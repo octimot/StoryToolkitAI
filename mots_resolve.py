@@ -390,10 +390,6 @@ def render_markers(marker_color, target_dir, add_timestamp=False, stills=False, 
                 Saves some info about the marker next to the rendered file in a json format. This will not work if we start_render is False
     '''
 
-    #print('marker id', marker_id)
-
-    #return
-
     resolve_objects = [resolve, project, mediaPool, projectManager, currentBin, currentTimeline] = initialize_resolve()
 
     # get the current page, so we can get back to it when we're done
@@ -789,12 +785,5 @@ def offset_start_tc_bin_item(offset=0, tc_larger_than='00:00:00:00', update_slat
 if __name__ == '__main__':
     print("Hello")
 
-
+    # offset tc demo
     #offset_start_tc_bin_item(6) #<-- calculated for AT85
-    #print("No call.")
-
-
-
-    # -11 frames 08:39:20
-    # +12 frames 09:16:40
-
