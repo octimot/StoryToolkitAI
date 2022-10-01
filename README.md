@@ -73,6 +73,8 @@ The tool also supports direct translation to English by clicking the "Translate 
 # Contributions
 This tool is developed and maintained by Octavian Mot (https://mots.us).
 
+The app is very raw and not polished at all!
+
 Ideally it should evolve by incorporating other machine learning models such as CLIP and GPT-3 to assist editors in their work.
 
 Feel free to get in touch or contribute. 
