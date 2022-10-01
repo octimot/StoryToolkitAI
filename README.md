@@ -50,7 +50,7 @@ Open a project in Resolve. Then, go back to the folder where you downloaded the 
 
 A simple GUI should appear on screen:
 
-![StoryToolkitAI GUI](help/StoryToolkitAI GUI.png)
+![StoryToolkitAI GUI](help/StoryToolkitAI_GUI.png)
 
 ### 2. Open the Timeline and Press Transcribe 
 
