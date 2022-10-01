@@ -74,6 +74,9 @@ def get_resolve_data():
 
     resolve_data = {'currentProject': ''}
 
+    # add resolve object to return dict
+    resolve_data['resolve'] = resolve
+
     # add project and bin to return dict
     resolve_data['currentProject'] = project.GetName()
 
@@ -298,7 +301,7 @@ def add_clip_markers(clip_name, markers, delete_clip_markers):
             if clip.GetName() == clip_name:
 
                 # should we first delete its markers?
-                if delete_clip_markers == '1':
+                if delete_clip_markers == True:
                     clip.DeleteMarkersByColor('All')
 
                 # now copy all the markers to the clip
@@ -319,7 +322,7 @@ def add_timeline_markers(timeline_name, markers, delete_timeline_markers):
     if currentTimeline and currentTimeline is not None and currentTimeline.GetName() == timeline_name:
 
         # should we first delete its markers?
-        if delete_timeline_markers == '1':
+        if delete_timeline_markers == True:
             currentTimeline.DeleteMarkersByColor('All')
 
         # now copy all the markers to the timeline
@@ -360,12 +363,6 @@ def import_media_into_timeline(file_path):
         mediaPool.AppendToTimeline(mediaPoolItem)
 
     return False
-
-
-
-
-#def import_media_into_timeline(file_path):
-#    import_media(file_path)
 
 
 
@@ -427,6 +424,9 @@ def render_markers(marker_color, target_dir, add_timestamp=False, stills=False, 
             render_preset = DEFAULT_RENDER_PRESET
 
         # if we're rendering to stills, use the proper preset
+        # the Stills_TIFF is a video only render preset with the following settings:
+        #  - Format: TIFF
+        #  - Codec RGB 16bits (LZW Compression)
         elif stills:
             render_preset = 'Still_TIFF'
 
