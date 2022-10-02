@@ -88,7 +88,7 @@ def ask_for_target_file():
     root.lift()
 
     # ask the user via os dialog which file to use
-    target_file = filedialog.askopenfilename(title="Where should we save the files?", initialdir=initial_target_dir, filetypes=[("Audio files", ".mp4 .wav .mp3")], multiple=False)
+    target_file = filedialog.askopenfilename(title="Choose a file", initialdir=initial_target_dir, filetypes=[("Audio files", ".mp4 .wav .mp3")], multiple=False)
 
     # what happens if the user cancels
     if not target_file:
@@ -129,7 +129,7 @@ def transcribe(translate_to_english=False):
             return False
 
     # render the audio from resolve, only if Resolve is available
-    if resolve_data['resolve'] != None:
+    if resolve_data['resolve'] != None and 'currentTimeline' in resolve_data and resolve_data['currentTimeline'] != '':
 
         # get the current timeline from Resolve
         currentTimelineName = resolve_data['currentTimeline']['name']
@@ -153,7 +153,8 @@ def transcribe(translate_to_english=False):
     else:
 
         # ask the user if they want to simply transcribe a file from the drive
-        if messagebox.askyesno(message='Resolve is not available.\nDo you want to transcribe an existing audio file?'):
+        if messagebox.askyesno(message='A Resolve Timeline is not available.\n\n'
+                                       'Do you want to transcribe an existing audio file?'):
 
             # create a list of files that will be passed later for transcription
             rendered_files = []
@@ -164,6 +165,9 @@ def transcribe(translate_to_english=False):
             # add it to the transcription list
             if target_file:
                 rendered_files.append(target_file)
+
+                # the file name also becomes currentTimelineName for future use
+                currentTimelineName = os.path.basename(target_file)
 
             # or close the process if the user canceled
             else:
@@ -181,6 +185,7 @@ def transcribe(translate_to_english=False):
 
     # process each audio file through whisper
     for audio_path in rendered_files:
+
         notification_msg = "Processing {}.\nThis will take a while depending on your CPU/GPU. " \
                            "Do not exit the app until it finished or you will have to start all over."\
             .format(audio_path)
@@ -193,16 +198,23 @@ def transcribe(translate_to_english=False):
         else:
             result = model.transcribe(audio_path)
 
-        # prepare a json file taking into consideration the name of the audio file
-        transcription_json_file_path = os.path.join(target_dir, os.path.basename(audio_path) + '.transcription.json')
-
         # let the user know that the speech was processed
         notification_msg = "Finished processing {} after {} seconds".format(audio_path, round(time.time() - start_time))
         notify("Finished Transcription", notification_msg, notification_msg)
 
+        # prepare a json file taking into consideration the name of the audio file
+        transcription_json_file_path = os.path.join(target_dir, os.path.basename(audio_path) + '.transcription.json')
+
         # save the whole whisper result in the json file to previously selected target_dir
-        with open(transcription_json_file_path, 'w') as outfile:
+        with open(transcription_json_file_path, 'w', encoding='utf-8') as outfile:
             json.dump(result, outfile)
+
+        # save the full transcript in text format too
+        transcription_txt_file_path = os.path.join(target_dir, os.path.basename(audio_path) + '.transcription.txt')
+
+        # save the whole whisper result in the json file to previously selected target_dir
+        with open(transcription_txt_file_path, 'w', encoding="utf-8") as txt_outfile:
+            txt_outfile.write(result['text'])
 
         # save SRT file to previously selected target_dir
         srt_path = os.path.join(target_dir, (os.path.basename(audio_path) + ".srt"))
@@ -221,6 +233,21 @@ def transcribe(translate_to_english=False):
         else:
             print("Pressed cancel")
 
+def speaker_diarization(audio_path):
+
+    # work in progress, but whisper vs. pyannote dependencies collide (huggingface-hub)
+    #print("Detecting speakers.")
+
+    from pyannote.audio import Pipeline
+    #pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization")
+
+    # apply pretrained pipeline
+    #diarization = pipeline(audio_path)
+
+    # print the result
+    #for turn, _, speaker in diarization.itertracks(yield_label=True):
+    #    print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
+    return False
 
 
 def start_thread(function):
