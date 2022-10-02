@@ -23,7 +23,9 @@ On a GPU with CUDA the transcription process will be significantly faster. For e
 
 ## Setup
 
-Our installation is on MacOS 12.6 running on M1, but the scripts should run fine on other CPU and GPUs. For both production and development we're using Python 3.10.2, but Python 3.9.9 and later shoud work out of the box.
+Our installation is on MacOS 12.6 running on M1, but the scripts should run fine on other CPU and GPUs. For both production and development we're currently using Python 3.9.13. 
+
+*Note: Whisper worked fine on Python 3.10.2, but we ran into problems when trying to install some packages which we're planning to use for future developments.*
 
 The scripts were so far tested on Davinci Resolve 17 and 18 and worked fine.
 
@@ -73,8 +75,8 @@ The tool also supports direct translation to English by clicking the "Translate 
 # Contributions
 This tool is developed and maintained by Octavian Mot (https://mots.us).
 
+Feel free to get in touch or contribute.
+
 The app is very raw and not polished at all!
 
 Ideally it should evolve by incorporating other machine learning models such as CLIP and GPT-3 to assist editors in their work.
-
-Feel free to get in touch or contribute. 

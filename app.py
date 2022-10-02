@@ -347,6 +347,7 @@ current_timeline = ''
 current_tc = '00:00:00:00'
 current_bin = ''
 resolve_error = 0
+resolve = None
 
 def poll_resolve_data():
 
@@ -354,6 +355,7 @@ def poll_resolve_data():
     global current_timeline
     global current_tc
     global current_bin
+    global resolve
 
     global resolve_error
 
@@ -377,6 +379,12 @@ def poll_resolve_data():
         # re-schedule this function to poll every 500ms
         root.after(500, poll_resolve_data)
 
+        # reset the error counter since the Resolve API worked fine
+        resolve_error = 0
+
+        # update the global resolve variable with the resolve object
+        resolve = resolve_data['resolve']
+
 
     # if an exception is thrown while trying to work with Resolve, don't crash, but continue to try to poll
     except:
@@ -399,12 +407,14 @@ def poll_resolve_data():
         else:
             print('Resolve Communication Error. Is your Resolve project open?')
 
+        resolve = None
+
         # pause and try again in a second
         time.sleep(1)
 
 
 # leave version here, maybe add setuptools in the future
-version = 0.15
+version = 0.16
 
 if __name__ == '__main__':
 
@@ -426,6 +436,9 @@ if __name__ == '__main__':
 
     # draw buttons
     # @TODO implement all mots_resolve functions in the GUI
+
+    #label1 = tk.Label(frame, text="Resolve Operations", anchor='w')
+    #label1.grid(row=0, column=1, sticky='w', padx=10, pady=10)
 
     #row 1
     button2 = tk.Button(frame, image=pixel, width=140, height=50, compound="c", text="Copy Timeline\nMarkers to Same Clip", command= lambda:execute_operation('copy_markers_timeline_to_clip'))
@@ -457,8 +470,6 @@ if __name__ == '__main__':
     button7.grid(row=4, column=2, padx=10, pady=10)
 
 
-
-
     resolve_marker_colors = {
         "Blue": "#0000FF",
         "Cyan": "#00CED0",
@@ -478,9 +489,19 @@ if __name__ == '__main__':
         "Cream": "#F5EBE1"
     }
 
+    resolve_theme_colors = {
+        'white':  '#ffffff',
+        'supernormal':  '#C2C2C2',
+        'normal':  '#929292',
+        'black':  '#1F1F1F',
+        'superblack':  '#000000',
+        'dark':  '#282828',
+        'red':  '#E64B3D'
+    }
+
     print("Starting GUI")
 
-    # poll resolve after 100ms
+    # poll resolve after 500ms
     root.after(500, poll_resolve_data())
 
     root.mainloop()
