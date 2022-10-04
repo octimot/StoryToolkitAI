@@ -14,7 +14,6 @@ import json
 
 from timecode import Timecode
 
-
 def initialize_resolve():
     """
     Returns most of the necessary Resolve API objects that are needed to do most operations,
@@ -25,23 +24,29 @@ def initialize_resolve():
 
     """
 
+    # Windows 10 seems to require this fix.
+    # The source of the problem is unclear, but it looks like there's an issue when loading DaVinciResolveScript libs
+    # if you're having problems, simply uncomment these to disable Resolve functionality:
+    #if platform.system() == 'Windows' and sys.getwindowsversion()['Major'] == 10:
+    #    raise ValueError('Raising this to avoid Windows 10 crash.')
+
     resolve = GetResolve()
     if resolve is None or not resolve:
-        print("Resolve is not started. Exiting app.")
+        print("Resolve is not started. Exiting mots_resolve.")
         sys.exit()
         # return False
 
     project = resolve.GetProjectManager().GetCurrentProject()
 
     if project is None or not project:
-        print("No Resolve project is loaded. Exiting app.")
+        print("No Resolve project is loaded. Exiting mots_resolve.")
         sys.exit()
         # return False
 
     mediaPool = project.GetMediaPool()
 
     if mediaPool is None:
-        print("Media Pool not available. Exiting app.")
+        print("Media Pool not available. Exiting mots_resolve.")
         sys.exit()
         # return False
 

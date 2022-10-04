@@ -13,6 +13,7 @@ from threading import *
 
 import mots_resolve
 
+import torch
 import whisper
 
 '''
@@ -231,7 +232,7 @@ def transcribe(translate_to_english=False):
             print("Importing SRT into Resolve Bin")
             mots_resolve.import_media(srt_path)
         else:
-            print("Pressed cancel")
+            print("Pressed cancel. Aborting SRT import into Resolve.")
 
 def speaker_diarization(audio_path):
 
@@ -413,11 +414,67 @@ def poll_resolve_data():
         time.sleep(1)
 
 
-# leave version here, maybe add setuptools in the future
-version = 0.16
+# leave version here for now, maybe add setuptools in the future
+import version
+__version__ = version.__version__
+print("Running StoryToolkit version {}".format(__version__))
+
+def check_update():
+    '''
+    This checks if there's a new version of the app on GitHub and returns True if it is and the version number
+    :return: [bool, str online_version]
+    '''
+    from requests import get
+    version_request = "https://raw.githubusercontent.com/octimot/StoryToolkitAI/main/version.py"
+
+    # retrieve the latest version number from github
+    try:
+        r = get(version_request, verify=True)
+
+        # extract the actual version number from the string
+        online_version_raw = r.text.split('"')[1]
+
+    # show exception if it fails, but don't crash
+    except Exception as e:
+        print('Unable to check the latest version of StoryToolkitAI: {}. Is your Internet connection working?'.format(e))
+
+        # return False - no update available and None instead of an online version number
+        return False, None
+
+    # get the numbers in the version string
+    local_version = __version__.split(".")
+    online_version = online_version_raw.split(".")
+
+    # take each number in the version string and compare it with the local numbers
+    for n in range(len(online_version)):
+
+        # if there's a number larger online, return true
+        if int(online_version[n]) > int(local_version[n]):
+            return True, online_version_raw
+
+        # continue the search if there's no version mismatch
+        if int(online_version[n]) == int(local_version[n]):
+            continue
+        break
+
+    # return false (and the online version) if the local and the online versions match
+    return False, online_version_raw
+
+
 
 if __name__ == '__main__':
 
+    # check for updates
+    [update_exists, online_version] = check_update()
+
+    # and let the user know if a new version of the app was detected
+    if update_exists:
+        update_message = '\nA new version ({}) of StoryToolkitAI is available.\n Use git pull or manually download it from\n https://github.com/octimot/StoryToolkitAI \n'.format(online_version)
+        print(update_message)
+
+    # use CUDA if available
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print('Using device:', device)
 
     # initialize GUI
     root = tk.Tk()
@@ -499,9 +556,11 @@ if __name__ == '__main__':
         'red':  '#E64B3D'
     }
 
-    print("Starting GUI")
-
     # poll resolve after 500ms
     root.after(500, poll_resolve_data())
 
+    if update_exists:
+        messagebox.showinfo(title='Update available', message=update_message)
+
+    print("Starting StoryToolkitAI GUI")
     root.mainloop()
