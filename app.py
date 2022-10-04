@@ -480,7 +480,7 @@ if __name__ == '__main__':
     root = tk.Tk()
 
     # set the window title
-    root.title("StoryToolkitAI v{}".format(version))
+    root.title("StoryToolkitAI v{}".format(__version__))
 
     # set the window size
     root.geometry("350x340")
