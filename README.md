@@ -17,7 +17,7 @@ The results we get with Whisper are significantly better than any other Speech-t
 ### Speed
 Our tests show that on an Macbook Pro M1 a 30 second timeline is transcribed on average in approx. 1 minute, but results may vary.
 
-On a GPU with CUDA the transcription process will be significantly faster. For eg. Whisper Demo Notebooks running Google Collab GPUs transcribe minutes of audio in 10 seconds or less.
+On a Windows workstation with a GTX1070, the transcription time is around a quarter of the length of the audio file (4 minute audio is transcribed in approx. 1 minute).
 
 ---
 
@@ -25,7 +25,7 @@ On a GPU with CUDA the transcription process will be significantly faster. For e
 
 Our installation is on MacOS 12.6 running on M1, but the scripts should run fine on other CPU and GPUs. For both production and development we're currently using Python 3.9.13. 
 
-*Note: Whisper worked fine on Python 3.10.2, but we ran into problems when trying to install some packages which we're planning to use for future developments.*
+_Note: Whisper worked fine on Python 3.10.2, but we ran into problems when trying to install some packages which we're planning to use for future developments._
 
 The scripts were so far tested on Davinci Resolve 17 and 18 and worked fine.
 
@@ -41,9 +41,18 @@ Once Whisper is installed, make sure you have all other requirements installed b
 
     pip install -r requirements.txt
 
+If you are running the tool on a machine NVIDIA CUDA GPU, make sure you install Torch with CUDA:
+
+    pip uninstall torch
+    pip cache purge
+    install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
+
+_Note: If Resolve is not turned on or not available, the transcription and translation functions will work on normal wav 
+files too. Simply press the transcribe or translate buttons and follow the process._
+
 ---
 
-## How it works
+## How to transcribe timelines:
 
 ### 1. Open Resolve
 Open a project in Resolve. Then, go back to the folder where you downloaded the tool and run:
@@ -71,6 +80,12 @@ When the transcription is ready, you can choose a Media Bin in Resolve where the
 The tool also supports direct translation to English by clicking the "Translate Timeline to English" button. However, it will not generate any original language transcription together with the translation.
 
 ---
+
+# Known issues
+There seems to be a problem with the Resolve libraries on some Windows 10 machines, but we're trying to find a fix.
+If you're running the tool on a Windows 10 machine with Resolve 18 and it works, please get in touch.
+
+To report any issues, please use the Issues tab here on Github: https://github.com/octimot/StoryToolkitAI/issues
 
 # Contributions
 This tool is developed and maintained by Octavian Mot (https://mots.us).
