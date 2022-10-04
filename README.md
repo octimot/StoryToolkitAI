@@ -27,7 +27,9 @@ Our installation is on MacOS 12.6 running on M1, but the scripts should run fine
 
 _Note: Whisper worked fine on Python 3.10.2, but we ran into problems when trying to install some packages which we're planning to use for future developments._
 
-The scripts were so far tested on Davinci Resolve 17 and 18 and worked fine.
+**The tool only works on Resolve Studio 18.**
+
+_Note: Unfortunately, only the Studio version of Resolve supports external scripting and Resolve versions earlier than 18 do not support Python 3.6+_
 
 We recommend running the tool inside a virtual environment like virtualenv. This is not required, but it prevents messing up your Python installation.
 
