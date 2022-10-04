@@ -41,7 +41,7 @@ Once Whisper is installed, make sure you have all other requirements installed b
 
     pip install -r requirements.txt
 
-If you are running the tool on a machine NVIDIA CUDA GPU, make sure you install Torch with CUDA:
+If you are running the tool on a machine with an NVIDIA CUDA GPU, make sure you install Torch with CUDA:
 
     pip uninstall torch
     pip cache purge
