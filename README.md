@@ -7,15 +7,23 @@ This is meant as an editing extension for Davinci Resolve.
 Among other things, it transcribes timelines directly from Resolve by rendering to Audio Only (mp4/wav) and then passing
 the rendered file to OpenAI Whisper, a state-of-the-art speech recognition model. 
 
-After the audio files are processed, the tool saves the transcription into both a detailed JSON and an SRT file ready to
-be imported into Davinci Resolve (or other software).
+The tool saves the transcription into both a detailed JSON and an SRT file ready to be imported into Davinci Resolve
+(compatible with other software aswell).
+
+The transcription and translation functions also work without the need to have Resolve installed on the machine.
+
+_The app is in this stage raw and not polished at all, but it already helps us in the editing room, so we simply 
+wanted to share it for free for anyone to use!_
 
 ### Is it really completely free?
 Yes, the tool runs locally and there's no need for any additional account.
 
-### Results
+### Transcription Results
 The results we get with Whisper are significantly better than any other Speech-to-Text model (including Google, AWS
-etc.) out there and the models are free to use.
+etc.) out there and the models are free to use. According to OpenAI, the models have been trained on data in 98
+different languages (cca. 65% of data in English) and show strong Automated Speech Recognition results in ~10 languages.
+More info here: https://github.com/openai/whisper/blob/main/model-card.md
+
 
 ### Speed
 Our tests show that on a Macbook Pro M1 a 30-second timeline is transcribed on average in approx. 1 minute, but results
@@ -168,7 +176,5 @@ To report any issues, please use the Issues tab here on Github: https://github.c
 This tool is developed and maintained by Octavian Mot (https://mots.us).
 
 Feel free to get in touch or contribute.
-
-The app is very raw and not polished at all!
 
 Ideally, it should evolve by incorporating other machine learning models such as CLIP and GPT-3 to assist editors in their work.
