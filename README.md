@@ -79,6 +79,12 @@ Now create a virtual environment (to prevent messing up with other python packag
 
     virtualenv -p python3.9 venv
 
+Right now, your installation folder should contain 2 other folders, and the tree should look like this:
+
+    YOUR_INSTALLATION_FOLDER
+    +- StoryToolkitAI
+    +- venv
+
 #### 6. Activate virtual environment
 Now enable the virtual environment (this means that all the packages you'll install now via pip will be contained in the
 virtual environment, meaning that for the tool to work you'll ALWAYS have to activate the virtual environment first
@@ -94,7 +100,7 @@ For more info regarding Whisper installation, please check https://github.com/op
 
 #### 8. Install all the stuff the tool requires:
 
-    pip install -r requirements.txt
+    pip install -r StoryToolkitAI/requirements.txt
 
 If you are running the tool on a machine with an NVIDIA CUDA GPU, make sure you install Torch with CUDA:
 
@@ -108,7 +114,7 @@ files too. Simply press the transcribe or translate buttons and follow the proce
 #### That's it!
 Inside the virtual environment, you should now be able to start the tool:
 
-    python app.py
+    python StoryToolkitAI/app.py
 
 _Note: After restart of the machine or your terminal window, never forget to activate the virtual environment before
 starting the app. In the folder where you created venv, run:_
@@ -124,7 +130,7 @@ Detailed Windows installation instructions coming soon.
 ## How to transcribe timelines:
 
 #### 1. Open Resolve and StoryToolkitAI
-Open a project in Resolve. Then, go back to the folder where you downloaded the tool, activate the virtual environment 
+Open a project in Resolve. Then, go back to the folder where you installed the tool, activate the virtual environment 
 (if you created one) and then start the tool:
     
     source venv/bin/activate
