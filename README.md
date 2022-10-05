@@ -49,24 +49,24 @@ and there is a (very) slight chance that you'll affect your Operating System's o
 your other apps. In an unlikely worst-case scenario, some stuff might not work anymore at all and you'll need pro help
 to fix them back._
 
-###Mac OS
+### Mac OS
 In the Terminal:
 
-####1. You'll need Homebrew
+#### 1. You'll need Homebrew
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-####2. You'll need Python 3.9, Python Tkinter, Git, and FFMPEG:
+#### 2. You'll need Python 3.9, Python Tkinter, Git, and FFMPEG:
 
     brew install python@3.9
     brew install python-tk@3.9
     brew install git
     brew install ffmpeg
 
-####3. Make sure you now have virtualenv:
+#### 3. Make sure you now have virtualenv:
 
     pip install virtualenv
 
-####4. Download StoryToolkitAI:
+#### 4. Download StoryToolkitAI:
 First, go to the Folder you want to install StoryToolkit in via Finder. Right-click on it and select "New Terminal at Folder".
 Once you get another terminal window open, run:
 
@@ -74,25 +74,25 @@ Once you get another terminal window open, run:
 
 This should download the app in the folder that you chose.
 
-####5. Set up a virtual environment
+#### 5. Set up a virtual environment
 Now create a virtual environment (to prevent messing up with other python packages you may have installed on your OS for other stuff):
 
     virtualenv -p python3.9 venv
 
-####6. Activate virtual environment
+#### 6. Activate virtual environment
 Now enable the virtual environment (this means that all the packages you'll install now via pip will be contained in the
 virtual environment, meaning that for the tool to work you'll ALWAYS have to activate the virtual environment first
 using the following command!)
 
     source venv/bin/activate
 
-####7. Install OpenAI Whisper
+#### 7. Install OpenAI Whisper
 
     pip install git+https://github.com/openai/whisper.git 
 
 For more info regarding Whisper installation, please check https://github.com/openai/whisper 
 
-####8. Install all the stuff the tool requires:
+#### 8. Install all the stuff the tool requires:
 
     pip install -r requirements.txt
 
@@ -105,7 +105,7 @@ If you are running the tool on a machine with an NVIDIA CUDA GPU, make sure you 
 _Note: If Resolve is not turned on or not available, the transcription and translation functions will work on normal wav 
 files too. Simply press the transcribe or translate buttons and follow the process._
 
-####That's it!
+#### That's it!
 Inside the virtual environment, you should now be able to start the tool:
 
     python app.py
@@ -115,7 +115,7 @@ starting the app. In the folder where you created venv, run:_
 
     source venv/bin/activate
     
-###Windows
+### Windows
 
 Detailed Windows installation instructions coming soon. 
 
