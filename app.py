@@ -78,11 +78,14 @@ class toolkit_UI:
         # any frames stored here in the future will be considered visible
         self.main_window_visible_frames = []
 
-        # create the main window
-        self.create_main_window()
+        # set some UI styling here
+        self.paddings = {'padx': 10, 'pady': 10}
+        self.button_size = {'width': 150, 'height': 50}
 
-        self.resolve_marker_colors = {}
-        self.resolve_theme_colors = {}
+        # define the pixel size for buttons
+        pixel = tk.PhotoImage(width=1, height=1)
+
+        self.blank_img_button_settings = {'image': pixel, 'compound': 'c'}
 
         # these are the marker colors used in Resolve
         self.resolve_marker_colors = {
@@ -114,6 +117,9 @@ class toolkit_UI:
             'dark': '#282828',
             'red': '#E64B3D'
         }
+
+        # create the main window
+        self.create_main_window()
 
     class main_window:
         pass
@@ -209,57 +215,54 @@ class toolkit_UI:
         # create the frame that will hold the other buttons
         self.main_window.other_buttons_frame = tk.Frame(self.root)
 
-        # define the pixel size for buttons
-        pixel = tk.PhotoImage(width=1, height=1)
-
         # draw buttons
 
         # label1 = tk.Label(frame, text="Resolve Operations", anchor='w')
         # label1.grid(row=0, column=1, sticky='w', padx=10, pady=10)
 
         # resolve buttons frame row 1
-        self.main_window.button1 = tk.Button(self.main_window.resolve_buttons_frame, image=pixel, width=140, height=50, compound="c",
+        self.main_window.button1 = tk.Button(self.main_window.resolve_buttons_frame, **self.blank_img_button_settings, **self.button_size,
                             text="Copy Timeline\nMarkers to Same Clip",
                             command=lambda: execute_operation('copy_markers_timeline_to_clip', self))
-        self.main_window.button1.grid(row=1, column=1, padx=10, pady=10)
+        self.main_window.button1.grid(row=1, column=1, **self.paddings)
 
-        self.main_window.button2 = tk.Button(self.main_window.resolve_buttons_frame, image=pixel, width=140, height=50, compound="c",
+        self.main_window.button2 = tk.Button(self.main_window.resolve_buttons_frame, **self.blank_img_button_settings, **self.button_size,
                             text="Copy Clip Markers\nto Same Timeline",
                             command=lambda: execute_operation('copy_markers_clip_to_timeline', self))
-        self.main_window.button2.grid(row=1, column=2, padx=10, pady=10)
+        self.main_window.button2.grid(row=1, column=2, **self.paddings)
 
         # resolve buttons frame row 2
-        self.main_window.button3 = tk.Button(self.main_window.resolve_buttons_frame, image=pixel, width=140, height=50, compound="c", text="Render Markers\nto Stills",
+        self.main_window.button3 = tk.Button(self.main_window.resolve_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Render Markers\nto Stills",
                             command=lambda: execute_operation('render_markers_to_stills', self))
-        self.main_window.button3.grid(row=2, column=1, padx=10, pady=10)
+        self.main_window.button3.grid(row=2, column=1, **self.paddings)
 
-        self.main_window.button4 = tk.Button(self.main_window.resolve_buttons_frame, image=pixel, width=140, height=50, compound="c", text="Render Duration\nMarkers",
-                            command=lambda: execute_operation('render_markers_to_clip', self))
-        self.main_window.button4.grid(row=2, column=2, padx=10, pady=10)
+        self.main_window.button4 = tk.Button(self.main_window.resolve_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Render Markers\nto Clips",
+                            command=lambda: execute_operation('render_markers_to_clips', self))
+        self.main_window.button4.grid(row=2, column=2, **self.paddings)
 
         # Other Frame Row 1
-        self.main_window.button5 = tk.Button(self.main_window.other_buttons_frame, image=pixel, width=140, height=50, compound="c", text="Transcribe\nTimeline",
+        self.main_window.button5 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Transcribe\nTimeline",
                             command=lambda: start_thread('transcribe', self))
-        self.main_window.button5.grid(row=1, column=1, padx=10, pady=10)
+        self.main_window.button5.grid(row=1, column=1, **self.paddings)
 
-        self.main_window.button6 = tk.Button(self.main_window.other_buttons_frame, image=pixel, width=140, height=50, compound="c",
+        self.main_window.button6 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings, **self.button_size,
                             text="Translate\nTimeline to English", command=lambda: start_thread('translate', self))
-        self.main_window.button6.grid(row=1, column=2, padx=10, pady=10)
+        self.main_window.button6.grid(row=1, column=2, **self.paddings)
 
         #self.main_window.link2 = Label(self.main_window.other_buttons_frame, text="project home", font=("Courier", 8), fg='#1F1F1F', cursor="hand2", anchor='s')
         #self.main_window.link2.grid(row=2, column=1, columnspan=2, padx=10, pady=5, sticky='s')
         #self.main_window.link2.bind("<Button-1>", lambda e: webbrowser.open_new("https://github.com/octimot/StoryToolkitAI"))
 
         # Other Frame row 2 (disabled for now)
-        #self.main_window.button7 = tk.Button(self.main_window.other_buttons_frame, image=pixel, width=140, height=50, compound="c", text="Transcribe\nDuration Markers")
-        # self.main_window.button7.grid(row=4, column=1, padx=10, pady=10)
-        #self.main_window.button8 = tk.Button(self.main_window.other_buttons_frame, image=pixel, width=140, height=50, compound="c", text="Translate\nDuration Markers to English")
-        # self.main_window.button8.grid(row=4, column=1, padx=10, pady=10)
+        #self.main_window.button7 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Transcribe\nDuration Markers")
+        # self.main_window.button7.grid(row=4, column=1, **self.paddings)
+        #self.main_window.button8 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Translate\nDuration Markers to English")
+        # self.main_window.button8.grid(row=4, column=1, **self.paddings)
 
 
-        #self.main_window.button_test = tk.Button(self.main_window.other_buttons_frame, image=pixel, width=140, height=50, compound="c", text="Test",
+        #self.main_window.button_test = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Test",
         #                        command=lambda: self.update_main_window())
-        #self.main_window.button_test.grid(row=5, column=2, padx=10, pady=10)
+        #self.main_window.button_test.grid(row=5, column=2, **self.paddings)
 
 
 
@@ -276,6 +279,43 @@ class toolkit_UI:
         self.root.mainloop()
 
         return
+
+    def create_transcription_settings_window(self, title="Transcription Settings"):
+
+        # WORK IN PROGRESS
+
+        self.transcription_settings_window = Toplevel(self.root)
+
+        self.transcription_settings_window.title(title)
+
+        self.transcription_settings_window.resizable(False, False)
+
+        form_frame = tk.Frame(self.transcription_settings_window)
+        form_frame.pack()
+
+        # A Label widget to show in toplevel
+        Label(form_frame, text="Transcription Model").grid(row=1, column=1, **self.paddings)
+
+        # A dropdown with showing all the available whisper models
+        self.selected_model = StringVar(form_frame)
+        self.selected_model.set("medium")
+        OptionMenu(form_frame, self.selected_model, *whisper.available_models()).grid(row=1, column=2, **self.paddings)
+
+        #tokenizer.py Tokenizer LANGUAGES contains all the language list-  how to get it?
+
+        # start transcription button
+        self.start_button = tk.Button(form_frame, **self.blank_img_button_settings, **self.button_size,
+                            text="Start",
+                            command=lambda: self.option_changed())
+        self.start_button.grid(row=2, column=1, **self.paddings)
+
+    def start_transcription(self, *args):
+
+        # gather all the variables
+        print('You selected: {}'.format(self.selected_model.get()))
+
+        # transcription process starts here
+
 
     def open_new_window(self, title=None):
 
@@ -357,6 +397,24 @@ def transcribe(translate_to_english=False, toolkit_UI_obj = None):
     # we need to have a toolkit_UI_obj passed, otherwise there's no way to prompt the user
     if toolkit_UI_obj is None:
         return False
+
+    # @TODO open the transcription window and let the user select stuff while Resolve is transcribing in the back
+    # - add an button that says something like "Go AUTO Let me know when it's done"
+    # - there needs to be a status label that says where we are: rendering, pre-processing, transcribing, error?
+    # - after the render is done, add a countdown on the continue button to give the user a bit of time to react,
+    #     so if the user doesn't change any of the options, whisper will start the process
+    # - it would also be cool if we do a bit of pre-processing to auto detect language, length etc. and populate
+    #   options and inputs in the window
+    # toolkit_UI_obj.create_transcription_settings_window()
+    #time.sleep(120)
+    #return
+
+    # @TODO Transcription queue system
+    # There needs to be a queue dict with all the pending files that have been queued for transcription
+    # - once the resolve render is done with one file, start the next file in the render queue
+    #   (this is resolve-only maybe?)
+    # - once whisper is done with one file, start the next file in the transcription queue
+    # but first the transcription functions need to have their own class
 
     # get info from resolve
     try:
@@ -544,6 +602,13 @@ def execute_operation(operation, toolkit_UI_obj):
         else:
             return False
 
+        # trigger warning if there is no current timeline
+        if resolve_data['currentTimeline'] is None:
+            print('Timeline not available. Make sure that you\'ve opened a Timeline in Resolve.')
+            return False
+
+        #@todo trigger error if the timeline is not opened or the clip is not available in the bin
+
         # execute operation without asking for any prompts
         # this will delete the existing clip/timeline destination markers,
         # but the user can undo the operation from Resolve
@@ -554,6 +619,39 @@ def execute_operation(operation, toolkit_UI_obj):
 
     # render marker operation
     elif operation == 'render_markers_to_stills' or operation == 'render_markers_to_clips':
+
+        # ask user for marker color
+
+        # but first make a list of all the available marker colors based on the timeline markers
+        current_timeline_marker_colors = []
+        if current_timeline and 'markers' in current_timeline:
+
+            # take each marker from timeline and get its color
+            for marker in current_timeline['markers']:
+
+                # only append the marker to the list if it wasn't added already
+                if current_timeline['markers'][marker]['color'] not in current_timeline_marker_colors:
+                    current_timeline_marker_colors.append(current_timeline['markers'][marker]['color'])
+
+        # if no markers exist, cancel operation and let the user know that there are no markers to render
+        if current_timeline_marker_colors:
+            marker_color = simpledialog.askstring(title="Markers Color", prompt="What color markers should we render?\n\n"
+                                                                    "These are the marker colors on the current timeline:\n"
+                                                                    +", ".join(current_timeline_marker_colors))
+        else:
+            no_markers_alert = 'The timeline doesn\'t contain any markers'
+            print(no_markers_alert)
+            return False
+
+        if not marker_color:
+            print("User canceled render operation.")
+            return False
+
+        if marker_color not in current_timeline_marker_colors:
+            print("Aborting. User entered a marker color that doesn't exist on the timeline.")
+            messagebox.showerror(title='Unavailable marker color', message='The marker color you\'ve entered doesn\'t exist on the timeline.')
+            return False
+
 
         render_target_dir = toolkit_UI_obj.ask_for_target_dir()
 
@@ -569,22 +667,9 @@ def execute_operation(operation, toolkit_UI_obj):
             stills = False
             render = False
 
-            # ask user for render preset or asign one
+            # ask user for render preset or assign one
             # @todo
-
-        # ask user for marker color
-        # @todo only ask the colors that exist in the source markers
-        # if no markers exist, cancel operation and let the user know that there are no markers to render
-        marker_color = simpledialog.askstring(title="Markers Color", prompt="What color markers should we render?\n"
-                               "Blue, Cyan, Green, Yellow, Red, Pink, "
-                               "Purple, Fuchsia, Rose, Lavender, Sky, Mint, Lemon, Sand, Cocoa, Cream?")
-
-        if not marker_color:
-            print("User canceled render operation.")
-            return False
-
-        # verify if it's the right color
-        # @todo
+            render_preset = False
 
         mots_resolve.render_markers(marker_color, render_target_dir, False,
                                                            stills, render, render_preset)

@@ -370,8 +370,19 @@ def import_media_into_timeline(file_path):
     return False
 
 
-
+# This will be the render preset that the script will choose in case nothing was passed during the call
+# H.264 Master should be available in any new Resolve installation, it's in QuickTime format and uses H.264 as codec
 DEFAULT_RENDER_PRESET = 'H.264 Master'
+
+# These are render settings for presets we use and are not in Resolve
+MOTS_RENDER_PRESET_SETTINGS = {'Still_TIFF':{'ExportVideo': True, 'ExportAudio': False}}
+
+# Resolve API uses a different call to get the render format and codect, so we'll store them separately
+MOTS_RENDER_PRESET_FORMAT_CODEC = {'Still_TIFF':{'format': 'tif', 'codec': 'RGB16LZW'}}
+
+RESOLVE_MARKER_COLORS = ["Blue", "Cyan", "Green", "Yellow", "Red", "Pink",
+                         "Purple", "Fuchsia", "Rose", "Lavender", "Sky",
+                         "Mint", "Lemon", "Sand", "Cocoa", "Cream"]
 
 def render_markers(marker_color, target_dir, add_timestamp=False, stills=False, start_render=False, render_preset='h264_LQ3000', save_marker_data=False, marker_id=None):
     '''
@@ -394,6 +405,11 @@ def render_markers(marker_color, target_dir, add_timestamp=False, stills=False, 
             save_marker_data: bool,str
                 Saves some info about the marker next to the rendered file in a json format. This will not work if we start_render is False
     '''
+
+    # in case there was no render preset passed, use these fallbacks
+    global DEFAULT_RENDER_PRESET
+    global MOTS_RENDER_PRESET_SETTINGS
+    global MOTS_RENDER_PRESET_FORMAT_CODEC
 
     resolve_objects = [resolve, project, mediaPool, projectManager, currentBin, currentTimeline] = initialize_resolve()
 
@@ -436,12 +452,29 @@ def render_markers(marker_color, target_dir, add_timestamp=False, stills=False, 
 
         # check if the render preset is available in the project
         if render_preset in available_render_presets:
+
             # then use it
             project.LoadRenderPreset(render_preset)
-        # or throw an error if it's not
+
+            # but don't pass any format and codec, let the stored preset handle that
+            render_preset_format_codec = None
+
+        # if the selected render_preset doesn't exist in Resolve, use the settings stored in this script
         else:
-            print("Selected render preset doesn't exist.")
-            return False
+            print("Selected render preset ({}) doesn't exist.".format(render_preset))
+
+            # if the requested render_preset is in MOTS_RENDER_PRESET_SETTINGS, here are its predefined settings
+            if render_preset in MOTS_RENDER_PRESET_SETTINGS and render_preset in MOTS_RENDER_PRESET_FORMAT_CODEC:
+                print(' Creating render preset ({}) based on mots_resolve settings'.format(render_preset))
+                render_preset_settings = MOTS_RENDER_PRESET_SETTINGS[render_preset]
+                render_preset_format_codec = MOTS_RENDER_PRESET_FORMAT_CODEC[render_preset]
+
+                #  SetRenderSettings({settings})
+                #  SaveAsNewRenderPreset(render_preset)
+            else:
+                print('Aborting. Please manually create the render preset with the name {} and try again.'
+                      .format(render_preset))
+                return False
 
         #print(loaded_markers)
 
@@ -461,6 +494,10 @@ def render_markers(marker_color, target_dir, add_timestamp=False, stills=False, 
                 # set the render in and out points according to the marker
                 renderSettings["MarkIn"] = startFrame + marker
                 renderSettings["MarkOut"] = startFrame + marker + int(marker_data['duration']) - 1
+
+                # only render the first frame if we're in stills mode
+                if stills:
+                    renderSettings["MarkOut"] = startFrame + marker + 0
 
                 # the render file name is givven by the marker name
                 renderSettings["CustomName"] = marker_data["name"]
@@ -482,6 +519,11 @@ def render_markers(marker_color, target_dir, add_timestamp=False, stills=False, 
 
                 # replace all slashes and backslashes with an empty space in the file name
                 renderSettings["CustomName"] = str(renderSettings["CustomName"]).replace("\\", " ").replace("/", " ")
+
+                # use the passed render format and codec if it was passed
+                if render_preset_format_codec is not None \
+                        and 'format' in render_preset_format_codec and 'codec' in render_preset_format_codec:
+                    project.SetCurrentRenderFormatAndCodec(render_preset_format_codec['format'], render_preset_format_codec['codec'])
 
                 # append the render job id to the new_render_jobs
                 render_job_id = project.AddRenderJob()

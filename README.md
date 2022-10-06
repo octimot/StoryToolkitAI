@@ -2,7 +2,7 @@
 
 ## Description
 
-This is meant as an editing extension for Davinci Resolve. 
+This is meant as an editing extension for Davinci Resolve 18. 
 
 Among other things, it transcribes timelines directly from Resolve by rendering to Audio Only (mp4/wav) and then passing
 the rendered file to OpenAI Whisper, a state-of-the-art speech recognition model. 
@@ -137,6 +137,9 @@ Detailed Windows installation instructions coming soon.
 
 ## How to transcribe timelines:
 
+N*ote: The following process assumes that you have Davinci Resolve installed. However, the tool also works without
+Resolve on the machine.*
+
 #### 1. Open Resolve and StoryToolkitAI
 Open a project in Resolve. Then, go back to the folder where you installed the tool, activate the virtual environment 
 (if you created one) and then start the tool:
@@ -165,10 +168,40 @@ When the transcription is ready, you can choose a Media Bin in Resolve where the
 The tool also supports direct translation to English by clicking the "Translate Timeline to English" button. However, it will not generate any original language transcription together with the translation.
 
 ---
+## Other Features
+
+### Copy Timeline Markers to Same Clip
+This copies the current markers to its corresponding clip in the media bin. 
+Due to Resolve API limitations, it's important that the corresponding clip
+is in the bin that is currently opened in the Media Panel. 
+The clip's existing markers will be deleted before the new ones are copied!
+
+### Copy Clip Markers to Same Timeline
+Same as the function above, but in this case, the markers of the clip are copied to the timeline.
+
+### Render Markers to Stills
+This will render to TIFF and JPEG the first frame of the markers of a certain color. Works only on markers from the 
+opened timeline.
+
+### Render Markers to Clips
+This will render to H.264 the entire duration of the markers of a certain color. Same as above, it only works for
+markers from the opened timeline.
+
+
+
+---
 
 # Known issues
+### If the tool doesn't connect with Resolve:
+Make sure that, in Davinci Resolve Preferences -> General, "External Scripting using" is set to Local
+
+### Windows issues
 There seems to be a problem with the Resolve libraries on some Windows 10 machines, but we're trying to find a fix.
 If you're running the tool on a Windows 10 machine with Resolve 18 and it works, please get in touch.
+
+### Please report any other issues
+As mentioned, the tool is in a super raw state of development. We use it everyday in our editing workflow, but some 
+issues might escape us. To make sure that it works for the community, please report anything weird that you notice.
 
 To report any issues, please use the Issues tab here on Github: https://github.com/octimot/StoryToolkitAI/issues
 
