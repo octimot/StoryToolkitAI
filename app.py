@@ -9,6 +9,9 @@ import tkinter as tk
 from tkinter import filedialog, simpledialog, messagebox
 from tkinter import *
 
+import hashlib
+import codecs
+
 from threading import *
 
 import mots_resolve
@@ -27,43 +30,18 @@ pip install git+https://github.com/openai/whisper.git
 '''
 
 
-def notify(title, text, debug_message):
-    """
-    Uses OS specific tools to notify the user
-
-    :param title:
-    :param text:
-    :return:
-    """
-
-    # print to console first
-    print(debug_message)
-
-    # notify the user depending on which platform they're on
-    if platform.system() == 'Darwin':  # macOS
-        os.system("""
-                                                osascript -e 'display notification "{}" with title "{}"'
-                                                """.format(text, title))
-
-    # no solution yet for other platforms
-    elif platform.system() == 'Windows':  # Windows
-        return
-    else:  # linux variants
-        return
-
-
 # define a global target dir so we remember where we chose to save stuff last time when asked
 # but start with the user's home directory
 initial_target_dir = os.path.expanduser("~")
-
-
-
 
 class toolkit_UI:
     '''
     This handles all the GUI operations mainly using tkinter
     '''
-    def __init__(self, info_message=False):
+    def __init__(self, toolkit_ops_obj=None, info_message=False):
+
+        # make reference to toolkit ops obj available from now on
+        self.toolkit_ops_obj = toolkit_ops_obj
 
         # initialize tkinter as the main GUI
         self.root = tk.Tk()
@@ -71,9 +49,6 @@ class toolkit_UI:
         # show any info messages
         if info_message:
             messagebox.showinfo(title='Update available', message=info_message)
-
-        # this should hold all the existing GUI windows, except the root
-        self.windows = {}
 
         # any frames stored here in the future will be considered visible
         self.main_window_visible_frames = []
@@ -118,14 +93,21 @@ class toolkit_UI:
             'red': '#E64B3D'
         }
 
+        # use this variable to remember if the user said it's ok that resolve is not available to continue a process
+        self.no_resolve_ok = False
+
+        self.windows = self.windows()
+
         # create the main window
         self.create_main_window()
 
     class main_window:
         pass
 
-    class other_windows:
-        pass
+    class windows:
+        def __init__(self):
+            self.transcription_windows = {}
+
 
     def hide_main_window_frame(self, frame_name):
         '''
@@ -206,6 +188,9 @@ class toolkit_UI:
         # set the window title
         self.root.title("StoryToolkitAI v{}".format(stAI.__version__))
 
+        # retrieve toolkit_obs object
+        toolkit_ops_obj = self.toolkit_ops_obj
+
         # set the window size
         #self.root.geometry("350x440")
 
@@ -242,12 +227,16 @@ class toolkit_UI:
 
         # Other Frame Row 1
         self.main_window.button5 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Transcribe\nTimeline",
-                            command=lambda: start_thread('transcribe', self))
+                            command=lambda: toolkit_ops_obj.prepare_transcription_file(toolkit_UI_obj=self))
         self.main_window.button5.grid(row=1, column=1, **self.paddings)
 
         self.main_window.button6 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings, **self.button_size,
-                            text="Translate\nTimeline to English", command=lambda: start_thread('translate', self))
+                            text="Translate\nTimeline to English", command=lambda: toolkit_ops_obj.prepare_transcription_file(toolkit_UI_obj=self, translate=True))
         self.main_window.button6.grid(row=1, column=2, **self.paddings)
+
+        self.main_window.button7 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings, **self.button_size,
+                            text="Open Transcript", command=lambda: self.open_transcript())
+        self.main_window.button7.grid(row=2, column=1, **self.paddings)
 
         #self.main_window.link2 = Label(self.main_window.other_buttons_frame, text="project home", font=("Courier", 8), fg='#1F1F1F', cursor="hand2", anchor='s')
         #self.main_window.link2.grid(row=2, column=1, columnspan=2, padx=10, pady=5, sticky='s')
@@ -261,7 +250,7 @@ class toolkit_UI:
 
 
         #self.main_window.button_test = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Test",
-        #                        command=lambda: self.update_main_window())
+        #                        command=lambda: self.open_transcription_window())
         #self.main_window.button_test.grid(row=5, column=2, **self.paddings)
 
 
@@ -280,34 +269,196 @@ class toolkit_UI:
 
         return
 
-    def create_transcription_settings_window(self, title="Transcription Settings"):
+    def create_transcription_settings_window(self, title="Transcription Settings",
+                                             audio_file_path=None, name=None, translate=None):
+
+        if self.toolkit_ops_obj is None:
+            print('Aborting. A toolkit operations object is needed to continue.')
+            return False
 
         # WORK IN PROGRESS
 
+        print(audio_file_path)
+
         self.transcription_settings_window = Toplevel(self.root)
+
+        self.transcription_settings_window.attributes('-topmost', 'true')
 
         self.transcription_settings_window.title(title)
 
         self.transcription_settings_window.resizable(False, False)
 
-        form_frame = tk.Frame(self.transcription_settings_window)
-        form_frame.pack()
+        file_form_frame = tk.Frame(self.transcription_settings_window)
+        file_form_frame.pack()
+
+        # File items start here
+
+        # Name
+        Label(file_form_frame, text="Timeline name", anchor='w').grid(row=1, column=1, sticky='w', **self.paddings)
+        entry_name = Entry(file_form_frame)
+        entry_name.grid(row=1, column=2, sticky='w', **self.paddings)
+        entry_name.insert(0, name)
+
+
+        # File path
+        Label(file_form_frame, text="File path", anchor='w').grid(row=2, column=1, sticky='w', **self.paddings)
+        entry_file_path = Entry(file_form_frame)
+        entry_file_path.grid(row=2, column=2, sticky='w', **self.paddings)
+        entry_file_path.insert(END, audio_file_path)
+
+
+        # Translate?
+        Label(file_form_frame, text="Translate", anchor='w').grid(row=3, column=1, sticky='w', **self.paddings)
+        entry_translate = OptionMenu(master=file_form_frame, variable=translate, values={'True': 'x', 'False':'y'})
+        entry_translate.grid(row=3, column=2, sticky='w', **self.paddings)
+
+
+
+
+        # Transcription config items start here
+
+        t_form_frame = tk.Frame(self.transcription_settings_window)
+        t_form_frame.pack()
 
         # A Label widget to show in toplevel
-        Label(form_frame, text="Transcription Model").grid(row=1, column=1, **self.paddings)
+        Label(t_form_frame, text="Transcription Model").grid(row=1, column=1, **self.paddings)
 
         # A dropdown with showing all the available whisper models
-        self.selected_model = StringVar(form_frame)
+        self.selected_model = StringVar(t_form_frame)
         self.selected_model.set("medium")
-        OptionMenu(form_frame, self.selected_model, *whisper.available_models()).grid(row=1, column=2, **self.paddings)
+        OptionMenu(t_form_frame, self.selected_model, *whisper.available_models()).grid(row=1, column=2, **self.paddings)
 
         #tokenizer.py Tokenizer LANGUAGES contains all the language list-  how to get it?
 
         # start transcription button
-        self.start_button = tk.Button(form_frame, **self.blank_img_button_settings, **self.button_size,
+        self.start_button = tk.Button(t_form_frame, **self.blank_img_button_settings, **self.button_size,
                             text="Start",
-                            command=lambda: self.option_changed())
+                            command=lambda: toolkit_ops_obj.option_changed())
         self.start_button.grid(row=2, column=1, **self.paddings)
+
+    def destroy_and_remove_window_ref(self, parent_element, window_id):
+        '''
+        This makes sure that the window reference is deleted when a user closes a window
+        :param parent_element:
+        :param window_id:
+        :return:
+        '''
+        # first destroy the window
+        parent_element[window_id].destroy()
+
+        # then remove its reference
+        del parent_element[window_id]
+
+    def open_transcript(self):
+
+        # ask user which transcript to open
+        transcription_json_file_path = self.ask_for_target_file(filetypes=[("Json files", "json")])
+
+        # abort if user cancels
+        if not transcription_json_file_path:
+            return False
+
+        # why not open the transcript in a transcription window?
+        self.open_transcription_window(transcription_file_path=transcription_json_file_path)
+
+    def open_transcription_window(self, title=None, transcription_file_path=None):
+        if self.toolkit_ops_obj is None:
+            print('Aborting. A toolkit operations object is needed to continue.')
+            return False
+
+        # WORK IN PROGRESS
+        # @TODO Navigate on timeline by clicking on transcript phrases
+        #   Connect transcripts with timelines (auto open transcript when timeline opens)
+        #   Transcript editing (per phrase initially)
+        #   Transcript times on the side
+        #   Add markers on timeline based on phrase selection done on transcript
+
+        #self.windows.transcription = self.window()
+
+        # hash the url and use it as a unique id for the transcription window
+        t_window_id = hashlib.md5(transcription_file_path.encode('utf-8')).hexdigest()
+
+        # only continue if the transcription path was passed and the file exists
+        if transcription_file_path is None or os.path.exists(transcription_file_path) is False:
+            return False
+
+        # if the transcription is already opened somewhere, do this
+        if t_window_id in self.windows.transcription_windows:
+
+            # bring the transcription to the top
+            self.windows.transcription_windows[t_window_id].attributes('-topmost', 1)
+            self.windows.transcription_windows[t_window_id].attributes('-topmost', 0)
+
+            # then focus on it
+            self.windows.transcription_windows[t_window_id].focus_set()
+
+        else:
+
+            # create a new transcription window
+            self.windows.transcription_windows[t_window_id] = Toplevel(self.root)
+
+            # bring the transcription window to top
+            self.windows.transcription_windows[t_window_id].attributes('-topmost', 'true')
+
+            # use the transcription file name without the extension as title if a title wasn't passed
+            if title is None:
+                title = os.path.splitext(os.path.basename(transcription_file_path))[0]
+            self.windows.transcription_windows[t_window_id].title(title)
+
+            self.windows.transcription_windows[t_window_id].resizable(False, False)
+
+            # what happens when the user closes this window
+            self.windows.transcription_windows[t_window_id].protocol("WM_DELETE_WINDOW",
+                          lambda: self.destroy_and_remove_window_ref(self.windows.transcription_windows, t_window_id))
+
+
+            text_form_frame = tk.Frame(self.windows.transcription_windows[t_window_id])
+            text_form_frame.pack()
+
+            # check if the transcription json exists
+            if os.path.exists(transcription_file_path):
+                # now read the transcription
+                with codecs.open(transcription_file_path, 'r', 'utf-8-sig') as json_file:
+                    transcription_json = json.load(json_file)
+
+            # does the json file actually contain transcription segments generated by whisper?
+            if 'segments' in transcription_json:
+
+                # set up the text element where we'll add the transcription
+                text = Text(text_form_frame, font='Courier', width=70, height=50, wrap=tk.WORD)
+
+                segment_count = 0
+                for t_segment in transcription_json['segments']:
+
+                    #print(t_segment)
+
+                    # if there is a text element, simply insert it in the window
+                    if 'text' in t_segment:
+
+                        # count the segments
+                        segment_count = segment_count + 1
+
+                        text.insert(END, t_segment['text'].strip()+' ')
+
+                        #text.tag_config("tag1", foreground="blue")
+                        #text.tag_bind("tag1", "<Button-1>", lambda e: print(e, "tag1"))
+
+                        # for now, just add 2 new lines after each segment:
+                        text.insert(END, '\n')
+
+                # make the text read only
+                text.config(state=DISABLED)
+
+                # then show the text element
+                text.pack()
+
+            # if no transcript was found in the json file, alert the user
+            else:
+                not_a_transcription_message = 'The file {} isn\'t a transcript.'.format(os.path.basename(transcription_file_path))
+                messagebox.showwarning(title='Not a transcript.', message=not_a_transcription_message)
+                print(not_a_transcription_message)
+                self.destroy_and_remove_window_ref(self.windows.transcription_windows, t_window_id)
+
 
     def start_transcription(self, *args):
 
@@ -346,7 +497,7 @@ class toolkit_UI:
 
         w2 = OptionMenu(newWindow, variable2, "one", "two", "three").pack()
 
-    def ask_for_target_dir(self):
+    def ask_for_target_dir(self, title=None):
         global initial_target_dir
 
         # put the UI on top
@@ -354,7 +505,9 @@ class toolkit_UI:
         self.root.lift()
 
         # ask the user via os dialog where can we find the directory
-        target_dir = filedialog.askdirectory(title="Where should we save the files?", initialdir=initial_target_dir)
+        if title == None:
+            title = "Where should we save the files?"
+        target_dir = filedialog.askdirectory(title=title, initialdir=initial_target_dir)
 
         # what happens if the user cancels
         if not target_dir:
@@ -365,7 +518,7 @@ class toolkit_UI:
 
         return target_dir
 
-    def ask_for_target_file(self):
+    def ask_for_target_file(self, filetypes=[("Audio files", ".mp4 .wav .mp3")]):
         global initial_target_dir
 
         # put the UI on top
@@ -374,7 +527,7 @@ class toolkit_UI:
 
         # ask the user via os dialog which file to use
         target_file = filedialog.askopenfilename(title="Choose a file", initialdir=initial_target_dir,
-                                                 filetypes=[("Audio files", ".mp4 .wav .mp3")], multiple=False)
+                                                 filetypes=filetypes, multiple=False)
 
         # what happens if the user cancels
         if not target_file:
@@ -385,160 +538,399 @@ class toolkit_UI:
 
         return target_file
 
+    def notify(self, title, text, debug_message):
+        """
+        Uses OS specific tools to notify the user
 
-def transcribe(translate_to_english=False, toolkit_UI_obj = None):
-    """
-    Renders the current timeline, transcribes it via OpenAI Whisper and saves it as an SRT file
+        :param title:
+        :param text:
+        :return:
+        """
 
-    :param translate_to_english: bool
-    :return:
-    """
+        # print to console first
+        print(debug_message)
 
-    # we need to have a toolkit_UI_obj passed, otherwise there's no way to prompt the user
-    if toolkit_UI_obj is None:
-        return False
+        # notify the user depending on which platform they're on
+        if platform.system() == 'Darwin':  # macOS
+            os.system("""
+                                                    osascript -e 'display notification "{}" with title "{}"'
+                                                    """.format(text, title))
 
-    # @TODO open the transcription window and let the user select stuff while Resolve is transcribing in the back
-    # - add an button that says something like "Go AUTO Let me know when it's done"
-    # - there needs to be a status label that says where we are: rendering, pre-processing, transcribing, error?
-    # - after the render is done, add a countdown on the continue button to give the user a bit of time to react,
-    #     so if the user doesn't change any of the options, whisper will start the process
-    # - it would also be cool if we do a bit of pre-processing to auto detect language, length etc. and populate
-    #   options and inputs in the window
-    # toolkit_UI_obj.create_transcription_settings_window()
-    #time.sleep(120)
-    #return
+        # @todo OS notifications on other platforms
+        elif platform.system() == 'Windows':  # Windows
+            return
+        else:  # linux variants
+            return
 
-    # @TODO Transcription queue system
-    # There needs to be a queue dict with all the pending files that have been queued for transcription
-    # - once the resolve render is done with one file, start the next file in the render queue
-    #   (this is resolve-only maybe?)
-    # - once whisper is done with one file, start the next file in the transcription queue
-    # but first the transcription functions need to have their own class
+class toolkit_ops:
 
-    # get info from resolve
-    try:
-        resolve_data = mots_resolve.get_resolve_data()
-    # in case of exception still create a dict with an empty resolve object
-    except:
-        resolve_data = {'resolve': None}
+    def __init__(self):
 
-    target_dir = ''
+        # this will be used to store all the transcripts that are ready to be transcribed
+        self.transcription_queue = {}
 
-    # render the audio from resolve, only if Resolve is available
-    if resolve_data['resolve'] != None and 'currentTimeline' in resolve_data and resolve_data['currentTimeline'] != '':
+        # transcription queue thread - this will be useful when trying to figure out
+        # if there's any transcription thread active or not
+        self.transcription_queue_thread = None
 
-        # ask the user where to save the files
-        while target_dir == '' or not os.path.exists(os.path.join(target_dir)):
-            print("Prompting user for render path.")
-            target_dir = toolkit_UI_obj.ask_for_target_dir()
+        # this is used to get the name of what is being transcribed currently fast
+        self.transcription_queue_current_name = None
 
-            # cancel if the user presses cancel
-            if not target_dir:
-                print("User canceled transcription operation.")
-                return False
+        # declare this as none for now so we know it exists
+        self.toolkit_UI_obj = None
 
-        # get the current timeline from Resolve
-        currentTimelineName = resolve_data['currentTimeline']['name']
+        # @TODO open a transcription settings window and let the user select stuff while Resolve is rendering in the back
+        # - add an button that says something like "Go AUTO Let me know when it's done"
+        # - there needs to be a status label that says where we are: rendering, pre-processing, transcribing, error?
+        # - it would also be cool if we do a bit of pre-processing to auto detect language, length etc. and populate
+        #   options and inputs in a transcription settings window
+        # toolkit_UI_obj.create_transcription_settings_window()
+        # time.sleep(120)
+        # return
 
-        # let the user know that we're starting the render
-        notify("Starting Render", "Starting Render in Resolve", "Saving into {} and starting render.".format(target_dir))
+    def prepare_transcription_file(self, toolkit_UI_obj=None, translate=False):
+        '''
+        This asks the user where to save the transcribed files,
+         it choses between transcribing an existing timeline (and first starting the render process)
+         and then passes the file to the transcription queue
 
-        # use transcription_WAV render preset if it exists
-        # transcription_WAV is an Audio only custom render preset that renders Linear PCM codec in a Wave format instead
-        # of Quicktime mp4; this is just to work with wav files instead of mp4 to improve compatibility.
-        if 'transcription_WAV' in resolve_data['renderPresets']:
-            render_preset = 'transcription_WAV'
+        :param toolkit_UI_obj:
+        :param translate:
+        :param audio_file:
+        :return: bool
+        '''
+
+        # check if there's a UI object available
+        if not self.is_UI_obj_available(toolkit_UI_obj):
+            return False
+
+        # get info from resolve
+        try:
+            resolve_data = mots_resolve.get_resolve_data()
+        # in case of exception still create a dict with an empty resolve object
+        except:
+            resolve_data = {'resolve': None}
+
+        # set an empty target directory for future use
+        target_dir = ''
+
+        # if Resolve is available and the user has an open timeline, render the timeline to an audio file
+        if resolve_data['resolve'] != None and 'currentTimeline' in resolve_data and resolve_data[
+            'currentTimeline'] != '':
+
+            # reset any potential yes that the user might have said when asked to continue without resolve
+            toolkit_UI_obj.no_resolve_ok = False
+
+            # ask the user where to save the files
+            while target_dir == '' or not os.path.exists(os.path.join(target_dir)):
+                print("Prompting user for render path.")
+                target_dir = toolkit_UI_obj.ask_for_target_dir()
+
+                # cancel if the user presses cancel
+                if not target_dir:
+                    print("User canceled transcription operation.")
+                    return False
+
+            # get the current timeline from Resolve
+            currentTimelineName = resolve_data['currentTimeline']['name']
+
+            # let the user know that we're starting the render
+            toolkit_UI_obj.notify("Starting Render", "Starting Render in Resolve",
+                                  "Saving into {} and starting render.".format(target_dir))
+
+            # use transcription_WAV render preset if it exists
+            # transcription_WAV is an Audio only custom render preset that renders Linear PCM codec in a Wave format instead
+            # of Quicktime mp4; this is just to work with wav files instead of mp4 to improve compatibility.
+            if 'transcription_WAV' in resolve_data['renderPresets']:
+                render_preset = 'transcription_WAV'
+            else:
+                render_preset = 'Audio Only'
+
+            # render the timeline in Resolve
+            rendered_files = mots_resolve.render_timeline(target_dir, render_preset, True, False, False, True)
+
+        # if resolve is not available
         else:
-            render_preset = 'Audio Only'
 
+            # ask the user if they want to simply transcribe a file from the drive
+            if toolkit_UI_obj.no_resolve_ok or messagebox.askyesno(message='A Resolve Timeline is not available.\n\n'
+                                           'Do you want to transcribe an existing audio file?'):
 
-        # render the timeline in Resolve
-        rendered_files = mots_resolve.render_timeline(target_dir, render_preset, True, False, False, True)
+                # remember that the user said it's ok to continue without resolve
+                toolkit_UI_obj.no_resolve_ok = True
 
-    # if resolve is not available
-    else:
+                # create a list of files that will be passed later for transcription
+                rendered_files = []
 
-        # ask the user if they want to simply transcribe a file from the drive
-        if messagebox.askyesno(message='A Resolve Timeline is not available.\n\n'
-                                       'Do you want to transcribe an existing audio file?'):
+                # ask the user for the target file
+                target_file = toolkit_UI_obj.ask_for_target_file()
 
-            # create a list of files that will be passed later for transcription
-            rendered_files = []
+                # add it to the transcription list
+                if target_file:
+                    rendered_files.append(target_file)
 
-            # ask the user for the target file
-            target_file = toolkit_UI_obj.ask_for_target_file()
+                    # the file name also becomes currentTimelineName for future use
+                    currentTimelineName = os.path.basename(target_file)
 
-            # add it to the transcription list
-            if target_file:
-                rendered_files.append(target_file)
+                # or close the process if the user canceled
+                else:
+                    return False
 
-                # the file name also becomes currentTimelineName for future use
-                currentTimelineName = os.path.basename(target_file)
-
-            # or close the process if the user canceled
+            # close the process if the user doesn't want to transcribe an existing file
             else:
                 return False
 
-        # close the process if the user doesn't want to transcribe an existing file
-        else:
+        # the rendered files list should contain either the file rendered in resolve or the selected audio file
+        # so add that to the transcription queue together with the name of the timeline
+        return self.start_transcription_config(audio_file_path=rendered_files[0],
+                                               name=currentTimelineName,
+                                               translate=translate)
+
+    def start_transcription_config(self, audio_file_path=None, name=None, translate=None):
+        '''
+        Opens up a modal to allow the user to configure and start the transcription process for each file
+        :return:
+        '''
+
+        # check if there's a UI object available
+        if not self.is_UI_obj_available():
             return False
 
+        # @todo the purpose of this is to get more input from the user regarding the transcription process
+        #   before it starts
+        #print('Opening transcription settings window')
+        #self.toolkit_UI_obj.create_transcription_settings_window(audio_file_path=audio_file_path,
+        #                                                         name=name,
+        #                                                         translate=translate
+        #                                                         )
 
-    # load OpenAI Whisper
-    # we're using the medium model for better accuracy vs. time it takes to process
-    # if in doubt use the large model but that will need more time
-    model = whisper.load_model("medium")
+        return self.add_to_transcription_queue(audio_file_path=audio_file_path, translate=translate, name=name)
 
-    # process each audio file through whisper
-    for audio_path in rendered_files:
 
-        notification_msg = "Processing {}.\nThis will take a while depending on your CPU/GPU. " \
-                           "Do not exit the app until it finished or you will have to start all over."\
-            .format(audio_path)
-        notify("Starting Transcription", notification_msg, notification_msg)
+    def add_to_transcription_queue(self, toolkit_UI_obj=None, translate=False, audio_file_path=None, name=None):
+        '''
+        Adds files to the transcription queue and then pings the queue in case it's sleeping.
+        :param toolkit_UI_obj:
+        :param translate:
+        :param audio_file_path:
+        :param name:
+        :return:
+        '''
+
+        # check if there's a UI object available
+        if not self.is_UI_obj_available(toolkit_UI_obj):
+            return False
+
+        next_queue_id = name+'-'+str(int(time.time()))
+
+        # add to transcription queue if we at least know the path and the name of the timeline/file
+        if audio_file_path and os.path.exists(audio_file_path) and name:
+
+            # add to transcription queue
+            self.transcription_queue[next_queue_id] = {'name': name,
+                                                        'audio_file_path': audio_file_path,
+                                                        'translate': translate,
+                                                        'other_info':None
+                                                        }
+
+            # now ping the transcription queue in case it's sleeping
+            self.ping_transcription_queue()
+
+            return True
+
+        return False
+
+    def ping_transcription_queue(self):
+        '''
+        Checks if there are files waiting in the transcription queue and starts the transcription queue thread,
+        if there isn't a thread already running
+        :return:
+        '''
+
+        # if there are files in the queue
+        if self.transcription_queue:
+            print('Files waiting in queue for transcription:\n {} \n'.format(self.transcription_queue))
+
+            # check if there's an active transcription thread
+            if self.transcription_queue_thread is not None:
+                print('Currently transcribing: {}'.format(self.transcription_queue_current_name))
+
+            # if there's no active transcription thread, start it
+            else:
+                # take the first file in the queue:
+                next_queue_id = list(self.transcription_queue.keys())[0]
+
+                # and now start the transcription thread with it
+                self.transcription_queue_thread = Thread(target=self.transcribe_from_queue,
+                                                         args=(next_queue_id,)
+                                                         )
+                self.transcription_queue_thread.start()
+
+                # delete this file from the queue
+                del self.transcription_queue[next_queue_id]
+
+            return True
+
+        # if there are no more files left in the queue, stop until something pings it again
+        else:
+            print('Transcription queue empty. Going to sleep.')
+            return False
+
+    def transcribe_from_queue(self, queue_id):
+
+        # check if there's a UI object available
+        if not self.is_UI_obj_available():
+            return False
+
+        # get file info from queue
+        name, audio_file_path, translate, other_info = self.get_queue_file_info(queue_id)
+
+        print("Starting to transcribe {}".format(name))
+
+        # make the name of the file that is currently being processed public
+        self.transcription_queue_current_name = name
+
+        # transcribe
+        self.whisper_transcribe(audio_file_path=audio_file_path, translate=translate, name=name)
+
+        # when done, reset the transcription thread and name:
+        self.transcription_queue_current_name = None
+        self.transcription_queue_thread = None
+
+        # then ping the queue again
+        self.ping_transcription_queue()
+
+        return False
+
+    def get_queue_file_info(self, queue_id):
+        '''
+        Returns the file info stored in a queue given the correct queue_id
+        :param queue_id:
+        :return: list or False
+        '''
+        if self.transcription_queue and queue_id in self.transcription_queue:
+            queue_file = self.transcription_queue[queue_id]
+            return [queue_file['name'], queue_file['audio_file_path'],
+                    queue_file['translate'], queue_file['other_info']]
+
+        return False
+
+    def whisper_transcribe(self, name=None, audio_file_path=None, translate=False, target_dir=None):
+
+        # check if there's a UI object available
+        if not self.is_UI_obj_available():
+            return False
+
+        # don't continue unless we have a queue_id
+        if audio_file_path is None or not audio_file_path:
+            return False
+
+        # use the name of the file in case the name wasn't passed
+        if name is None:
+            name = os.path.basename(audio_file_path)
+
+        # save the directory where the file is stored if it wasn't passed
+        if target_dir is None:
+            target_dir = os.path.dirname(audio_file_path)
+
+        audio_file_name = os.path.basename(audio_file_path)
+
+        # load OpenAI Whisper
+        # we're using the medium model for better accuracy vs. time it takes to process
+        # if in doubt use the large model but that will need more time
+        model = whisper.load_model("medium")
+
+        notification_msg = "Transcribing {}.\nThis will take a while.".format(name)
+        self.toolkit_UI_obj.notify("Starting Transcription", notification_msg, notification_msg)
 
         start_time = time.time()
 
-        if translate_to_english:
-            result = model.transcribe(audio_path, task='translate')
+        # if translate is true, translate to english
+        if translate:
+            result = model.transcribe(audio_file_path, task='translate')
         else:
-            result = model.transcribe(audio_path)
+            result = model.transcribe(audio_file_path)
 
         # let the user know that the speech was processed
-        notification_msg = "Finished processing {} after {} seconds".format(audio_path, round(time.time() - start_time))
-        notify("Finished Transcription", notification_msg, notification_msg)
+        notification_msg = "Finished transcription for {} in {} seconds".format(name,
+                                                                                round(time.time() - start_time))
+        self.toolkit_UI_obj.notify("Finished Transcription", notification_msg, notification_msg)
 
         # prepare a json file taking into consideration the name of the audio file
-        transcription_json_file_path = os.path.join(target_dir, os.path.basename(audio_path) + '.transcription.json')
+        transcription_json_file_path = os.path.join(target_dir, audio_file_name + '.transcription.json')
 
         # save the whole whisper result in the json file to previously selected target_dir
         with open(transcription_json_file_path, 'w', encoding='utf-8') as outfile:
             json.dump(result, outfile)
 
         # save the full transcript in text format too
-        transcription_txt_file_path = os.path.join(target_dir, os.path.basename(audio_path) + '.transcription.txt')
+        transcription_txt_file_path = os.path.join(target_dir, audio_file_name + '.transcription.txt')
 
         # save the whole whisper result in the json file to previously selected target_dir
         with open(transcription_txt_file_path, 'w', encoding="utf-8") as txt_outfile:
             txt_outfile.write(result['text'])
 
+        # why not open the transcription in a transcription window?
+        self.toolkit_UI_obj.open_transcription_window(title=name, transcription_file_path=transcription_json_file_path)
+
         # save SRT file to previously selected target_dir
-        srt_path = os.path.join(target_dir, (os.path.basename(audio_path) + ".srt"))
+        srt_path = os.path.join(target_dir, audio_file_name + ".srt")
         with open(srt_path, "w", encoding="utf-8") as srt:
             whisper.utils.write_srt(result["segments"], file=srt)
 
-        # prompt user to import file into Resolve
+        # prompt user to import file into Resolve (do it in a new thread to keep the transcription queue running
+        prompt_thread1 = Thread(target=self.import_SRT_prompt, args=(srt_path, name))
+        prompt_thread1.start()
+
+        return True
+
+    def import_SRT_prompt(self, srt_path=None, name=None):
+        '''
+        This asks user to go to the timeline in Resolve and press ok to import the SRT from srt_path
+        :param srt_path:
+        :return:
+        '''
+
+        # don't continue if the srt path and the name are not known
+        if srt_path is None or name is None:
+            return False
+
+        # get the srt filename for later use
+        srt_filename = os.path.basename(srt_path)
+
         prompt_message = "The subtitles for {} are ready.\n\n" \
-                         "To import the file into Resolve, go to the Media Bin where you want to import it " \
-                         "and then press OK.".format(currentTimelineName)
+                         "To import the file into Resolve, open the Media Bin " \
+                         "and then press OK.".format(name)
+
+        # let the user know that the srt file doesn't exist
+        if not os.path.exists(srt_path):
+            print('Aborting import. {} doesn\'t exist.'.format(srt_path))
+            return False
 
         # wait for user ok before importing into resolve bin
-        if messagebox.askokcancel(message=prompt_message,icon='info'):
-            print("Importing SRT into Resolve Bin")
+        if messagebox.askokcancel(message=prompt_message, icon='info'):
+            print("Importing SRT into Resolve Bin.")
             mots_resolve.import_media(srt_path)
+            return True
         else:
-            print("Pressed cancel. Aborting SRT import into Resolve.")
+            print("Pressed cancel. Aborting import of {} into Resolve.".format(srt_filename))
+
+        return False
+
+    def is_UI_obj_available(self, toolkit_UI_obj=None):
+
+        # if there's no toolkit_UI_obj in the object or one hasn't been passed, abort
+        if toolkit_UI_obj is None and self.toolkit_UI_obj is None:
+            print('No GUI available. Aborting.')
+            return False
+        # if there was a toolkit_UI_obj passed, update the one in the object
+        elif toolkit_UI_obj is not None:
+            self.toolkit_UI_obj = toolkit_UI_obj
+            return True
+        # if there is simply a self.toolkit_UI_obj just return True
+        else:
+            return True
+
 
 
 def speaker_diarization(audio_path):
@@ -607,7 +999,8 @@ def execute_operation(operation, toolkit_UI_obj):
             print('Timeline not available. Make sure that you\'ve opened a Timeline in Resolve.')
             return False
 
-        #@todo trigger error if the timeline is not opened or the clip is not available in the bin
+        # @todo trigger error if the timeline is not opened or the clip is not available in the bin
+        #   otherwise exception is thrown by Resolve API
 
         # execute operation without asking for any prompts
         # this will delete the existing clip/timeline destination markers,
@@ -667,8 +1060,7 @@ def execute_operation(operation, toolkit_UI_obj):
             stills = False
             render = False
 
-            # ask user for render preset or assign one
-            # @todo
+            # @todo ask user for render preset or assign one
             render_preset = False
 
         mots_resolve.render_markers(marker_color, render_target_dir, False,
@@ -814,14 +1206,16 @@ class StoryToolkitAI:
         # take each number in the version string and compare it with the local numbers
         for n in range(len(online_version)):
 
-            # if there's a number larger online, return true
-            if int(online_version[n]) > int(local_version[n]):
-                return True, online_version_raw
+            # only test for the first 3 numbers in the version string
+            if n < 3:
+                # if there's a number larger online, return true
+                if int(online_version[n]) > int(local_version[n]):
+                    return True, online_version_raw
 
-            # continue the search if there's no version mismatch
-            if int(online_version[n]) == int(local_version[n]):
-                continue
-            break
+                # continue the search if there's no version mismatch
+                if int(online_version[n]) == int(local_version[n]):
+                    continue
+                break
 
         # return false (and the online version) if the local and the online versions match
         return False, online_version_raw
@@ -845,6 +1239,8 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print('Using device:', device)
 
+    # initialize operations object
+    toolkit_ops_obj = toolkit_ops()
 
     # initialize GUI
-    app_UI = toolkit_UI(info_message)
+    app_UI = toolkit_UI(toolkit_ops_obj=toolkit_ops_obj, info_message=info_message)
