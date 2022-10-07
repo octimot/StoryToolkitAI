@@ -734,7 +734,7 @@ class toolkit_ops:
 
         # we're using the medium model for better accuracy vs. time it takes to process
         # if in doubt use the large model but that will need more time
-        self.whisper_model_name = 'tiny'
+        self.whisper_model_name = 'medium'
 
         # @TODO open a transcription settings window and let the user select stuff while Resolve is rendering in the back
         # - add an button that says something like "Go AUTO Let me know when it's done"
