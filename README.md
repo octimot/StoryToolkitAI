@@ -187,6 +187,13 @@ opened timeline.
 This will render to H.264 the entire duration of the markers of a certain color. Same as above, it only works for
 markers from the opened timeline.
 
+### Timeline Navigation via Transcript
+For now, clicking on the transcript segments (phrases) will simply move the playhead to the respective timecode.
+
+### Transcript Word Search
+Once a transcript is loaded, a basic search function will let you find words in the transcript and show you their 
+position. Once you find what you're looking for, simply clicking the phrase will move the Resolve playhead to the
+respective timecode.
 
 
 ---

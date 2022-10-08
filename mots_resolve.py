@@ -82,7 +82,7 @@ def get_resolve_data():
     # add resolve object to return dict
     resolve_data['resolve'] = resolve
 
-    # add project and bin to return dict
+    # add project name and bin to return dict
     resolve_data['currentProject'] = project.GetName()
 
     # available render presets
@@ -116,7 +116,11 @@ def get_resolve_data():
     if currentTimeline and currentTimeline != None:
 
         # add timeline info to return dict
-        resolve_data['currentTimeline'] = {'name': currentTimeline.GetName(), 'markers': currentTimeline.GetMarkers()}
+        resolve_data['currentTimeline'] = {'name': currentTimeline.GetName(),
+                                           'markers': currentTimeline.GetMarkers(),
+                                           'startTC': currentTimeline.GetStartTimecode(),
+                                           'uid': currentTimeline.GetUniqueId()
+                                           }
 
         # add current timecode to return dict
         resolve_data['currentTC'] = currentTimeline.GetCurrentTimecode()

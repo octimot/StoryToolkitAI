@@ -38,6 +38,192 @@ class toolkit_UI:
     '''
     This handles all the GUI operations mainly using tkinter
     '''
+
+    class TranscriptEdit:
+        '''
+        All the functions available in the transcript window should be part of this class
+        '''
+
+        def __init__(self, stAI=None, toolkit_UI_obj=None, toolkit_ops_obj=None):
+
+            # keep a reference to the StoryToolkitAI object here
+            self.stAI = stAI
+
+            # keep a reference to the toolkit_UI object here
+            self.toolkit_UI_obj = toolkit_UI_obj
+
+            # keep a reference to the toolkit_ops_obj object here
+            self.toolkit_ops_obj = toolkit_ops_obj
+
+            # search results indexes stored here
+            # we're making it a dict so that we can store result indexes for each window individually
+            self.search_result_indexes = {}
+
+            # when searching for text, you may want the user to cycle through the results, so this keep track
+            # keeps track on which search result is the user currently on (in each transcript window)
+            self.search_result_pos = {}
+
+            # to keep track of what is being searched on each window
+            self.search_strings = {}
+
+            # to store the transcript segments of each window,
+            # including their start + end times and who knows what else?!
+            self.transcript_segments = {}
+
+            # selected transcript segments of each window including their start and end times
+            self.selected_segments = {}
+
+        def assign_to_timeline(self):
+            '''
+            Used to assign the transcript to the current opened timeline in Resolve via StoryToolkitAI object
+            :return:
+            '''
+
+            # @todo
+            #if self.stAI is not None:
+            #    self.stAI.save_project_settings()
+
+
+        def search_text(self, search_str=None, text_element=None, window_id=None):
+            '''
+            Used to search for text inside tkinter text objects
+            This also tags the search results
+            :return:
+            '''
+
+            if search_str is None or text_element is None or window_id is None:
+                return False
+
+            # remove tag 'found' from index 1 to END
+            text_element.tag_remove('found', '1.0', END)
+
+            # remove tag 'current_result_tag' from index 1 to END
+            text_element.tag_remove('current_result_tag', '1.0', END)
+
+            # reset the search result indexes and the result position
+            self.search_result_indexes[window_id] = []
+            self.search_result_pos[window_id] = 0
+
+            # get the search string as the user is typing
+            search_str = self.search_strings[window_id] = search_str.get()
+
+            if search_str:
+                idx = '1.0'
+
+                self.search_strings[window_id] = search_str
+
+                while 1:
+                    # searches for desired string from index 1
+                    idx = text_element.search(search_str, idx, nocase=True, stopindex=END)
+
+                    # stop the loop when we run out of results (indexes)
+                    if not idx:
+                        break
+
+                    # store each index
+                    self.search_result_indexes[window_id].append(idx)
+
+                    # last index sum of current index and
+                    # length of text
+                    lastidx = '%s+%dc' % (idx, len(search_str))
+
+                    # add the found tag at idx
+                    text_element.tag_add('found', idx, lastidx)
+                    idx = lastidx
+
+                #  take the viewer to the first occurrence
+                if self.search_result_indexes[window_id] and len(self.search_result_indexes[window_id]) > 0 \
+                        and self.search_result_indexes[window_id][0] != '':
+                    text_element.see(self.search_result_indexes[window_id][0])
+
+                    # and visually tag the results
+                    self.tag_results(text_element, self.search_result_indexes[window_id][0], window_id)
+
+                # mark located string with red
+                text_element.tag_config('found', foreground=self.toolkit_UI_obj.resolve_theme_colors['red'])
+
+
+        def tag_results(self, text_element, text_index, window_id):
+            '''
+            Another handy function that tags the search results directly on the transcript inside the transcript window
+            This is also used to show on which of the search results is the user right now according to search_result_pos
+            :param text_element:
+            :param text_index:
+            :param window_id:
+            :return:
+            '''
+            if text_element is None:
+                return False
+
+            # remove previous position tags
+            text_element.tag_delete('current_result_tag')
+
+            if not text_index or text_index == '' or text_index is None or window_id is None:
+                return False
+
+            # add tag to show the user on which result position we are now
+            # the tag starts at the text_index and ends according to the length of the search string
+            text_element.tag_add('current_result_tag', text_index, text_index + '+'
+                                 + str(len(self.search_strings[window_id])) + 'c')
+
+            # the result tag has a white background and a red foreground
+            text_element.tag_config('current_result_tag', background=self.toolkit_UI_obj.resolve_theme_colors['white'],
+                                    foreground=self.toolkit_UI_obj.resolve_theme_colors['red'])
+
+
+
+        def cycle_through_results(self, text_element=None, window_id=None):
+
+            if text_element is not None or window_id is not None \
+                    or self.search_result_indexes[window_id] or self.search_result_indexes[window_id][0] != '':
+
+                # get the current search result position
+                current_pos = self.search_result_pos[window_id]
+
+                # as long as we're not going over the number of results
+                if current_pos < len(self.search_result_indexes[window_id])-1:
+
+                    # add 1 to the current result position
+                    current_pos = self.search_result_pos[window_id] = current_pos+1
+
+                    # this is the index of the current result position
+                    text_index = self.search_result_indexes[window_id][current_pos]
+
+                    # go to the next search result
+                    text_element.see(text_index)
+
+                # otherwise go back to start
+                else:
+                    current_pos = self.search_result_pos[window_id] = 0
+
+                    # this is the index of the current result position
+                    text_index = self.search_result_indexes[window_id][current_pos]
+
+                    # go to the next search result
+                    text_element.see(self.search_result_indexes[window_id][current_pos])
+
+            # visually tag the results
+            self.tag_results(text_element, text_index, window_id)
+
+        def select_text_lines(self, event, text_element=None, window_id=None):
+            '''
+            Used to trigger events when user clicks on the transcript text
+            :return:
+            '''
+
+            if text_element is None or window_id is None:
+                return False
+
+            index = text_element.index("@%s,%s" % (event.x, event.y))
+            line, char = index.split(".")
+            text_element.tag_add("l_selected", "{}.0".format(line), "{}.end+1c".format(line))
+            text_element.tag_config('l_selected', background=self.toolkit_UI_obj.resolve_theme_colors['superblack'])
+
+            #print("you clicked line %s" % line)
+            #print(self.transcript_segments[window_id][int(line)-1])
+
+
+
     def __init__(self, toolkit_ops_obj=None, stAI=None, warn_message=None):
 
         # make a reference to toolkit ops obj
@@ -48,6 +234,9 @@ class toolkit_UI:
 
         # initialize tkinter as the main GUI
         self.root = tk.Tk()
+
+        # initialize transcript edit object
+        self.t_edit_obj = self.TranscriptEdit(stAI=self.stAI, toolkit_UI_obj=self, toolkit_ops_obj=self.toolkit_ops_obj)
 
         # show any info messages
         if warn_message is not None:
@@ -271,11 +460,11 @@ class toolkit_UI:
         self.main_window.button6.grid(row=1, column=2, **self.paddings)
 
         self.main_window.button7 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings, **self.button_size,
-                            text="Open Transcript", command=lambda: self.open_transcript())
+                            text="Open\nTranscript", command=lambda: self.open_transcript())
         self.main_window.button7.grid(row=2, column=1, **self.paddings)
 
         self.main_window.button8 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings, **self.button_size,
-                            text="Open Log", command=lambda: self.open_transcription_log_window())
+                            text="Open\nTranscription Log", command=lambda: self.open_transcription_log_window())
         self.main_window.button8.grid(row=2, column=2, **self.paddings)
 
         #self.main_window.link2 = Label(self.main_window.other_buttons_frame, text="project home", font=("Courier", 8), fg='#1F1F1F', cursor="hand2", anchor='s')
@@ -376,14 +565,6 @@ class toolkit_UI:
                             command=lambda: toolkit_ops_obj.option_changed())
         self.start_button.grid(row=2, column=1, **self.paddings)
 
-    def start_transcription(self, *args):
-
-        # WORK IN PROGRESS
-        # gather all the variables
-        print('You selected: {}'.format(self.selected_model.get()))
-
-        # then start the transcription process
-
     def destroy_window_(self, parent_element, window_id):
         '''
         This makes sure that the window reference is deleted when a user closes a window
@@ -414,18 +595,13 @@ class toolkit_UI:
         self.open_transcription_window(transcription_file_path=transcription_json_file_path, **options)
 
     def open_transcription_window(self, title=None, transcription_file_path=None, srt_file_path=None):
+
         if self.toolkit_ops_obj is None:
-            print('Aborting. A toolkit operations object is needed to continue.')
+            self.stAI.log_print('Cannot open transcription window. A toolkit operations object is needed to continue.',
+                                'error')
             return False
 
-        # WORK IN PROGRESS
-        # @TODO Navigate on timeline by clicking on transcript phrases
-        #   Connect transcripts with timelines (auto open transcript when timeline opens)
-        #   Transcript editing (per phrase initially)
-        #   Transcript times on the side
-        #   Add markers on timeline based on phrase selection done on transcript
-
-        #self.windows.transcription = self.window()
+        # Note: most of the transcription window functions are stored in the TranscriptEdit class
 
         # only continue if the transcription path was passed and the file exists
         if transcription_file_path is None or os.path.exists(transcription_file_path) is False:
@@ -439,11 +615,16 @@ class toolkit_UI:
             title = os.path.splitext(os.path.basename(transcription_file_path))[0]
 
         # create a window for the transcript if one doesn't already exist
-        if(self._create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title)):
+        if(self._create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title, resizable=True)):
 
+            # create a header frame to hold stuff above the transcript text
+            header_frame = tk.Frame(self.windows[t_window_id])
+            header_frame.place(anchor='nw', relwidth=1)
 
+            # THE MAIN TEXT ELEMENT
+            # create a frame for the text element
             text_form_frame = tk.Frame(self.windows[t_window_id])
-            text_form_frame.pack()
+            text_form_frame.pack(pady=50)
 
             # check if the transcription json exists
             if os.path.exists(transcription_file_path):
@@ -451,16 +632,24 @@ class toolkit_UI:
                 with codecs.open(transcription_file_path, 'r', 'utf-8-sig') as json_file:
                     transcription_json = json.load(json_file)
 
-            # does the json file actually contain transcription segments generated by whisper?
+            # does the json file actually contain transcript segments generated by whisper?
             if 'segments' in transcription_json:
 
-                # set up the text element where we'll add the transcription
-                text = Text(text_form_frame, font='Courier', width=70, height=50, wrap=tk.WORD)
+                # set up the text element where we'll add the actual transcript
+                text = Text(text_form_frame, font=('Courier', 16), width=45, height=30, padx=5, pady=5, wrap=tk.WORD)
 
+                # we'll need to count segments soon
                 segment_count = 0
-                for t_segment in transcription_json['segments']:
 
-                    #print(t_segment)
+                # use this to calculate the longest segment (but don't accept anything under 30)
+                longest_segment_num_char = 30
+
+                # initialize the segments list for later use
+                # this should contain all the segments in the order they appear
+                self.t_edit_obj.transcript_segments[t_window_id] = []
+
+                # take each transcript segment
+                for t_segment in transcription_json['segments']:
 
                     # if there is a text element, simply insert it in the window
                     if 'text' in t_segment:
@@ -468,29 +657,124 @@ class toolkit_UI:
                         # count the segments
                         segment_count = segment_count + 1
 
+                        # add the current segment to the segments list
+                        self.t_edit_obj.transcript_segments[t_window_id].append(t_segment)
+
+                        # get the text index before inserting the new segment
+                        # (where the segment will start)
+                        new_segment_start = text.index(INSERT)
+
+                        # insert the text
                         text.insert(END, t_segment['text'].strip()+' ')
 
-                        #text.tag_config("tag1", foreground="blue")
-                        #text.tag_bind("tag1", "<Button-1>", lambda e: print(e, "tag1"))
+                        # if this is the longest segment, keep that in mind
+                        if len(t_segment['text']) > longest_segment_num_char:
+                            longest_segment_num_char = len(t_segment['text'])
+
+                        # get the text index of the last character of the new segment
+                        new_segment_end = text.index("end-1c")
+
+                        # keep in mind the segment start and end times of each segment
+                        segment_start_time = t_segment['start']
+                        end_start_time = t_segment['start']
+
+                        # this works if we're aiming to move away from line based start_end times
+                        # @todo move this to a more generalized approach, like the shift binding below
+                        #   and get the start and end times of each segment via self.t_edit_obj.transcript_segments
+                        tag_id = 'segment-'+str(segment_count)
+                        text.tag_add(tag_id, new_segment_start, new_segment_end)
+                        text.tag_config(tag_id)
+                        text.tag_bind(tag_id, "<Button-1>", lambda e, segment_start_time=segment_start_time: toolkit_ops_obj.go_to_time(segment_start_time))
 
                         # for now, just add 2 new lines after each segment:
                         text.insert(END, '\n')
 
                 # make the text read only
-                text.config(state=DISABLED)
+                # and take into consideration the longest segment to adjust the width of the window
+                text.config(state=DISABLED, width=longest_segment_num_char)
+
+                # set the top, in-between and bottom text spacing
+                text.config(spacing1=0, spacing2=0.2, spacing3=5)
+
+
+
+                # bind CMD+click events to the text:
+                # on click, move playhead
+                #if platform.system() == 'Darwin':
+                #    text.bind("<Command-Button-1>", lambda e:
+                #            self.t_edit_obj.select_text_lines(event=e, text_element=text, window_id=t_window_id))
+                #else:
+                #    text.bind("<Control-Button-1>", lambda e:
+                #        self.t_edit_obj.select_text_lines(event=e, text_element=text, window_id=t_window_id))
+
+                # bind shift click events to the text
+                #text.bind("<Shift-Button-1>", lambda e:
+                #        self.t_edit_obj.select_text_lines(event=e, text_element=text, window_id=t_window_id))
 
                 # then show the text element
                 text.pack()
 
+                # create a footer frame that holds stuff on the bottom of the transcript window
                 footer_frame = tk.Frame(self.windows[t_window_id])
-                footer_frame.pack()
+                footer_frame.place(relwidth=1, anchor='sw', rely=1)
 
+                #b_test = tk.Button(footer_frame, text='Search', command=lambda: search(),
+                #               font=20, bg='white').grid(row=1, column=3, sticky='w', **self.paddings)
+
+                # THE SEARCH FIELD
+                # first the label
+                Label(header_frame, text="Find:", anchor='w').pack(side=tk.LEFT, **self.paddings)
+
+                # then the search text entry
+                # first the string variable that "monitors" what's being typed in the input
+                search_str = tk.StringVar()
+
+                # the search input
+                search_input = Entry(header_frame, textvariable=search_str)
+
+
+                # and a callback for when the search_str is changed
+                search_str.trace("w", lambda name, index, mode, search_str=search_str, text=text,
+                                             t_window_id=t_window_id:
+                                                self.t_edit_obj.search_text(search_str=search_str,
+                                                                            text_element=text, window_id=t_window_id))
+
+                search_input.pack(side=tk.LEFT, **self.paddings)
+
+                search_input.bind('<Return>', lambda e, text=text, t_window_id=t_window_id:
+                                self.t_edit_obj.cycle_through_results(text_element=text, window_id=t_window_id))
+
+                # the find button
+                # not really necessary due to <Return> bind above
+                #find_button = Button(header_frame, text='Find')
+                #find_button.pack(side=tk.LEFT, **self.paddings)
+                #find_button.config(command= lambda text=text, t_window_id=t_window_id:
+                #                  self.t_edit_obj.cycle_through_results(text_element=text, window_id=t_window_id))
+
+                # KEEP ON TOP BUTTON
+                on_top_button = tk.Button(header_frame, text="Keep on top")
+                # add the command function here
+                on_top_button.config(command= lambda on_top_button=on_top_button, t_window_id=t_window_id:
+                                                self.window_on_top_button(button=on_top_button, window_id=t_window_id)
+                                            )
+                on_top_button.pack(side=tk.RIGHT, **self.paddings, anchor='e')
+
+                # keep the transcript window on top or not according to the config
+                # and also update the initial text on the respective button
+                self.window_on_top_button(button=on_top_button,
+                                          window_id=t_window_id,
+                                          on_top=stAI.get_app_setting('transcripts_always_on_top', default_if_none=True)
+                                          )
+
+
+
+                # IMPORT SRT BUTTON
                 if srt_file_path:
                     import_srt_button = tk.Button(footer_frame,
                                                   text="Import SRT into Bin",
                                                   command=lambda: mots_resolve.import_media(srt_file_path)
                                                   )
-                    import_srt_button.grid(row=1, column=1, sticky='w', **self.paddings)
+                    import_srt_button.grid(row=1, column=3, sticky='w', **self.paddings)
 
 
 
@@ -570,8 +854,6 @@ class toolkit_UI:
                                                                        srt_file_path=srt_file_path)
                                       )
 
-
-
     def open_transcription_log_window(self):
 
         # create a window for the transcription log if one doesn't already exist
@@ -582,7 +864,6 @@ class toolkit_UI:
             self.update_transcription_log_window()
 
             return True
-
 
     def open_new_window(self, title=None):
 
@@ -654,6 +935,44 @@ class toolkit_UI:
 
         return target_file
 
+    def window_on_top(self, window_id=None, on_top=None):
+
+        if window_id is not None:
+
+            # does the window exist?
+            if window_id in self.windows:
+
+                # keep the window on top if on_top is true
+                if on_top is not None and on_top:
+                    self.windows[window_id].wm_attributes("-topmost", 1)
+                    return True
+                # don't keep the window on top if on top is false
+                elif on_top is not None:
+                    self.windows[window_id].wm_attributes("-topmost", 0)
+                    return False
+                # if the on top variable wasn't passed
+                else:
+                    # toggle between on and off
+                    topmost = self.windows[window_id].wm_attributes("-topmost")
+                    self.windows[window_id].wm_attributes("-topmost", not topmost)
+
+                    # and return the current state
+                    return self.windows[window_id].wm_attributes("-topmost")
+
+    def window_on_top_button(self, button=None, window_id=None, on_top=None):
+
+        # ask the UI to keep (or not) the window with this window_id on_top
+        if self.window_on_top(window_id=window_id, on_top=on_top):
+
+            # if the reply is true, it means that the window will be kept on top
+            # therefore the button needs to read the opposite action
+            button.config(text="Don't keep on top")
+            return True
+        else:
+            # and the opposite if the window will not be kept on top
+            button.config(text="Keep on top")
+            return False
+
     def notify_via_os(self, title, text, debug_message):
         """
         Uses OS specific tools to notify the user
@@ -699,8 +1018,7 @@ class toolkit_UI:
 
 
 
-
-class toolkit_ops:
+class ToolkitOps:
 
     def __init__(self, stAI=None):
 
@@ -732,16 +1050,34 @@ class toolkit_ops:
         # use this to store the whisper model later
         self.whisper_model = None
 
-        # we're using the medium model for better accuracy vs. time it takes to process
+        # load the whisper model from the config
+        # we're recommending the medium model for better accuracy vs. time it takes to process
         # if in doubt use the large model but that will need more time
-        self.whisper_model_name = 'medium'
+        self.whisper_model_name = self.stAI.get_app_setting(setting_name='whisper_model_name', default_if_none='medium')
 
+        # get the whisper device setting
+        # currently, the setting may be cuda, cpu or auto
+        self.whisper_device = stAI.get_app_setting('whisper_device', 'auto')
 
-        # @TODO open a transcription settings window and let the user select stuff while Resolve is rendering in the back
-        # - add an button that says something like "Go AUTO Let me know when it's done"
-        # - there needs to be a status label that says where we are: rendering, pre-processing, transcribing, error?
-        # - it would also be cool if we do a bit of pre-processing to auto detect language, length etc. and populate
-        #   options and inputs in a transcription settings window
+        # if the whisper device is set to cuda
+        if self.whisper_device in ['cuda', 'CUDA', 'gpu', 'GPU']:
+            # use CUDA if available
+            if torch.cuda.is_available():
+                device = torch.device('cuda')
+            # or let the user know that cuda is not available and switch to cpu
+            else:
+                stAI.log_print('CUDA not available. Switching to cpu.', 'error')
+                device = torch.device('cpu')
+        # if the whisper device is set to cpu
+        elif self.whisper_device in ['cpu', 'CPU']:
+            device = torch.device('cpu')
+        # any other setting, defaults to automatic selection
+        else:
+            # use CUDA if available
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        stAI.log_print('Using {} for torch processing.'.format(device), 'info')
+
         # toolkit_UI_obj.create_transcription_settings_window()
         # time.sleep(120)
         # return
@@ -1180,6 +1516,38 @@ class toolkit_ops:
         else:
             return True
 
+    def go_to_time(self, seconds=0):
+
+        from timecode import Timecode
+
+        # poll resolve for some info
+        resolve_data = mots_resolve.get_resolve_data()
+
+        # get the framerate of the current timeline
+        timeline_fps = resolve_data['currentTimelineFPS']
+
+        # get the start timecode of the current timeline
+        timeline_start_tc = resolve_data['currentTimeline']['startTC']
+
+        # initialize the timecode object for the start tc
+        timeline_start_tc = Timecode(timeline_fps, timeline_start_tc)
+
+        # only do timecode math if seconds > 0
+        if seconds > 0:
+
+            # init the timecode object based on the passed seconds
+            tc_from_seconds = Timecode(timeline_fps, start_seconds=float(seconds))
+
+            # calculate the new timecode
+            new_timeline_tc = timeline_start_tc + tc_from_seconds
+
+        # otherwise use the timeline start tc
+        else:
+            new_timeline_tc = timeline_start_tc
+
+        # move playhead in resolve
+        mots_resolve.set_resolve_tc(str(new_timeline_tc))
+
 
 
 def speaker_diarization(audio_path):
@@ -1332,7 +1700,7 @@ resolve_error = 0
 resolve = None
 
 
-def poll_resolve_data(toolkit_UI_obj):
+def poll_resolve_data(toolkit_UI_obj=None):
 
     global current_project
     global current_timeline
@@ -1396,21 +1764,23 @@ def poll_resolve_data(toolkit_UI_obj):
 
         # after 20+ tries, assume the user is no longer paying attention and reduce the frequency of tries
         if resolve_error > 20:
-            stAI.log_print('Resolve still out. Is anybody still paying attention? Retrying in 20 seconds. '
+            stAI.log_print('Resolve is still out. Retrying every 30 seconds. '
                     'Error count: {}'.format(resolve_error), 'error')
 
-            # and increase the wait time by 20 seconds
+            # and increase the wait time by 30 seconds
 
-            # re-schedule this function to poll after 20 seconds
-            toolkit_UI_obj.root.after(20000, lambda: poll_resolve_data(toolkit_UI_obj))
+            # re-schedule this function to poll after 30 seconds
+            toolkit_UI_obj.root.after(30000, lambda: poll_resolve_data(toolkit_UI_obj))
 
         # if the error has been triggered more than 10 times, say this
         elif resolve_error > 10:
-            stAI.log_print('Resolve communication error. Try to reload the project in Resolve. Retrying in 2 seconds. '
-                  'Error count: {}'.format(resolve_error), 'warn')
-            # increase the wait with 2 seconds
 
-            # re-schedule this function to poll after 10 seconds
+            if resolve_error == 11:
+                stAI.log_print('Resolve communication error. Try to reload the project in Resolve. '
+                               'Retrying every 2 seconds.'
+                      'Error count: {}'.format(resolve_error), 'warn')
+
+            # re-schedule this function to poll after 2 seconds
             toolkit_UI_obj.root.after(2000, lambda: poll_resolve_data(toolkit_UI_obj))
 
         else:
@@ -1420,8 +1790,16 @@ def poll_resolve_data(toolkit_UI_obj):
             # re-schedule this function to poll after 1 second
             toolkit_UI_obj.root.after(1000, lambda: poll_resolve_data(toolkit_UI_obj))
 
+        # resolve is now None in the global variable
         resolve = None
 
+        return False
+
+# this is the path to the user data folder
+USER_DATA_PATH = 'userdata'
+
+# this is where we store the app configuration
+APP_CONFIG_FILE_NAME = 'config.json'
 
 class StoryToolkitAI:
     def __init__(self):
@@ -1430,6 +1808,21 @@ class StoryToolkitAI:
 
         # keep the version in memory
         self.__version__ = version.__version__
+
+        # this is where all the user files should be stored
+        # if it's not absolute, make sure it's relative to the app.py script location
+        # to make it easier for the users to find it
+        # (and to prevent paths relative to possible virtual environment paths)
+        if not os.path.isabs(USER_DATA_PATH):
+            self.user_data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), USER_DATA_PATH)
+        else:
+            self.user_data_path = USER_DATA_PATH
+
+        # the config file should be in the user data folder
+        self.config_file_path = os.path.join(self.user_data_path, APP_CONFIG_FILE_NAME)
+
+        # create a config variable
+        self.config = {}
 
         print("Running StoryToolkit version {}".format(self.__version__))
 
@@ -1446,6 +1839,106 @@ class StoryToolkitAI:
         ENDC = '\033[0m'
         BOLD = '\033[1m'
         UNDERLINE = '\033[4m'
+
+    def get_app_setting(self, setting_name=None, default_if_none=None):
+        '''
+        Returns a specific app setting or None if it doesn't exist
+        If default if none is passed, the app will also save the setting to the config for future use
+        :param setting_name:
+        :param default_if_none:
+        :return:
+        '''
+
+        if setting_name is None or not setting_name or setting_name == '':
+            self.log_print('No setting was passed.', 'error')
+            return False
+
+        # get the app config
+        self.config = self.get_config()
+
+        # look for the requested setting
+        if setting_name in self.config:
+
+            # and return it
+            return self.config[setting_name]
+
+        # if the requested setting doesn't exist in the config
+        # but a default was passed
+        elif default_if_none is not None and default_if_none != '':
+
+            print('Config setting {} saved as {} '.format(setting_name, default_if_none))
+
+            # save the default to the config
+            self.save_config(setting_name=setting_name, setting_value=default_if_none)
+
+            # and then return the default
+            return default_if_none
+
+        # otherwise simple return none
+        else:
+            return None
+
+
+    def save_config(self, setting_name=None, setting_value=None):
+        '''
+        Saves a setting to the app configuration file
+        :param config_key:
+        :param config_value:
+        :return:
+        '''
+
+        if setting_name is None or not setting_name or setting_name == '' or setting_value is None:
+            self.log_print('No setting that we could save to the config file was passed.', 'error')
+            return False
+
+        # get existing configuration
+        self.config = self.get_config()
+
+        # save or overwrite the passed setting the config json
+        self.config[setting_name] = setting_value
+
+        # before writing the configuration to the config file
+        # check if the user data folder exists
+        if not os.path.exists(self.user_data_path):
+            self.log_print('User data folder doesn\'t exist. Creating one at {}'
+                           .format(os.path.abspath(self.user_data_path)), 'warn')
+
+            # and create the whole path to it if it doesn't
+            os.makedirs(self.user_data_path)
+
+        # then write the config to the config json
+        with open(self.config_file_path, 'w') as outfile:
+            json.dump(self.config, outfile)
+
+        self.log_print('Updated config file {} with {} data.'
+                       .format(os.path.abspath(self.config_file_path), setting_name), 'info')
+
+        # and return the config back to the user
+        return self.config
+
+    def get_config(self):
+        '''
+        Gets the app configuration from the config file (if one exists)
+        :return:
+        '''
+
+        # read the config file if it exists
+        if os.path.exists(self.config_file_path):
+
+            # read the app config
+            with open(self.config_file_path, 'r') as json_file:
+                self.config = json.load(json_file)
+
+            # and return the config
+            return self.config
+
+        # if the config file doesn't exist, return an empty dict
+        else:
+            return {}
+
+    def get_project_setting(self):
+        return
+
 
     def check_update(self):
         '''
@@ -1542,12 +2035,8 @@ if __name__ == '__main__':
     if update_exists:
         warn_message = '\nA new version ({}) of StoryToolkitAI is available.\n Use git pull or manually download it from\n https://github.com/octimot/StoryToolkitAI \n'.format(online_version)
 
-    # use CUDA if available
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print('Using device:', device)
-
     # initialize operations object
-    toolkit_ops_obj = toolkit_ops(stAI=stAI)
+    toolkit_ops_obj = ToolkitOps(stAI=stAI)
 
     # initialize GUI
     app_UI = toolkit_UI(toolkit_ops_obj=toolkit_ops_obj, stAI=stAI, warn_message=warn_message)
