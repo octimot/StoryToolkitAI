@@ -73,15 +73,32 @@ class toolkit_UI:
             # selected transcript segments of each window including their start and end times
             self.selected_segments = {}
 
-        def assign_to_timeline(self):
-            '''
-            Used to assign the transcript to the current opened timeline in Resolve via StoryToolkitAI object
-            :return:
-            '''
+        def link_to_timeline_button(self, button=None, transcription_file_path=None,
+                                    link=None, timeline_name=None):
 
-            # @todo
-            #if self.stAI is not None:
-            #    self.stAI.save_project_settings()
+            if transcription_file_path is None:
+                return None
+
+            link_result = self.toolkit_ops_obj.link_transcription_to_timeline(
+                                        transcription_file_path=transcription_file_path,
+                                        link=link, timeline_name=timeline_name)
+
+            # make the UI link (or unlink) the transcript to the timeline
+            if link_result and link_result is not None:
+
+                # if the reply is true, it means that the transcript is linked
+                # therefore the button needs to read the opposite action
+                button.config(text="Unlink from Timeline")
+                return True
+            elif not link_result and link_result is not None:
+                # and the opposite if transcript is not linked
+                button.config(text="Link to Timeline")
+                return False
+
+            # if the link result is None
+            # don't change anything to the button
+            else:
+                return
 
 
         def search_text(self, search_str=None, text_element=None, window_id=None):
@@ -312,8 +329,10 @@ class toolkit_UI:
             # then focus on it
             self.windows[window_id].focus_set()
 
-        else:
+            # but return false since we're not creating it
+            return False
 
+        else:
             # create a new window
             self.windows[window_id] = Toplevel(self.root)
 
@@ -330,7 +349,7 @@ class toolkit_UI:
             # what happens when the user closes this window
             self.windows[window_id].protocol("WM_DELETE_WINDOW", lambda: self.destroy_window_(self.windows, window_id))
 
-        return True
+            return True
 
     def hide_main_window_frame(self, frame_name):
         '''
@@ -396,9 +415,6 @@ class toolkit_UI:
         # now show the other buttons too if they're not visible already
         self.show_main_window_frame('other_buttons_frame')
 
-        # refresh main window after 500 ms
-        #self.root.after(1500, self.show_button())
-
         return
 
     def create_main_window(self):
@@ -413,7 +429,7 @@ class toolkit_UI:
         # set the window title
         self.root.title("StoryToolkitAI v{}".format(stAI.__version__))
 
-        # retrieve toolkit_obs object
+        # retrieve toolkit_ops object
         toolkit_ops_obj = self.toolkit_ops_obj
 
         # set the window size
@@ -488,12 +504,10 @@ class toolkit_UI:
         self.root.resizable(False, False)
 
         # poll resolve after 500ms
-        self.root.after(500, poll_resolve_data(self))
+        # todo this needs to be moved to the init function asap
+        self.root.after(500, self.resolve_monitor(initial=True))
 
-        # refresh main window after 500 ms
-        self.root.after(500, self.update_main_window())
-
-        print("Starting StoryToolkitAI GUI")
+        self.stAI.log_print("Starting StoryToolkitAI GUI")
         self.root.mainloop()
 
         return
@@ -605,17 +619,39 @@ class toolkit_UI:
 
         # only continue if the transcription path was passed and the file exists
         if transcription_file_path is None or os.path.exists(transcription_file_path) is False:
+            self.stAI.log_print('The passed transcription file path doesn\'t exist', 'error')
             return False
+
+        # now read the transcription file contents
+        # @todo move this to a get_transcription_file function
+        with codecs.open(transcription_file_path, 'r', 'utf-8-sig') as json_file:
+            transcription_json = json.load(json_file)
+
+        # if no srt_file_path was passed
+        if srt_file_path is None:
+
+            # try to use the file path in the transcription json
+            if 'srt_file_path' in transcription_json:
+                srt_file_path = transcription_json['srt_file_path']
+
+        # try to see if we have a srt path or not
+        if srt_file_path is not None:
+
+            # if not we're dealing with an absolute path
+            if not os.path.isabs(srt_file_path):
+                # assume that the srt is in the same folder as the transcription
+                srt_file_path = os.path.join(os.path.dirname(transcription_file_path), srt_file_path)
+
 
         # hash the url and use it as a unique id for the transcription window
         t_window_id = hashlib.md5(transcription_file_path.encode('utf-8')).hexdigest()
 
-        # use the transcription file name without the extension as a window title title if a title wasn't passed
+        # use the transcription file name without the extension as a window title if a title wasn't passed
         if title is None:
             title = os.path.splitext(os.path.basename(transcription_file_path))[0]
 
         # create a window for the transcript if one doesn't already exist
-        if(self._create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title, resizable=True)):
+        if self._create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title, resizable=True):
 
             # create a header frame to hold stuff above the transcript text
             header_frame = tk.Frame(self.windows[t_window_id])
@@ -625,12 +661,6 @@ class toolkit_UI:
             # create a frame for the text element
             text_form_frame = tk.Frame(self.windows[t_window_id])
             text_form_frame.pack(pady=50)
-
-            # check if the transcription json exists
-            if os.path.exists(transcription_file_path):
-                # now read the transcription
-                with codecs.open(transcription_file_path, 'r', 'utf-8-sig') as json_file:
-                    transcription_json = json.load(json_file)
 
             # does the json file actually contain transcript segments generated by whisper?
             if 'segments' in transcription_json:
@@ -642,7 +672,7 @@ class toolkit_UI:
                 segment_count = 0
 
                 # use this to calculate the longest segment (but don't accept anything under 30)
-                longest_segment_num_char = 30
+                longest_segment_num_char = 40
 
                 # initialize the segments list for later use
                 # this should contain all the segments in the order they appear
@@ -712,7 +742,7 @@ class toolkit_UI:
                 #        self.t_edit_obj.select_text_lines(event=e, text_element=text, window_id=t_window_id))
 
                 # then show the text element
-                text.pack()
+                text.pack(anchor='w')
 
                 # create a footer frame that holds stuff on the bottom of the transcript window
                 footer_frame = tk.Frame(self.windows[t_window_id])
@@ -763,7 +793,7 @@ class toolkit_UI:
                 # and also update the initial text on the respective button
                 self.window_on_top_button(button=on_top_button,
                                           window_id=t_window_id,
-                                          on_top=stAI.get_app_setting('transcripts_always_on_top', default_if_none=True)
+                                          on_top=stAI.get_app_setting('transcripts_always_on_top', default_if_none=False)
                                           )
 
 
@@ -774,7 +804,35 @@ class toolkit_UI:
                                                   text="Import SRT into Bin",
                                                   command=lambda: mots_resolve.import_media(srt_file_path)
                                                   )
-                    import_srt_button.grid(row=1, column=3, sticky='w', **self.paddings)
+                    import_srt_button.grid(row=1, column=4, sticky='w', **self.paddings)
+
+
+                # LINK TO TIMELINE BUTTON
+
+                # is this transcript linked to the current timeline?
+                global current_timeline
+                global current_project
+
+                # prepare an empty link button for now, and only show it when/if resolve starts
+                link_button = tk.Button(footer_frame)
+                link_button.config(command=lambda transcription_file_path=transcription_file_path:
+                                                self.t_edit_obj.link_to_timeline_button(
+                                                    button=link_button,
+                                                  transcription_file_path=transcription_file_path)
+                                              )
+
+
+                # prepare a label to use to send errors to the user
+                # error_label = Label(footer_frame, text="", anchor='w').grid(row=2, column=1, sticky='w', **self.paddings)
+
+                # start the transcription window self-updating process
+                # here we send the update transcription window function a few items that need to be updated
+                self.windows[t_window_id].after(500, lambda link_button=link_button,
+                                                             t_window_id=t_window_id,
+                                                             transcription_file_path=transcription_file_path:
+                                    self.update_transcription_window(window_id=t_window_id,
+                                                                     link_button=link_button,
+                                                                     transcription_file_path=transcription_file_path))
 
 
 
@@ -787,6 +845,51 @@ class toolkit_UI:
                                            type='warn'
                                            )
                 self.destroy_window_(self.windows, t_window_id)
+
+    def update_transcription_window(self, window_id, **update_attr):
+        '''
+        Auto-updates a transcription window and then calls itself again after a few seconds.
+        :param window_id:
+        :param update_attr:
+        :return:
+        '''
+
+        # check if the current timeline is still linked to this transcription window
+        global current_timeline
+        global current_project
+        global resolve
+
+        # only check if resolve is connected
+        if resolve:
+
+            # query for the link
+            link, _ = self.toolkit_ops_obj.get_transcription_to_timeline_link(
+                                    transcription_file_path=update_attr['transcription_file_path'],
+                                    timeline_name=current_timeline['name'],
+                                    project_name=current_project)
+
+            # the link button text depends on the above link
+            if link:
+                link_button_text = 'Unlink from Timeline'
+                # update_attr['error_label'].config(text='')
+            else:
+                link_button_text = 'Link to Timeline'
+
+                # if there's no link, let the user know
+                # update_attr['error_label'].config(text='Timeline mismatch')
+
+            # update the link button on the transcription window
+            update_attr['link_button'].config(text=link_button_text)
+            update_attr['link_button'].grid(row=1, column=3, sticky='w', **self.paddings)
+
+        # hide the button if resolve isn't connected
+        else:
+            update_attr['link_button'].grid_forget()
+
+
+        # do this again after 1000 ms
+        self.windows[window_id].after(500, lambda window_id=window_id,update_attr=update_attr:
+                        self.update_transcription_window(window_id, **update_attr))
 
     def update_transcription_log_window(self):
 
@@ -997,14 +1100,13 @@ class toolkit_UI:
         else:  # linux variants
             return
 
-
     def notify_via_messagebox(self, type='info', message_log=None, message=None, **options):
 
         if message_log is None:
             message_log = message
 
         # first print and log the message
-        self.stAI.log_print(message_log)
+        self.stAI.log_print(message=message_log, type=type)
 
         # alert the user using the messagebox according to the type
         if type == 'error':
@@ -1015,6 +1117,78 @@ class toolkit_UI:
 
         elif type == 'warn':
             messagebox.showwarning(message=message, **options)
+
+    def resolve_monitor(self, initial=False):
+        '''
+        This makes sure that the UI is up-to-date with what is being polled from Resolve
+
+        :return:
+        '''
+
+        #
+        global resolve_error
+        global current_timeline
+        global resolve
+
+        # keep in mind the current timeline
+        old_timeline = current_timeline
+
+        # first poll resolve
+        self.toolkit_ops_obj.poll_resolve_data()
+
+        # update main window
+        self.update_main_window()
+
+        # if the timeline has changed, open its linked transcriptions
+        if resolve and (initial or (current_timeline is not None and 'name' in current_timeline and 'name' in old_timeline \
+                and current_timeline['name'] != old_timeline['name'])):
+
+            # get the transcription_paths linked with this timeline
+            timeline_transcription_file_paths = self.toolkit_ops_obj.get_timeline_transcriptions(
+                                                        timeline_name=current_timeline['name'],
+                                                        project_name=current_project
+                                                )
+
+            # and open a transcript window for each of them
+            if timeline_transcription_file_paths:
+                for transcription_file_path in timeline_transcription_file_paths:
+                    self.open_transcription_window(transcription_file_path=transcription_file_path)
+
+        # how often do we poll resolve?
+        polling_interval = 500
+
+        # if any errors occurred
+        if resolve_error:
+
+            # let the user know that there's an error, and throttle the polling_interval
+
+            # after 20+ tries, assume the user is no longer paying attention and reduce the frequency of tries
+            if resolve_error > 20:
+                self.stAI.log_print('Resolve is not reachable. Now retrying every 30 seconds.\n'
+                                    '  Error count: {}'.format(resolve_error), 'error')
+
+                # and increase the polling interval to 30 seconds
+                polling_interval = 30000
+
+            # if the error has been triggered more than 10 times, say this
+            elif resolve_error > 10:
+
+                if resolve_error == 11:
+                    self.stAI.log_print('Resolve is not reachable. Now retrying every 5 seconds.\n'
+                                        '  Error count: {}'.format(resolve_error), 'warn')
+
+                # increase the polling interval to 5 seconds
+                polling_interval = 5000
+
+            else:
+                self.stAI.log_print('Resolve is not reachable.\n'
+                                    '  Error count: {}'.format(resolve_error), 'warn')
+
+                # increase the polling interval to 1 second
+                polling_interval = 1000
+
+        # repeat this every x milliseconds
+        self.root.after(polling_interval, lambda: self.resolve_monitor())
 
 
 
@@ -1076,7 +1250,7 @@ class ToolkitOps:
             # use CUDA if available
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        stAI.log_print('Using {} for torch processing.'.format(device), 'info')
+        stAI.log_print('Using {} for Torch / Whisper.'.format(device), 'info')
 
         # toolkit_UI_obj.create_transcription_settings_window()
         # time.sleep(120)
@@ -1435,39 +1609,366 @@ class ToolkitOps:
         # update the status of the item in the transcription log
         self.update_transcription_log(unique_id=queue_id, **{'status': 'saving files'})
 
-        # prepare a json file taking into consideration the name of the audio file
-        transcription_json_file_path = os.path.join(target_dir, audio_file_name + '.transcription.json')
+        # WHAT HAPPENS FROM HERE
 
-        # save the whole whisper result in the json file to previously selected target_dir
-        with open(transcription_json_file_path, 'w', encoding='utf-8') as outfile:
-            json.dump(result, outfile)
+        # Once a transcription is completed, you should see 4 or 5 files:
+        # - the original audio file used for transcription (usually WAV)
+        # - if the file was rendered from resolve, a json file - which is kind of like a report card for what was
+        #   rendered from where (see mots_resolve.py render())
+        # - the resulting transcription.json file with the actual transcription
+        # - the plain text transcript in TXT format - transcript.txt
+        # - the transcript in SRT format, ready to be imported in Resolve (or other apps)
+        #
+        # Once these are written, the transcription.json file should be used to gather any further information saved
+        # within the tool, therefore it's important to also mention the 3 other files within it (txt, srt, wav). But,
+        # with this approach we need to keep in mind to always keep the other 3 files next to the transcription.json
+        # to ensure that the files can migrate between different machines and the links won't break.
+        #
+        # Furthermore, the same file will be used to save any other information related to the transcription.)
 
-        # save the full transcript in text format too
-        transcription_txt_file_path = os.path.join(target_dir, audio_file_name + '.transcription.txt')
+        txt_file_path = self.save_txt_from_transcription(name=audio_file_name, target_dir=target_dir,
+                                         transcription_data=result)
 
-        # save the whole whisper result in the json file to previously selected target_dir
-        with open(transcription_txt_file_path, 'w', encoding="utf-8") as txt_outfile:
-            txt_outfile.write(result['text'])
+        # only save the filename without the absolute path to the transcript json
+        result['txt_file_path'] = os.path.basename(txt_file_path)
 
-        # save SRT file to previously selected target_dir
-        srt_path = os.path.join(target_dir, audio_file_name + ".srt")
-        with open(srt_path, "w", encoding="utf-8") as srt:
-            whisper.utils.write_srt(result["segments"], file=srt)
+        # save the SRT file next to the transcription file
+        srt_file_path = self.save_srt_from_transcription(name=audio_file_name, target_dir=target_dir,
+                                         transcription_data=result)
 
-        # when done, change the status in the log
-        # and also add the file paths to the log
+        # only the basename is needed here too
+        result['srt_file_path'] = os.path.basename(srt_file_path)
+
+        # remember the audio_file_path this transcription is based on too
+        result['audio_file_path'] = os.path.basename(audio_file_path)
+
+        # save the transcription file with all the added file paths
+        transcription_json_file_path = self.save_transcription_file(name=audio_file_name, target_dir=target_dir,
+                                     transcription_data=result)
+
+        # when done, change the status in the transcription log
+        # and also add the file paths to the transcription log
         self.update_transcription_log(unique_id=queue_id, status='done',
-                                      srt_file_path=srt_path, txt_file_path=transcription_txt_file_path,
+                                      srt_file_path=result['srt_file_path'], txt_file_path=result['txt_file_path'],
                                       json_file_path=transcription_json_file_path)
-
-        print(self.transcription_log[queue_id])
 
         # why not open the transcription in a transcription window?
         self.toolkit_UI_obj.open_transcription_window(title=name,
                                                       transcription_file_path=transcription_json_file_path,
-                                                      srt_file_path=srt_path)
+                                                      srt_file_path=srt_file_path)
 
         return True
+
+    def save_transcription_file(self, transcription_file_path=None, transcription_data=None,
+                                name=None, target_dir=None):
+        '''
+        Saves the transcription file either to the transcription_file_path
+        or to the "target_dir/name.transcription.json" path
+
+        :param transcription_file_path:
+        :param transcription_data:
+        :param name:
+        :param target_dir:
+        :return: False or transcription_file_path
+        '''
+
+        # if no full path was passed
+        if transcription_file_path is None:
+
+            # try to use the name and target dir attributes
+            if name is not None and target_dir is not None:
+                # the path should contain the name and the target dir, but end with transcription.json
+                transcription_file_path = os.path.join(target_dir, name + '.transcription.json')
+
+            # if the name and target_dir were not passed, throw an error
+            else:
+                self.stAI.log_print('No transcription file path, name or target dir were passed.', 'error')
+                return False
+
+        if transcription_file_path:
+            # save the whole whisper result in the transcription json file
+            # don't question what is being passed, simply save everything
+            with open(transcription_file_path, 'w', encoding='utf-8') as outfile:
+                json.dump(transcription_data, outfile)
+
+            return transcription_file_path
+
+        return False
+
+    def process_transcription_data(self, transcription_segments=None, transcription_data=None):
+        '''
+        This takes the passed segments and puts them into a dict ready to be passed to a transcription file.
+
+        It's important that if the contents of any transcription segment was edited, to see that reflected in
+        other variables as well. It also adds the key 'modified' so we later know that the tokens might not
+        correspond to the segment contents anymore.
+
+        :param transcription_segments:
+        :return:
+        '''
+
+        # take each transcription segment
+        if transcription_segments is not None and transcription_segments and transcription_data is not None and 'segments' in transcription_data:
+
+            # first empty the text variable
+            transcription_data['text'] = ''
+
+            for segment in transcription_segments:
+
+                # @todo test this when working on the transcript editing
+                print(segment)
+
+                # take each segment and insert it into the text variable
+                transcription_data['text'] = segment+' '
+
+            # make it known that this transcription was modified
+            transcription_data['modified'] = time.time()
+
+            return transcription_data
+
+    def save_srt_from_transcription(self, srt_file_path=None, transcription_segments=None,
+                                    name=None, target_dir=None, transcription_data=None):
+        '''
+        Saves an SRT file next to the transcription file.
+
+        You can either pass the transcription segments or the full transcription data. When both are passed,
+        the transcription_segments will be used.
+
+        :param srt_file_path:
+        :param transcription_segments:
+        :param name:
+        :param target_dir:
+        :param transcription_data:
+        :return: False or srt_file_path
+        '''
+
+        # if no full path was passed
+        if srt_file_path is None:
+
+            # try to use the name and target dir attributes
+            if name is not None and target_dir is not None:
+                # the path should contain the name and the target dir, but end with transcription.json
+                srt_file_path = os.path.join(target_dir, name + '.srt')
+
+            # if the name and target_dir were not passed, throw an error
+            else:
+                self.stAI.log_print('No transcription file path, name or target dir were passed.', 'error')
+                return False
+
+        if srt_file_path:
+
+            # if the transcription segments were not passed
+            # try to find them in transcription_data (if that was passed too)
+            if transcription_segments is None and transcription_data and 'segments' in transcription_data:
+                transcription_segments = transcription_data['segments']
+
+            # otherwise, stop the process
+            else:
+                return False
+
+            if transcription_segments:
+                with open(srt_file_path, "w", encoding="utf-8") as srt:
+                    whisper.utils.write_srt(transcription_segments, file=srt)
+
+                return srt_file_path
+
+        return False
+
+    def save_txt_from_transcription(self, txt_file_path=None, transcription_text=None,
+                                    name=None, target_dir=None, transcription_data=None):
+        '''
+        Saves an txt file next to the transcription file.
+
+        You can either pass the transcription text or the full transcription data. When both are passed,
+        the transcription_text will be used.
+
+        :param txt_file_path:
+        :param transcription_text:
+        :param name:
+        :param target_dir:
+        :param transcription_data:
+        :return: False or txt_file_path
+        '''
+
+        # if no full path was passed
+        if txt_file_path is None:
+
+            # try to use the name and target dir attributes
+            if name is not None and target_dir is not None:
+                # the path should contain the name and the target dir, but end with transcription.json
+                txt_file_path = os.path.join(target_dir, name + '.txt')
+
+            # if the name and target_dir were not passed, throw an error
+            else:
+                self.stAI.log_print('No transcription file path, name or target dir were passed.', 'error')
+                return False
+
+        if txt_file_path:
+
+            # if the transcription segments were not passed
+            # try to find them in transcription_data (if that was passed too)
+            if transcription_text is None and transcription_data and 'text' in transcription_data:
+                transcription_text = transcription_data['text']
+
+            # otherwise, stop the process
+            else:
+                return False
+
+            # save the text in the txt file
+            if transcription_text:
+                with open(txt_file_path, 'w', encoding="utf-8") as txt_outfile:
+                    txt_outfile.write(transcription_text)
+
+                return txt_file_path
+
+        return False
+
+    def get_timeline_transcriptions(self, timeline_name=None, project_name=None):
+        '''
+        Gets a list of all the transcriptions associated with a timeline
+        :param timeline_name:
+        :param project_name:
+        :return:
+        '''
+        if timeline_name is None:
+            return None
+
+        # get all the transcription files associated with the timeline
+        # by requesting the timeline setting named 'transcription_files'
+        timeline_transcription_files = self.stAI.get_timeline_setting(project_name=project_name,
+                                                                  timeline_name=timeline_name,
+                                                                  setting_key='transcription_files')
+
+        return timeline_transcription_files
+
+    def get_transcription_to_timeline_link(self, transcription_file_path=None, timeline_name=None, project_name=None):
+        '''
+        Checks if a transcription linked with a timeline but also returns all the transcription files
+        associated with that timeline
+
+        :param transcription_file_path:
+        :param timeline_name:
+        :param project_name:
+        :return: bool, timeline_transcription_files
+        '''
+        if transcription_file_path is None or timeline_name is None:
+            return None
+
+        # get all the transcription files associated with the timeline
+        timeline_transcription_files = self.get_timeline_transcriptions(timeline_name=timeline_name,
+                                                                        project_name=project_name)
+
+        # if the settings of our timeline were found
+        if timeline_transcription_files and timeline_transcription_files is not None:
+
+            # check if the transcription is linked to the timeline
+            if transcription_file_path in timeline_transcription_files:
+                return True, timeline_transcription_files
+            # if it's not just say so
+            else:
+                return False, timeline_transcription_files
+
+        # give None and an empty transcription list
+        return None, []
+
+    def link_transcription_to_timeline(self, transcription_file_path=None, timeline_name=None, link=None, project_name=None):
+        '''
+        Links transcription files to timelines.
+        If the link parameter isn't passed, it first checks if the transcription is linked and then toggles the link
+        If no timeline_name is passed, it tries to use the timeline of the currently opened timeline in Resolve
+
+        :param transcription_file_path:
+        :param timeline_name:
+        :param link:
+        :return:
+        '''
+
+        # abort if no transcript file was passed
+        if transcription_file_path is None:
+            self.stAI.log_print('No transcript path was passed. Unable to link transcript to timeline.', 'error')
+            return None
+
+        # if no timeline name was passed
+        if timeline_name is None:
+
+            # try to get the timeline currently opened in Resolve
+            global current_timeline
+            if current_timeline and current_timeline is not None and 'name' in current_timeline:
+
+                # and use it as timeline name
+                timeline_name = current_timeline['name']
+
+                self.stAI.log_print('Linking to current timeline: {}'.format(timeline_name), 'info')
+
+            else:
+                self.stAI.log_print('No timeline was passed. Unable to link transcript to timeline.', 'error')
+                return None
+
+        # if no project was passed
+        if project_name is None:
+
+            # try to get the project opened in Resolve
+            global current_project
+            if current_project and current_project is not None:
+
+                # use that as a project name
+                project_name = current_project
+
+            else:
+                self.stAI.log_print('No project name was passed. Unable to link transcript to timeline.', 'error')
+
+        # check the if the transcript is currently linked with the transcription
+        current_link, timeline_transcriptions = self.get_transcription_to_timeline_link(transcription_file_path=transcription_file_path,
+                                                                   timeline_name=timeline_name, project_name=project_name)
+
+        # if the link action wasn't passed, decide here whether to link or unlink
+        # basically toggle between true or false by choosing the opposite of whether the current_link is true or false
+        if link is None and current_link is True:
+            link = False
+        elif link is None and current_link is not None and current_link is False:
+            link = True
+        else:
+            link = True
+
+        # now create the link if we should
+        if link:
+
+            # but only create it if it isn't in there yet
+            if transcription_file_path not in timeline_transcriptions:
+                timeline_transcriptions.append(transcription_file_path)
+
+        # or remove the link if we shouldn't
+        else:
+            # but only remove it if it is in there currently
+            if transcription_file_path in timeline_transcriptions:
+                timeline_transcriptions.remove(transcription_file_path)
+
+        # if we made it so far, get all the project settings
+        self.stAI.project_settings = self.stAI.get_project_settings(project_name=project_name)
+
+        # if there isn't a timeline dict in the project settings, create one
+        if 'timelines' not in self.stAI.project_settings:
+            self.stAI.project_settings['timelines'] = {}
+
+        # if there isn't a reference to this timeline in the timelines dict
+        # add one, including the transcription files list
+        if timeline_name not in self.stAI.project_settings['timelines']:
+            self.stAI.project_settings['timelines'][timeline_name] = {'transcription_files': []}
+
+        # overwrite the transcription file settings of the timeline
+        # within the timelines project settings of this project
+        self.stAI.project_settings['timelines'][timeline_name]['transcription_files'] \
+            = timeline_transcriptions
+
+        #print(json.dumps(self.stAI.project_settings, indent=4))
+
+        self.stAI.save_project_settings(project_name=project_name,
+                                        project_settings=self.stAI.project_settings)
+
+        return link
+
+
+
 
     def import_SRT_prompt(self, srt_path=None, name=None):
         '''
@@ -1493,6 +1994,7 @@ class ToolkitOps:
             return False
 
         # wait for user ok before importing into resolve bin
+        # @todo move this to toolkit_UI?
         if messagebox.askokcancel(message=prompt_message, icon='info'):
             self.stAI.log_print("Importing SRT into Resolve Bin.")
             mots_resolve.import_media(srt_path)
@@ -1547,6 +2049,62 @@ class ToolkitOps:
 
         # move playhead in resolve
         mots_resolve.set_resolve_tc(str(new_timeline_tc))
+
+    def poll_resolve_data(self):
+        '''
+        Polls resolve and returns either the data passed from resolve, or False if any exceptions occured
+        :return:
+        '''
+
+        global current_project
+        global current_timeline
+        global current_tc
+        global current_bin
+        global resolve
+
+        global resolve_error
+
+        # try to poll resolve
+        try:
+            resolve_data = mots_resolve.get_resolve_data()
+
+            if (current_project != resolve_data['currentProject']):
+                current_project = resolve_data['currentProject']
+                #self.stAI.log_print('Current Project: {}'.format(current_project))
+
+            if (current_timeline != resolve_data['currentTimeline']):
+                current_timeline = resolve_data['currentTimeline']
+                #self.stAI.log_print("Current Timeline: {}".format(current_timeline))
+
+            #  updates the currentBin
+            if (current_bin != resolve_data['currentBin']):
+                current_bin = resolve_data['currentBin']
+                #self.stAI.log_print("Current Bin: {}".format(current_bin))
+
+            # update the global resolve variable with the resolve object
+            resolve = resolve_data['resolve']
+
+            # was there a previous error?
+            if resolve_error > 0:
+                # first let the user know that the connection is back on
+                self.stAI.log_print("Resolve connection re-established.", 'warn')
+
+                # reset the error counter since the Resolve API worked fine
+                resolve_error = 0
+
+            return resolve_data
+
+
+        # if an exception is thrown while trying to work with Resolve, don't crash, but continue to try to poll
+        except:
+
+            # count the number of errors
+            resolve_error += 1
+
+            # resolve is now None in the global variable
+            resolve = None
+
+            return False
 
 
 
@@ -1700,100 +2258,7 @@ resolve_error = 0
 resolve = None
 
 
-def poll_resolve_data(toolkit_UI_obj=None):
 
-    global current_project
-    global current_timeline
-    global current_tc
-    global current_bin
-    global resolve
-
-    global resolve_error
-
-    global stAI
-
-    # try to poll resolve
-    try:
-        resolve_data = mots_resolve.get_resolve_data()
-
-        if(current_project != resolve_data['currentProject']):
-            current_project = resolve_data['currentProject']
-            stAI.log_print('Current Project: {}'.format(current_project))
-
-        if(current_timeline != resolve_data['currentTimeline']):
-            current_timeline = resolve_data['currentTimeline']
-            stAI.log_print("Current Timeline: {}".format(current_timeline))
-
-        #  updates the currentBin
-        if(current_bin != resolve_data['currentBin']):
-            current_bin = resolve_data['currentBin']
-            stAI.log_print("Current Bin: {}".format(current_bin))
-
-        # update the global resolve variable with the resolve object
-        resolve = resolve_data['resolve']
-
-        # was there a previous error?
-        if resolve_error > 0:
-            # first let the user know that the connection is back on
-            stAI.log_print("Resolve connection re-established.", 'warn')
-
-            # reset the error counter since the Resolve API worked fine
-            resolve_error = 0
-
-            # refresh main window - @todo move this in its own object asap
-            toolkit_UI_obj.update_main_window()
-
-        # re-schedule this function to poll every 500ms
-        toolkit_UI_obj.root.after(500, lambda: poll_resolve_data(toolkit_UI_obj))
-
-
-    # if an exception is thrown while trying to work with Resolve, don't crash, but continue to try to poll
-    except:
-
-        # count the number of errors
-        resolve_error += 1
-
-        if resolve_error == 1:
-            # set the resolve object to None to make it known that its not available
-            resolve = None
-
-            # refresh main window - @todo move this in its own object asap
-            toolkit_UI_obj.update_main_window()
-
-        # let the user know that there's an error, but at different intervals:
-
-        # after 20+ tries, assume the user is no longer paying attention and reduce the frequency of tries
-        if resolve_error > 20:
-            stAI.log_print('Resolve is still out. Retrying every 30 seconds. '
-                    'Error count: {}'.format(resolve_error), 'error')
-
-            # and increase the wait time by 30 seconds
-
-            # re-schedule this function to poll after 30 seconds
-            toolkit_UI_obj.root.after(30000, lambda: poll_resolve_data(toolkit_UI_obj))
-
-        # if the error has been triggered more than 10 times, say this
-        elif resolve_error > 10:
-
-            if resolve_error == 11:
-                stAI.log_print('Resolve communication error. Try to reload the project in Resolve. '
-                               'Retrying every 2 seconds.'
-                      'Error count: {}'.format(resolve_error), 'warn')
-
-            # re-schedule this function to poll after 2 seconds
-            toolkit_UI_obj.root.after(2000, lambda: poll_resolve_data(toolkit_UI_obj))
-
-        else:
-            stAI.log_print('Resolve Communication Error. Is your Resolve project open? '
-                        'Error count: {}'.format(resolve_error))
-
-            # re-schedule this function to poll after 1 second
-            toolkit_UI_obj.root.after(1000, lambda: poll_resolve_data(toolkit_UI_obj))
-
-        # resolve is now None in the global variable
-        resolve = None
-
-        return False
 
 # this is the path to the user data folder
 USER_DATA_PATH = 'userdata'
@@ -1824,7 +2289,14 @@ class StoryToolkitAI:
         # create a config variable
         self.config = {}
 
-        print("Running StoryToolkit version {}".format(self.__version__))
+        # the projects directory is always inside the user_data_path
+        # this is where we will store all the stuff related to specific projects
+        self.projects_dir_path = os.path.join(self.user_data_path, 'projects')
+
+        # create a project settings variable
+        self.project_settings = {}
+
+        self.log_print("Running StoryToolkit version {}".format(self.__version__), type='infoplus')
 
     class bcolors:
         '''
@@ -1839,6 +2311,50 @@ class StoryToolkitAI:
         ENDC = '\033[0m'
         BOLD = '\033[1m'
         UNDERLINE = '\033[4m'
+
+    def user_data_dir_exists(self, create_if_not=True):
+        '''
+        Checks if the user data dir exists and creates one if asked to
+        :param create_if_not:
+        :return:
+        '''
+
+        # if the directory doesn't exist
+        if not os.path.exists(self.user_data_path):
+            self.log_print('User data directory {} doesn\'t exist.'
+                           .format(os.path.abspath(self.user_data_path)), 'warn')
+
+            if create_if_not:
+                self.log_print('Creating user data directory.', 'warn')
+
+                # and create the whole path to it if it doesn't
+                os.makedirs(self.user_data_path)
+
+            else:
+                return False
+
+        return True
+
+    def project_dir_exists(self, project_settings_path=None, create_if_not=True):
+
+        if project_settings_path is None:
+            return False
+
+        # if the directory doesn't exist
+        if not os.path.exists(os.path.dirname(project_settings_path)):
+            self.log_print('Project settings directory {} doesn\'t exist.'
+                           .format(os.path.abspath(os.path.dirname(project_settings_path))), 'warn')
+
+            if create_if_not:
+                self.log_print('Creating project settings directory.', 'warn')
+
+                # and create the whole path to it if it doesn't
+                os.makedirs(os.path.dirname(project_settings_path))
+
+            else:
+                return False
+
+        return True
 
     def get_app_setting(self, setting_name=None, default_if_none=None):
         '''
@@ -1866,7 +2382,7 @@ class StoryToolkitAI:
         # but a default was passed
         elif default_if_none is not None and default_if_none != '':
 
-            print('Config setting {} saved as {} '.format(setting_name, default_if_none))
+            self.log_print('Config setting {} saved as {} '.format(setting_name, default_if_none), 'warn')
 
             # save the default to the config
             self.save_config(setting_name=setting_name, setting_value=default_if_none)
@@ -1877,7 +2393,6 @@ class StoryToolkitAI:
         # otherwise simple return none
         else:
             return None
-
 
     def save_config(self, setting_name=None, setting_value=None):
         '''
@@ -1898,17 +2413,12 @@ class StoryToolkitAI:
         self.config[setting_name] = setting_value
 
         # before writing the configuration to the config file
-        # check if the user data folder exists
-        if not os.path.exists(self.user_data_path):
-            self.log_print('User data folder doesn\'t exist. Creating one at {}'
-                           .format(os.path.abspath(self.user_data_path)), 'warn')
-
-            # and create the whole path to it if it doesn't
-            os.makedirs(self.user_data_path)
+        # check if the user data folder exists (and create it if not)
+        self.user_data_dir_exists(create_if_not=True)
 
         # then write the config to the config json
         with open(self.config_file_path, 'w') as outfile:
-            json.dump(self.config, outfile)
+            json.dump(self.config, outfile, indent=3)
 
         self.log_print('Updated config file {} with {} data.'
                        .format(os.path.abspath(self.config_file_path), setting_name), 'info')
@@ -1936,8 +2446,101 @@ class StoryToolkitAI:
         else:
             return {}
 
-    def get_project_setting(self):
-        return
+    def _project_settings_path(self, project_name=None):
+
+        # the full path to the project settings file
+        if project_name is not None and project_name != '':
+            return os.path.join(self.projects_dir_path, project_name, 'project.json')
+
+    def get_project_settings(self, project_name=None):
+        '''
+        Gets the settings of a specific project
+        :return:
+        '''
+
+        if project_name is None:
+            self.log_print('Unable to get project settings if no project name was passed.', 'error')
+
+        # the full path to the project settings file
+        project_settings_path = self._project_settings_path(project_name=project_name)
+
+        # read the project settings file if it exists
+        if os.path.exists(project_settings_path):
+
+            # read the project settings from the project.json
+            with open(project_settings_path, 'r') as json_file:
+                self.project_settings = json.load(json_file)
+
+            # and return the project settings
+            return self.project_settings
+
+        # if the project settings file doesn't exist, return an empty dict
+        else:
+            return {}
+
+    def save_project_settings(self, project_name=None, project_settings=None):
+        '''
+        Saves the settings of a specific project.
+        This will OVERWRITE any existing project settings so make sure you include the whole project settings dictionary
+        in the call!
+        :param project_name:
+        :return:
+        '''
+
+        if project_name is None or project_name == '' or project_settings is None:
+            self.log_print('Insufficient data. Unable to save project settings.', 'error')
+            return False
+
+        # the full path to the project settings file
+        project_settings_path = self._project_settings_path(project_name=project_name)
+
+        # before writing the project settings
+        # check if the project directory exists (and create it if not)
+        if(self.project_dir_exists(project_settings_path=project_settings_path, create_if_not=True)):
+
+            # but make sure it also contains the correct project name
+            project_settings['name'] = project_name
+
+            # then overwrite the settings to the project settings json
+            with open(project_settings_path, 'w') as outfile:
+                json.dump(project_settings, outfile, indent=3)
+
+            self.log_print('Updated project settings file {}.'
+                           .format(os.path.abspath(project_settings_path)), 'info')
+
+            # and return the config back to the user
+            return project_settings
+
+        return False
+
+
+
+    def get_timeline_setting(self, project_name=None, timeline_name=None, setting_key=None):
+        '''
+        This gets a specific timeline setting from the project.json by looking into the timelines dictionary
+        :param project_name:
+        :param timeline_name:
+        :param setting_key:
+        :return:
+        '''
+
+        # get all the project settings first
+        self.project_settings = self.get_project_settings(project_name=project_name)
+
+        if self.project_settings:
+
+            # is there a timeline dictionary?
+            # is there a reference regarding the passed timeline?
+            # is there a reference regarding the passed setting key?
+            if 'timelines' in self.project_settings \
+                    and timeline_name in self.project_settings['timelines'] \
+                    and setting_key in self.project_settings['timelines'][timeline_name]:
+
+                # then return the setting value
+                return self.project_settings['timelines'][timeline_name][setting_key]
+
+        # if the setting key, or any of the stuff above wasn't found
+        return None
 
 
     def check_update(self):
@@ -2003,17 +2606,20 @@ class StoryToolkitAI:
             message = self.bcolors.WARNING + message + self.bcolors.ENDC
         elif type == 'error':
             message = self.bcolors.FAIL + message + self.bcolors.ENDC
+        elif type == 'infoplus':
+            message = self.bcolors.OKBLUE + message + self.bcolors.ENDC
+
 
         # show all messages if the verbosity is set to info
-        if verbose == 'info' and type in ['info', 'warn', 'error']:
+        if verbose == 'info' and type in ['info', 'warn', 'error', 'infoplus']:
             print(message)
 
         # show only warnings and errors if verbosity is warn
-        elif verbose == 'warn' and type in ['warn', 'error']:
+        elif verbose == 'warn' and type in ['warn', 'error', 'infoplus']:
             print(message)
 
         # show only errors if verbosity is set to error
-        elif verbose == 'error' and type == 'error':
+        elif verbose == 'error' and type in ['error', 'infoplus']:
             print(message)
 
 

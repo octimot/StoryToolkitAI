@@ -32,21 +32,21 @@ def initialize_resolve():
 
     resolve = GetResolve()
     if resolve is None or not resolve:
-        print("Resolve is not started. Exiting mots_resolve.")
+        print("Resolve is not started.")
         sys.exit()
         # return False
 
     project = resolve.GetProjectManager().GetCurrentProject()
 
     if project is None or not project:
-        print("No Resolve project is loaded. Exiting mots_resolve.")
+        print("No Resolve project is loaded.")
         sys.exit()
         # return False
 
     mediaPool = project.GetMediaPool()
 
     if mediaPool is None:
-        print("Media Pool not available. Exiting mots_resolve.")
+        print("Media Pool not available.")
         sys.exit()
         # return False
 
@@ -57,7 +57,7 @@ def initialize_resolve():
         currentBin = mediaPool.GetCurrentFolder()
 
     if currentBin is None or not currentBin:
-        print("Resolve bins not loaded.")
+        print("Resolve bins not loaded or unavailable.")
 
     # get timeline info
     if project:
