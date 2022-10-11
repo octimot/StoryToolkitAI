@@ -148,7 +148,7 @@ As soon as it's done, the transcription will be saved on your machine.
 
 _Important Note: **The first time you transcribe something**, it will take a bit longer to start the process
 because Whisper needs to download the model file (around 1.5GB for the medium model) on your local machine. So if it 
-usually takes you 3 days do download your average Netflix movie, don't expect to download the model any faster. If you
+usually takes you 3 days to download your average Netflix movie, don't expect to download the model any faster. If you
 have 100G Internet we hope you feel good about yourself. But, after the model is saved on your machine, transcriptions
 will take less than your average time spent on Myspace every day._
 
