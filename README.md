@@ -94,7 +94,7 @@ real work and feel a bit better about yourself?
 
 ---
 
-## Setup & Installation
+# Setup & Installation
 
 Before you attempt something silly like actually installing this tool on your machine, please keep in mind that by
 clicking on the instructions you will see many computer commands which are the main method used by our ancestors to tame their machines.
@@ -107,7 +107,7 @@ For detailed installation instructions [go here](https://github.com/octimot/Stor
 
 ---
 
-## Running the Tool
+# Running the Tool
 
 To start StoryToolkitAI, go to the folder where you installed it previously, activate the virtual environment 
 (if you created one) and then start the tool:
@@ -172,7 +172,7 @@ average, don't despair, it's better to be prepared than sorry._
 
 # Known issues
 ### If the tool doesn't connect with Resolve:
-Make sure that, in Davinci Resolve Preferences -> General, "External Scripting using" is set to Local
+Bad luck, but make sure that, in Davinci Resolve Preferences -> General, "External Scripting using" is set to Local
 
 ### Windows issues
 There seems to be a problem with the Resolve libraries on some Windows 10 machines, because either Windows sucks or we
@@ -184,9 +184,9 @@ issues might escape us. To make sure that it works for the community, please rep
 
 To report any issues, please use the Issues tab here on Github: https://github.com/octimot/StoryToolkitAI/issues
 
+---
 
-
-## Features Info
+# Features Info
 
 ### Direct Translations to English
 The tool also supports direct translation to English by clicking the "Translate Timeline to English" button. However,
