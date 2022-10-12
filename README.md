@@ -26,8 +26,7 @@ discussion for some other time.**
 
 ### Work in progress
 - [ ] **Mark In / Mark Out** directly from the tool to Resolve
-- [ ] **Advanced Transcriptions** with more user input, like source language and selection
-- [ ] **Global Search** to find words or phrases in project transcripts 
+- [ ] **Global Search** to search words or phrases in all the project transcripts 
 - [ ] **Transcript Editing** from the tool
 - [ ] **Sliced Transcriptions** based on Resolve Duration Markers to transcribe only parts of the timeline
 - [ ] **Speaker Recognition**
@@ -193,6 +192,11 @@ The tool also supports direct translation to English by clicking the "Translate 
 it will not generate any original language transcription together with the translation, meaning that you'll have to
 transcribe and translate in two different processes.
 
+### Transcription Settings
+Before starting the transcription process, you can tweak different options, including selecting the source language of
+the footage, choosing between different Whisper models, the processing device, etc. For faster and better results,
+we recommend at least selecting the source language.
+
 ### Copy Timeline Markers to Same Clip
 This copies the current markers to its corresponding clip in the media bin. 
 Due to Resolve API limitations, it's important that the corresponding clip
@@ -212,6 +216,13 @@ markers from the opened timeline.
 
 ### Timeline Navigation via Transcript
 For now, clicking on the transcript segments (phrases) will simply move the playhead to the respective timecode.
+
+### Resolve Playhead to Transcript Sync
+The tool highlights the transcript words at the current timecode in Resolve. To activate this function, simply press
+"sync" in the transcription window and the words will be highlighted each time the playhead stops moving in Resolve.
+
+_Note: we found some issues when synching timelines that have a frame rate of 23.976fps because of a bug in the Resolve
+API. Unfortunately, the synching of these timelines might drift until Blackmagic solves the bug._ 
 
 ### Transcript Word Search
 Once a transcript is loaded, a basic search function will let you find words in the transcript and show you their 
