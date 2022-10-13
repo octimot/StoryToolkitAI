@@ -2,14 +2,12 @@
 
 ## Description
 
-StoryToolkitAI is an editing extension for Davinci Resolve Studio 18. 
-
-Among other things, it transcribes timelines directly from Resolve by rendering to Audio Only (mp4/wav) and then passing
-the rendered file to OpenAI Whisper, a state-of-the-art speech recognition model. 
+StoryToolkitAI is an editing extension for Davinci Resolve Studio 18 that uses Open AI Whisper to transcribe timelines
+and enables editors to log footage and edit more efficiently.
  
 **TL;DR:
 this tool is supernatural and will enhance your editing workflow like Harry Potter's Sword of Gryffindor or Batman's 
-Utility Belt - depending which reference you relate to kind of shows what sort of person you are, but this is a
+Utility Belt - depending on which reference you relate to kind of shows what sort of person you are, but this is a
 discussion for some other time.**
 
 <img alt="StoryToolkitAI Demo GIF" src="https://videoapi-muybridge.vimeocdn.com/animated-thumbnails/image/9eb88ee1-4902-4e17-82dc-77411d959eab.gif?ClientID=vimeo-core-prod&Date=1665676352&Signature=52a72df29b216dd2f8cce8ee7360ea38a24b5b6e" width="700">
