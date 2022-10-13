@@ -12,7 +12,7 @@ this tool is supernatural and will enhance your editing workflow like Harry Pott
 Utility Belt - depending which reference you relate to kind of shows what sort of person you are, but this is a
 discussion for some other time.**
 
-<img alt="StoryToolkitAI Demo" src="https://videoapi-muybridge.vimeocdn.com/animated-thumbnails/image/9eb88ee1-4902-4e17-82dc-77411d959eab.gif?ClientID=vimeo-core-prod&Date=1665676352&Signature=52a72df29b216dd2f8cce8ee7360ea38a24b5b6e" width="700">
+<img alt="StoryToolkitAI Demo GIF" src="https://videoapi-muybridge.vimeocdn.com/animated-thumbnails/image/9eb88ee1-4902-4e17-82dc-77411d959eab.gif?ClientID=vimeo-core-prod&Date=1665676352&Signature=52a72df29b216dd2f8cce8ee7360ea38a24b5b6e" width="700">
 
 ### Key Features
 - [x] **Free Automatic Transcriptions in many languages** on your local machine directly from Resolve
