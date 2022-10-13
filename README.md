@@ -17,8 +17,8 @@ discussion for some other time.**
 - [x] **Free Automatic Translation** from many languages to English on your local machine from Resolve
 - [x] Export of transcripts to multiple formats, including SRT
 - [x] Import of transcript SRT file directly into Resolve
-- [x] Transcription queuing which allows 
-- [x] **Transcript Timeline Navigation** - simply click on a phrase and it takes the Resolve Playhead at the right timecode 
+- [x] Transcription queuing to line up transcription jobs
+- [x] **Transcript Timeline Navigation** - click on a phrase to get the playhead in Resolve at the right timecode 
 - [x] **Transcript Word Search** - allows you to find specific words or phrases in your transcripts
 - [x] Copy Markers between Resolve Timelines and Timeline Source Clip
 - [x] Render Resolve Markers to Stills or Clips
@@ -35,9 +35,7 @@ discussion for some other time.**
 
 _The app is in this stage very raw and not polished at all, but we use it daily in our editing room. So we simply wanted
 to make it for free for anyone to use. It's not only out of sheer generosity, but also because we'd like to
-change how people approach editing by using AI. And yes, definitely as a bow to our new CPU-for-brains overlords. When
-dirty stuff hits the fan and they take over, who do you think they'll spare first? Us slaves or you anti-AI 
-"machine-can-t-be-artists" rebels?_
+change how people approach editing by using AI._
 
 Ideally, it should evolve by incorporating other machine learning models such as CLIP and GPT-3 to assist editors in
 their work, or rather to make them obsolete (that would be cool, right?).
@@ -58,14 +56,11 @@ languages**. More technical blabla on the
 [Scientific Paper](https://cdn.openai.com/papers/whisper.pdf), for hardcore enthusiasts. 
 
 The sorcery takes over even for the most difficult noisy low bitrate stuff you can feed it - like recordings of your
-assistant editor with them complain about industry wages while Ubering people around in a noisy 98 Prius as a third job, 
-without realizing that they're sending accidental whatsapp voice messages from their non-uber phone in their back pocket.
-Seriously, be fair and pay folks what they're worth. If not, that day when you realize that you've just been replaced
-completely by AI editors is really coming to get you.
+assistant editor complaining about you without realizing that their back pocket is sending voice messages to random
+people.
 
-Yes, this is a machine that is doing transcriptions for you. It's advanced AI sorcery indeed, but don't panic  if it
-starts hallucinating if you feed it audio with long periods of silence. Misfires do happen, but there are smart people
-(kind of) working on it. Not us, of course, it's the OpenAI Whisper people, but thanks for the compliment!
+The results are almost perfect for at least 10 languages, but this is a machine doing transcriptions for you. Sometimes
+it does hallucinate, for example, on longer periods of silence in your audio...
 
 ### Transcription Speed
 We used the expression "runs like butter" above. There's one thing you need to know about butter - it's good when it's
@@ -88,8 +83,8 @@ editing faster than that, please stop, you're embarrassing the rest of us.
 This tool is written by Octavian Mot, your friendly filmmaker who hates to code and is trying to keep it together as
 [half of mots](https://mots.us).
 
-Feel free to get in touch with compliments or why not grab an ax and contribute with ideas or code to procrastinate your
-real work and feel a bit better about yourself?
+Feel free to get in touch with compliments, criticism, and even weird ideas for new features. As a matter of fact, why 
+not grab an axe and start coding to procrastinate your real work and feel a bit better about yourself?
 
 ---
 
@@ -178,8 +173,8 @@ There seems to be a problem with the Resolve libraries on some Windows 10 machin
 suck (definitely not us), but we're trying to find a fix.
 
 ### Please report any other issues
-As mentioned, the tool is in a super raw state of development. We use it everyday in our editing workflow, but some 
-issues might escape us. To make sure that it works for the community, please report anything weird that you notice.
+As mentioned, the tool is in a super raw state of development. We use it every day in our editing workflow, but some 
+issues might escape us. Please report anything weird that you notice and we'll look into it.
 
 To report any issues, please use the Issues tab here on Github: https://github.com/octimot/StoryToolkitAI/issues
 
@@ -187,15 +182,36 @@ To report any issues, please use the Issues tab here on Github: https://github.c
 
 # Features Info
 
-### Direct Translations to English
-The tool also supports direct translation to English by clicking the "Translate Timeline to English" button. However,
-it will not generate any original language transcription together with the translation, meaning that you'll have to
-transcribe and translate in two different processes.
-
 ### Transcription Settings
 Before starting the transcription process, you can tweak different options, including selecting the source language of
 the footage, choosing between different Whisper models, the processing device, etc. For faster and better results,
 we recommend at least selecting the source language.
+
+### Linking Transcriptions to Timelines
+In the transcription window, the "Link" button will attach the transcription to the currently opened timeline in
+Resolve. This will make the tool automatically open the right transcription when you switch between timelines in
+Resolve. In a future update, this will also help the Global Search function know in which timeline, at what timecode
+you can find the term you're looking for.
+
+### Timeline Navigation via Transcript
+For now, clicking on the transcript segments (phrases) will simply move the playhead to the respective timecode.
+
+### Resolve Playhead to Transcript Sync
+The tool highlights the transcript words at the current timecode in Resolve. To activate this function, simply press
+"sync" in the transcription window and the words will be highlighted each time the playhead stops moving in Resolve.
+
+_Note: we found some issues when synching timelines that have a frame rate of 23.976fps because of a bug in the Resolve
+API. Unfortunately, the synching of these timelines might drift until Blackmagic solves the bug._ 
+
+### Transcript Word Search
+Once a transcript is loaded, a basic search function will let you find words in the transcript and show you their 
+position. Once you find what you're looking for, simply clicking the phrase will move the Resolve playhead to the
+respective timecode.
+
+### Direct Translations to English
+The tool also supports direct translation to English by clicking the "Translate Timeline to English" button. However,
+it will not generate any original language transcription together with the translation, meaning that you'll have to
+transcribe and translate in two different processes.
 
 ### Copy Timeline Markers to Same Clip
 This copies the current markers to its corresponding clip in the media bin. 
@@ -213,21 +229,6 @@ opened timeline.
 ### Render Markers to Clips
 This will render to H.264 the entire duration of the markers of a certain color. Same as above, it only works for
 markers from the opened timeline.
-
-### Timeline Navigation via Transcript
-For now, clicking on the transcript segments (phrases) will simply move the playhead to the respective timecode.
-
-### Resolve Playhead to Transcript Sync
-The tool highlights the transcript words at the current timecode in Resolve. To activate this function, simply press
-"sync" in the transcription window and the words will be highlighted each time the playhead stops moving in Resolve.
-
-_Note: we found some issues when synching timelines that have a frame rate of 23.976fps because of a bug in the Resolve
-API. Unfortunately, the synching of these timelines might drift until Blackmagic solves the bug._ 
-
-### Transcript Word Search
-Once a transcript is loaded, a basic search function will let you find words in the transcript and show you their 
-position. Once you find what you're looking for, simply clicking the phrase will move the Resolve playhead to the
-respective timecode.
 
 
 ---
