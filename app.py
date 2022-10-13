@@ -22,14 +22,6 @@ from timecode import Timecode
 
 import webbrowser
 
-'''
-To install whisper on MacOS use brew and pip:
-
-brew install rust
-pip install git+https://github.com/openai/whisper.git
-
-'''
-
 # define a global target dir so we remember where we chose to save stuff last time when asked
 # but start with the user's home directory
 initial_target_dir = os.path.expanduser("~")
@@ -56,6 +48,8 @@ class toolkit_UI:
             # keep a reference to the toolkit_ops_obj object here
             self.toolkit_ops_obj = toolkit_ops_obj
 
+            self.root = toolkit_UI_obj.root
+
             # search results indexes stored here
             # we're making it a dict so that we can store result indexes for each window individually
             self.search_result_indexes = {}
@@ -67,15 +61,25 @@ class toolkit_UI:
             # to keep track of what is being searched on each window
             self.search_strings = {}
 
+            # to stop certain events while typing,
+            # we keep track if we have typing going on in any of the windows
+            self.typing = {}
+
             # to store the transcript segments of each window,
             # including their start + end times and who knows what else?!
             self.transcript_segments = {}
 
-            # selected transcript segments of each window
+            # all the selected transcript segments of each window
+            # the selected segments dict will use the text element line number as an index, for eg:
+            # self.selected_segments[window_id][line] = transcript_segment
             self.selected_segments = {}
 
-            # the current selected text line of each window
-            self.current_selected_segment = {}
+            # the active_segment stores the text line number of each window to keep track where
+            # the cursor is currently on the transcript
+            self.active_segment = {}
+
+            # when changed, active segments line numbers move to last_active_segment
+            self.last_active_segment = {}
 
             # the current timecode of each window
             self.current_window_tc = {}
@@ -127,6 +131,26 @@ class toolkit_UI:
 
             return sync
 
+        def set_typing_in_window(self, event, window_id, typing):
+
+            # if there isn't a typing tracker for this window, create one
+            if window_id not in self.typing:
+                self.typing[window_id] = False
+
+            # if typing was passed, assign it
+            if typing is not None:
+                self.typing[window_id] = typing
+
+            # return the status of the typing
+            return self.typing[window_id]
+
+        def get_typing_in_window(self, window_id):
+
+            # if there isn't a typing tracker for this window, create one
+            if window_id not in self.typing:
+                self.typing[window_id] = False
+
+            return self.typing[window_id]
 
         def search_text(self, search_str=None, text_element=None, window_id=None):
             '''
@@ -246,93 +270,521 @@ class toolkit_UI:
             # visually tag the results
             self.tag_results(text_element, text_index, window_id)
 
-        def select_text_lines(self, event, text_element=None, window_id=None, line_id=None, special_key=None):
+        def get_line_char_from_click(self, event, text_element=None):
+
+            index = text_element.index("@%s,%s" % (event.x, event.y))
+            line, char = index.split(".")
+
+            return line, char
+
+        def transcription_window_keypress(self, event=None, **attributes):
             '''
-            Handles text line selections in all the possible ways
+            What to do with the keypresses on transcription windows?
+            :param attributes:
+            :return:
+            '''
+
+            if self.get_typing_in_window(attributes['window_id']):
+                return
+
+            # print(event)
+
+            # for now, simply pass to select text lines if it matches one of these keys
+            if event.keysym in ['Up', 'Down', 'v', 'V', 'A', 'i', 'o', 'm', 'M', 'C', 'q', 'apostrophe', 'semicolon']:
+                self.segment_actions(event, **attributes)
+
+        def transcription_window_mouse(self, event=None, **attributes):
+            '''
+            What to do with mouse presses on transcription windows?
+            :param event:
+            :param attributes:
+            :return:
+            '''
+
+            #print(event.state)
+            # for now simply pass the event to the segment actions
+            self.segment_actions(event, mouse=True, **attributes)
+
+        def segment_actions(self, event=None, text_element=None, window_id=None, special_key=None, mouse=False):
+            '''
+            Handles the key and mouse presses in relation with transcript segments (lines)
             :return:
             '''
 
             if text_element is None or window_id is None:
                 return False
 
-            if special_key is not None:
-                print(special_key)
+            #if special_key is not None:
+            #     print(special_key)
 
-            if event.keysym == 'Up':
-                print(event.keysym)
-            elif event.keysym == 'Down':
-                print(event.keysym)
-            elif event.keysym == 'apostrophe':
-                # go_to_time segment_end_time
-                print('go_to_time segment_end_time')
-                print(event.keysym)
-            elif event.keysym == 'semicolon':
-                # go_to_time segment_start_time
-                print('go_to_time segment_start_time')
-                print(event.keysym)
-
-            # get the number of lines in the text element
-            text_num_lines = int(text_element.index('end-1c').split('.')[0])
-
-            # if there is no current_selected_segment for the window, create one
-            if window_id not in self.current_selected_segment:
-                # but start with the first line
-                self.current_selected_segment[window_id] = 1
-            else:
-                if event.keysym == 'Up':
-                    self.current_selected_segment[window_id] = self.current_selected_segment[window_id] - 1
-
-                if event.keysym == 'Down':
-                    self.current_selected_segment[window_id] = self.current_selected_segment[window_id] + 1
-
-                if self.current_selected_segment[window_id] < 1:
-                    self.current_selected_segment[window_id] = 1
-
-                if self.current_selected_segment[window_id] > text_num_lines:
-                    self.current_selected_segment[window_id] = text_num_lines
-
-                line = self.current_selected_segment[window_id]
-
-            # get the line and char numbers based on the selected text element index
-            # index = text_element.index("@%s,%s" % (event.x, event.y))
-            # line, char = index.split(".")
-
-            # get the selected segment
-            # print(json.dumps(self.transcript_segments[window_id], indent=3))
-
-            # print(window_id)
-            # print(line)
-            # print(line_id)
-
+            # HERE ARE SOME USEFUL SHORTCUTS FOR THE TRANSCRIPTION WINDOW:
             #
+            # MOUSE
+            # Click          - move active segment on clicked text and move playhead to start of active segment
+            # CMD/CTRL+Click - add clicked text to selection
+            #
+            # KEYS
+            # Up, Down keys  - move the cursor up and down on the transcript (we call it "active segment")
+            # Semicolon      - move playhead to start of active segment (or of selection)
+            # Apostrophe     - move playhead to end of active segment (or of selection)
+            # V              - add active segment to selection
+            # Shift+V        - deselect all
+            # Shift+A        - create selection between the previously active and the currently active segment
+            #                   also works to create a selection for the last played segments (if sync is active)
+            # Shift+C        - copy transcript of active segment/selection with the timecode
+            #                       (taking into consideration the current timeline in resolve if available)
+            # m              - add duration markers between start and end of active segment (or for all selections)
+            # Shift+M        - add duration marker as above, but with user prompt for the marker name
+            # q              - close transcript window
 
-            if special_key is None:
-                # remove previous position tags
-                text_element.tag_delete('l_selected')
 
-            # create a dictionary for the selected segments of the current transcription window
+             # initialize the active segment number
+            self.active_segment[window_id] = self.get_active_segment(window_id, 1)
+
+            # PRE- CURSOR MOVE EVENTS:
+            # below we have the events that should happen prior to moving the cursor
+
+            # UP key events
+            if event.keysym == 'Up':
+
+                # move cursor (active segment) on the previous segment on the transcript
+                self.set_active_segment(window_id, text_element, line_calc=-1)
+
+            # DOWN key events
+            elif event.keysym == 'Down':
+
+                # move cursor (active segment) on the next segment on the transcript
+                self.set_active_segment(window_id, text_element, line_calc=1)
+
+            # APOSTROPHE key events
+            elif event.keysym == 'apostrophe':
+                # go_to_time end time of the last selected segment
+                self.go_to_selected_time(window_id=window_id, position='end')
+
+            # SEMICOLON key events
+            elif event.keysym == 'semicolon':
+                # go_to_time start time of the first selected segment
+                self.go_to_selected_time(window_id=window_id, position='start')
+
+
+            # on mouse presses
+            if mouse:
+
+                # first get the line and char numbers based text under the click event
+                index = text_element.index("@%s,%s" % (event.x, event.y))
+                line_str, char_str = index.split(".")
+
+                # make the clicked segment into active segment
+                self.set_active_segment(window_id, text_element, int(line_str))
+
+                # and move playhead to that time
+                self.go_to_selected_time(window_id, 'start', ignore_selection=True)
+
+                # if shift was also pressed
+                if special_key == 'cmd':
+
+                    # add clicked segment to selection
+                    self.segment_to_selection(window_id, text_element, int(line_str))
+
+            # what is the currently selected line number again?
+            line = self.get_active_segment(window_id)
+
+            # POST- CURSOR MOVE EVENTS
+            # these are the events that might require the new line and segment numbers
+
+            # v key events
+            if event.keysym == 'v':
+
+                # add/remove active segment to selection
+                # if it's not in the selection
+                self.segment_to_selection(window_id, text_element, line)
+
+            # Shift+V key events
+            if event.keysym == 'V':
+                # clear selection
+                self.clear_selection(window_id, text_element)
+
+            # Shift+A key events
+            if event.keysym == 'A':
+
+                # select all segments between the active_segment and the last_active_segment
+
+                # first, get the lowest index between the active and the last active segments
+                if self.active_segment[window_id] >= self.last_active_segment[window_id]:
+                    start_segment = self.last_active_segment[window_id]
+                    max_segment = self.active_segment[window_id]
+                else:
+                    max_segment = self.last_active_segment[window_id]
+                    start_segment = self.active_segment[window_id]
+
+                # first clear the entire selection
+                self.clear_selection(window_id, text_element)
+
+                # then take each segment, starting with the lowest and select them
+                n = start_segment
+                while n <= max_segment:
+                    self.segment_to_selection(window_id, text_element, n)
+                    n = n+1
+
+            # Shift+C key event
+            if event.keysym == 'C':
+
+                if window_id in self.active_segment:
+                    self.copy_segments_or_selection(window_id)
+
+
+            # m key event
+            if event.keysym == 'm' or event.keysym == 'M':
+                global resolve
+                global current_timeline
+
+                if resolve and 'name' in current_timeline:
+
+                    # first get the selected (or active) text from the transcript
+                    # including the start timecode and end timecodes
+                    text, start_tc, end_tc = self.copy_segments_or_selection(window_id, add_to_clipboard=False)
+
+                    # calculate the duration of the marker (these should be Timecode objects)
+                    marker_duration_tc = end_tc-start_tc
+
+                    # calculate the start timecode of the timeline (simply use second 0 for the conversion)
+                    timeline_start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(0)
+
+                    # now subtract the start timecode from the start_tc to get the marker index
+                    # but only if the start_tc is larger than the timeline_start_tc
+                    if start_tc > timeline_start_tc:
+                        start_tc_zero = start_tc-timeline_start_tc
+                        marker_index = start_tc_zero.frames
+                    else:
+                        marker_index = 1
+
+                    # check if there's another marker at the exact same index
+                    index_blocked = True
+                    while index_blocked:
+
+                        if 'markers' in current_timeline and marker_index in current_timeline['markers']:
+
+                            # if the duration isn't under a frame:
+                            if marker_duration_tc.frames <= 1:
+                                self.notify_via_messagebox(title='Cannot add marker',
+                                                           message='Not enough space to add marker on timeline.',
+                                                           type='warn'
+                                                           )
+                                return False
+
+                            # notify the user that the index is blocked by another marker
+                            add_frame = messagebox.askyesno(title='Cannot add marker',
+                                                message="Another marker exists at the exact same timecode.\n\n"
+                                                        "Do you want to place the new marker one frame later?")
+
+                            # if the user wants to move this marker one frame to the right, be it
+                            if add_frame:
+                                marker_index = marker_index+1
+
+                                # but this means that the duration should be one frame shorter
+                                marker_duration_tc.frames = marker_duration_tc.frames-1
+                            else:
+                                return False
+
+                        else:
+                            index_blocked = False
+
+                    marker_data = {}
+                    marker_data[marker_index] = {}
+
+                    # choose the marker color from Resolve
+                    marker_data[marker_index]['color'] = self.stAI.get_app_setting('default_marker_color',
+                                                                                     default_if_none='Blue')
+
+                    # declare this false to pick it up after
+                    marker_data[marker_index]['name'] = False
+
+                    # if Shift+M was pressed, prompt the user for the name
+                    if event.keysym == 'M':
+                        marker_data[marker_index]['name'] = simpledialog.askstring(title="Markers Name",
+                                                                                     prompt="Marker Name:")
+
+                    # if we still don't have a marker name
+                    if not marker_data[marker_index]['name'] or marker_data[marker_index]['name'] == '':
+                        # use a generic name which the user will most likely change afterwards
+                        marker_data[marker_index]['name'] = 'Transcript Marker'
+
+                    # add the text to the marker data
+                    marker_data[marker_index]['note'] = text
+
+                    # the marker duration needs to be in frames
+                    marker_data[marker_index]['duration'] = marker_duration_tc.frames
+
+                    # no need for custom data
+                    marker_data[marker_index]['customData'] = ''
+
+                    mots_resolve.add_timeline_markers(current_timeline['name'], marker_data, False)
+
+            # q key event
+            if event.keysym == 'q':
+                self.toolkit_UI_obj.destroy_window_(self.toolkit_UI_obj.windows, window_id=window_id)
+
+        def copy_segments_or_selection(self, window_id, add_to_clipboard=True):
             '''
+            Used to extract the text from either the active segment or from the selection
+            Will return the text, and the start and end times
+            :param window_id:
+            :return: text, start, end
+            '''
+
+            text = ''
+            start_sec = None
+            end_sec = None
+
+            # if we have some selected segments, use their start and end times
+            if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0:
+
+                start_segment = None
+                end_segment = None
+
+                # go though all the selected_segments and get the lowest start time and the highest end time
+                # (we need to do this so that we get the text in order)
+                for segment_index in self.selected_segments[window_id]:
+
+                    # get the index time of first selected segment
+                    if start_sec is None \
+                            or self.selected_segments[window_id][segment_index]['start'] < start_sec:
+                        start_segment = segment_index
+                        start_sec = self.selected_segments[window_id][segment_index]['start']
+
+                    # get the index of the last selected segment
+                    if end_sec is None \
+                            or self.selected_segments[window_id][segment_index]['end'] > end_sec:
+                        end_segment = segment_index
+                        end_sec = self.selected_segments[window_id][segment_index]['end']
+
+                # go through all the segments, starting with the first
+                for n in range(start_segment-1, end_segment):
+                    # and add their text to the text variable
+                    text = text+self.transcript_segments[window_id][n]['text'].strip()+'\n'
+
+            # if there are no selected segments on this window
+            # use the active segment
+            else:
+                # if there is no active_segment for the window, create one
+                if window_id not in self.active_segment:
+                    self.active_segment[window_id] = 1
+
+                # get the line number from the active segment
+                line = self.active_segment[window_id]
+
+                # we need to convert the line number to the segment_index used in the transcript_segments list
+                segment_index = line - 1
+
+                # get the start and end times from the active segment
+                text = self.transcript_segments[window_id][segment_index]['text']
+
+                start_sec = self.transcript_segments[window_id][segment_index]['start']
+                end_sec = self.transcript_segments[window_id][segment_index]['end']
+
+
+            if start_sec is not None:
+                # now calculate the timecodes
+                start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(float(start_sec))
+
+                # if a valid timecode was passed
+                if start_tc:
+                    # add it to the text
+                    text = str(start_tc) + ':\n'+text
+
+                    # but calculate the end_tc too
+                    end_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(float(end_sec))
+
+                    # add the text to the clipboard if necessary
+                    if add_to_clipboard:
+                        self.root.clipboard_clear()
+                        self.root.clipboard_append(text.strip())
+
+                    return text, start_tc, end_tc
+
+                # otherwise use the seconds value from the transcription
+                else:
+                    text = str(start_sec) + ' seconds:\n'+text
+
+                    # add the text to the clipboard if necessary
+                    if add_to_clipboard:
+                        self.root.clipboard_clear()
+                        self.root.clipboard_append(text.strip())
+
+                    return text, start_sec, end_sec
+
+            return False
+
+
+
+        def go_to_selected_time(self, window_id=None, position=None, ignore_selection=False):
+
+            # if we have some selected segments, use their start and end times
+            if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0 \
+                    and not ignore_selection:
+
+                start_sec = None
+                end_sec = None
+
+                # go though all the selected_segments and get the lowest start time and the highest end time
+                for segment_index in self.selected_segments[window_id]:
+
+                    # get the start time of the earliest selected segment
+                    if start_sec is None or self.selected_segments[window_id][segment_index]['start'] < start_sec:
+                        start_sec = self.selected_segments[window_id][segment_index]['start']
+
+                    # get the end time of the latest selected segment
+                    if end_sec is None or self.selected_segments[window_id][segment_index]['end'] > end_sec:
+                        end_sec = self.selected_segments[window_id][segment_index]['end']
+
+
+            # otherwise use the active segment start and end times
+            else:
+
+                # if there is no active_segment for the window, create one
+                if window_id not in self.active_segment:
+                    self.active_segment[window_id] = 1
+
+                # get the line number from the active segment
+                line = self.active_segment[window_id]
+
+                # we need to convert the line number to the segment_index used in the transcript_segments list
+                segment_index = line-1
+
+                # get the start and end times from the active segment
+                start_sec = self.transcript_segments[window_id][segment_index]['start']
+                end_sec = self.transcript_segments[window_id][segment_index]['end']
+
+
+            # decide where to go depending on which position requested
+            if position == 'end':
+                seconds = end_sec
+            else:
+                seconds = start_sec
+
+            # move playhead to seconds
+            self.toolkit_ops_obj.go_to_time(seconds=seconds)
+
+        def get_active_segment(self, window_id=None, initial_value=0):
+            '''
+            This returns the active segment number for the window with the window_id
+            :param window_id:
+            :return:
+            '''
+            # if there is no active_segment for the window, create one
+            # this will help us keep track of where we are with the cursor
+            if window_id not in self.active_segment:
+                # but start with 0, considering that it will be re-calculated below
+                self.active_segment[window_id] = initial_value
+
+            # same as above for the last_active_segment
+            if window_id not in self.last_active_segment:
+                # but start with 0, considering that it will be re-calculated below
+                self.last_active_segment[window_id] = initial_value
+
+            return self.active_segment[window_id]
+
+        def set_active_segment(self, window_id=None, text_element=None, line=None, line_calc=None):
+
+            # remove any active segment tags
+            text_element.tag_delete('l_active')
+
+            # count the number of lines in the text
+            text_num_lines = len(self.transcript_segments[window_id])
+
+            # initialize the active segment number
+            self.active_segment[window_id] = self.get_active_segment(window_id)
+
+            # interpret the line number correctly
+            if line is None and line_calc:
+                line = self.active_segment[window_id] + line_calc
+
+            # if passed line is lower than 1, go to the end of the transcript
+            if line < 1:
+                line = text_num_lines
+
+            # if the line is larger than the number of lines, go to the beginning of the transcript
+            elif line > text_num_lines:
+                line = 1
+
+            # first copy the active segment line number to the last active segment line number
+            self.last_active_segment[window_id] = self.active_segment[window_id]
+
+            # then update the active segment
+            self.active_segment[window_id] = line
+
+            # now tag the active segment
+            text_element.tag_add("l_active", "{}.0".format(line), "{}.end+1c".format(line))
+            # text_element.tag_config('l_active', foreground=self.toolkit_UI_obj.resolve_theme_colors['white'])
+
+            # add some nice colors
+            text_element.tag_config('l_active', foreground=self.toolkit_UI_obj.resolve_theme_colors['superblack'],
+                                    background=self.toolkit_UI_obj.resolve_theme_colors['normal'])
+
+            # also scroll the text element to the line
+            text_element.see(str(line) + ".0")
+
+        def clear_selection(self, window_id=None, text_element=None):
+            '''
+            This clears the segment selection for the said window
+            :param window_id:
+            :return:
+            '''
+
+            if window_id is None or text_element is None:
+                return False
+
+            self.selected_segments[window_id] = {}
+
+            self.selected_segments[window_id].clear()
+
+            text_element.tag_delete("l_selected")
+
+        def segment_to_selection(self, window_id=None, text_element=None, line=None):
+            '''
+            This either adds or removes a segment to a selection,
+            depending if it's already in the selection or not
+
+            :param window_id:
+            :param text_element:
+            :param line:
+            :return:
+            '''
+
+            if window_id is None or text_element is None or line is None:
+                return False
+
+            # if there is no selected_segments dict for the current window, create one
             if window_id not in self.selected_segments:
                 self.selected_segments[window_id] = {}
 
-            # is the current line in the selected segments?
-            if line_id in self.selected_segments[window_id]:
-                # if yes, remove it
-                del self.selected_segments[window_id][line_id]
+            # convert the line number to segment_index
+            segment_index = line-1
+
+            # if the segment is not in the transcript segments dict
+            if line in self.selected_segments[window_id]:
+                # remove it
+                del self.selected_segments[window_id][line]
+
+                # remove the tag on the text in the text element
+                text_element.tag_remove("l_selected", "{}.0".format(line), "{}.end+1c".format(line))
+
+            # otherwise add it
             else:
-                #otherwise add it
-                self.selected_segments[window_id][line_id] = self.transcript_segments[window_id][int(line)]
-            '''
+                self.selected_segments[window_id][line] = self.transcript_segments[window_id][segment_index]
 
-            # @todo
-            # then mark all the segments
-            text_element.tag_add("l_selected", "{}.0".format(line), "{}.end+1c".format(line))
-            text_element.tag_config('l_selected', background=self.toolkit_UI_obj.resolve_theme_colors['superblack'])
+                # tag the text on the text element
+                text_element.tag_add("l_selected", "{}.0".format(line), "{}.end+1c".format(line))
 
-            # print(self.selected_segments[window_id])
+                # raise the tag so we can see it above other tags
+                text_element.tag_raise("l_selected")
 
-            # print("you clicked line %s" % line)
-            # print(self.transcript_segments[window_id][int(line)-1])
+                # color the tag accordingly
+                text_element.tag_config('l_selected', foreground='blue',
+                                        background=self.toolkit_UI_obj.resolve_theme_colors['superblack'])
+
+            return True
+
 
     def __init__(self, toolkit_ops_obj=None, stAI=None, warn_message=None):
 
@@ -892,13 +1344,15 @@ class toolkit_UI:
             # THE MAIN TEXT ELEMENT
             # create a frame for the text element
             text_form_frame = tk.Frame(self.windows[t_window_id])
-            text_form_frame.pack(pady=50)
+            text_form_frame.pack(pady=50, expand=True, fill='both')
 
             # does the json file actually contain transcript segments generated by whisper?
             if 'segments' in transcription_json:
 
                 # set up the text element where we'll add the actual transcript
-                text = Text(text_form_frame, font=('Courier', 16), width=45, height=30, padx=5, pady=5, wrap=tk.WORD)
+                text = Text(text_form_frame, font=('Courier', 16), width=45, height=30, padx=5, pady=5, wrap=tk.WORD,
+                                                    background=self.resolve_theme_colors['black'],
+                                                    foreground=self.resolve_theme_colors['normal'])
 
                 # we'll need to count segments soon
                 segment_count = 0
@@ -941,12 +1395,12 @@ class toolkit_UI:
                         end_start_time = t_segment['start']
 
                         # this works if we're aiming to move away from line based start_end times
-                        tag_id = 'segment-' + str(segment_count)
-                        text.tag_add(tag_id, new_segment_start, new_segment_end)
-                        text.tag_config(tag_id)
-                        text.tag_bind(tag_id, "<Button-1>", lambda e,
-                                                                   segment_start_time=segment_start_time:
-                        toolkit_ops_obj.go_to_time(segment_start_time))
+                        #tag_id = 'segment-' + str(segment_count)
+                        #text.tag_add(tag_id, new_segment_start, new_segment_end)
+                        #text.tag_config(tag_id)
+                        #text.tag_bind(tag_id, "<Button-1>", lambda e,
+                        #                                           segment_start_time=segment_start_time:
+                        #                            toolkit_ops_obj.go_to_time(segment_start_time))
 
                         # bind CMD/CTRL+click events to the text:
                         # on click, select text
@@ -960,6 +1414,8 @@ class toolkit_UI:
 
                 # make the text read only
                 # and take into consideration the longest segment to adjust the width of the window
+                if longest_segment_num_char > 60:
+                    longest_segment_num_char = 60
                 text.config(state=DISABLED, width=longest_segment_num_char)
 
                 # set the top, in-between and bottom text spacing
@@ -972,17 +1428,40 @@ class toolkit_UI:
                 select_options = {'window_id': t_window_id, 'text_element': text}
 
                 # bind ; and ' to go to first frame and last frame of the selected text
-                # self.windows[t_window_id].bind("<Key-semicolon>", lambda e: self.t_edit_obj.select_text_lines(e, **select_options))
-                # self.windows[t_window_id].bind("<Key-apostrophe>", lambda e: self.t_edit_obj.select_text_lines(e, **select_options))
-                # self.windows[t_window_id].bind("<Up>", lambda e: self.t_edit_obj.select_text_lines(e, **select_options))
-                # self.windows[t_window_id].bind("<Down>", lambda e: self.t_edit_obj.select_text_lines(e, **select_options))
-                # self.windows[t_window_id].bind("<Shift-Up>", lambda e: self.t_edit_obj.select_text_lines(e, special_key='Shift', **select_options))
-                # self.windows[t_window_id].bind("<Shift-Down>", lambda e: self.t_edit_obj.select_text_lines(e, special_key='Shift', **select_options))
+                #self.windows[t_window_id].bind("<Key-semicolon>", lambda e: self.t_edit_obj.select_text_lines(e, **select_options))
+                #self.windows[t_window_id].bind("<Key-apostrophe>", lambda e: self.t_edit_obj.select_text_lines(e, **select_options))
+
+
+
+                #self.windows[t_window_id].bind("<Up>", lambda e: self.t_edit_obj.select_text_lines(e, **select_options))
+                #self.windows[t_window_id].bind("<Down>", lambda e: self.t_edit_obj.select_text_lines(e, **select_options))
+
+                # bind all key presses to transcription window actions
+                self.windows[t_window_id].bind("<KeyPress>",
+                                               lambda e:
+                                               self.t_edit_obj.transcription_window_keypress(event=e,
+                                                                                             **select_options))
+
+                # bind all mouse clicks on text
+                text.bind("<Button-1>", lambda e,
+                                               select_options=select_options:
+                                                    self.t_edit_obj.transcription_window_mouse(e,
+                                                                                               **select_options))
+
+                # bind CMD/CTRL + mouse Clicks to text
+                text.bind("<" + self.ctrl_cmd_bind + "-Button-1>",
+                          lambda e, select_options=select_options:
+                            self.t_edit_obj.transcription_window_mouse(e,
+                                                                       special_key='cmd',
+                                                                       **select_options))
+
+                #self.windows[t_window_id].bind("<Shift-Up>", lambda e: self.t_edit_obj.select_text_lines(e, special_key='Shift', **select_options))
+                #self.windows[t_window_id].bind("<Shift-Down>", lambda e: self.t_edit_obj.select_text_lines(e, special_key='Shift', **select_options))
                 # self.windows[t_window_id].bind("<" + self.ctrl_cmd_bind + "-Up>", lambda e: self.t_edit_obj.select_text_lines(e, special_key=self.ctrl_cmd_bind, **select_options))
                 # self.windows[t_window_id].bind("<" + self.ctrl_cmd_bind + "-Down>", lambda e: self.t_edit_obj.select_text_lines(e, special_key=self.ctrl_cmd_bind, **select_options))
 
                 # then show the text element
-                text.pack(anchor='w')
+                text.pack(anchor='w', expand=True, fill='both')
 
                 # create a footer frame that holds stuff on the bottom of the transcript window
                 footer_frame = tk.Frame(self.windows[t_window_id])
@@ -1012,6 +1491,11 @@ class toolkit_UI:
 
                 search_input.bind('<Return>', lambda e, text=text, t_window_id=t_window_id:
                 self.t_edit_obj.cycle_through_results(text_element=text, window_id=t_window_id))
+
+                search_input.bind('<FocusIn>', lambda e, t_window_id=t_window_id:
+                                            self.t_edit_obj.set_typing_in_window(e, t_window_id, typing=True))
+                search_input.bind('<FocusOut>', lambda e, t_window_id=t_window_id:
+                                            self.t_edit_obj.set_typing_in_window(e, t_window_id, typing=False))
 
                 # KEEP ON TOP BUTTON
                 on_top_button = tk.Button(header_frame, text="Keep on top")
@@ -1186,7 +1670,7 @@ class toolkit_UI:
             if window_id not in self.t_edit_obj.current_window_tc:
                 self.t_edit_obj.current_window_tc[window_id] = ''
 
-            # HOW WE TRANSLATE THE RESOLVE PLAYHEAD TO TRANSCRIPT LINES
+            # HOW WE CONVERT THE RESOLVE PLAYHEAD TO TRANSCRIPT LINES
 
             # only do this if the sync is on for this window
             # and if the timecode in resolve has changed compared to last time
@@ -1220,18 +1704,15 @@ class toolkit_UI:
 
                     # if the transcript timecode in seconds is between the start and the end of this line
                     if float(self.t_edit_obj.transcript_segments[window_id][num]['start']) <= transcript_sec \
-                            < float(self.t_edit_obj.transcript_segments[window_id][num]['end']):
+                            < float(self.t_edit_obj.transcript_segments[window_id][num]['end'])-0.01:
                         line = num + 1
 
-                        # get the line and char numbers based on the selected text element index
-                        update_attr['text'].tag_add("current_time", "{}.0".format(line), "{}.end+1c".format(line))
-
-                        update_attr['text'].see(str(line) + ".0")
+                        # set the line as the active segment on the timeline
+                        self.t_edit_obj.set_active_segment(window_id, update_attr['text'], line)
 
                     num = num + 1
 
-                update_attr['text'].tag_config('current_time', foreground=self.resolve_theme_colors['superblack'],
-                                               background=self.resolve_theme_colors['normal'])
+                update_attr['text'].tag_config('current_time', foreground=self.resolve_theme_colors['white'])
 
                 # highlight current line on transcript
                 # update_attr['text'].tag_add('current_time')
@@ -2361,7 +2842,7 @@ class ToolkitOps:
 
         # if there's no toolkit_UI_obj in the object or one hasn't been passed, abort
         if toolkit_UI_obj is None and self.toolkit_UI_obj is None:
-            print('No GUI available. Aborting.')
+            self.stAI.log_print('No GUI available. Aborting.', 'error')
             return False
         # if there was a toolkit_UI_obj passed, update the one in the object
         elif toolkit_UI_obj is not None:
@@ -2371,10 +2852,8 @@ class ToolkitOps:
         else:
             return True
 
-    def go_to_time(self, seconds=0):
-
+    def calculate_sec_to_resolve_timecode(self, seconds=0):
         global resolve
-
         if resolve:
 
             # poll resolve for some info
@@ -2401,6 +2880,17 @@ class ToolkitOps:
             # otherwise use the timeline start tc
             else:
                 new_timeline_tc = timeline_start_tc
+
+            return new_timeline_tc
+
+        else:
+            return False
+
+    def go_to_time(self, seconds=0):
+
+        if resolve:
+
+            new_timeline_tc = self.calculate_sec_to_resolve_timecode(seconds)
 
             # move playhead in resolve
             mots_resolve.set_resolve_tc(str(new_timeline_tc))
@@ -2561,7 +3051,8 @@ def execute_operation(operation, toolkit_UI_obj):
 
         # trigger warning if there is no current timeline
         if resolve_data['currentTimeline'] is None:
-            print('Timeline not available. Make sure that you\'ve opened a Timeline in Resolve.')
+            global stAI
+            stAI.print('Timeline not available. Make sure that you\'ve opened a Timeline in Resolve.')
             return False
 
         # @todo trigger error if the timeline is not opened or the clip is not available in the bin
@@ -2599,11 +3090,11 @@ def execute_operation(operation, toolkit_UI_obj):
                                                          + ", ".join(current_timeline_marker_colors))
         else:
             no_markers_alert = 'The timeline doesn\'t contain any markers'
-            print(no_markers_alert)
+            stAI.print(no_markers_alert, 'warn')
             return False
 
         if not marker_color:
-            print("User canceled render operation.")
+            #print("User canceled render operation.")
             return False
 
         if marker_color not in current_timeline_marker_colors:
@@ -2618,7 +3109,7 @@ def execute_operation(operation, toolkit_UI_obj):
         render_target_dir = toolkit_UI_obj.ask_for_target_dir()
 
         if not render_target_dir or render_target_dir == '':
-            print("User canceled render operation.")
+            #print("User canceled render operation.")
             return False
 
         if operation == 'render_markers_to_stills':

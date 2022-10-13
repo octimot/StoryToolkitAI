@@ -18,20 +18,20 @@ discussion for some other time.**
 - [x] Export of transcripts to multiple formats, including SRT
 - [x] Import of transcript SRT file directly into Resolve
 - [x] Transcription queuing to line up transcription jobs
-- [x] **Transcript Timeline Navigation** - click on a phrase to get the playhead in Resolve at the right timecode 
+- [x] **Transcript Timeline Navigation** - click or UP/DOWN on transcript moves the playhead in Resolve
 - [x] **Transcript Word Search** - allows you to find specific words or phrases in your transcripts
+- [x] **Mark** Resolve timelines using the phrases you select (see keyboard shortcuts below)
 - [x] Copy Markers between Resolve Timelines and Timeline Source Clip
 - [x] Render Resolve Markers to Stills or Clips
 - [X] Audio Files transcription even without Resolve installed on the machine
 
 ### Work in progress
-- [ ] **Mark In / Mark Out** directly from the tool to Resolve
 - [ ] **Global Search** to search words or phrases in all the project transcripts 
 - [ ] **Transcript Editing** from the tool
 - [ ] **Sliced Transcriptions** based on Resolve Duration Markers to transcribe only parts of the timeline
 - [ ] **Speaker Recognition**
 - [ ] **Integration with other AI / ML tools**
-- [ ] Plus more flashy features as clickbait to unrealistically raise expectations and destroy competition
+- [X] Plus more flashy features as clickbait to unrealistically raise expectations and destroy competition
 
 _The app is in this stage very raw and not polished at all, but we use it daily in our editing room. So we simply wanted
 to make it for free for anyone to use. It's not only out of sheer generosity, but also because we'd like to
@@ -172,6 +172,10 @@ Bad luck, but make sure that, in Davinci Resolve Preferences -> General, "Extern
 There seems to be a problem with the Resolve libraries on some Windows 10 machines, because either Windows sucks or we
 suck (definitely not us), but we're trying to find a fix.
 
+### Tool freezing during playback
+Currently, the tool gets stuck as it waits a reply from the Resolve API, while Resolve is playing back, but it gets
+un-stuck as soon as the playhead stops moving. This will be fixed in a future update soon.
+
 ### Please report any other issues
 As mentioned, the tool is in a super raw state of development. We use it every day in our editing workflow, but some 
 issues might escape us. Please report anything weird that you notice and we'll look into it.
@@ -194,7 +198,12 @@ Resolve. In a future update, this will also help the Global Search function know
 you can find the term you're looking for.
 
 ### Timeline Navigation via Transcript
-For now, clicking on the transcript segments (phrases) will simply move the playhead to the respective timecode.
+Clicking on the transcript segments (phrases) will move the playhead to the respective timecode in Resolve.
+UP/DOWN keys will also let you navigate between transcript phrases (see more transcription window shortcuts below)
+
+### Adding Markers to Timeline via Transcript
+You can now add markers that include the selected phrases in the transcript by pressing either M or SHIFT+M
+(see more shortcuts below)
 
 ### Resolve Playhead to Transcript Sync
 The tool highlights the transcript words at the current timecode in Resolve. To activate this function, simply press
@@ -229,6 +238,38 @@ opened timeline.
 ### Render Markers to Clips
 This will render to H.264 the entire duration of the markers of a certain color. Same as above, it only works for
 markers from the opened timeline.
+
+## Transcription Window Shortcuts:
+
+    Mouse Click    - move active segment on clicked text and move playhead to start of active segment
+
+    CMD/CTRL+Click - add clicked text to selection
+    
+    Up, Down keys  - move the cursor up and down on the transcript (we call it "active segment")
+
+    Semicolon (;)  - move playhead to start of active segment (or of selection)
+
+    Apostrophe (') - move playhead to end of active segment (or of selection)
+
+    V              - add active segment to selection
+
+    Shift+V        - deselect all
+
+    Shift+A        - create selection between the previously active and the currently active segment
+                     also works to create a selection for the last played segments in Resolve (if sync is active):
+                     for eg.: 
+                     press 'sync', click a phrase, press play in Resolve, stop, then press Shift+A in the tool
+
+    Shift+C        - copy transcript of active segment/selection with the timecode
+                     (taking into consideration the current timeline in resolve, if available)
+
+    m              - add duration markers between start and end of active segment (or for all selections)
+
+    Shift+M        - add duration marker as above, but with user prompt for the marker name
+
+    q              - close transcript window
+
+
 
 
 ---
