@@ -27,6 +27,7 @@ https://vimeo.com/759962195/dee07a067a
 - [X] Audio Files transcription even without Resolve installed on the machine
 
 ### Work in progress
+- [ ] **Transcript Segment Groups** to select and add phrases to groups that can be recalled later 
 - [ ] **Global Search** to search words or phrases in all the project transcripts 
 - [ ] **Transcript Editing** from the tool
 - [ ] **Sliced Transcriptions** based on Resolve Duration Markers to transcribe only parts of the timeline
@@ -34,12 +35,11 @@ https://vimeo.com/759962195/dee07a067a
 - [ ] **Integration with other AI / ML tools**
 - [X] Plus more flashy features as clickbait to unrealistically raise expectations and destroy competition
 
-_The app is in this stage very raw and not polished at all, but we use it daily in our editing room. So we simply wanted
-to make it for free for anyone to use. It's not only out of sheer generosity, but also because we'd like to
-change how people approach editing by using AI._
+_The app is in this stage very raw and not polished at all, but we use it daily in our editing room. It's not for free
+only out of sheer generosity, but also because we'd like to change how people approach editing by using AI._
 
 Ideally, it should evolve by incorporating other machine learning models such as CLIP and GPT-3 to assist editors in
-their work, or rather to make them obsolete (that would be cool, right?).
+their work, or rather to make editors obsolete (that would be cool, right?).
 
 ### Is it really completely free?
 Yes, the tool runs locally like butter and there's no need for any additional account to transcribe, translate to
@@ -56,12 +56,14 @@ languages**. More technical blabla on the
 [OpenAI Whisper Github](https://github.com/openai/whisper/blob/main/model-card.md) or the 
 [Scientific Paper](https://cdn.openai.com/papers/whisper.pdf), for hardcore enthusiasts. 
 
-The sorcery takes over even for the most difficult noisy low bitrate stuff you can feed it - like recordings of your
+The magic takes over even for the most difficult noisy low bitrate stuff you can feed it - like recordings of your
 assistant editor complaining about you without realizing that their back pocket is sending voice messages to random
-people.
+people from their contacts list.
 
-The results are almost perfect for at least 10 languages, but this is a machine doing transcriptions for you. Sometimes
-it does hallucinate, for example, on longer periods of silence in your audio...
+The results are almost perfect for at least 10 languages, but remember, this is a machine doing transcriptions for you. 
+And machines, just like unpaid interns have dreams too... For example, on longer periods of silence in your audio, you
+may expect to see words that aren't there. Also, for uncommon names, it might give you nicknames instead, just to
+mess with your feelings.
 
 ### Transcription Speed
 We used the expression "runs like butter" above. There's one thing you need to know about butter - it's good when it's
@@ -177,6 +179,15 @@ suck (definitely not us), but we're trying to find a fix.
 Currently, the tool gets stuck as it waits a reply from the Resolve API, while Resolve is playing back, but it gets
 un-stuck as soon as the playhead stops moving. This will be fixed in a future update soon.
 
+### Hallucinations during audio silence
+In some cases, on chunks of audio that are silent, Whisper sometimes writes phrases that aren't there. This is a known
+issue, and we'll code a workaround soon.
+
+### Timecode issues with 23.976 timelines
+A bug in the Resolve API which sometimes reports 23.976 fps as 23fps creates a bunch of issues mainly for operations
+that use timecode (transcript to playhead navigation, adding markers at the precise frame etc.). Unfortunately, this
+can only be fixed by Blackmagic within Resolve itself (fingers crossed for an update?)
+
 ### Please report any other issues
 As mentioned, the tool is in a super raw state of development. We use it every day in our editing workflow, but some 
 issues might escape us. Please report anything weird that you notice and we'll look into it.
@@ -269,6 +280,12 @@ markers from the opened timeline.
     Shift+M        - add duration marker as above, but with user prompt for the marker name
 
     q              - close transcript window
+
+    Shift+L        - link transcription to the current timeline (if available)
+    
+    s              - enable sync
+    
+    Tab            - cycle between search and transcript navigation
 
 
 

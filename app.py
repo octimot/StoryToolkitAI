@@ -65,9 +65,19 @@ class toolkit_UI:
             # we keep track if we have typing going on in any of the windows
             self.typing = {}
 
+            # to know which window works with which transcription_file_path
+            self.transcription_file_paths = {}
+
             # to store the transcript segments of each window,
             # including their start + end times and who knows what else?!
+            # here, they are simply ordered in their line orders, where the index is line_no-1:
+            #               self.transcript_segments[window_id][index] = segment_dict
             self.transcript_segments = {}
+
+            # we need this to have a reference between
+            # the line number of a segment within the transcript and the id of that segment in the transcription file
+            # so the dict should look like: self.transcript_segments_ids[window_id][segment_line_no] = segment_id
+            self.transcript_segments_ids = {}
 
             # all the selected transcript segments of each window
             # the selected segments dict will use the text element line number as an index, for eg:
@@ -119,6 +129,12 @@ class toolkit_UI:
 
             if button is None or window_id is None:
                 return False
+
+            self.sync_with_playhead_update(window_id, sync)
+
+            return sync
+
+        def sync_with_playhead_update(self, window_id, sync=None):
 
             if window_id not in self.sync_with_playhead:
                 self.sync_with_playhead[window_id] = False
@@ -287,10 +303,10 @@ class toolkit_UI:
             if self.get_typing_in_window(attributes['window_id']):
                 return
 
-            # print(event)
-
             # for now, simply pass to select text lines if it matches one of these keys
-            if event.keysym in ['Up', 'Down', 'v', 'V', 'A', 'i', 'o', 'm', 'M', 'C', 'q', 'apostrophe', 'semicolon']:
+            if event.keysym in ['Up', 'Down', 'v', 'V', 'A', 'i', 'o', 'm', 'M', 'C', 'q', 's', 'L',
+                                'g',
+                                'apostrophe', 'semicolon']:
                 self.segment_actions(event, **attributes)
 
         def transcription_window_mouse(self, event=None, **attributes):
@@ -336,6 +352,9 @@ class toolkit_UI:
             # m              - add duration markers between start and end of active segment (or for all selections)
             # Shift+M        - add duration marker as above, but with user prompt for the marker name
             # q              - close transcript window
+            # Shift+L        - link transcription to the current timeline (if available)
+            # s              - enable sync
+            # Tab            - cycle between search and transcript navigation
 
 
              # initialize the active segment number
@@ -428,13 +447,15 @@ class toolkit_UI:
 
             # Shift+C key event
             if event.keysym == 'C':
-
-                if window_id in self.active_segment:
-                    self.copy_segments_or_selection(window_id)
+                # copy the text content to clipboard
+                self.copy_segments_or_selection(window_id)
 
 
             # m key event
             if event.keysym == 'm' or event.keysym == 'M':
+
+                # add segment based markers
+
                 global resolve
                 global current_timeline
 
@@ -522,7 +543,22 @@ class toolkit_UI:
 
             # q key event
             if event.keysym == 'q':
+                # close transcription window
                 self.toolkit_UI_obj.destroy_window_(self.toolkit_UI_obj.windows, window_id=window_id)
+
+            # Shift+L key event
+            if event.keysym == 'L':
+                # link transcription to file
+                print('linking')
+                self.toolkit_ops_obj.link_transcription_to_timeline(self.transcription_file_paths[window_id])
+
+            # s key event
+            if event.keysym == 's':
+                self.sync_with_playhead_update(window_id=window_id)
+
+            # g key event
+            if event.keysym == 'g':
+                self.group_selected(window_id=window_id)
 
         def copy_segments_or_selection(self, window_id, add_to_clipboard=True):
             '''
@@ -614,8 +650,6 @@ class toolkit_UI:
                     return text, start_sec, end_sec
 
             return False
-
-
 
         def go_to_selected_time(self, window_id=None, position=None, ignore_selection=False):
 
@@ -785,6 +819,61 @@ class toolkit_UI:
 
             return True
 
+        def segment_line_to_id(self, window_id, line):
+
+            # is there a reference to this current window id?
+            # normally this should have been created during the opening of the transcription window
+            if window_id in self.transcript_segments_ids:
+
+                # is there a reference to the line number?
+                if line in self.transcript_segments_ids[window_id]:
+
+                    # then return the stored segment id
+                    return self.transcript_segments_ids[window_id][line]
+
+            # if all fails return None
+            return None
+
+        def segment_id_to_line(self, window_id, segment_id):
+
+            # is there a reference to this current window id?
+            # normally this should have been created during the opening of the transcription window
+            if window_id in self.transcript_segments_ids:
+
+                # go through all the ids and return the line number
+                try:
+                    line = list(self.transcript_segments_ids[window_id].keys()) \
+                                [list(self.transcript_segments_ids[window_id].values()).index(segment_id)]
+
+                    # if the line was found, return it
+                    return line
+
+                # if the line wasn't found return None
+                except ValueError:
+                    return None
+
+
+            # if all fails return None
+            return None
+
+        def group_selected(self, window_id):
+
+            # WORK IN PROGRESS
+
+            #print(self.transcript_segments_ids[window_id])
+
+            #print(self.segment_id_to_line(window_id, 20))
+
+            # if we have some selected segments, group them
+            if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0:
+
+                # take all the segments and add them to the group
+                for selected_segment in self.selected_segments[window_id]:
+
+                    # @todo add segment id to group
+                    print(self.selected_segments[window_id][selected_segment])
+
+                    # save group contents to transcription json file
 
     def __init__(self, toolkit_ops_obj=None, stAI=None, warn_message=None):
 
@@ -1337,6 +1426,12 @@ class toolkit_UI:
         # create a window for the transcript if one doesn't already exist
         if self._create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title, resizable=True):
 
+            # add the path to the transcription_file_paths dict in case we need it later
+            self.t_edit_obj.transcription_file_paths[t_window_id] = transcription_file_path
+
+            # initialize the transcript_segments_ids for this window
+            self.t_edit_obj.transcript_segments_ids[t_window_id] = {}
+
             # create a header frame to hold stuff above the transcript text
             header_frame = tk.Frame(self.windows[t_window_id])
             header_frame.place(anchor='nw', relwidth=1)
@@ -1364,8 +1459,22 @@ class toolkit_UI:
                 # this should contain all the segments in the order they appear
                 self.t_edit_obj.transcript_segments[t_window_id] = []
 
+                # initialize line numbers
+                line = 0
+
                 # take each transcript segment
                 for t_segment in transcription_json['segments']:
+
+                    # start counting the lines
+                    line = line+1
+
+                    # add a reference for its id
+                    if 'id' in t_segment:
+                        self.t_edit_obj.transcript_segments_ids[t_window_id][line] = t_segment['id']
+                    # throw an error otherwise, it might be a problem on the long run
+                    else:
+                        self.stAI.log_print('Line {} in {} doesn\'t have an id.'.format(line, transcription_file_path),
+                                            'error')
 
                     # if there is a text element, simply insert it in the window
                     if 'text' in t_segment:
@@ -1498,11 +1607,11 @@ class toolkit_UI:
                                             self.t_edit_obj.set_typing_in_window(e, t_window_id, typing=False))
 
                 # KEEP ON TOP BUTTON
-                on_top_button = tk.Button(header_frame, text="Keep on top")
+                on_top_button = tk.Button(header_frame, text="Keep on top", takefocus=False)
                 # add the command function here
                 on_top_button.config(command=lambda on_top_button=on_top_button, t_window_id=t_window_id:
-                self.window_on_top_button(button=on_top_button, window_id=t_window_id)
-                                     )
+                                            self.window_on_top_button(button=on_top_button, window_id=t_window_id)
+                                                                 )
                 on_top_button.pack(side=tk.RIGHT, **self.paddings, anchor='e')
 
                 # keep the transcript window on top or not according to the config
@@ -1517,6 +1626,7 @@ class toolkit_UI:
                 if srt_file_path:
                     import_srt_button = tk.Button(footer_frame,
                                                   text="Import SRT into Bin",
+                                                  takefocus=False,
                                                   command=lambda: mots_resolve.import_media(srt_file_path)
                                                   )
                     import_srt_button.pack(side=tk.RIGHT, **self.paddings, anchor='e')
@@ -1524,12 +1634,12 @@ class toolkit_UI:
 
                 # SYNC BUTTON
 
-                sync_button = tk.Button(header_frame)
-                sync_button.config(command=lambda window_id=t_window_id:
-                self.t_edit_obj.sync_with_playhead_button(
-                    button=link_button,
-                    window_id=t_window_id)
-                                   )
+                sync_button = tk.Button(header_frame, takefocus=False)
+                sync_button.config(command=lambda sync_button=sync_button, window_id=t_window_id:
+                                                self.t_edit_obj.sync_with_playhead_button(
+                                                    button=sync_button,
+                                                    window_id=t_window_id)
+                                                                   )
 
                 # LINK TO TIMELINE BUTTON
 
@@ -1539,11 +1649,12 @@ class toolkit_UI:
 
                 # prepare an empty link button for now, and only show it when/if resolve starts
                 link_button = tk.Button(footer_frame)
-                link_button.config(command=lambda transcription_file_path=transcription_file_path:
-                self.t_edit_obj.link_to_timeline_button(
-                    button=link_button,
-                    transcription_file_path=transcription_file_path)
-                                   )
+                link_button.config(command=lambda link_button=link_button,
+                                                  transcription_file_path=transcription_file_path:
+                                            self.t_edit_obj.link_to_timeline_button(
+                                                button=link_button,
+                                                transcription_file_path=transcription_file_path)
+                                                               )
 
                 # RE-TRANSCRIBE BUTTON
 
@@ -1670,7 +1781,7 @@ class toolkit_UI:
             if window_id not in self.t_edit_obj.current_window_tc:
                 self.t_edit_obj.current_window_tc[window_id] = ''
 
-            # HOW WE CONVERT THE RESOLVE PLAYHEAD TO TRANSCRIPT LINES
+            # HOW WE CONVERT THE RESOLVE PLAYHEAD TIMECODE TO TRANSCRIPT LINES
 
             # only do this if the sync is on for this window
             # and if the timecode in resolve has changed compared to last time
@@ -2768,7 +2879,6 @@ class ToolkitOps:
                 # and use it as timeline name
                 timeline_name = current_timeline['name']
 
-                self.stAI.log_print('Linking to current timeline: {}'.format(timeline_name), 'info')
 
             else:
                 self.stAI.log_print('No timeline was passed. Unable to link transcript to timeline.', 'error')
@@ -2804,12 +2914,16 @@ class ToolkitOps:
         # now create the link if we should
         if link:
 
+            self.stAI.log_print('Linking to current timeline: {}'.format(timeline_name), 'info')
+
             # but only create it if it isn't in there yet
             if transcription_file_path not in timeline_transcriptions:
                 timeline_transcriptions.append(transcription_file_path)
 
         # or remove the link if we shouldn't
         else:
+            self.stAI.log_print('Unlinking from current timeline: {}'.format(timeline_name), 'info')
+
             # but only remove it if it is in there currently
             if transcription_file_path in timeline_transcriptions:
                 timeline_transcriptions.remove(transcription_file_path)
