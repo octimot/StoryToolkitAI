@@ -28,7 +28,7 @@ https://vimeo.com/759962195/dee07a067a
 
 ### Work in progress
 - [ ] **Transcript Segment Groups** to select and add phrases to groups that can be recalled later 
-- [ ] **Global Search** to search words or phrases in all the project transcripts 
+- [ ] **Global Semantic Search** to search stuff in all the project transcripts 
 - [ ] **Transcript Editing** from the tool
 - [ ] **Sliced Transcriptions** based on Resolve Duration Markers to transcribe only parts of the timeline
 - [ ] **Speaker Recognition**
@@ -170,6 +170,7 @@ average, don't despair, it's better to be prepared than sorry._
 # Known issues
 ### If the tool doesn't connect with Resolve:
 Bad luck, but make sure that, in Davinci Resolve Preferences -> General, "External Scripting using" is set to Local
+Again, this only works with Resolve Studio and not the free version of Resolve (not that we know of)
 
 ### Windows issues
 There seems to be a problem with the Resolve libraries on some Windows 10 machines, because either Windows sucks or we
