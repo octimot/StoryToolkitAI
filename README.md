@@ -273,12 +273,14 @@ markers from the opened timeline.
                      for eg.: 
                      press 'sync', click a phrase, press play in Resolve, stop, then press Shift+A in the tool
 
-    Shift+C        - copy transcript of active segment/selection with the timecode
-                     (taking into consideration the current timeline in resolve, if available)
+    Shift+C        - copy transcript of active segment/selection with timecodes at the beginning of each block of text
+                     (or transcript seconds, if resolve is not available)
 
-    m              - add duration markers between start and end of active segment (or for all selections)
+    m              - add duration markers for the active segment/selection
+                     in case there are gaps between the text segments, 
+                     the tool will create a marker for each block of uninterrupted text
 
-    Shift+M        - add duration marker as above, but with user prompt for the marker name
+    Shift+M        - add duration markers as above, but with user prompt for the marker name
 
     q              - close transcript window
 
@@ -287,7 +289,6 @@ markers from the opened timeline.
     s              - enable sync
     
     Tab            - cycle between search and transcript navigation
-
 
 
 

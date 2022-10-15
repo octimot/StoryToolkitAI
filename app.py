@@ -341,16 +341,18 @@ class toolkit_UI:
             #
             # KEYS
             # Up, Down keys  - move the cursor up and down on the transcript (we call it "active segment")
-            # Semicolon      - move playhead to start of active segment (or of selection)
-            # Apostrophe     - move playhead to end of active segment (or of selection)
+            # Semicolon      - move playhead to start of active segment/selection
+            # Apostrophe     - move playhead to end of active segment/selection
             # V              - add active segment to selection
             # Shift+V        - deselect all
             # Shift+A        - create selection between the previously active and the currently active segment
             #                   also works to create a selection for the last played segments (if sync is active)
-            # Shift+C        - copy transcript of active segment/selection with the timecode
-            #                       (taking into consideration the current timeline in resolve if available)
-            # m              - add duration markers between start and end of active segment (or for all selections)
-            # Shift+M        - add duration marker as above, but with user prompt for the marker name
+            # Shift+C        - copy transcript of active segment/selection with timecodes at the beginning
+            #                  of each block of text (or transcript seconds, if resolve is not available)
+            # m              - add duration markers for the active segment/selection
+            #                  in case there are gaps between the text segments,
+            #                  the tool will create a marker for each block of uninterrupted text
+            # Shift+M        - add duration markers as above, but with user prompt for the marker name
             # q              - close transcript window
             # Shift+L        - link transcription to the current timeline (if available)
             # s              - enable sync
@@ -448,98 +450,129 @@ class toolkit_UI:
             # Shift+C key event
             if event.keysym == 'C':
                 # copy the text content to clipboard
-                self.copy_segments_or_selection(window_id)
+                self.get_segments_or_selection(window_id, add_to_clipboard=True, split_by='index')
 
 
             # m key event
             if event.keysym == 'm' or event.keysym == 'M':
+
+                print('Special Key:', special_key)
 
                 # add segment based markers
 
                 global resolve
                 global current_timeline
 
+                # this only works if resolve is connected
                 if resolve and 'name' in current_timeline:
 
                     # first get the selected (or active) text from the transcript
-                    # including the start timecode and end timecodes
-                    text, start_tc, end_tc = self.copy_segments_or_selection(window_id, add_to_clipboard=False)
+                    # this should return a list of all the text chunks, the full text
+                    #   and the start and end times of the entire text
+                    text, full_text, start_sec, end_sec = \
+                        self.get_segments_or_selection(window_id, add_to_clipboard=False,
+                                                       split_by='index', timecodes=True)
 
-                    # calculate the duration of the marker (these should be Timecode objects)
-                    marker_duration_tc = end_tc-start_tc
+                    # now, take care of the marker name
+                    marker_name = False
 
-                    # calculate the start timecode of the timeline (simply use second 0 for the conversion)
-                    timeline_start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(0)
-
-                    # now subtract the start timecode from the start_tc to get the marker index
-                    # but only if the start_tc is larger than the timeline_start_tc
-                    if start_tc > timeline_start_tc:
-                        start_tc_zero = start_tc-timeline_start_tc
-                        marker_index = start_tc_zero.frames
-                    else:
-                        marker_index = 1
-
-                    # check if there's another marker at the exact same index
-                    index_blocked = True
-                    while index_blocked:
-
-                        if 'markers' in current_timeline and marker_index in current_timeline['markers']:
-
-                            # if the duration isn't under a frame:
-                            if marker_duration_tc.frames <= 1:
-                                self.notify_via_messagebox(title='Cannot add marker',
-                                                           message='Not enough space to add marker on timeline.',
-                                                           type='warn'
-                                                           )
-                                return False
-
-                            # notify the user that the index is blocked by another marker
-                            add_frame = messagebox.askyesno(title='Cannot add marker',
-                                                message="Another marker exists at the exact same timecode.\n\n"
-                                                        "Do you want to place the new marker one frame later?")
-
-                            # if the user wants to move this marker one frame to the right, be it
-                            if add_frame:
-                                marker_index = marker_index+1
-
-                                # but this means that the duration should be one frame shorter
-                                marker_duration_tc.frames = marker_duration_tc.frames-1
-                            else:
-                                return False
-
-                        else:
-                            index_blocked = False
-
-                    marker_data = {}
-                    marker_data[marker_index] = {}
-
-                    # choose the marker color from Resolve
-                    marker_data[marker_index]['color'] = self.stAI.get_app_setting('default_marker_color',
-                                                                                     default_if_none='Blue')
-
-                    # declare this false to pick it up after
-                    marker_data[marker_index]['name'] = False
-
-                    # if Shift+M was pressed, prompt the user for the name
+                    # if Shift+M was pressed, prompt the user for the marker name
                     if event.keysym == 'M':
-                        marker_data[marker_index]['name'] = simpledialog.askstring(title="Markers Name",
-                                                                                     prompt="Marker Name:")
+
+                        # @todo this doesn't show up on top of everything else if other windows have 'keep on top'
+                        marker_name = simpledialog.askstring(title="Markers Name", prompt="Marker Name:")
 
                     # if we still don't have a marker name
-                    if not marker_data[marker_index]['name'] or marker_data[marker_index]['name'] == '':
+                    if not marker_name or marker_name == '':
                         # use a generic name which the user will most likely change afterwards
-                        marker_data[marker_index]['name'] = 'Transcript Marker'
+                        marker_name = 'Transcript Marker'
 
-                    # add the text to the marker data
-                    marker_data[marker_index]['note'] = text
+                    # calculate the start timecode of the timeline (simply use second 0 for the conversion)
+                    # we will use this to calculate the text_chunk durations
+                    timeline_start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(0)
 
-                    # the marker duration needs to be in frames
-                    marker_data[marker_index]['duration'] = marker_duration_tc.frames
+                    # now take all the text chunks
+                    for text_chunk in text:
 
-                    # no need for custom data
-                    marker_data[marker_index]['customData'] = ''
+                        # calculate the end timecodes for each text chunk
+                        end_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(text_chunk['end'])
 
-                    mots_resolve.add_timeline_markers(current_timeline['name'], marker_data, False)
+                        # get the start_tc from the text_chunk but place it back into a Timecode object
+                        # using the timeline framerate
+                        start_tc = Timecode(timeline_start_tc.framerate, text_chunk['start_tc'])
+
+                        # and subtract the end timecode from the start_tc of the text_chunk
+                        # to get the marker duration (still timecode object for now)
+                        # the start_tc of the text_chunk should be already in the text list
+                        marker_duration_tc = end_tc-start_tc
+
+                        # in Resolve, marker indexes are the number of frames from the beginning of the timeline
+                        # so in order to get the marker index, we need to subtract the timeline_start_tc from start_tc
+
+                        # but only if the start_tc is larger than the timeline_start_tc so we don't get a
+                        # Timecode class error
+                        if start_tc > timeline_start_tc:
+                            start_tc_zero = start_tc-timeline_start_tc
+                            marker_index = start_tc_zero.frames
+
+                        # if not consider that we are at frame 1
+                        else:
+                            marker_index = 1
+
+                        # check if there's another marker at the exact same index
+                        index_blocked = True
+                        while index_blocked:
+
+                            if 'markers' in current_timeline and marker_index in current_timeline['markers']:
+
+                                # give up if the duration is under a frame:
+                                if marker_duration_tc.frames <= 1:
+                                    self.notify_via_messagebox(title='Cannot add marker',
+                                                               message='Not enough space to add marker on timeline.',
+                                                               type='warn'
+                                                               )
+                                    return False
+
+                                # notify the user that the index is blocked by another marker
+                                add_frame = messagebox.askyesno(title='Cannot add marker',
+                                                    message="Another marker exists at {}.\n\n"
+                                                            "Do you want to place the new marker one frame later?"
+                                                                .format(start_tc))
+
+                                # if the user wants to move this marker one frame to the right, be it
+                                if add_frame:
+                                    start_tc.frames = start_tc.frames+1
+                                    marker_index = marker_index+1
+
+                                    # but this means that the duration should be one frame shorter
+                                    marker_duration_tc.frames = marker_duration_tc.frames-1
+                                else:
+                                    return False
+
+                            else:
+                                index_blocked = False
+
+                        marker_data = {}
+                        marker_data[marker_index] = {}
+
+                        # the name of the marker
+                        marker_data[marker_index]['name'] = marker_name
+
+                        # choose the marker color from Resolve
+                        marker_data[marker_index]['color'] = self.stAI.get_app_setting('default_marker_color',
+                                                                                         default_if_none='Blue')
+
+                        # add the text to the marker data
+                        marker_data[marker_index]['note'] = text_chunk['text']
+
+                        # the marker duration needs to be in frames
+                        marker_data[marker_index]['duration'] = marker_duration_tc.frames
+
+                        # no need for custom data
+                        marker_data[marker_index]['customData'] = ''
+
+                        # pass the marker add request to resolve
+                        mots_resolve.add_timeline_markers(current_timeline['name'], marker_data, False)
 
             # q key event
             if event.keysym == 'q':
@@ -560,47 +593,150 @@ class toolkit_UI:
             if event.keysym == 'g':
                 self.group_selected(window_id=window_id)
 
-        def copy_segments_or_selection(self, window_id, add_to_clipboard=True):
+        def get_segments_or_selection(self, window_id, add_to_clipboard=False, split_by=None, timecodes=True):
             '''
             Used to extract the text from either the active segment or from the selection
             Will return the text, and the start and end times
+
+            If the split_by parameter is 'index', the text will be split into chunks of text that
+            are next to each other in the main transcript_segments[window_id] list.
+
+            If the split_by parameter is 'time', the text will be split into chunks of text that
+            have no time gaps between them.
+
+            If timecodes is true, the return will also include the text chunks start and end timecodes
+            (if Resolve is available)
+
+            If add_to_clipboard is True, the function copies the full_text to the clipboard
+
             :param window_id:
-            :return: text, start, end
+            :param add_to_clipboard:
+            :param split_by: None, 'index' or 'time'
+            :param timecodes
+            :return:
             '''
 
-            text = ''
+            # the full text string
+            full_text = ''
+
+            # the return text list
+            text = [{}]
+
+            # the start and end times of the entire selection
             start_sec = None
             end_sec = None
+
+            # get the start timecode from Resolve
+            if timecodes:
+                timeline_start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(0)
+
+                # if no timecode was received it probably means Resolve is disconnected so disable timecodes
+                if not timeline_start_tc:
+                    timecodes = False
 
             # if we have some selected segments, use their start and end times
             if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0:
 
                 start_segment = None
                 end_segment = None
+                start_sec = 0
+                end_sec = 0
 
-                # go though all the selected_segments and get the lowest start time and the highest end time
-                # (we need to do this so that we get the text in order)
-                for segment_index in self.selected_segments[window_id]:
+                from operator import itemgetter
 
-                    # get the index time of first selected segment
-                    if start_sec is None \
-                            or self.selected_segments[window_id][segment_index]['start'] < start_sec:
-                        start_segment = segment_index
-                        start_sec = self.selected_segments[window_id][segment_index]['start']
+                # first sort the selected segments by start time
+                # (but we are losing the line numbers which are normally in the dict keys!)
+                sorted_selected_segments = sorted(self.selected_segments[window_id].values(), key=itemgetter('start'))
 
-                    # get the index of the last selected segment
-                    if end_sec is None \
-                            or self.selected_segments[window_id][segment_index]['end'] > end_sec:
-                        end_segment = segment_index
-                        end_sec = self.selected_segments[window_id][segment_index]['end']
+                # use this later to see where the selected_segment is in the original transcript
+                transcript_segment_index = 0
+                prev_transcript_segment_index = None
+                prev_segment_end_time = None
 
-                # go through all the segments, starting with the first
-                for n in range(start_segment-1, end_segment):
-                    # and add their text to the text variable
-                    text = text+self.transcript_segments[window_id][n]['text'].strip()+'\n'
+                # keep track of text chunks in case the split by parameter was passed
+                current_chunk_num = 0
+
+                # add each text
+                for selected_segment in sorted_selected_segments:
+
+                    # see where this selected_segment is in the original transcript
+                    transcript_segment_index = self.transcript_segments[window_id].index(selected_segment)
+
+                    if split_by == 'index':
+
+                        # assign a value if this is the first transcript_segment_index of this iteration
+                        if prev_transcript_segment_index is None:
+                            prev_transcript_segment_index = transcript_segment_index
+
+                        # if the segment is not right after the previous segment that we processed
+                        # it means that there are other segments between them which haven't been selected
+                        elif prev_transcript_segment_index+1 != transcript_segment_index:
+                            current_chunk_num = current_chunk_num+1
+                            text.append({})
+
+                            # show that there might be missing text from the transcription
+                            full_text = full_text+'\n[...]\n'
+
+                    if split_by == 'time':
+
+                        # assign the end time of the first selected segment
+                        if prev_segment_end_time is None:
+                            prev_segment_end_time = selected_segment['end']
+
+                        # if the start time of the current segment
+                        # doesn't match with the end time of the previous segment
+                        elif selected_segment['start'] != prev_segment_end_time:
+                            current_chunk_num = current_chunk_num+1
+                            text.append({})
+
+                            # show that there might be missing text from the transcription
+                            full_text = full_text+'\n[...]\n'
+
+                    # add the current segment text to the current text chunk
+                    text[current_chunk_num]['text'] = \
+                        text[current_chunk_num]['text']+'\n'+selected_segment['text'].strip() \
+                        if 'text' in text[current_chunk_num] else selected_segment['text']
+
+                    # add the start time to the current text chunk
+                    # but only for the first segment of this text chunk
+                    if 'start' not in text[current_chunk_num]:
+                        text[current_chunk_num]['start'] = selected_segment['start']
+
+                        # also calculate the start timecode of this text chunk (only if Resolve available)
+                        # the end timecode isn't needed at this point, so no sense in wasting resources
+                        if timecodes:
+
+                            # init the segment start timecode object
+                            # but only if the start seconds are larger than 0
+                            if selected_segment['start'] > 0:
+                                segment_start_timecode = Timecode(timeline_start_tc.framerate,
+                                                                  start_seconds=selected_segment['start'])
+
+                                # factor in the timeline start tc and use it for this chunk
+                                text[current_chunk_num]['start_tc'] = str(timeline_start_tc+segment_start_timecode)
+
+                            # otherwise use the timeline_start_timecode
+                            else:
+                                text[current_chunk_num]['start_tc'] = str(timeline_start_tc)
+
+                            # add it to the beginning of the text
+                            text[current_chunk_num]['text'] = \
+                                text[current_chunk_num]['start_tc']+':\n'+text[current_chunk_num]['text'].strip()
+
+                            # add it to the full text body
+                            full_text = full_text+'\n'+text[current_chunk_num]['start_tc']+':\n'
+
+                    # add the end time of the current text chunk
+                    text[current_chunk_num]['end'] = selected_segment['end']
+
+                    # add the segment text to the full text variable
+                    full_text = (full_text+selected_segment['text'].strip()+'\n')
+
+                    # remember the index for the next iteration
+                    prev_transcript_segment_index = transcript_segment_index
 
             # if there are no selected segments on this window
-            # use the active segment
+            # get the text of the active segment
             else:
                 # if there is no active_segment for the window, create one
                 if window_id not in self.active_segment:
@@ -612,44 +748,43 @@ class toolkit_UI:
                 # we need to convert the line number to the segment_index used in the transcript_segments list
                 segment_index = line - 1
 
-                # get the start and end times from the active segment
-                text = self.transcript_segments[window_id][segment_index]['text']
+                # get the text form the active segment
+                full_text = self.transcript_segments[window_id][segment_index]['text'].strip()
 
+                # get the start and end times from the active segment
                 start_sec = self.transcript_segments[window_id][segment_index]['start']
                 end_sec = self.transcript_segments[window_id][segment_index]['end']
 
+                if timecodes:
+                    start_seconds = start_sec if int(start_sec) > 0 else 0.01
 
-            if start_sec is not None:
-                # now calculate the timecodes
-                start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(float(start_sec))
+                    # init the segment start timecode object
+                    # but only if the start seconds are larger than 0
+                    if start_sec > 0:
+                        segment_start_timecode = Timecode(timeline_start_tc.framerate, start_seconds=start_sec)
 
-                # if a valid timecode was passed
-                if start_tc:
-                    # add it to the text
-                    text = str(start_tc) + ':\n'+text
+                        # factor in the timeline start tc and use it for this chunk
+                        start_tc = str(timeline_start_tc + segment_start_timecode)
 
-                    # but calculate the end_tc too
-                    end_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(float(end_sec))
+                    # otherwise use the timeline_start_timecode
+                    else:
+                        start_tc = str(timeline_start_tc)
 
-                    # add the text to the clipboard if necessary
-                    if add_to_clipboard:
-                        self.root.clipboard_clear()
-                        self.root.clipboard_append(text.strip())
+                    # add it to the full text body
+                    full_text = start_tc+':\n'+full_text
 
-                    return text, start_tc, end_tc
+                # add this to the return list
+                text = [{'text': full_text.strip(), 'start': start_sec, 'end': end_sec, 'start_tc': start_tc}]
 
-                # otherwise use the seconds value from the transcription
-                else:
-                    text = str(start_sec) + ' seconds:\n'+text
+            if add_to_clipboard:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(full_text.strip())
 
-                    # add the text to the clipboard if necessary
-                    if add_to_clipboard:
-                        self.root.clipboard_clear()
-                        self.root.clipboard_append(text.strip())
+            # now get the start_sec and the end_sec for the whole text
+            start_sec = text[0]['start']
+            end_sec = text[-1]['end']
 
-                    return text, start_sec, end_sec
-
-            return False
+            return text, full_text, start_sec, end_sec
 
         def go_to_selected_time(self, window_id=None, position=None, ignore_selection=False):
 
@@ -1057,12 +1192,20 @@ class toolkit_UI:
             # hide resolve related buttons
             self.hide_main_window_frame('resolve_buttons_frame')
 
-        # if resolve is connected and the resolve buttons are not visible
+            # update the names of the transcribe buttons
+            self.main_window.button5.config(text='Transcribe\nAudio')
+            self.main_window.button6.config(text='Translate\nAudio to English')
+
+            # if resolve is connected and the resolve buttons are not visible
         else:
             # show resolve buttons
             if self.show_main_window_frame('resolve_buttons_frame'):
                 # but hide other buttons so we can place them back below the resolve buttons frame
                 self.hide_main_window_frame('other_buttons_frame')
+
+            # update the names of the transcribe buttons
+            self.main_window.button5.config(text='Transcribe\nTimeline')
+            self.main_window.button6.config(text='Translate\nTimeline to English')
 
         # now show the other buttons too if they're not visible already
         self.show_main_window_frame('other_buttons_frame')
@@ -1252,7 +1395,7 @@ class toolkit_UI:
                 task = 'transcribe'
 
             task_var = StringVar(ts_form_frame, value=task)
-            available_tasks = ['transcribe', 'translate']
+            available_tasks = ['transcribe', 'translate', 'transcribe+translate']
             task_input = OptionMenu(ts_form_frame, task_var, *available_tasks)
             task_input.grid(row=4, column=2, **self.input_grid_settings, **self.form_paddings)
 
@@ -1551,6 +1694,12 @@ class toolkit_UI:
                                                self.t_edit_obj.transcription_window_keypress(event=e,
                                                                                              **select_options))
 
+                # bind CMD/CTRL + key presses to transcription window actions
+                # self.windows[t_window_id].bind("<" + self.ctrl_cmd_bind + "-KeyPress>",
+                #                               lambda e:
+                #                               self.t_edit_obj.transcription_window_keypress(event=e, special_key='cmd'
+                #                                                                             **select_options))
+
                 # bind all mouse clicks on text
                 text.bind("<Button-1>", lambda e,
                                                select_options=select_options:
@@ -1848,15 +1997,39 @@ class toolkit_UI:
         if self.toolkit_ops_obj.transcription_log and 't_log' in self.windows:
 
             # first destroy anything that the window might have held
-            list = self.windows['t_log'].pack_slaves()
+            list = self.windows['t_log'].winfo_children()
             for l in list:
                 l.destroy()
 
-            # create a frame to hold all the log items in the window
-            log_frame = tk.Frame(self.windows['t_log'])
-            log_frame.pack()
+            # create a canvas to hold all the log items in the window
+            log_canvas = tk.Canvas(self.windows['t_log'], borderwidth=0)
 
-            # show all the transcription items in the transcription log
+            # create a frame for the log items
+            log_frame = tk.Frame(log_canvas)
+
+            # create a scrollbar to use with the canvas
+            scrollbar = Scrollbar(self.windows['t_log'], command=log_canvas.yview)
+
+            # attach the scrollbar to the log_canvas
+            log_canvas.config(yscrollcommand=scrollbar.set)
+
+            # add the scrollbar to the window
+            scrollbar.pack(side=RIGHT, fill=Y)
+
+            # add the canvas to the window
+            log_canvas.pack(side=LEFT, fill=BOTH, expand=True)
+
+            # show the frame in the canvas
+            log_canvas.create_window((4,4), window=log_frame, anchor="nw")
+
+            # make scroll region adjust each time the canvas changes in size
+            # and also adjust the width according to the frame inside it
+            log_frame.bind("<Configure>", lambda event, log_canvas=log_canvas:
+                                                log_canvas.configure(scrollregion=log_canvas.bbox("all"),
+                                                                     width=event.width
+                                                                     ))
+
+            # populate the log frame with the transcription items from the transcription log
             num = 0
             for t_item_id, t_item in self.toolkit_ops_obj.transcription_log.items():
 
@@ -1865,7 +2038,7 @@ class toolkit_UI:
                 if 'name' not in t_item:
                     t_item['name'] = 'Unknown'
 
-                label_name = Label(log_frame, text=t_item['name'], anchor='w', width=35)
+                label_name = Label(log_frame, text=t_item['name'], anchor='w', width=40)
                 label_name.grid(row=num, column=1, **self.list_paddings, sticky='w')
 
                 if 'status' not in t_item:
@@ -1899,6 +2072,7 @@ class toolkit_UI:
                                       self.open_transcription_window(title=name,
                                                                      transcription_file_path=json_file_path)
                                       )
+
 
     def open_transcription_log_window(self):
 
@@ -1938,7 +2112,7 @@ class toolkit_UI:
 
         return target_dir
 
-    def ask_for_target_file(self, filetypes=[("Audio files", ".mp4 .wav .mp3")], target_dir=None):
+    def ask_for_target_file(self, filetypes=[("Audio files", ".mp4 .wav .mp3")], target_dir=None, multiple=False):
         global initial_target_dir
 
         # if an initial target_dir was passed
@@ -1951,15 +2125,19 @@ class toolkit_UI:
         self.root.lift()
 
         # ask the user via os dialog which file to use
-        target_file = filedialog.askopenfilename(title="Choose a file", initialdir=initial_target_dir,
-                                                 filetypes=filetypes, multiple=False)
+        if not multiple:
+            target_file = filedialog.askopenfilename(title="Choose a file", initialdir=initial_target_dir,
+                                                     filetypes=filetypes)
+        else:
+            target_file = filedialog.askopenfilenames(title="Choose the files", initialdir=initial_target_dir,
+                                                     filetypes=filetypes)
 
         # what happens if the user cancels
         if not target_file:
             return False
 
         # remember what the user selected for next time
-        initial_target_dir = os.path.dirname(target_file)
+        initial_target_dir = os.path.dirname(target_file if isinstance(target_file, str) else target_file[0])
 
         return target_file
 
@@ -2090,8 +2268,12 @@ class toolkit_UI:
 
             # after 20+ tries, assume the user is no longer paying attention and reduce the frequency of tries
             if resolve_error > 20:
-                self.stAI.log_print('Resolve is not reachable. Now retrying every 30 seconds.\n'
-                                    '  Error count: {}'.format(resolve_error), 'error')
+
+                # only show this error one more time
+                if resolve_error == 21:
+                    self.stAI.log_print('Resolve is still not reachable. '
+                                        'Muting errors. Now retrying every 30 seconds.\n'
+                                        '  Error count: {}'.format(resolve_error), 'error')
 
                 # and increase the polling interval to 30 seconds
                 polling_interval = 30000
@@ -2100,15 +2282,16 @@ class toolkit_UI:
             elif resolve_error > 10:
 
                 if resolve_error == 11:
-                    self.stAI.log_print('Resolve is not reachable. Now retrying every 5 seconds.\n'
+                    self.stAI.log_print('Resolve is still not reachable. Now retrying every 5 seconds.\n'
                                         '  Error count: {}'.format(resolve_error), 'warn')
 
                 # increase the polling interval to 5 seconds
                 polling_interval = 5000
 
             else:
-                self.stAI.log_print('Resolve is not reachable.\n'
-                                    '  Error count: {}'.format(resolve_error), 'warn')
+                if resolve_error==1:
+                    self.stAI.log_print('Resolve is not reachable.\n'
+                                        '  Error count: {}'.format(resolve_error), 'warn')
 
                 # increase the polling interval to 1 second
                 polling_interval = 1000
@@ -2271,31 +2454,43 @@ class ToolkitOps:
             # render the timeline in Resolve
             rendered_files = mots_resolve.render_timeline(target_dir, render_preset, True, False, False, True)
 
+            # now open up the transcription settings window
+            for rendered_file in rendered_files:
+                self.start_transcription_config(audio_file_path=rendered_file,
+                                                name=currentTimelineName,
+                                                task=task, unique_id=unique_id)
+
         # if resolve is not available
         else:
 
             # ask the user if they want to simply transcribe a file from the drive
-            if toolkit_UI_obj.no_resolve_ok or messagebox.askyesno(message='A Resolve Timeline is not available.\n\n'
-                                                                           'Do you want to transcribe an existing audio file instead?'):
+            if toolkit_UI_obj.no_resolve_ok \
+                    or messagebox.askyesno(message='A Resolve Timeline is not available.\n\n'
+                                                    'Do you want to transcribe existing audio files instead?'):
 
                 # remember that the user said it's ok to continue without resolve
                 toolkit_UI_obj.no_resolve_ok = True
 
-                # create a list of files that will be passed later for transcription
-                rendered_files = []
-
-                # ask the user for the target file
-                target_file = toolkit_UI_obj.ask_for_target_file()
+                # ask the user for the target files
+                target_files = toolkit_UI_obj.ask_for_target_file(multiple=True)
 
                 # add it to the transcription list
-                if target_file:
-                    rendered_files.append(target_file)
+                if target_files:
 
-                    # the file name also becomes currentTimelineName for future use
-                    currentTimelineName = os.path.basename(target_file)
+                    for target_file in target_files:
 
-                    # a unique id is also useful to keep track
-                    unique_id = self._generate_transcription_unique_id(name=currentTimelineName)
+                        # the file name also becomes currentTimelineName for future use
+                        file_name = os.path.basename(target_file)
+
+                        # a unique id is also useful to keep track
+                        unique_id = self._generate_transcription_unique_id(name=file_name)
+
+                        # now open up the transcription settings window
+                        self.start_transcription_config(audio_file_path=target_file,
+                                                        name=file_name,
+                                                        task=task, unique_id=unique_id)
+
+                    return True
 
                 # or close the process if the user canceled
                 else:
@@ -2304,12 +2499,6 @@ class ToolkitOps:
             # close the process if the user doesn't want to transcribe an existing file
             else:
                 return False
-
-        # the rendered files list should contain either the file rendered in resolve or the selected audio file
-        # so add that to the transcription queue together with the name of the timeline
-        return self.start_transcription_config(audio_file_path=rendered_files[0],
-                                               name=currentTimelineName,
-                                               task=task, unique_id=unique_id)
 
     def start_transcription_config(self, audio_file_path=None, name=None, task=None, unique_id=None):
         '''
@@ -2396,36 +2585,75 @@ class ToolkitOps:
         if not self.is_UI_obj_available(toolkit_UI_obj):
             return False
 
-        # generate a unique id if one hasn't been passed
-        if unique_id is None:
-            next_queue_id = self._generate_transcription_unique_id(name=name)
-        else:
-            next_queue_id = unique_id
-
         # select the transcribe task automatically if neither transcribe or translate was passed
-        if task is None or task not in ['transcribe', 'translate']:
+        if task is None or task not in ['transcribe', 'translate', 'transcribe+translate']:
             task = 'transcribe'
 
-        # add to transcription queue if we at least know the path and the name of the timeline/file
-        if next_queue_id and audio_file_path and os.path.exists(audio_file_path) and name:
+        # if it's a regular transcribe or translate task
+        if task in ['transcribe', 'translate']:
 
-            file_dict = {'name': name, 'audio_file_path': audio_file_path, 'task': task,
-                         'language': language, 'model': model, 'device': device,
-                         'status': 'waiting', 'info': None}
+            # just do that task
+            tasks = [task]
 
-            # add to transcription queue
-            self.transcription_queue[next_queue_id] = file_dict
+        # if the user is asking for a transcribe+translate
+        elif task == 'transcribe+translate':
+            # add both tasks
+            tasks = ['transcribe', 'translate']
 
-            # add the file to the transcription log too (the add function will check if it's already there)
-            self.add_to_transcription_log(unique_id=next_queue_id, **file_dict)
-
-            # now ping the transcription queue in case it's sleeping
-            self.ping_transcription_queue()
-
-            return True
+        # we will never get to this, but let's have it
         else:
-            self.stAI.log_print('Missing parameters to add file to transcription queue', 'error')
             return False
+
+        # to count tasks we need an int
+        task_num = 0
+
+        # add all the above tasks to the queue
+        for c_task in tasks:
+
+            task_num = task_num+1
+
+            # generate a unique id if one hasn't been passed
+            if unique_id is None:
+                next_queue_id = self._generate_transcription_unique_id(name=name)
+            else:
+
+                # if a unique id was passed, only use it for the first task
+                next_queue_id = unique_id
+
+                # then reset it
+                unique_id = None
+
+            # add numbering to names, but starting with the second task
+            if task_num > 1:
+                c_name = name + ' ' + str(task_num)
+            else:
+                c_name = name
+
+            # add to transcription queue if we at least know the path and the name of the timeline/file
+            if next_queue_id and audio_file_path and os.path.exists(audio_file_path) and name:
+
+                file_dict = {'name': c_name, 'audio_file_path': audio_file_path, 'task': c_task,
+                             'language': language, 'model': model, 'device': device,
+                             'status': 'waiting', 'info': None}
+
+                # add to transcription queue
+                self.transcription_queue[next_queue_id] = file_dict
+
+                # add the file to the transcription log too (the add function will check if it's already there)
+                self.add_to_transcription_log(unique_id=next_queue_id, **file_dict)
+
+                # now ping the transcription queue in case it's sleeping
+                self.ping_transcription_queue()
+
+            else:
+                self.stAI.log_print('Missing parameters to add file to transcription queue', 'error')
+                return False
+
+            # throttle for a bit to avoid unique id unique id collisions
+            time.sleep(0.01)
+
+        return True
+
 
     def _generate_transcription_unique_id(self, name=None):
         if name:
@@ -2486,9 +2714,19 @@ class ToolkitOps:
         # make the name of the file that is currently being processed public
         self.transcription_queue_current_name = name
 
-        # transcribe
-        self.whisper_transcribe(audio_file_path=audio_file_path, task=task, name=name,
-                                queue_id=queue_id, language=language, model=model, device=device)
+        import traceback
+
+        # try the transcription
+        try:
+            self.whisper_transcribe(audio_file_path=audio_file_path, task=task, name=name,
+                                    queue_id=queue_id, language=language, model=model, device=device)
+
+        # in case the transcription process crashes
+        except Exception:
+            # show error
+            self.stAI.log_print(traceback.format_exc(), 'error')
+            # update the status of the item in the transcription log
+            self.update_transcription_log(unique_id=queue_id, **{'status': 'failed'})
 
         # reset the transcription thread and name:
         self.transcription_queue_current_name = None
@@ -2545,6 +2783,9 @@ class ToolkitOps:
         if self.whisper_model is None \
                 or ('model' in other_whisper_options and self.whisper_model_name != other_whisper_options['model']):
 
+            # update the status of the item in the transcription log
+            self.update_transcription_log(unique_id=queue_id, **{'status': 'loading model'})
+
             # use the model that was passed in the call (if any)
             if 'model' in other_whisper_options and other_whisper_options['model']:
                 self.whisper_model_name = other_whisper_options['model']
@@ -2600,14 +2841,22 @@ class ToolkitOps:
         #
         # Furthermore, the same file will be used to save any other information related to the transcription.)
 
-        txt_file_path = self.save_txt_from_transcription(name=audio_file_name, target_dir=target_dir,
+        # first determine if there's another transcription.json file with the same name
+        # and keep adding numbers to it until the name is free
+        file_name = audio_file_name
+        file_num = 2
+        while os.path.exists(os.path.join(target_dir, file_name + '.transcription.json')):
+            file_name = audio_file_name + "_{}".format(file_num)
+            file_num = file_num+1
+
+        txt_file_path = self.save_txt_from_transcription(file_name=file_name, target_dir=target_dir,
                                                          transcription_data=result)
 
         # only save the filename without the absolute path to the transcript json
         result['txt_file_path'] = os.path.basename(txt_file_path)
 
         # save the SRT file next to the transcription file
-        srt_file_path = self.save_srt_from_transcription(name=audio_file_name, target_dir=target_dir,
+        srt_file_path = self.save_srt_from_transcription(file_name=file_name, target_dir=target_dir,
                                                          transcription_data=result)
 
         # only the basename is needed here too
@@ -2624,7 +2873,7 @@ class ToolkitOps:
         result['model'] = self.whisper_model_name
 
         # save the transcription file with all the added file paths
-        transcription_json_file_path = self.save_transcription_file(name=audio_file_name, target_dir=target_dir,
+        transcription_json_file_path = self.save_transcription_file(file_name=file_name, target_dir=target_dir,
                                                                     transcription_data=result)
 
         # when done, change the status in the transcription log
@@ -2641,7 +2890,7 @@ class ToolkitOps:
         return True
 
     def save_transcription_file(self, transcription_file_path=None, transcription_data=None,
-                                name=None, target_dir=None):
+                                file_name=None, target_dir=None):
         '''
         Saves the transcription file either to the transcription_file_path
         or to the "target_dir/name.transcription.json" path
@@ -2657,9 +2906,9 @@ class ToolkitOps:
         if transcription_file_path is None:
 
             # try to use the name and target dir attributes
-            if name is not None and target_dir is not None:
+            if file_name is not None and target_dir is not None:
                 # the path should contain the name and the target dir, but end with transcription.json
-                transcription_file_path = os.path.join(target_dir, name + '.transcription.json')
+                transcription_file_path = os.path.join(target_dir, file_name + '.transcription.json')
 
             # if the name and target_dir were not passed, throw an error
             else:
@@ -2707,7 +2956,7 @@ class ToolkitOps:
             return transcription_data
 
     def save_srt_from_transcription(self, srt_file_path=None, transcription_segments=None,
-                                    name=None, target_dir=None, transcription_data=None):
+                                    file_name=None, target_dir=None, transcription_data=None):
         '''
         Saves an SRT file next to the transcription file.
 
@@ -2726,9 +2975,9 @@ class ToolkitOps:
         if srt_file_path is None:
 
             # try to use the name and target dir attributes
-            if name is not None and target_dir is not None:
+            if file_name is not None and target_dir is not None:
                 # the path should contain the name and the target dir, but end with transcription.json
-                srt_file_path = os.path.join(target_dir, name + '.srt')
+                srt_file_path = os.path.join(target_dir, file_name + '.srt')
 
             # if the name and target_dir were not passed, throw an error
             else:
@@ -2755,7 +3004,7 @@ class ToolkitOps:
         return False
 
     def save_txt_from_transcription(self, txt_file_path=None, transcription_text=None,
-                                    name=None, target_dir=None, transcription_data=None):
+                                    file_name=None, target_dir=None, transcription_data=None):
         '''
         Saves an txt file next to the transcription file.
 
@@ -2764,7 +3013,7 @@ class ToolkitOps:
 
         :param txt_file_path:
         :param transcription_text:
-        :param name:
+        :param file_name:
         :param target_dir:
         :param transcription_data:
         :return: False or txt_file_path
@@ -2774,9 +3023,9 @@ class ToolkitOps:
         if txt_file_path is None:
 
             # try to use the name and target dir attributes
-            if name is not None and target_dir is not None:
+            if file_name is not None and target_dir is not None:
                 # the path should contain the name and the target dir, but end with transcription.json
-                txt_file_path = os.path.join(target_dir, name + '.txt')
+                txt_file_path = os.path.join(target_dir, file_name + '.txt')
 
             # if the name and target_dir were not passed, throw an error
             else:
