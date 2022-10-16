@@ -24,7 +24,8 @@ import webbrowser
 
 # define a global target dir so we remember where we chose to save stuff last time when asked
 # but start with the user's home directory
-initial_target_dir = os.path.expanduser("~")
+user_home_dir = os.path.expanduser("~")
+initial_target_dir = user_home_dir
 
 
 class toolkit_UI:
@@ -1530,7 +1531,8 @@ class toolkit_UI:
 
         # only continue if the transcription path was passed and the file exists
         if transcription_file_path is None or os.path.exists(transcription_file_path) is False:
-            self.stAI.log_print('The passed transcription file path doesn\'t exist', 'error')
+            self.stAI.log_print('The transcription file {} doesn\'t exist'.format(transcription_file_path)
+                                , 'error')
             return False
 
         # now read the transcription file contents
@@ -3500,8 +3502,17 @@ current_bin = ''
 resolve_error = 0
 resolve = None
 
-# this is the path to the user data folder
-USER_DATA_PATH = 'userdata'
+# this is where we used to store the user data prior to version 0.16.14
+# but we need to have a more universal approach, so we'll move this to
+# the home directory of the user which is platform dependent (see below)
+OLD_USER_DATA_PATH = 'userdata'
+
+# this is where StoryToolkitAI stores the config files
+# including project.json files and others
+# on Mac, this is usually /Users/[username]/StoryToolkitAI
+# on Windows, it's normally C:\Users\[username]\StoryToolkitAI
+# on Linux, it's probably /home/[username]/StoryToolkitAI
+USER_DATA_PATH = os.path.join(user_home_dir, 'StoryToolkitAI')
 
 # this is where we store the app configuration
 APP_CONFIG_FILE_NAME = 'config.json'
@@ -3571,6 +3582,55 @@ class StoryToolkitAI:
                 # and create the whole path to it if it doesn't
                 os.makedirs(self.user_data_path)
 
+                # for users of versions prior to 0.16.14, the user data folder was at OLD_USER_DATA_PATH
+                # so make sure we copy everything from the old path to the new folder
+                old_user_data_path_abs = os.path.join(os.path.dirname(os.path.abspath(__file__)), OLD_USER_DATA_PATH)
+
+                # we first check if the old_user_data_path_abs exists
+                if os.path.exists(old_user_data_path_abs):
+                    import shutil
+                    from datetime import date
+                    import platform
+
+                    self.log_print('Old user data directory found.\n\n', 'warn')
+
+                    # let the user know that we are moving the files
+                    move_user_data_path_msg = \
+                                    'Starting with version 0.16.14, '\
+                                    'the user data directory on {} has moved to {}.\n'\
+                                    'This means that any existing configuration and project ' \
+                                    'settings files will be copied there.\n'\
+                                    'If the files are at the new location, feel free to delete {}\n' \
+                                    .format(platform.node(),
+                                            self.user_data_path, old_user_data_path_abs, old_user_data_path_abs)
+
+                    self.log_print(move_user_data_path_msg, 'warn')
+
+                    self.log_print('Copying user data files to new location.', 'warn')
+
+                    # copy all the contents of the OLD_USER_DATA_PATH to the new path
+                    for item in os.listdir(old_user_data_path_abs):
+                        s = os.path.join(old_user_data_path_abs, item)
+                        d = os.path.join(self.user_data_path, item)
+
+                        self.log_print((' - {}'.format(item)), 'warn')
+
+                        if os.path.isdir(s):
+                            shutil.copytree(s, d, False, None)
+                        else:
+                            shutil.copy2(s, d)
+
+                    self.log_print('Finished copying user data files to {}'.format(self.user_data_path), 'warn')
+
+                    # reload the config file
+                    self.config = self.get_config()
+
+                    # leave a readme file in the OLD_USER_DATA_PATH so that the user knows that stuff was moved
+                    with open(os.path.join(old_user_data_path_abs, 'README.txt'), 'a') as f:
+                        f.write('\n'+str(date.today())+'\n')
+                        f.write(move_user_data_path_msg)
+
+
             else:
                 return False
 
@@ -3623,7 +3683,7 @@ class StoryToolkitAI:
         # but a default was passed
         elif default_if_none is not None and default_if_none != '':
 
-            self.log_print('Config setting {} saved as {} '.format(setting_name, default_if_none), 'warn')
+            self.log_print('Config setting {} saved as {} '.format(setting_name, default_if_none), 'info')
 
             # save the default to the config
             self.save_config(setting_name=setting_name, setting_value=default_if_none)

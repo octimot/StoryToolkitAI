@@ -7,10 +7,10 @@
 Our installation is on MacOS 12.6 running on M1, but the scripts should run fine on other CPUs and GPUs. For both
 production and development we're currently using Python 3.9.13. 
 
-**The tool only works on Resolve Studio 18.**
-
 _Note: Whisper worked fine on Python 3.10.2, but we ran into problems when trying to install some packages which we're
 planning to use for future developments._
+
+**The tool only works on Resolve Studio 18.**
 
 _Note: Unfortunately, only the Studio version of Resolve supports external scripting and Resolve versions earlier than
 18 do not support Python 3.6+_
@@ -40,6 +40,8 @@ In the Terminal:
 #### 3. Make sure you now have virtualenv:
 
     pip install virtualenv
+
+_Note: if the pip command above doesn't work, try to use pip3 (and use pip3 for the next steps too)_
 
 #### 4. Download StoryToolkitAI:
 First, go to the Folder you want to install StoryToolkit in via Finder. Right-click on it and select "New Terminal at Folder".
