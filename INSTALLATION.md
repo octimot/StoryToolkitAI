@@ -128,4 +128,4 @@ _Note: if the pip command doesn't work, you can either try to install it like th
 
 Or, simply replace pip in the commands above with:
 
-    python -m pip [whatever goes after pip]
+    python -m pip [WHATEVER GOES AFTER PIP]

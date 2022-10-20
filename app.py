@@ -20,6 +20,29 @@ import whisper
 
 from timecode import Timecode
 
+
+# this makes sure that the user has all the required packages installed
+try:
+    file_path = os.path.realpath(__file__)
+
+    import pkg_resources
+    pkg_resources.require(open(os.path.join(os.path.dirname(__file__), 'requirements.txt'), mode='r'))
+except:
+
+    print('\033[91m')
+    import traceback
+    print(traceback.format_exc())
+
+    print('\n'
+          'WARNING: Some of the packages required to run StoryToolkitAI are missing from your Python environment.\n'
+          'Please run pip install -r requirements.txt '
+          'to make sure that the right versions of the required packages are installed or StoryToolkitAI will not '
+          'run properly.'
+          )
+
+    print('\033[0m')
+    time.sleep(5)
+
 import webbrowser
 
 # define a global target dir so we remember where we chose to save stuff last time when asked
@@ -65,6 +88,9 @@ class toolkit_UI:
             # to stop certain events while typing,
             # we keep track if we have typing going on in any of the windows
             self.typing = {}
+
+            # to know in which windows is the user editing transcripts
+            self.transcript_editing = {}
 
             # to know which window works with which transcription_file_path
             self.transcription_file_paths = {}
@@ -148,7 +174,10 @@ class toolkit_UI:
 
             return sync
 
-        def set_typing_in_window(self, event, window_id, typing):
+        def set_typing_in_window(self, event=None, window_id=None, typing=None):
+
+            if window_id is None:
+                return None
 
             # if there isn't a typing tracker for this window, create one
             if window_id not in self.typing:
@@ -168,6 +197,30 @@ class toolkit_UI:
                 self.typing[window_id] = False
 
             return self.typing[window_id]
+
+        def set_transcript_editing(self, event=None, window_id=None, editing=None):
+
+            if window_id is None:
+                return None
+
+            # if there isn't a typing tracker for this window, create one
+            if window_id not in self.transcript_editing:
+                self.transcript_editing[window_id] = False
+
+            # if typing was passed, assign it
+            if editing is not None:
+                self.transcript_editing[window_id] = editing
+
+            # return the status of the typing
+            return self.transcript_editing[window_id]
+
+        def get_transcript_editing_in_window(self, window_id):
+
+            # if there isn't a typing tracker for this window, create one
+            if window_id not in self.transcript_editing:
+                self.transcript_editing[window_id] = False
+
+            return self.transcript_editing[window_id]
 
         def search_text(self, search_str=None, text_element=None, window_id=None):
             '''
@@ -869,6 +922,11 @@ class toolkit_UI:
             if line is None and line_calc:
                 line = self.active_segment[window_id] + line_calc
 
+            # remove the active segment if no line or line_calc was passed
+            if line is None and line_calc is None:
+                del self.active_segment[window_id]
+                return False
+
             # if passed line is lower than 1, go to the end of the transcript
             if line < 1:
                 line = text_num_lines
@@ -992,6 +1050,23 @@ class toolkit_UI:
             # if all fails return None
             return None
 
+        def next_segment_id(self, window_id):
+            # is there a reference to this current window id?
+            # normally this should have been created during the opening of the transcription window
+            if window_id in self.transcript_segments_ids:
+
+                # go through all the ids and calculate the highest
+                max_id = 0
+                for line_id in self.transcript_segments_ids[window_id]:
+                    if max_id < self.transcript_segments_ids[window_id][line_id]:
+                        max_id = self.transcript_segments_ids[window_id][line_id]
+
+                # if the line was found, return it
+                return int(max_id)+1
+
+            # if all fails return None
+            return None
+
         def group_selected(self, window_id):
 
             # WORK IN PROGRESS
@@ -1010,6 +1085,296 @@ class toolkit_UI:
                     print(self.selected_segments[window_id][selected_segment])
 
                     # save group contents to transcription json file
+
+        def on_press_add_segment(self, event, window_id=None, text=None):
+
+            if window_id is None or text is None:
+                return False
+
+            # WORK IN PROGRESS
+
+            print(event)
+
+            # get the cursor position where the event was triggered (key was pressed)
+            # and the last character of the line
+            line, char, last_char = self.get_current_segment_chars(text=text)
+
+            print('Pos: {}.{}; Last: {}'.format(line, char, last_char))
+
+            # WORK IN PROGRESS
+            # prevent RETURN key from adding another line break in the text
+            return 'break'
+
+
+            # initialize the new_line dict
+            new_line = {}
+
+            # the end time of the new line is the end of the current line
+            new_line['end'] = self.transcript_segments[window_id][int(line)-1]['end']
+
+            # get the text that is supposed to go on the next line
+            new_line['text'] = text.get(INSERT, "{}.end+1c".format(line))
+
+            # the id of the new line is the next available id in the transcript
+            new_line['id'] = self.next_segment_id(window_id=window_id)
+
+            print(new_line)
+
+            # ask user at what time to split the segment
+            # split_time = simpledialog.askstring(title='Where to split?',
+            #                                     prompt='At what time should we split this segment?',
+            #                                     initialvalue=self.transcript_segments[window_id][int(line)-1]['start'])
+
+            split_time = (int(self.transcript_segments[window_id][int(line)-1]['end']) \
+                         -int(self.transcript_segments[window_id][int(line)-1]['start']))/2
+
+            split_time = int(self.transcript_segments[window_id][int(line)-1]['start']) + split_time
+
+            # if the user didn't specify the split time
+            if not split_time:
+                # cancel
+                return 'break'
+
+            if float(split_time) >= float(self.transcript_segments[window_id][int(line)-1]['end']):
+
+                self.toolkit_UI_obj.notify_via_messagebox(title='Split time too large',
+                                                          message='The time you entered goes over the end time of '
+                                                                  'the current segment.', type='warn')
+                return 'break'
+
+            # the split time becomes the start time of the new line
+            new_line['start'] = split_time
+
+            # and also the end of the previous line
+            self.transcript_segments[window_id][int(line)-1]['end'] = split_time
+
+            # add the element to the transcript segments right after the current line
+            self.transcript_segments[window_id].insert(int(line), new_line)
+
+            # insert the new line in the text element
+            text.insert('{}.{}'.format(line, char), 'test\n')
+
+            #text.insert(INSERT, text.get('0.0', "{}.end+1c".format(line)))
+
+            # prevent RETURN key from adding another line break in the text
+            return 'break'
+
+        def edit_transcript(self, window_id=None, text=None, status_label=None):
+
+            if window_id is None or text is None:
+                return False
+
+            text.focus()
+
+            # enable typing mode to disable some shortcuts
+            self.set_typing_in_window(window_id=window_id, typing=True)
+
+            # enable transcript_editing for this window
+            self.set_transcript_editing(window_id=window_id, editing=True)
+
+            # todo RETURN key splits the segment at cursor according to Resolve playhead position
+            text.bind('<Return>', lambda e: self.on_press_add_segment(e, window_id, text))
+
+            # ESCAPE key defocuses transcript (and implicitly saves the transcript, see below)
+            text.bind('<Escape>', lambda e: self.defocus_transcript(text=text))
+
+            # text focusout saves transcript
+            text.bind('<FocusOut>', lambda e: self.on_press_save_transcript(e, window_id, text,
+                                                                          status_label=status_label))
+
+            # todo BACKSPACE key at first line character merges the current and the previous segment
+            text.bind('<BackSpace>', lambda e:
+                    self.on_press_merge_segments(e, window_id=window_id, text=text, merge='previous'))
+
+            # todo DELETE key at last line character merges the current and the next segment
+            text.bind('<Delete>', lambda e:
+                    self.on_press_merge_segments(e, window_id=window_id, text=text, merge='next'))
+
+            if status_label is not None:
+                status_label.config(text='Not saved.', foreground=self.toolkit_UI_obj.resolve_theme_colors['red'])
+
+            text.config(state=NORMAL)
+
+        def unbind_editing_keys(self, text):
+            '''
+            This function unbinds all the keys used for editing the transcription
+            :return:
+            '''
+
+            text.unbind('<Return>')
+            text.unbind('<Escape>')
+            text.unbind('<BackSpace>')
+            text.unbind('<Delete>')
+
+        def get_current_segment_chars(self, text):
+
+            # get the position of the cursor
+            line, char = text.index(INSERT).split('.')
+
+            # get the index of the last character of the line where the cursor is
+            _, last_char = text.index("{}.end".format(line)).split('.')
+
+            return line, char, last_char
+
+        def on_press_merge_segments(self, event, window_id, text, merge=None):
+            '''
+            This function checks whether the cursor is at the beginning or at the end of the line and
+            it merges the current transcript segment either with the previous or with the next segment
+
+            :param event:
+            :param window_id:
+            :param text:
+            :return:
+            '''
+
+            if window_id is None or text is None:
+                return False
+
+            if merge not in ['previous', 'next']:
+                self.stAI.log_print('Merge direction not specified.', 'error')
+                return 'break'
+
+            # get the cursor position where the event was triggered (key was pressed)
+            # and the last character of the line
+            line, char, last_char = self.get_current_segment_chars(text=text)
+
+            # ignore if we are not at the beginning nor at the end of the current line
+            # or if the direction of the merge doesn't match the character number
+            if char not in ['0', last_char]\
+                or (char == '0' and merge != 'previous')\
+                or (char == last_char and merge != 'next'):
+                return
+
+            # if we are at the beginning of the line
+            # and the merge direction is 'prev'
+            if char == '0' and merge != 'previous':
+
+                return 'break'
+                #print('TODO: Merge previous')
+
+            # if we are at the end of the line
+            # and the merge direction is 'next'
+            if char == last_char and merge != 'next':
+
+                return 'break'
+                #print('TODO: Merge next')
+
+            return 'break'
+
+        def defocus_transcript(self, text):
+
+            # defocus from transcript text
+            tk_transcription_window = text.winfo_toplevel()
+            tk_transcription_window.focus()
+
+        def on_press_save_transcript(self, event, window_id, text, status_label=None):
+
+            if window_id is None or text is None:
+                return False
+
+            # disable text editing again
+            text.config(state=DISABLED)
+
+            # unbind all the editing keys
+            self.unbind_editing_keys(text)
+
+            # deactivate typing and editing for this window
+            self.set_typing_in_window(window_id=window_id, typing=False)
+            self.set_transcript_editing(window_id=window_id, editing=False)
+
+            # save the transcript
+            save_status = self.save_transcript(window_id=window_id, text=text)
+
+            # let the user know what happened via the status label
+            if save_status is True:
+
+                # show the user that the transcript was saved
+                if status_label is not None:
+                    status_label.config(text='Saved.',
+                                        foreground=self.toolkit_UI_obj.resolve_theme_colors['normal'])
+
+
+            # in case anything went wrong while saving,
+            # let the user know about it
+            elif save_status == 'fail':
+                if status_label is not None:
+                    status_label.config(text='Save Failed.',
+                                        foreground=self.toolkit_UI_obj.resolve_theme_colors['red'])
+
+            # in case the save status is False
+            # assume that nothing needed saving
+            else:
+                if status_label is not None:
+                    status_label.config(text='Nothing changed.',
+                                        foreground=self.toolkit_UI_obj.resolve_theme_colors['normal'])
+
+        def save_transcript(self, window_id=None, text=None):
+
+            if window_id is None or text is None:
+                return False
+
+            # make sure that we know the path to this transcription file
+            if not window_id in self.transcription_file_paths:
+                return 'fail'
+
+            # get the path of the transcription file
+            transcription_file_path = self.transcription_file_paths[window_id]
+
+            # get the contents of the transcription file
+            old_transcription_file_data = \
+                self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path=transcription_file_path)
+
+            # compare the edited lines with the existing transcript lines
+            text_lines = text.get('1.0', END).splitlines()
+
+            segment_no = 0
+            changes_exist = False
+            full_text = ''
+            while segment_no < len(text_lines)-1:
+
+                # add the segment text to a full text variable in case we need it later
+                full_text = full_text+' '+text_lines[segment_no]
+
+                # if any change to the text was found
+                if text_lines[segment_no].strip() != self.transcript_segments[window_id][segment_no]['text'].strip():
+                    #print('Modified line {}'.format(segment_no+1))
+                    #print(text_lines[segment_no].strip())
+                    #print(self.transcript_segments[window_id][segment_no])
+
+                    # overwrite the segment text with the new text
+                    self.transcript_segments[window_id][segment_no]['text'] = text_lines[segment_no].strip()+' '
+
+                    # it means that we have to save the new file
+                    changes_exist = True
+
+                segment_no = segment_no + 1
+
+            # if changes were detected on any of the lines
+            if changes_exist:
+                #print(json.dumps(old_transcription_file_data, indent=4))
+
+                modified_transcription_file_data = old_transcription_file_data
+
+                # replace the segments in the transcription file
+                modified_transcription_file_data['segments'] = self.transcript_segments[window_id]
+
+                # replace the full text in the trancription file
+                modified_transcription_file_data['text'] = full_text
+
+                # add the last modified key
+                modified_transcription_file_data['last_modified'] = str(time.time()).split('.')[0]
+
+                # save the new transcription
+                self.toolkit_ops_obj.save_transcription_file(transcription_file_path=transcription_file_path,
+                                                             transcription_data=modified_transcription_file_data,
+                                                             backup='backup')
+
+                return True
+
+            # returning false means that no changes were made
+            return False
+
+
 
     def __init__(self, toolkit_ops_obj=None, stAI=None, warn_message=None):
 
@@ -1085,9 +1450,11 @@ class toolkit_UI:
         # use CMD for Mac
         if platform.system() == 'Darwin':
             self.ctrl_cmd_bind = "Command"
+            self.alt_bind = "Mod2"
         # use CTRL for Windows
         else:
             self.ctrl_cmd_bind = "Control"
+            self.alt_bind = "Alt"
 
         # use this variable to remember if the user said it's ok that resolve is not available to continue a process
         self.no_resolve_ok = False
@@ -1536,9 +1903,8 @@ class toolkit_UI:
             return False
 
         # now read the transcription file contents
-        # @todo move this to a "get_transcription_file" function
-        with codecs.open(transcription_file_path, 'r', 'utf-8-sig') as json_file:
-            transcription_json = json.load(json_file)
+        transcription_json = \
+            self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path=transcription_file_path)
 
         # if no srt_file_path was passed
         if srt_file_path is None:
@@ -1675,20 +2041,23 @@ class toolkit_UI:
                 # set the top, in-between and bottom text spacing
                 text.config(spacing1=0, spacing2=0.2, spacing3=5)
 
+                # then show the text element
+                text.pack(anchor='w', expand=True, fill='both')
+
+                # create a footer frame that holds stuff on the bottom of the transcript window
+                footer_frame = tk.Frame(self.windows[t_window_id])
+                footer_frame.place(relwidth=1, anchor='sw', rely=1)
+
+                # add a status label to print out current transcription status
+                status_label = Label(footer_frame, text="", anchor='w', foreground=self.resolve_theme_colors['normal'])
+                status_label.pack(side=tk.LEFT, **self.paddings)
+
+
                 # bind shift click events to the text
                 # text.bind("<Shift-Button-1>", lambda e:
                 #         self.t_edit_obj.select_text_lines(event=e, text_element=text, window_id=t_window_id))
 
                 select_options = {'window_id': t_window_id, 'text_element': text}
-
-                # bind ; and ' to go to first frame and last frame of the selected text
-                #self.windows[t_window_id].bind("<Key-semicolon>", lambda e: self.t_edit_obj.select_text_lines(e, **select_options))
-                #self.windows[t_window_id].bind("<Key-apostrophe>", lambda e: self.t_edit_obj.select_text_lines(e, **select_options))
-
-
-
-                #self.windows[t_window_id].bind("<Up>", lambda e: self.t_edit_obj.select_text_lines(e, **select_options))
-                #self.windows[t_window_id].bind("<Down>", lambda e: self.t_edit_obj.select_text_lines(e, **select_options))
 
                 # bind all key presses to transcription window actions
                 self.windows[t_window_id].bind("<KeyPress>",
@@ -1709,23 +2078,33 @@ class toolkit_UI:
                                                                                                **select_options))
 
                 # bind CMD/CTRL + mouse Clicks to text
-                text.bind("<" + self.ctrl_cmd_bind + "-Button-1>",
+                text.bind("<"+self.ctrl_cmd_bind+"-Button-1>",
                           lambda e, select_options=select_options:
                             self.t_edit_obj.transcription_window_mouse(e,
                                                                        special_key='cmd',
                                                                        **select_options))
+
+
+                # bind ALT/OPT + mouse Click to edit transcript
+                text.bind("<"+self.alt_bind+"-Button-1>",
+                          lambda e: self.t_edit_obj.edit_transcript(window_id=t_window_id, text=text,
+                                                                    status_label=status_label)
+                          )
+
+                # bind CMD/CTRL + e to edit transcript
+                self.windows[t_window_id].bind("<"+self.ctrl_cmd_bind+"-e>",
+                          lambda e: self.t_edit_obj.edit_transcript(window_id=t_window_id, text=text,
+                                                                    status_label=status_label)
+                          )
+
+                # bind the FocusOut of the text so that we save the new text when done
+                # text.bind("<FocusOut>", lambda e: self.t_edit_obj.save_transcript(window_id=t_window_id, text=text))
 
                 #self.windows[t_window_id].bind("<Shift-Up>", lambda e: self.t_edit_obj.select_text_lines(e, special_key='Shift', **select_options))
                 #self.windows[t_window_id].bind("<Shift-Down>", lambda e: self.t_edit_obj.select_text_lines(e, special_key='Shift', **select_options))
                 # self.windows[t_window_id].bind("<" + self.ctrl_cmd_bind + "-Up>", lambda e: self.t_edit_obj.select_text_lines(e, special_key=self.ctrl_cmd_bind, **select_options))
                 # self.windows[t_window_id].bind("<" + self.ctrl_cmd_bind + "-Down>", lambda e: self.t_edit_obj.select_text_lines(e, special_key=self.ctrl_cmd_bind, **select_options))
 
-                # then show the text element
-                text.pack(anchor='w', expand=True, fill='both')
-
-                # create a footer frame that holds stuff on the bottom of the transcript window
-                footer_frame = tk.Frame(self.windows[t_window_id])
-                footer_frame.place(relwidth=1, anchor='sw', rely=1)
 
                 # b_test = tk.Button(footer_frame, text='Search', command=lambda: search(),
                 #                font=20, bg='white').grid(row=1, column=3, sticky='w', **self.paddings)
@@ -1750,7 +2129,7 @@ class toolkit_UI:
                 search_input.pack(side=tk.LEFT, **self.paddings)
 
                 search_input.bind('<Return>', lambda e, text=text, t_window_id=t_window_id:
-                self.t_edit_obj.cycle_through_results(text_element=text, window_id=t_window_id))
+                                self.t_edit_obj.cycle_through_results(text_element=text, window_id=t_window_id))
 
                 search_input.bind('<FocusIn>', lambda e, t_window_id=t_window_id:
                                             self.t_edit_obj.set_typing_in_window(e, t_window_id, typing=True))
@@ -2074,7 +2453,6 @@ class toolkit_UI:
                                       self.open_transcription_window(title=name,
                                                                      transcription_file_path=json_file_path)
                                       )
-
 
     def open_transcription_log_window(self):
 
@@ -2892,7 +3270,7 @@ class ToolkitOps:
         return True
 
     def save_transcription_file(self, transcription_file_path=None, transcription_data=None,
-                                file_name=None, target_dir=None):
+                                file_name=None, target_dir=None, backup=None):
         '''
         Saves the transcription file either to the transcription_file_path
         or to the "target_dir/name.transcription.json" path
@@ -2918,6 +3296,30 @@ class ToolkitOps:
                 return False
 
         if transcription_file_path:
+
+            # if backup_original is enabled, it will save a copy of the transcription file to
+            # originals/[filename].backup.json (if one doesn't exist already)
+            if backup and os.path.exists(transcription_file_path):
+
+                import shutil
+
+                # format the name of the backup file
+                backup_transcription_file_path = \
+                    os.path.splitext(os.path.basename(transcription_file_path))[0]+'.'+str(backup)+'.json'
+
+                backups_folder = os.path.join(os.path.dirname(transcription_file_path), '.backups')
+
+                # if the backups folder doesn't exist, create it
+                if not os.path.exists(backups_folder):
+                    os.mkdir(backups_folder)
+
+                # copy the existing file to the backups folder
+                # if it doesn't already exist
+                if not os.path.exists(os.path.join(backups_folder, backup_transcription_file_path)):
+                    shutil.copyfile(transcription_file_path,
+                                    os.path.join(backups_folder, backup_transcription_file_path))
+
+            # Finally,
             # save the whole whisper result in the transcription json file
             # don't question what is being passed, simply save everything
             with open(transcription_file_path, 'w', encoding='utf-8') as outfile:
@@ -2925,7 +3327,22 @@ class ToolkitOps:
 
             return transcription_file_path
 
+
         return False
+
+    def get_transcription_file_data(self, transcription_file_path):
+
+        # make sure the transcription exists
+        if not os.path.exists(transcription_file_path):
+            self.stAI.log_print('Transcription file {} doesn\'t exist.'.format(transcription_file_path), 'warn')
+            return False
+
+        # get the contents of the transcription file
+        with codecs.open(transcription_file_path, 'r', 'utf-8-sig') as json_file:
+            transcription_json = json.load(json_file)
+
+        return transcription_json
+
 
     def process_transcription_data(self, transcription_segments=None, transcription_data=None):
         '''
@@ -3289,6 +3706,41 @@ class ToolkitOps:
     #         pool.join()
     #         return val
 
+
+    # def on_resolve_timeline_changed(self):
+    #     '''
+    #     Handles everything that happens when a timeline changes in resolve
+    #     :return:
+    #     '''
+
+        # global current_project
+        # global current_timeline
+
+        # should we close the transcripts that are not linked to the timeline?
+        # print(self.stAI.get_app_setting('close_transcripts_on_timeline_change'))
+        # if self.stAI.get_app_setting('close_transcripts_on_timeline_change', default_if_none=False):
+        #     print(self.toolkit_UI_obj)
+
+
+        #     for window in self.toolkit_UI_obj.windows:
+
+        #         print(window)
+        #         transcription_file_path = self.toolkit_UI_obj.t_edit_obj.transcription_file_paths[window]
+
+        #         print(transcription_file_path)
+
+        #         # if this transcription is connected with the current timeline
+        #         if not self.toolkit_UI_obj.get_transcription_to_timeline_link(self,
+        #                                                                transcription_file_path=transcription_file_path,
+        #                                                                timeline_name=current_timeline,
+        #                                                                project_name=current_project):
+        #             print('not linked.closing.')
+
+        #         else:
+        #             print('linked. leave on')
+
+        # print('Timeline Changed')
+
     def poll_resolve_data(self):
         '''
         Polls resolve and returns either the data passed from resolve, or False if any exceptions occured
@@ -3314,6 +3766,7 @@ class ToolkitOps:
 
             if current_timeline != resolve_data['currentTimeline']:
                 current_timeline = resolve_data['currentTimeline']
+                # self.on_resolve_timeline_changed()
                 # self.stAI.log_print("Current Timeline: {}".format(current_timeline))
 
             #  updates the currentBin

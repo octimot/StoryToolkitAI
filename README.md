@@ -22,6 +22,7 @@ https://vimeo.com/759962195/dee07a067a
 - [x] **Transcript Timeline Navigation** - click or UP/DOWN on transcript moves the playhead in Resolve
 - [x] **Transcript Word Search** - allows you to find specific words or phrases in your transcripts
 - [x] **Mark** Resolve timelines using the phrases you select (see keyboard shortcuts below)
+- [x] **Transcript Segments editing** - editing of transcript lines (to be further developed)
 - [x] Copy Markers between Resolve Timelines and Timeline Source Clip
 - [x] Render Resolve Markers to Stills or Clips
 - [X] Audio Files transcription even without Resolve installed on the machine
@@ -29,7 +30,7 @@ https://vimeo.com/759962195/dee07a067a
 ### Work in progress
 - [ ] **Transcript Segment Groups** to select and add phrases to groups that can be recalled later 
 - [ ] **Global Semantic Search** to search stuff in all the project transcripts 
-- [ ] **Transcript Editing** from the tool
+- [ ] **Full Transcript Editing** from the tool
 - [ ] **Sliced Transcriptions** based on Resolve Duration Markers to transcribe only parts of the timeline
 - [ ] **Speaker Recognition**
 - [ ] **Integration with other AI / ML tools**
@@ -263,6 +264,8 @@ markers from the opened timeline.
     Mouse Click    - move active segment on clicked text and move playhead to start of active segment
 
     CMD/CTRL+Click - add clicked text to selection
+
+    OPT/ALT+Click  - edit transcript segment
     
     Up, Down keys  - move the cursor up and down on the transcript (we call it "active segment")
 
@@ -295,6 +298,10 @@ markers from the opened timeline.
     s              - enable sync
     
     Tab            - cycle between search and transcript navigation
+
+    CMD/CTRL+E     - edit transcript
+
+    Escape         - when editing transcripts, this will defocus and save the transcript
 
 
 
