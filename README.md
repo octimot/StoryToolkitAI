@@ -211,6 +211,10 @@ Before starting the transcription process, you can tweak different options, incl
 the footage, choosing between different Whisper models, the processing device, etc. For faster and better results,
 we recommend at least selecting the source language.
 
+_Note: when selecting "transcribe+translate" as "task", the tool will add both a transcription and a translation job to
+the queue, as if you selected them individually. The translation will not use the previous transcription process results
+at all, so this means that the process will take 2x the processing time._
+
 ### Linking Transcriptions to Timelines
 In the transcription window, the "Link" button will attach the transcription to the currently opened timeline in
 Resolve. This will make the tool automatically open the right transcription when you switch between timelines in
