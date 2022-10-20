@@ -189,6 +189,12 @@ A bug in the Resolve API which sometimes reports 23.976 fps as 23fps creates a b
 that use timecode (transcript to playhead navigation, adding markers at the precise frame etc.). Unfortunately, this
 can only be fixed by Blackmagic within Resolve itself (fingers crossed for an update?)
 
+### Black Interface / Flickering on Intel Macs
+Some users are experiencing weirdness with the interface on Intel Macs. This is due to a bug in Tcl/Tk - a package
+required to create the interface, which needs to be re-installed together with Python and everything else on the 
+machine. Details here and a possible fix 
+[here](https://github.com/octimot/StoryToolkitAI/issues/6#issuecomment-1283519594).
+
 ### Please report any other issues
 As mentioned, the tool is in a super raw state of development. We use it every day in our editing workflow, but some 
 issues might escape us. Please report anything weird that you notice and we'll look into it.
