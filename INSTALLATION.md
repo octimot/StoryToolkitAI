@@ -24,7 +24,7 @@ and there is a (very) slight chance that you'll affect your Operating System's o
 your other apps. In an unlikely worst-case scenario, some stuff might not work anymore at all and you'll need pro help
 to fix them back._
 
-### Mac OS
+## Mac OS
 In the Terminal:
 
 #### 1. You'll need Homebrew
@@ -98,6 +98,34 @@ starting the app. In the folder where you created venv, run:_
 
     source venv/bin/activate
     
-### Windows
+## Windows
 
-Detailed Windows installation instructions coming soon. 
+Detailed Windows installation steps coming soon! 
+
+In principle: 
+
+#### 1. Download and install Python
+Download the latest Python 3.9 version from [here](https://www.python.org/downloads/).
+
+#### 2. Download and install GIT 
+Download it from [here](https://git-scm.com/download/win)
+
+#### 3. Download and install FFMPEG
+The simplest approach is to use a package manager like [Choco](https://chocolatey.org/install). Once you follow the
+installation steps for "Individual Use" on that page, you can install FFMPEG using this command:
+
+    choco install ffmpeg
+
+Alternatively, you can also try to download FFMPEG from [here](https://www.gyan.dev/ffmpeg/builds/) and manually 
+install it, but you may need to manually add some environment variables after installation.
+
+#### 4. Install everything else
+Use the steps 3-8 from the Mac OS instructions above.
+
+_Note: if the pip command doesn't work, you can either try to install it like this:_
+
+    python get-pip.py
+
+Or, simply replace pip in the commands above with:
+
+    python -m pip [whatever goes after pip]
