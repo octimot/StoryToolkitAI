@@ -85,7 +85,7 @@ If you are running the tool on a machine with an NVIDIA CUDA GPU, make sure you 
 
     pip uninstall torch
     pip cache purge
-    install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
+    pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
 
 _Note: If Resolve is not turned on or not available, the transcription and translation functions will work on normal wav 
 files too. Simply press the transcribe or translate buttons and follow the process._

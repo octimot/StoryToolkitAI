@@ -173,10 +173,6 @@ average, don't despair, it's better to be prepared than sorry._
 Bad luck, but make sure that, in Davinci Resolve Preferences -> General, "External Scripting using" is set to Local
 Again, this only works with Resolve Studio and not the free version of Resolve (not that we know of)
 
-### Windows issues
-There seems to be a problem with the Resolve libraries on some Windows 10 machines, because either Windows sucks or we
-suck (definitely not us), but we're trying to find a fix.
-
 ### Tool freezing during playback
 Currently, the tool gets stuck as it waits a reply from the Resolve API, while Resolve is playing back, but it gets
 un-stuck as soon as the playhead stops moving. This will be fixed in a future update soon.
