@@ -39,7 +39,7 @@ In the Terminal:
 
 #### 3. Make sure you now have virtualenv:
 
-    pip install virtualenv
+    python3.9 -m pip install virtualenv
 
 _Note: if the pip command above doesn't work, try to use pip3 (and use pip3 for the next steps too)_
 
@@ -54,7 +54,7 @@ This should download the app in the folder that you chose.
 #### 5. Set up a virtual environment
 Now create a virtual environment (to prevent messing up with other python packages you may have installed on your OS for other stuff):
 
-    virtualenv -p python3.9 venv
+    python3.9 virtualenv -p python3.9 venv
 
 Right now, your installation folder should contain 2 other folders, and the tree should look like this:
 
@@ -70,6 +70,8 @@ using the following command!)
     source venv/bin/activate
 
 #### 7. Install OpenAI Whisper
+_Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
+If you followed the previous steps, your terminal prompt should now have `(venv)` before everything else._
 
     pip install git+https://github.com/openai/whisper.git 
 
