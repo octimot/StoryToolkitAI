@@ -2,6 +2,13 @@
 
 [Click here to the main project page](https://github.com/octimot/StoryToolkitAI)
 
+### Have you looked for standalone version first?
+We're currently working to get the app in a standalone binary version for different operating systems and platforms,
+so before anything else and if you don't want to get your hands dirty with terminal commands, check if there is a 
+release available for your platform [here](https://github.com/octimot/StoryToolkitAI/releases).
+
+---
+
 ### Quick Info before we start
 
 Our installation is on MacOS 12.6 running on M1, but the scripts should run fine on other CPUs and GPUs. For both

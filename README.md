@@ -94,12 +94,17 @@ not grab an axe and start coding to procrastinate your real work and feel a bit 
 
 # Setup & Installation
 
-Before you attempt something silly like actually installing this tool on your machine, please keep in mind that by
-clicking on the instructions you will see many computer commands which are the main method used by our ancestors to tame their machines.
-Approach them with no fear. But do keep in mind that you might end up ruining your computer, destroying the Internet, 
-starting AI apocalypse, losing your job and your only real friend, have children out of wedlock, and/or marry your lost
-non-identical twin by mistake - not necessarily in that order and highly unlikely because of the commands, but still
-slightly possible. Nevertheless, we're not responsible for any of it or anything else that might happen.
+We're currently working to get the app in a standalone binary version for different operating systems and platforms,
+so before anything else, check if there is a release available for your platform
+[here](https://github.com/octimot/StoryToolkitAI/releases) - right now there's a Mac M1 version available.
+
+But if a binary isn't available, before you attempt something silly like actually installing this tool on your machine, 
+please keep in mind that by clicking on the instructions you will see many computer commands which are the main method 
+used by our ancestors to tame their machines. Approach them with no fear. But do keep in mind that you might end up
+ruining your computer, destroying the Internet, starting AI apocalypse, losing your job and your only real friend, have 
+children out of wedlock, and/or marry your lost non-identical twin by mistake - not necessarily in that order and
+highly unlikely because of the commands, but still slightly possible. Nevertheless, we're not responsible for any of it 
+or anything else that might happen.
 
 For detailed installation instructions [go here](https://github.com/octimot/StoryToolkitAI/blob/main/INSTALLATION.md).
 
@@ -107,7 +112,8 @@ For detailed installation instructions [go here](https://github.com/octimot/Stor
 
 # Running the Tool
 
-To start StoryToolkitAI, go to the folder where you installed it previously, activate the virtual environment 
+If you haven't downloaded the app in a binary format from [here](https://github.com/octimot/StoryToolkitAI/releases), 
+to start StoryToolkitAI, go to the folder where you installed it previously, activate the virtual environment 
 (if you created one) and then start the tool:
     
     source venv/bin/activate
