@@ -1,8 +1,10 @@
 import os
 import platform
+import threading
 import time
 import json
-# import sys
+import sys
+import subprocess
 
 import tkinter as tk
 from tkinter import filedialog, simpledialog, messagebox
@@ -10,6 +12,9 @@ from tkinter import *
 
 import hashlib
 import codecs
+
+import logging
+import logging.handlers as handlers
 
 from threading import *
 
@@ -20,35 +25,162 @@ import whisper
 
 from timecode import Timecode
 
-
-# this makes sure that the user has all the required packages installed
-try:
-    file_path = os.path.realpath(__file__)
-
-    import pkg_resources
-    pkg_resources.require(open(os.path.join(os.path.dirname(__file__), 'requirements.txt'), mode='r'))
-except:
-
-    print('\033[91m')
-    import traceback
-    print(traceback.format_exc())
-
-    print('\n'
-          'WARNING: Some of the packages required to run StoryToolkitAI are missing from your Python environment.\n'
-          'Please run pip install -r requirements.txt '
-          'to make sure that the right versions of the required packages are installed or StoryToolkitAI will not '
-          'run properly.'
-          )
-
-    print('\033[0m')
-    time.sleep(5)
-
 import webbrowser
 
 # define a global target dir so we remember where we chose to save stuff last time when asked
 # but start with the user's home directory
 user_home_dir = os.path.expanduser("~")
 initial_target_dir = user_home_dir
+
+
+# this is where we used to store the user data prior to version 0.16.14
+# but we need to have a more universal approach, so we'll move this to
+# the home directory of the user which is platform dependent (see below)
+OLD_USER_DATA_PATH = 'userdata'
+
+# this is where StoryToolkitAI stores the config files
+# including project.json files and others
+# on Mac, this is usually /Users/[username]/StoryToolkitAI
+# on Windows, it's normally C:\Users\[username]\StoryToolkitAI
+# on Linux, it's probably /home/[username]/StoryToolkitAI
+USER_DATA_PATH = os.path.join(user_home_dir, 'StoryToolkitAI')
+
+# this is where we store the app configuration
+APP_CONFIG_FILE_NAME = 'config.json'
+
+# the location of the log file
+APP_LOG_FILE = os.path.join(USER_DATA_PATH, 'app.log')
+
+class Style():
+    BOLD = '\33[1m'
+    ITALIC = '\33[3m'
+    UNDERLINE = '\33[4m'
+    BLINK = '\33[5m'
+    BLINK2 = '\33[6m'
+    SELECTED = '\33[7m'
+
+    GREY = '\33[20m'
+    RED = '\33[91m'
+    GREEN = '\33[92m'
+    YELLOW = '\33[93m'
+    BLUE = '\33[94m'
+    VIOLET = '\33[95m'
+    CYAN = '\33[96m'
+    WHITE = '\33[97m'
+
+    ENDC = '\033[0m'
+
+
+# START LOGGER CONFIGURATION
+
+# System call so that Windows enables console colors
+os.system("")
+
+# logger colors + style
+class Logger_ConsoleFormatter(logging.Formatter):
+
+    #format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
+    format = '%(levelname)s: %(message)s'
+
+    FORMATS = {
+        logging.DEBUG: Style.BLUE + format + Style.ENDC,
+        logging.INFO: Style.GREY + format + Style.ENDC,
+        logging.WARNING: Style.YELLOW + format + Style.ENDC,
+        logging.ERROR: Style.RED + format + Style.ENDC,
+        logging.CRITICAL: Style.RED + Style.BOLD + format + Style.ENDC
+    }
+
+    def format(self, record):
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt)
+        return formatter.format(record)
+
+# enable logger
+logger = logging.getLogger('StAI')
+
+# if --debug was used in the command line arguments, use the DEBUG logging level
+# otherwise use INFO level
+logger.setLevel(logging.INFO if '--debug' not in sys.argv else logging.DEBUG)
+
+# create console handler and set level to info
+logger_console_handler = logging.StreamHandler()
+logger_console_handler.setLevel(logging.DEBUG)
+
+# add console formatter to ch
+logger_console_handler.setFormatter(Logger_ConsoleFormatter())
+
+# add logger_console_handler to logger
+logger.addHandler(logger_console_handler)
+
+## Here we define our file formatter
+# format the file logging
+file_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s: %(message)s (%(filename)s:%(lineno)d)")
+
+# create file handler and set level to debug
+logger_file_handler = handlers.RotatingFileHandler(APP_LOG_FILE, maxBytes=1000000, backupCount=3)
+logger_file_handler.setFormatter(file_formatter)
+logger_file_handler.setLevel(logging.DEBUG)
+
+# add file handler to logger
+logger.addHandler(logger_file_handler)
+
+
+# signal the start of the session in the log by adding some info about the machine
+logger.debug('\n--------------\n'
+             'Platform: {} {}\n Platform version: {}\n OS: {} \n running Python {}'
+             '\n--------------'.format(
+    platform.system(), platform.release(),
+    platform.version(),
+    ' '.join(map(str, platform.win32_ver()+platform.mac_ver())),
+    '.'.join(map(str, sys.version_info))))
+
+
+'''
+logger.debug('debug message')
+logger.info('info message')
+logger.warning('warn message')
+logger.error('error message')
+logger.critical('critical message')
+'''
+
+
+
+
+# this makes sure that the user has all the required packages installed
+try:
+    # get the path of app.py
+    file_path = os.path.realpath(__file__)
+
+    # check if all the requirements are met
+    import pkg_resources
+    pkg_resources.require(open(os.path.join(os.path.dirname(__file__), 'requirements.txt'), mode='r'))
+
+    logger.debug('All package requirements met.')
+
+except:
+
+    # let the user know that the packages are wrong
+    import traceback
+    traceback_str = traceback.format_exc()
+
+    logger.error(traceback_str)
+
+    # get the relative path of the requirements file
+    requirements_rel_path = os.path.relpath(os.path.join(os.path.dirname(__file__), 'requirements.txt'))
+
+    requirements_warning_msg = ('\n'
+          'Some of the packages required to run StoryToolkitAI are missing from your Python environment.\n'
+          'Please run pip install -r {} '
+          'to make sure that the right versions of the required packages are installed or StoryToolkitAI will not '
+          'run properly.\n\n'
+          'If you are running the standalone version of the app, please report this error to the developers together '
+                                'with the log file found at: {}\n'
+          .format(requirements_rel_path, APP_LOG_FILE))
+
+    logger.error(requirements_warning_msg)
+
+    # keep this message in the console for a bit
+    time.sleep(5)
 
 
 class toolkit_UI:
@@ -510,7 +642,7 @@ class toolkit_UI:
             # m key event
             if event.keysym == 'm' or event.keysym == 'M':
 
-                print('Special Key:', special_key)
+                #print('Special Key:', special_key)
 
                 # add segment based markers
 
@@ -583,7 +715,7 @@ class toolkit_UI:
                                 if marker_duration_tc.frames <= 1:
                                     self.notify_via_messagebox(title='Cannot add marker',
                                                                message='Not enough space to add marker on timeline.',
-                                                               type='warn'
+                                                               type='warning'
                                                                )
                                     return False
 
@@ -1101,7 +1233,6 @@ class toolkit_UI:
 
             print('Pos: {}.{}; Last: {}'.format(line, char, last_char))
 
-            # WORK IN PROGRESS
             # prevent RETURN key from adding another line break in the text
             return 'break'
 
@@ -1139,7 +1270,7 @@ class toolkit_UI:
 
                 self.toolkit_UI_obj.notify_via_messagebox(title='Split time too large',
                                                           message='The time you entered goes over the end time of '
-                                                                  'the current segment.', type='warn')
+                                                                  'the current segment.', type='warning')
                 return 'break'
 
             # the split time becomes the start time of the new line
@@ -1231,7 +1362,7 @@ class toolkit_UI:
                 return False
 
             if merge not in ['previous', 'next']:
-                self.stAI.log_print('Merge direction not specified.', 'error')
+                logger.error('Merge direction not specified.')
                 return 'break'
 
             # get the cursor position where the event was triggered (key was pressed)
@@ -1369,14 +1500,35 @@ class toolkit_UI:
                                                              transcription_data=modified_transcription_file_data,
                                                              backup='backup')
 
+                # the directory where the transcription file is
+                transcription_file_dir = os.path.dirname(transcription_file_path)
+
+                # if this transcription has an associated txt file, update it:
+                if 'txt_file_path' in modified_transcription_file_data:
+
+                    # assume that it's in the same folder as the transcription file
+                    txt_file_path = os.path.join(transcription_file_dir,
+                                                 modified_transcription_file_data['txt_file_path'])
+
+                    self.toolkit_ops_obj.save_txt_from_transcription(txt_file_path=txt_file_path,
+                                                                 transcription_data=modified_transcription_file_data)
+
+                # if this transcription has an associated srt file, update it
+                if 'srt_file_path' in modified_transcription_file_data:
+
+                    # assume that it's in the same folder as the transcription file
+                    srt_file_path = os.path.join(transcription_file_dir,
+                                                 modified_transcription_file_data['srt_file_path'])
+
+                    self.toolkit_ops_obj.save_srt_from_transcription(srt_file_path=srt_file_path,
+                                                                 transcription_data=modified_transcription_file_data)
+
                 return True
 
             # returning false means that no changes were made
             return False
 
-
-
-    def __init__(self, toolkit_ops_obj=None, stAI=None, warn_message=None):
+    def __init__(self, toolkit_ops_obj=None, stAI=None, **other_options):
 
         # make a reference to toolkit ops obj
         self.toolkit_ops_obj = toolkit_ops_obj
@@ -1387,14 +1539,50 @@ class toolkit_UI:
         # initialize tkinter as the main GUI
         self.root = tk.Tk()
 
+        logger.debug('Running with TK {}'.format(self.root.call("info", "patchlevel")))
+
+        # set the main window title
+        self.root.title("StoryToolkitAI v{}".format(stAI.__version__))
+
+        # temporary width and height for the main window
+        self.root.config(width=1, height=1)
+
         # initialize transcript edit object
         self.t_edit_obj = self.TranscriptEdit(stAI=self.stAI, toolkit_UI_obj=self, toolkit_ops_obj=self.toolkit_ops_obj)
 
-        # show any info messages
-        if warn_message is not None:
-            self.notify_via_messagebox(title='Update available',
-                                       message=warn_message,
-                                       type='warn'
+        # show the update available message if any
+        if 'update_available' in other_options and other_options['update_available'] is not None:
+
+            # the url to the releases page
+            release_url = 'https://github.com/octimot/StoryToolkitAI/releases/latest'
+
+            # the update warning message the user will see
+            warn_message = '\nA newer version of StoryToolkitAI is available.\n\n ' \
+                           'Use git pull or download it from\n ' \
+                           '{}'.format(release_url)
+
+            # notify the user via console
+            logger.warning(warn_message)
+
+            # add the question to the pop up message box
+            warn_message = warn_message+' \n\n Do you want to open the release page?'
+
+            # notify the user and ask whether to open the release website or not
+            goto_projectpage = messagebox.askyesno(title="Update available",
+                                                  message=warn_message)
+
+            # open the browser and go to the release_url
+            if goto_projectpage:
+                webbrowser.open(release_url)
+
+        # alert the user if ffmpeg isn't installed
+        if 'ffmpeg_status' in other_options and not other_options['ffmpeg_status']:
+
+            self.notify_via_messagebox(title='FFMPEG not found',
+                                       message='FFMPEG was not found on this machine.\n'
+                                               'Please follow the installation instructions or StoryToolkitAI will '
+                                               'not work correctly.',
+                                       type='error'
                                        )
 
         # keep all the window references here to find them easy by window_id
@@ -1458,9 +1646,6 @@ class toolkit_UI:
 
         # use this variable to remember if the user said it's ok that resolve is not available to continue a process
         self.no_resolve_ok = False
-
-        # create the main window
-        self.create_main_window()
 
     class main_window:
         pass
@@ -1589,9 +1774,6 @@ class toolkit_UI:
         # any frames stored here in the future will be considered visible
         self.main_window_visible_frames = []
 
-        # set the window title
-        self.root.title("StoryToolkitAI v{}".format(stAI.__version__))
-
         # retrieve toolkit_ops object
         toolkit_ops_obj = self.toolkit_ops_obj
 
@@ -1675,11 +1857,10 @@ class toolkit_UI:
         # Make the window resizable false
         self.root.resizable(False, False)
 
-        # poll resolve after 500ms
-        # todo this needs to be moved to the init function asap
-        self.root.after(500, self.resolve_monitor(initial=True))
+        # update the window after it's been created
+        self.root.after(500, self.update_main_window())
 
-        self.stAI.log_print("Starting StoryToolkitAI GUI")
+        logger.info("Starting StoryToolkitAI GUI")
         self.root.mainloop()
 
         return
@@ -1688,7 +1869,7 @@ class toolkit_UI:
                                            audio_file_path=None, name=None, task=None, unique_id=None):
 
         if self.toolkit_ops_obj is None or audio_file_path is None or unique_id is None:
-            self.stAI.log_print('Aborting. Unable to open transcription settings window.', 'error')
+            logger.error('Aborting. Unable to open transcription settings window.')
             return False
 
         # assign a unique_id for this window depending on the queue unique_id
@@ -1798,6 +1979,16 @@ class toolkit_UI:
             device_input = OptionMenu(ts_form_frame, device_var, *available_devices)
             device_input.grid(row=6, column=2, **self.input_grid_settings, **self.form_paddings)
 
+            # INITIAL PROMPT INPUT
+            Label(ts_form_frame, text="Initial Prompt", **self.label_settings).grid(row=7, column=1,
+                                                                            sticky='nw',
+                                                                          #**self.input_grid_settings,
+                                                                          **self.form_paddings)
+            #prompt_var = StringVar(ts_form_frame)
+            prompt_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
+            prompt_input.grid(row=7, column=2, **self.input_grid_settings, **self.form_paddings)
+            prompt_input.insert(END, " - How are you?\n - I'm fine, thank you.")
+
             # START BUTTON
 
             # add all the settings entered by the use into a nice dictionary
@@ -1817,7 +2008,8 @@ class toolkit_UI:
                                             task=task_var.get(),
                                             name=name_var.get(),
                                             model=model_var.get(),
-                                            device=device_var.get()
+                                            device=device_var.get(),
+                                            initial_prompt=prompt_input.get(1.0, END)
                                             )
                                 )
 
@@ -1890,16 +2082,14 @@ class toolkit_UI:
     def open_transcription_window(self, title=None, transcription_file_path=None, srt_file_path=None):
 
         if self.toolkit_ops_obj is None:
-            self.stAI.log_print('Cannot open transcription window. A toolkit operations object is needed to continue.',
-                                'error')
+            logger.error('Cannot open transcription window. A toolkit operations object is needed to continue.')
             return False
 
         # Note: most of the transcription window functions are stored in the TranscriptEdit class
 
         # only continue if the transcription path was passed and the file exists
         if transcription_file_path is None or os.path.exists(transcription_file_path) is False:
-            self.stAI.log_print('The transcription file {} doesn\'t exist'.format(transcription_file_path)
-                                , 'error')
+            logger.error('The transcription file {} doesn\'t exist'.format(transcription_file_path))
             return False
 
         # now read the transcription file contents
@@ -1984,8 +2174,7 @@ class toolkit_UI:
                         self.t_edit_obj.transcript_segments_ids[t_window_id][line] = t_segment['id']
                     # throw an error otherwise, it might be a problem on the long run
                     else:
-                        self.stAI.log_print('Line {} in {} doesn\'t have an id.'.format(line, transcription_file_path),
-                                            'error')
+                        logger.error('Line {} in {} doesn\'t have an id.'.format(line, transcription_file_path))
 
                     # if there is a text element, simply insert it in the window
                     if 'text' in t_segment:
@@ -2037,6 +2226,9 @@ class toolkit_UI:
                 if longest_segment_num_char > 60:
                     longest_segment_num_char = 60
                 text.config(state=DISABLED, width=longest_segment_num_char)
+
+                # add undo/redo
+                text.config(undo=True)
 
                 # set the top, in-between and bottom text spacing
                 text.config(spacing1=0, spacing2=0.2, spacing3=5)
@@ -2230,11 +2422,12 @@ class toolkit_UI:
                 self.windows[t_window_id].after(500, lambda link_button=link_button,
                                                             t_window_id=t_window_id,
                                                             transcription_file_path=transcription_file_path:
-                self.update_transcription_window(window_id=t_window_id,
-                                                 link_button=link_button,
-                                                 sync_button=sync_button,
-                                                 transcription_file_path=transcription_file_path,
-                                                 text=text))
+                    self.update_transcription_window(window_id=t_window_id,
+                                                     link_button=link_button,
+                                                     sync_button=sync_button,
+                                                     transcription_file_path=transcription_file_path,
+                                                     text=text)
+                                                )
 
 
 
@@ -2245,7 +2438,7 @@ class toolkit_UI:
 
                 self.notify_via_messagebox(title='Not a transcript file',
                                            message=not_a_transcription_message,
-                                           type='warn'
+                                           type='warning'
                                            )
                 self.destroy_window_(self.windows, t_window_id)
 
@@ -2367,9 +2560,10 @@ class toolkit_UI:
             update_attr['link_button'].grid_forget()
             update_attr['sync_button'].grid_forget()
 
-        # do this again after 1000 ms
+        # update again after 500ms
+        # @todo remove the auto-update and place the call where is needed to prevent constant redrawing of stuff
         self.windows[window_id].after(500, lambda window_id=window_id, update_attr=update_attr:
-        self.update_transcription_window(window_id, **update_attr))
+                self.update_transcription_window(window_id, **update_attr))
 
     def update_transcription_log_window(self):
 
@@ -2565,11 +2759,12 @@ class toolkit_UI:
 
         :param title:
         :param text:
+        :param debug_message:
         :return:
         """
 
         # log and print to console first
-        self.stAI.log_print(debug_message)
+        logger.info(debug_message)
 
         # notify the user depending on which platform they're on
         if platform.system() == 'Darwin':  # macOS
@@ -2588,96 +2783,19 @@ class toolkit_UI:
         if message_log is None:
             message_log = message
 
-        # first print and log the message
-        self.stAI.log_print(message=message_log, type=type)
-
         # alert the user using the messagebox according to the type
+        # and log the message
         if type == 'error':
             messagebox.showerror(message=message, **options)
+            logger.error(message)
 
         elif type == 'info':
             messagebox.showinfo(message=message, **options)
+            logger.info(message)
 
-        elif type == 'warn':
+        elif type == 'warning':
             messagebox.showwarning(message=message, **options)
-
-    def resolve_monitor(self, initial=False):
-        '''
-        This makes sure that the UI is up-to-date with what is being polled from Resolve
-
-        :return:
-        '''
-
-        #
-        global resolve_error
-        global current_timeline
-        global resolve
-
-        # keep in mind the current timeline
-        old_timeline = current_timeline
-
-        # first poll resolve
-        self.toolkit_ops_obj.poll_resolve_thread()
-
-        # update main window
-        self.update_main_window()
-
-        # if the timeline has changed, open its linked transcriptions
-        if resolve and (
-                initial or (current_timeline is not None and 'name' in current_timeline and 'name' in old_timeline \
-                            and current_timeline['name'] != old_timeline['name'])):
-
-            # get the transcription_paths linked with this timeline
-            timeline_transcription_file_paths = self.toolkit_ops_obj.get_timeline_transcriptions(
-                timeline_name=current_timeline['name'],
-                project_name=current_project
-            )
-
-            # and open a transcript window for each of them
-            if timeline_transcription_file_paths:
-                for transcription_file_path in timeline_transcription_file_paths:
-                    self.open_transcription_window(transcription_file_path=transcription_file_path)
-
-        # how often do we poll resolve?
-        polling_interval = 500
-
-        # if any errors occurred
-        if resolve_error:
-
-            # let the user know that there's an error, and throttle the polling_interval
-
-            # after 20+ tries, assume the user is no longer paying attention and reduce the frequency of tries
-            if resolve_error > 20:
-
-                # only show this error one more time
-                if resolve_error == 21:
-                    self.stAI.log_print('Resolve is still not reachable. '
-                                        'Muting errors. Now retrying every 30 seconds.\n'
-                                        '  Error count: {}'.format(resolve_error), 'error')
-
-                # and increase the polling interval to 30 seconds
-                polling_interval = 30000
-
-            # if the error has been triggered more than 10 times, say this
-            elif resolve_error > 10:
-
-                if resolve_error == 11:
-                    self.stAI.log_print('Resolve is still not reachable. Now retrying every 5 seconds.\n'
-                                        '  Error count: {}'.format(resolve_error), 'warn')
-
-                # increase the polling interval to 5 seconds
-                polling_interval = 5000
-
-            else:
-                if resolve_error==1:
-                    self.stAI.log_print('Resolve is not reachable.\n'
-                                        '  Error count: {}'.format(resolve_error), 'warn')
-
-                # increase the polling interval to 1 second
-                polling_interval = 1000
-
-        # repeat this every x milliseconds
-        self.root.after(polling_interval, lambda: self.resolve_monitor())
+            logger.warning(message)
 
 
 class ToolkitOps:
@@ -2723,6 +2841,10 @@ class ToolkitOps:
 
         self.whisper_device = self.whisper_device_select(self.whisper_device)
 
+        # start the resolve thread
+        # with this, resolve should be constantly polled for data
+        self.poll_resolve_thread()
+
         # toolkit_UI_obj.create_transcription_settings_window()
         # time.sleep(120)
         # return
@@ -2741,7 +2863,7 @@ class ToolkitOps:
                 self.whisper_device = device = torch.device('cuda')
             # or let the user know that cuda is not available and switch to cpu
             else:
-                stAI.log_print('CUDA not available. Switching to cpu.', 'error')
+                logger.error('CUDA not available. Switching to cpu.')
                 self.whisper_device = device = torch.device('cpu')
         # if the whisper device is set to cpu
         elif self.whisper_device in ['cpu', 'CPU']:
@@ -2751,7 +2873,7 @@ class ToolkitOps:
             # use CUDA if available
             self.whisper_device = device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        stAI.log_print('Using {} for Torch / Whisper.'.format(device), 'info')
+        logger.info('Using {} for Torch / Whisper.'.format(device))
 
         return self.whisper_device
 
@@ -2782,8 +2904,8 @@ class ToolkitOps:
         target_dir = ''
 
         # if Resolve is available and the user has an open timeline, render the timeline to an audio file
-        if resolve_data['resolve'] != None and 'currentTimeline' in resolve_data and resolve_data[
-            'currentTimeline'] != '':
+        if resolve_data['resolve'] != None and 'currentTimeline' in resolve_data and \
+                resolve_data['currentTimeline'] != '' and resolve_data['currentTimeline'] is not None:
 
             # reset any potential yes that the user might have said when asked to continue without resolve
             toolkit_UI_obj.no_resolve_ok = False
@@ -2793,7 +2915,7 @@ class ToolkitOps:
 
             # ask the user where to save the files
             while target_dir == '' or not os.path.exists(os.path.join(target_dir)):
-                self.stAI.log_print("Prompting user for render path.")
+                logger.info("Prompting user for render path.")
                 target_dir = toolkit_UI_obj.ask_for_target_dir(target_dir=last_target_dir)
 
                 # remember this target_dir for the next time we're working on this project
@@ -2804,7 +2926,7 @@ class ToolkitOps:
 
                 # cancel if the user presses cancel
                 if not target_dir:
-                    self.stAI.log_print("User canceled transcription operation.")
+                    logger.info("User canceled transcription operation.")
                     return False
 
             # get the current timeline from Resolve
@@ -2916,7 +3038,7 @@ class ToolkitOps:
             return True
 
         else:
-            self.stAI.log_print('Missing unique id when trying to add item to transcription log.')
+            logger.warning('Missing unique id when trying to add item to transcription log.')
             return False
 
     def update_transcription_log(self, unique_id=None, **attributes):
@@ -2950,7 +3072,7 @@ class ToolkitOps:
 
     def add_to_transcription_queue(self, toolkit_UI_obj=None, task=None, audio_file_path=None,
                                    name=None, language=None, model=None, device=None,
-                                   unique_id=None):
+                                   unique_id=None, initial_prompt=None):
         '''
         Adds files to the transcription queue and then pings the queue in case it's sleeping.
         It also adds the files to the transcription log
@@ -3014,6 +3136,7 @@ class ToolkitOps:
 
                 file_dict = {'name': c_name, 'audio_file_path': audio_file_path, 'task': c_task,
                              'language': language, 'model': model, 'device': device,
+                             'initial_prompt': initial_prompt,
                              'status': 'waiting', 'info': None}
 
                 # add to transcription queue
@@ -3026,7 +3149,7 @@ class ToolkitOps:
                 self.ping_transcription_queue()
 
             else:
-                self.stAI.log_print('Missing parameters to add file to transcription queue', 'error')
+                logger.error('Missing parameters to add file to transcription queue')
                 return False
 
             # throttle for a bit to avoid unique id unique id collisions
@@ -3050,11 +3173,11 @@ class ToolkitOps:
 
         # if there are files in the queue
         if self.transcription_queue:
-            # self.stAI.log_print('Files waiting in queue for transcription:\n {} \n'.format(self.transcription_queue))
+            # logger.info('Files waiting in queue for transcription:\n {} \n'.format(self.transcription_queue))
 
             # check if there's an active transcription thread
             if self.transcription_queue_thread is not None:
-                self.stAI.log_print('Currently transcribing: {}'.format(self.transcription_queue_current_name))
+                logger.info('Currently transcribing: {}'.format(self.transcription_queue_current_name))
 
             # if there's no active transcription thread, start it
             else:
@@ -3077,7 +3200,7 @@ class ToolkitOps:
 
         # if there are no more files left in the queue, stop until something pings it again
         else:
-            self.stAI.log_print('Transcription queue empty. Going to sleep.')
+            logger.info('Transcription queue empty. Going to sleep.')
             return False
 
     def transcribe_from_queue(self, queue_id):
@@ -3087,9 +3210,10 @@ class ToolkitOps:
             return False
 
         # get file info from queue
-        name, audio_file_path, task, language, model, device, info = self.get_queue_file_info(queue_id)
+        name, audio_file_path, task, language, model, device, initial_prompt, info \
+            = self.get_queue_file_info(queue_id)
 
-        self.stAI.log_print("Starting to transcribe {}".format(name))
+        logger.info("Starting to transcribe {}".format(name))
 
         # make the name of the file that is currently being processed public
         self.transcription_queue_current_name = name
@@ -3099,12 +3223,13 @@ class ToolkitOps:
         # try the transcription
         try:
             self.whisper_transcribe(audio_file_path=audio_file_path, task=task, name=name,
-                                    queue_id=queue_id, language=language, model=model, device=device)
+                                    queue_id=queue_id, language=language, model=model, initial_prompt=initial_prompt,
+                                    device=device)
 
         # in case the transcription process crashes
         except Exception:
             # show error
-            self.stAI.log_print(traceback.format_exc(), 'error')
+            logger.error(traceback.format_exc())
             # update the status of the item in the transcription log
             self.update_transcription_log(unique_id=queue_id, **{'status': 'failed'})
 
@@ -3127,6 +3252,7 @@ class ToolkitOps:
             queue_file = self.transcription_queue[queue_id]
             return [queue_file['name'], queue_file['audio_file_path'], queue_file['task'],
                     queue_file['language'], queue_file['model'], queue_file['device'],
+                    queue_file['initial_prompt'],
                     queue_file['info']]
 
         return False
@@ -3170,11 +3296,11 @@ class ToolkitOps:
             if 'model' in other_whisper_options and other_whisper_options['model']:
                 self.whisper_model_name = other_whisper_options['model']
 
-            self.stAI.log_print('Loading Whisper {} model.'.format(self.whisper_model_name), 'info')
+            logger.info('Loading Whisper {} model.'.format(self.whisper_model_name))
             self.whisper_model = whisper.load_model(self.whisper_model_name)
 
             # let the user know if the whisper model is multilingual or english-only
-            self.stAI.log_print('Selected Whisper model is {}.'.format(
+            logger.info('Selected Whisper model is {}.'.format(
                 'multilingual' if self.whisper_model.is_multilingual else 'English-only'
             ))
 
@@ -3194,7 +3320,15 @@ class ToolkitOps:
         if 'language' in other_whisper_options and other_whisper_options['language'] == '':
             del other_whisper_options['language']
 
-        result = self.whisper_model.transcribe(audio_file_path, task=task, **other_whisper_options)
+        # remove empty initial prompt
+        if 'initial_prompt' in other_whisper_options and other_whisper_options['initial_prompt'] == '':
+            del other_whisper_options['initial_prompt']
+
+        result = self.whisper_model.transcribe(audio_file_path,
+                                               task=task, verbose=True, **other_whisper_options)
+
+        # self.speaker_diarization(audio_file_path)
+
 
         # let the user know that the speech was processed
         notification_msg = "Finished transcription for {} in {} seconds".format(name,
@@ -3292,7 +3426,7 @@ class ToolkitOps:
 
             # if the name and target_dir were not passed, throw an error
             else:
-                self.stAI.log_print('No transcription file path, name or target dir were passed.', 'error')
+                logger.error('No transcription file path, name or target dir were passed.')
                 return False
 
         if transcription_file_path:
@@ -3334,7 +3468,7 @@ class ToolkitOps:
 
         # make sure the transcription exists
         if not os.path.exists(transcription_file_path):
-            self.stAI.log_print('Transcription file {} doesn\'t exist.'.format(transcription_file_path), 'warn')
+            logger.warning('Transcription file {} doesn\'t exist.'.format(transcription_file_path))
             return False
 
         # get the contents of the transcription file
@@ -3342,7 +3476,6 @@ class ToolkitOps:
             transcription_json = json.load(json_file)
 
         return transcription_json
-
 
     def process_transcription_data(self, transcription_segments=None, transcription_data=None):
         '''
@@ -3363,7 +3496,6 @@ class ToolkitOps:
             transcription_data['text'] = ''
 
             for segment in transcription_segments:
-                # @todo test this when working on the transcript editing
                 print(segment)
 
                 # take each segment and insert it into the text variable
@@ -3400,7 +3532,7 @@ class ToolkitOps:
 
             # if the name and target_dir were not passed, throw an error
             else:
-                self.stAI.log_print('No transcription file path, name or target dir were passed.', 'error')
+                logger.error('No transcription file path, name or target dir were passed.')
                 return False
 
         if srt_file_path:
@@ -3448,7 +3580,7 @@ class ToolkitOps:
 
             # if the name and target_dir were not passed, throw an error
             else:
-                self.stAI.log_print('No transcription file path, name or target dir were passed.', 'error')
+                logger.error('No transcription file path, name or target dir were passed.')
                 return False
 
         if txt_file_path:
@@ -3534,7 +3666,7 @@ class ToolkitOps:
 
         # abort if no transcript file was passed
         if transcription_file_path is None:
-            self.stAI.log_print('No transcript path was passed. Unable to link transcript to timeline.', 'error')
+            logger.error('No transcript path was passed. Unable to link transcript to timeline.')
             return None
 
         # if no timeline name was passed
@@ -3549,7 +3681,7 @@ class ToolkitOps:
 
 
             else:
-                self.stAI.log_print('No timeline was passed. Unable to link transcript to timeline.', 'error')
+                logger.error('No timeline was passed. Unable to link transcript to timeline.')
                 return None
 
         # if no project was passed
@@ -3563,7 +3695,7 @@ class ToolkitOps:
                 project_name = current_project
 
             else:
-                self.stAI.log_print('No project name was passed. Unable to link transcript to timeline.', 'error')
+                logger.error('No project name was passed. Unable to link transcript to timeline.')
 
         # check the if the transcript is currently linked with the transcription
         current_link, timeline_transcriptions = self.get_transcription_to_timeline_link(
@@ -3582,7 +3714,7 @@ class ToolkitOps:
         # now create the link if we should
         if link:
 
-            self.stAI.log_print('Linking to current timeline: {}'.format(timeline_name), 'info')
+            logger.info('Linking to current timeline: {}'.format(timeline_name))
 
             # but only create it if it isn't in there yet
             if transcription_file_path not in timeline_transcriptions:
@@ -3590,7 +3722,7 @@ class ToolkitOps:
 
         # or remove the link if we shouldn't
         else:
-            self.stAI.log_print('Unlinking from current timeline: {}'.format(timeline_name), 'info')
+            logger.info('Unlinking from current timeline: {}'.format(timeline_name))
 
             # but only remove it if it is in there currently
             if transcription_file_path in timeline_transcriptions:
@@ -3624,13 +3756,13 @@ class ToolkitOps:
 
         # if there's no toolkit_UI_obj in the object or one hasn't been passed, abort
         if toolkit_UI_obj is None and self.toolkit_UI_obj is None:
-            self.stAI.log_print('No GUI available. Aborting.', 'error')
+            logger.error('No GUI available. Aborting.')
             return False
         # if there was a toolkit_UI_obj passed, update the one in the object
         elif toolkit_UI_obj is not None:
             self.toolkit_UI_obj = toolkit_UI_obj
             return True
-        # if there is simply a self.toolkit_UI_obj just return True
+        # if there simply is a self.toolkit_UI_obj just return True
         else:
             return True
 
@@ -3677,73 +3809,59 @@ class ToolkitOps:
             # move playhead in resolve
             mots_resolve.set_resolve_tc(str(new_timeline_tc))
 
+    def on_resolve(self, event_name):
+        '''
+        Process resolve events
+        :param event_name:
+        :return:
+        '''
+
+        # FOR NOW WE WILL KEEP THE UI UPDATES HERE AS WELL
+
+        # print(event_name)
+
+        # when resolve connects / re-connects
+        if event_name == 'resolve_changed':
+
+            # update the main window
+            if self.is_UI_obj_available():
+                self.toolkit_UI_obj.update_main_window()
+
+        # when the timeline has changed
+        elif event_name == 'timeline_changed':
+
+            global current_timeline
+
+            if current_timeline is not None:
+                # get the transcription_paths linked with this timeline
+                timeline_transcription_file_paths = self.get_timeline_transcriptions(
+                    timeline_name=current_timeline['name'],
+                    project_name=current_project
+                )
+
+                # and open a transcript window for each of them
+                if timeline_transcription_file_paths:
+                    for transcription_file_path in timeline_transcription_file_paths:
+                        self.toolkit_UI_obj.open_transcription_window(transcription_file_path=transcription_file_path)
+
+
     def poll_resolve_thread(self):
+        '''
+        This keeps resolve polling in a separate thread
+        '''
 
-        return self.poll_resolve_data()
+        # wrap poll_resolve_data into a thread
+        poll_resolve_thread = Thread(target=self.poll_resolve_data)
 
-        # a possible approach to avoing windows hanging while resolve is playing back
-        # self.multiprocessing_with_timeout(self.poll_resolve_data, timeout=1, default='Closed')
-
-        # create the thread
-        # t = Thread(target=self.poll_resolve_data)
+        # stop the thread when the main thread stops
+        poll_resolve_thread.daemon = True
 
         # start the thread
-        # t.start()
-
-    # def multiprocessing_with_timeout(self, func, args=(), kwds={}, timeout=1, default=None):
-    #
-    #     import multiprocessing as mp
-    #
-    #     pool = mp.Pool(processes=1)
-    #     result = pool.apply_async(func, args=args, kwds=kwds)
-    #     try:
-    #         val = result.get(timeout=timeout)
-    #     except mp.TimeoutError:
-    #         pool.terminate()
-    #         return default
-    #     else:
-    #         pool.close()
-    #         pool.join()
-    #         return val
-
-
-    # def on_resolve_timeline_changed(self):
-    #     '''
-    #     Handles everything that happens when a timeline changes in resolve
-    #     :return:
-    #     '''
-
-        # global current_project
-        # global current_timeline
-
-        # should we close the transcripts that are not linked to the timeline?
-        # print(self.stAI.get_app_setting('close_transcripts_on_timeline_change'))
-        # if self.stAI.get_app_setting('close_transcripts_on_timeline_change', default_if_none=False):
-        #     print(self.toolkit_UI_obj)
-
-
-        #     for window in self.toolkit_UI_obj.windows:
-
-        #         print(window)
-        #         transcription_file_path = self.toolkit_UI_obj.t_edit_obj.transcription_file_paths[window]
-
-        #         print(transcription_file_path)
-
-        #         # if this transcription is connected with the current timeline
-        #         if not self.toolkit_UI_obj.get_transcription_to_timeline_link(self,
-        #                                                                transcription_file_path=transcription_file_path,
-        #                                                                timeline_name=current_timeline,
-        #                                                                project_name=current_project):
-        #             print('not linked.closing.')
-
-        #         else:
-        #             print('linked. leave on')
-
-        # print('Timeline Changed')
+        poll_resolve_thread.start()
 
     def poll_resolve_data(self):
         '''
-        Polls resolve and returns either the data passed from resolve, or False if any exceptions occured
+        Polls resolve and returns either the data passed from resolve, or False if any exceptions occurred
         :return:
         '''
 
@@ -3756,97 +3874,152 @@ class ToolkitOps:
 
         global resolve_error
 
-        # try to poll resolve
-        try:
-            resolve_data = mots_resolve.get_resolve_data()
+        # do this continuously
+        while True:
 
-            if current_project != resolve_data['currentProject']:
-                current_project = resolve_data['currentProject']
-                # self.stAI.log_print('Current Project: {}'.format(current_project))
+            # try to poll resolve
+            try:
+                resolve_data = mots_resolve.get_resolve_data(silent=True)
 
-            if current_timeline != resolve_data['currentTimeline']:
-                current_timeline = resolve_data['currentTimeline']
-                # self.on_resolve_timeline_changed()
-                # self.stAI.log_print("Current Timeline: {}".format(current_timeline))
+                #print(resolve)
+                #print(resolve_data['resolve'])
 
-            #  updates the currentBin
-            if current_bin != resolve_data['currentBin']:
-                current_bin = resolve_data['currentBin']
-                # self.stAI.log_print("Current Bin: {}".format(current_bin))
+                if type(resolve) != type(resolve_data['resolve']):
+                    # update the global resolve variable with the resolve object
+                    resolve = resolve_data['resolve']
+                    self.on_resolve('resolve_changed')
 
-            # update current playhead timecode
-            if current_tc != resolve_data['currentTC']:
-                current_tc = resolve_data['currentTC']
+                if current_project != resolve_data['currentProject']:
+                    current_project = resolve_data['currentProject']
+                    self.on_resolve('project_changed')
+                    # logger.info('Current Project: {}'.format(current_project))
 
-            # update current playhead timecode
-            if current_timeline_fps != resolve_data['currentTimelineFPS']:
-                current_timeline_fps = resolve_data['currentTimelineFPS']
+                if current_timeline != resolve_data['currentTimeline']:
+                    current_timeline = resolve_data['currentTimeline']
+                    self.on_resolve('timeline_changed')
+                    # self.on_resolve_timeline_changed()
+                    # logger.info("Current Timeline: {}".format(current_timeline))
 
-            # update the global resolve variable with the resolve object
-            resolve = resolve_data['resolve']
+                #  updates the currentBin
+                if current_bin != resolve_data['currentBin']:
+                    current_bin = resolve_data['currentBin']
+                    self.on_resolve('bin_changed')
+                    # logger.info("Current Bin: {}".format(current_bin))
 
-            # was there a previous error?
-            if resolve_error > 0:
-                # first let the user know that the connection is back on
-                self.stAI.log_print("Resolve connection re-established.", 'warn')
+                # update current playhead timecode
+                if current_tc != resolve_data['currentTC']:
+                    current_tc = resolve_data['currentTC']
+                    self.on_resolve('tc_changed')
 
-                # reset the error counter since the Resolve API worked fine
-                resolve_error = 0
+                # update current playhead timecode
+                if current_timeline_fps != resolve_data['currentTimelineFPS']:
+                    current_timeline_fps = resolve_data['currentTimelineFPS']
+                    self.on_resolve('fps_changed')
 
-            return resolve_data
+                # was there a previous error?
+                if resolve is not None and resolve_error > 0:
+                    # first let the user know that the connection is back on
+                    logger.warning("Resolve connection re-established.")
+
+                    # reset the error counter since the Resolve API worked fine
+                    resolve_error = 0
+
+                elif resolve is None:
+                    resolve_error += 1
+
+                #return resolve_data
+
+            # if an exception is thrown while trying to work with Resolve, don't crash, but continue to try to poll
+            except:
+
+                import traceback
+                print(traceback.format_exc())
+
+                # count the number of errors
+                resolve_error += 1
+
+                # resolve is now None in the global variable
+                # resolve = None
+
+                #return False
+
+            # how often do we poll resolve?
+            polling_interval = 500
+
+            # if any errors occurred
+            if resolve_error:
+
+                # let the user know that there's an error, and throttle the polling_interval
+
+                # after 20+ tries, assume the user is no longer paying attention and reduce the frequency of tries
+                if resolve_error > 20:
+
+                    # only show this error one more time
+                    if resolve_error == 21:
+                        logger.error('Resolve is still not reachable. '
+                                            'Muting errors. Now retrying every 30 seconds. ')
+
+                    # and increase the polling interval to 30 seconds
+                    polling_interval = 30000
+
+                # if the error has been triggered more than 10 times, say this
+                elif resolve_error > 10:
+
+                    if resolve_error == 11:
+                        logger.warning('Resolve is still not reachable. Now retrying every 5 seconds.')
+
+                    # increase the polling interval to 5 seconds
+                    polling_interval = 5000
+
+                else:
+                    if resolve_error == 1:
+                        logger.warning('Resolve is not reachable.')
+
+                    # increase the polling interval to 1 second
+                    polling_interval = 1000
+
+            # take a short break before continuing the loop
+            time.sleep(polling_interval/1000)
+
+    def speaker_diarization(audio_path):
+        # work in progress, but whisper vs. pyannote dependencies collide (huggingface-hub)
+        # print("Detecting speakers.")
+
+        # from pyannote.audio import Pipeline
+        # pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization")
+
+        # apply pretrained pipeline
+        # diarization = pipeline(audio_path)
+
+        # print the result
+        # for turn, _, speaker in diarization.itertracks(yield_label=True):
+        #    print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
+        return False
 
 
-        # if an exception is thrown while trying to work with Resolve, don't crash, but continue to try to poll
-        except:
-
-            # count the number of errors
-            resolve_error += 1
-
-            # resolve is now None in the global variable
-            resolve = None
-
-            return False
-
-
-def speaker_diarization(audio_path):
-    # work in progress, but whisper vs. pyannote dependencies collide (huggingface-hub)
-    # print("Detecting speakers.")
-
-    from pyannote.audio import Pipeline
-    # pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization")
-
-    # apply pretrained pipeline
-    # diarization = pipeline(audio_path)
-
-    # print the result
-    # for turn, _, speaker in diarization.itertracks(yield_label=True):
-    #    print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
-    return False
-
-
-def start_thread(function, toolkit_UI_obj):
+def resolve_check_timeline(resolve_data, toolkit_UI_obj):
     '''
-    (OBSOLETE) This starts the transcribe function in a different thread
+    This checks if a timeline is available and returns bool
+    :param resolve:
     :return:
     '''
 
-    # are we transcribing or translating?
-    if function == 'transcribe':
-        t1 = Thread(target=transcribe, args=(False, toolkit_UI_obj))
-
-    # if we are translating, pass the true argument to the transcribe function
-    elif function == 'translate':
-        t1 = Thread(target=transcribe, args=(True, toolkit_UI_obj))
-    else:
+    # trigger warning if there is no current timeline
+    if resolve_data['currentTimeline'] is None:
+        toolkit_UI_obj.notify_via_messagebox(
+            message='Timeline not available. Make sure that you\'ve opened a Timeline in Resolve.',
+            type='warning')
         return False
 
-    # start the thread
-    t1.start()
+    else:
+        return True
 
 
 def execute_operation(operation, toolkit_UI_obj):
     if not operation or operation == '':
         return False
+
+    global stAI
 
     # get info from resolve for later
     resolve_data = mots_resolve.get_resolve_data()
@@ -3867,14 +4040,17 @@ def execute_operation(operation, toolkit_UI_obj):
         else:
             return False
 
-        # trigger warning if there is no current timeline
-        if resolve_data['currentTimeline'] is None:
-            global stAI
-            stAI.print('Timeline not available. Make sure that you\'ve opened a Timeline in Resolve.')
+        # trigger warning and stop if there is no current timeline
+        if not resolve_check_timeline(resolve_data, toolkit_UI_obj):
             return False
 
-        # @todo trigger error if the timeline is not opened or the clip is not available in the bin
-        #   otherwise exception is thrown by Resolve API
+        # trigger warning and stop if there are no bin clips
+        if resolve_data['binClips'] is None:
+            toolkit_UI_obj.notify_via_messagebox(
+                message='Bin clips not available. Make sure that a bin is opened in Resolve.\n\n'
+                        'This doesn\'t work if multiple bins or smart bins are selected due to API.',
+                type='warning')
+            return False
 
         # execute operation without asking for any prompts
         # this will delete the existing clip/timeline destination markers,
@@ -3891,7 +4067,8 @@ def execute_operation(operation, toolkit_UI_obj):
 
         # but first make a list of all the available marker colors based on the timeline markers
         current_timeline_marker_colors = []
-        if current_timeline and 'markers' in current_timeline:
+        if resolve_check_timeline(resolve_data, toolkit_UI_obj) and \
+                current_timeline and 'markers' in current_timeline:
 
             # take each marker from timeline and get its color
             for marker in current_timeline['markers']:
@@ -3908,7 +4085,7 @@ def execute_operation(operation, toolkit_UI_obj):
                                                          + ", ".join(current_timeline_marker_colors))
         else:
             no_markers_alert = 'The timeline doesn\'t contain any markers'
-            stAI.print(no_markers_alert, 'warn')
+            logger.warning(no_markers_alert)
             return False
 
         if not marker_color:
@@ -3955,21 +4132,6 @@ current_bin = ''
 resolve_error = 0
 resolve = None
 
-# this is where we used to store the user data prior to version 0.16.14
-# but we need to have a more universal approach, so we'll move this to
-# the home directory of the user which is platform dependent (see below)
-OLD_USER_DATA_PATH = 'userdata'
-
-# this is where StoryToolkitAI stores the config files
-# including project.json files and others
-# on Mac, this is usually /Users/[username]/StoryToolkitAI
-# on Windows, it's normally C:\Users\[username]\StoryToolkitAI
-# on Linux, it's probably /home/[username]/StoryToolkitAI
-USER_DATA_PATH = os.path.join(user_home_dir, 'StoryToolkitAI')
-
-# this is where we store the app configuration
-APP_CONFIG_FILE_NAME = 'config.json'
-
 
 class StoryToolkitAI:
     def __init__(self):
@@ -4001,21 +4163,7 @@ class StoryToolkitAI:
         # create a project settings variable
         self.project_settings = {}
 
-        self.log_print("Running StoryToolkit version {}".format(self.__version__), type='infoplus')
-
-    class bcolors:
-        '''
-        This is useful for outputting colored stuff to the terminal
-        '''
-        HEADER = '\033[95m'
-        OKBLUE = '\033[94m'
-        OKCYAN = '\033[96m'
-        OKGREEN = '\033[92m'
-        WARNING = '\033[93m'
-        FAIL = '\033[91m'
-        ENDC = '\033[0m'
-        BOLD = '\033[1m'
-        UNDERLINE = '\033[4m'
+        logger.info(Style.BOLD+Style.UNDERLINE+"Running StoryToolkitAI version {}".format(self.__version__))
 
     def user_data_dir_exists(self, create_if_not=True):
         '''
@@ -4026,11 +4174,11 @@ class StoryToolkitAI:
 
         # if the directory doesn't exist
         if not os.path.exists(self.user_data_path):
-            self.log_print('User data directory {} doesn\'t exist.'
-                           .format(os.path.abspath(self.user_data_path)), 'warn')
+            logger.warning('User data directory {} doesn\'t exist.'
+                           .format(os.path.abspath(self.user_data_path)))
 
             if create_if_not:
-                self.log_print('Creating user data directory.', 'warn')
+                logger.warning('Creating user data directory.')
 
                 # and create the whole path to it if it doesn't
                 os.makedirs(self.user_data_path)
@@ -4045,7 +4193,7 @@ class StoryToolkitAI:
                     from datetime import date
                     import platform
 
-                    self.log_print('Old user data directory found.\n\n', 'warn')
+                    logger.warning('Old user data directory found.\n\n')
 
                     # let the user know that we are moving the files
                     move_user_data_path_msg = \
@@ -4057,23 +4205,23 @@ class StoryToolkitAI:
                                     .format(platform.node(),
                                             self.user_data_path, old_user_data_path_abs, old_user_data_path_abs)
 
-                    self.log_print(move_user_data_path_msg, 'warn')
+                    logger.warning(move_user_data_path_msg)
 
-                    self.log_print('Copying user data files to new location.', 'warn')
+                    logger.warning('Copying user data files to new location.')
 
                     # copy all the contents of the OLD_USER_DATA_PATH to the new path
                     for item in os.listdir(old_user_data_path_abs):
                         s = os.path.join(old_user_data_path_abs, item)
                         d = os.path.join(self.user_data_path, item)
 
-                        self.log_print((' - {}'.format(item)), 'warn')
+                        logger.warning((' - {}'.format(item)))
 
                         if os.path.isdir(s):
                             shutil.copytree(s, d, False, None)
                         else:
                             shutil.copy2(s, d)
 
-                    self.log_print('Finished copying user data files to {}'.format(self.user_data_path), 'warn')
+                    logger.warning('Finished copying user data files to {}'.format(self.user_data_path))
 
                     # reload the config file
                     self.config = self.get_config()
@@ -4096,11 +4244,11 @@ class StoryToolkitAI:
 
         # if the directory doesn't exist
         if not os.path.exists(os.path.dirname(project_settings_path)):
-            self.log_print('Project settings directory {} doesn\'t exist.'
-                           .format(os.path.abspath(os.path.dirname(project_settings_path))), 'warn')
+            logger.warning('Project settings directory {} doesn\'t exist.'
+                           .format(os.path.abspath(os.path.dirname(project_settings_path))))
 
             if create_if_not:
-                self.log_print('Creating project settings directory.', 'warn')
+                logger.warning('Creating project settings directory.')
 
                 # and create the whole path to it if it doesn't
                 os.makedirs(os.path.dirname(project_settings_path))
@@ -4120,7 +4268,7 @@ class StoryToolkitAI:
         '''
 
         if setting_name is None or not setting_name or setting_name == '':
-            self.log_print('No setting was passed.', 'error')
+            logger.error('No setting was passed.')
             return False
 
         # get the app config
@@ -4136,7 +4284,7 @@ class StoryToolkitAI:
         # but a default was passed
         elif default_if_none is not None and default_if_none != '':
 
-            self.log_print('Config setting {} saved as {} '.format(setting_name, default_if_none), 'info')
+            logger.info('Config setting {} saved as {} '.format(setting_name, default_if_none))
 
             # save the default to the config
             self.save_config(setting_name=setting_name, setting_value=default_if_none)
@@ -4157,7 +4305,7 @@ class StoryToolkitAI:
         '''
 
         if setting_name is None or not setting_name or setting_name == '' or setting_value is None:
-            self.log_print('No setting that we could save to the config file was passed.', 'error')
+            logger.error('No setting that we could save to the config file was passed.')
             return False
 
         # get existing configuration
@@ -4174,8 +4322,8 @@ class StoryToolkitAI:
         with open(self.config_file_path, 'w') as outfile:
             json.dump(self.config, outfile, indent=3)
 
-        self.log_print('Updated config file {} with {} data.'
-                       .format(os.path.abspath(self.config_file_path), setting_name), 'info')
+        logger.info('Updated config file {} with {} data.'
+                       .format(os.path.abspath(self.config_file_path), setting_name))
 
         # and return the config back to the user
         return self.config
@@ -4213,7 +4361,7 @@ class StoryToolkitAI:
         '''
 
         if project_name is None:
-            self.log_print('Unable to get project settings if no project name was passed.', 'error')
+            logger.error('Unable to get project settings if no project name was passed.')
 
         # the full path to the project settings file
         project_settings_path = self._project_settings_path(project_name=project_name)
@@ -4242,7 +4390,7 @@ class StoryToolkitAI:
         '''
 
         if project_name is None or project_name == '' or project_settings is None:
-            self.log_print('Insufficient data. Unable to save project settings.', 'error')
+            logger.error('Insufficient data. Unable to save project settings.')
             return False
 
         # the full path to the project settings file
@@ -4258,8 +4406,8 @@ class StoryToolkitAI:
             with open(project_settings_path, 'w') as outfile:
                 json.dump(project_settings, outfile, indent=3)
 
-            self.log_print('Updated project settings file {}.'
-                           .format(os.path.abspath(project_settings_path)), 'info')
+            logger.info('Updated project settings file {}.'
+                           .format(os.path.abspath(project_settings_path)))
 
             # and return the config back to the user
             return project_settings
@@ -4292,7 +4440,7 @@ class StoryToolkitAI:
         '''
 
         if project_name is None or project_name == '' or setting_key is None:
-            self.log_print('Insufficient data. Unable to save project setting.', 'error')
+            logger.error('Insufficient data. Unable to save project setting.')
             return False
 
         # get the current project settings
@@ -4353,9 +4501,8 @@ class StoryToolkitAI:
 
         # show exception if it fails, but don't crash
         except Exception as e:
-            self.log_print('Unable to check the latest version of StoryToolkitAI: {}. '
-                           'Is your Internet connection working?'.format(e),
-                           type='warn')
+            logger.warning('Unable to check the latest version of StoryToolkitAI: {}. '
+                           'Is your Internet connection working?'.format(e))
 
             # return False - no update available and None instead of an online version number
             return False, None
@@ -4381,38 +4528,25 @@ class StoryToolkitAI:
         # return false (and the online version) if the local and the online versions match
         return False, online_version_raw
 
-    def log_print(self, message, type=None):
-        # @todo log file
-        # all the messages passed through here should be logged to a file
+    def check_ffmpeg(self):
 
-        #  for now assume high verbosity
-        #  (info shows all, warn shows warnings and errors only, error shows only errors)
-        # verbose = self.get_app_setting('verbose', default_if_none='info')
-        verbose = 'info'
+        # check if ffmpeg is installed
 
-        # for now, if the user doesn't pass a type, assume it's info
-        if type == None:
-            type = 'info'
+        try:
+            # get the FFMPEG_BINARY variable or try the ffmpeg command if not
+            ffmpeg_binary = os.getenv('FFMPEG_BINARY', 'ffmpeg')
+            cmd = [
+                ffmpeg_binary]
 
-        # add colors to the message, depending on its type
-        if type == 'warn':
-            message = self.bcolors.WARNING + message + self.bcolors.ENDC
-        elif type == 'error':
-            message = self.bcolors.FAIL + message + self.bcolors.ENDC
-        elif type == 'infoplus':
-            message = self.bcolors.OKBLUE + message + self.bcolors.ENDC
+            # check if ffmpeg answers the call
+            exit_code = subprocess.call(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        # show all messages if the verbosity is set to info
-        if verbose == 'info' and type in ['info', 'warn', 'error', 'infoplus']:
-            print(message)
+            # if it does, just return true
+            return True
 
-        # show only warnings and errors if verbosity is warn
-        elif verbose == 'warn' and type in ['warn', 'error', 'infoplus']:
-            print(message)
-
-        # show only errors if verbosity is set to error
-        elif verbose == 'error' and type in ['error', 'infoplus']:
-            print(message)
+        except FileNotFoundError:
+            # if the ffmpeg binary wasn't found, we presume that ffmpeg is not installed on the machine
+            return False
 
 
 if __name__ == '__main__':
@@ -4426,17 +4560,24 @@ if __name__ == '__main__':
     # check if a new version of the app exists
     [update_exists, online_version] = stAI.check_update()
 
-    # and prepare the info message to let the user know that there's a new version of the app available
-    warn_message = None
+    # check if ffmpeg is installed
+    ffmpeg_status = stAI.check_ffmpeg()
+
+    # if an update exists, let the user know about it
+    update_available = None
     if update_exists:
-        warn_message = '\nA new version ({}) of StoryToolkitAI is available.\n\n ' \
-                       'Use git pull or manually download it from\n ' \
-                       'https://github.com/octimot/StoryToolkitAI \n\n' \
-                       'Please report any issues.' \
-                       ''.format(online_version)
+        update_available = online_version
 
     # initialize operations object
     toolkit_ops_obj = ToolkitOps(stAI=stAI)
 
     # initialize GUI
-    app_UI = toolkit_UI(toolkit_ops_obj=toolkit_ops_obj, stAI=stAI, warn_message=warn_message)
+    app_UI = toolkit_UI(toolkit_ops_obj=toolkit_ops_obj, stAI=stAI,
+                        update_available=update_available,
+                        ffmpeg_status=ffmpeg_status)
+
+    # connect app UI to operations object
+    toolkit_ops_obj.toolkit_UI_obj = app_UI
+
+    # create the main window
+    app_UI.create_main_window()

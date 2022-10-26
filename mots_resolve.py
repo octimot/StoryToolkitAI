@@ -14,59 +14,68 @@ import json
 
 from timecode import Timecode
 
-def initialize_resolve():
+def initialize_resolve(silent=False):
     """
     Returns most of the necessary Resolve API objects that are needed to do most operations,
     it's a good common ground for initializing and handling the operations
+    :param:
+        silent: bool When True, this will prevent the function from printing anything on the screen
 
     :return:
         [resolve, project, mediaPool, projectManager, currentBin, currentTimeline]: dict
 
     """
 
-    # Windows 10 seems to require this fix.
-    # The source of the problem is unclear, but it looks like there's an issue when loading DaVinciResolveScript libs
-    # if you're having problems, simply uncomment these to disable Resolve functionality:
-    #if platform.system() == 'Windows' and sys.getwindowsversion()['Major'] == 10:
-    #    raise ValueError('Raising this to avoid Windows 10 crash.')
+    # first initialize all the objects with None values
+    # if any of the following get requests fails, these values will still be None
+    resolve = project = mediaPool = projectManager = currentBin = currentTimeline = None
 
+    # first get the resolve object
     resolve = GetResolve()
-    if resolve is None or not resolve:
-        print("Resolve is not started.")
-        sys.exit()
-        # return False
 
-    project = resolve.GetProjectManager().GetCurrentProject()
-
-    if project is None or not project:
-        print("No Resolve project is loaded.")
-        sys.exit()
-        # return False
-
-    mediaPool = project.GetMediaPool()
-
-    if mediaPool is None:
-        print("Media Pool not available.")
-        sys.exit()
-        # return False
-
-    if resolve:
+    # get the project manager if resolve is opened
+    if resolve is not None and resolve:
+        # get the project manager
         projectManager = resolve.GetProjectManager()
+    else:
+        if not silent:
+            print("Resolve is not started.")
 
-    if mediaPool:
+    # get the project if the project manager is opened
+    if projectManager is not None and projectManager:
+        # get the project
+        project = projectManager.GetCurrentProject()
+
+    # if a project is opened, get the media pool and the current timeline
+    if project is not None and project:
+        # get the media pool
+        mediaPool = project.GetMediaPool()
+
+        # get the timeline
+        currentTimeline = project.GetCurrentTimeline()
+    else:
+        if not silent:
+            print("No Resolve project is loaded.")
+
+    # get the current bin, if the media pool is available
+    if mediaPool is not None:
         currentBin = mediaPool.GetCurrentFolder()
+    else:
+        if not silent:
+            print("Resolve Media Pool not available.")
+
+    if currentTimeline is None or not currentTimeline:
+        if not silent:
+            print("Resolve Timeline not loaded or unavailable.")
 
     if currentBin is None or not currentBin:
-        print("Resolve bins not loaded or unavailable.")
-
-    # get timeline info
-    if project:
-        currentTimeline = project.GetCurrentTimeline()
+        if not silent:
+            print("Resolve Bins not loaded or unavailable.")
 
     return [resolve, project, mediaPool, projectManager, currentBin, currentTimeline]
 
 
-def get_resolve_data():
+def get_resolve_data(silent=False):
     """
     Returns resolve objects in a nicely formatted dict
 
@@ -75,21 +84,31 @@ def get_resolve_data():
     """
 
     # initialize resolve objects
-    [resolve, project, mediaPool, projectManager, currentBin, currentTimeline] = initialize_resolve()
+
+    resolve_init = [resolve, project, mediaPool, projectManager, currentBin, currentTimeline] \
+        = initialize_resolve(silent=silent)
 
     resolve_data = {'currentProject': ''}
 
     # add resolve object to return dict
     resolve_data['resolve'] = resolve
 
-    # add project name and bin to return dict
-    resolve_data['currentProject'] = project.GetName()
+    if project is not None:
+        # add project name
+        resolve_data['currentProject'] = project.GetName()
 
-    # available render presets
-    resolve_data['renderPresets'] = project.GetRenderPresetList()
+        # add available render presets
+        resolve_data['renderPresets'] = project.GetRenderPresetList()
+    else:
+        resolve_data['currentProject'] = resolve_data['renderPresets'] = None
 
 
+    # the current bin and the bin clips
+    resolve_data['currentBin'] = None
+    resolve_data['binClips'] = None
     if currentBin is not None and currentBin:
+
+        # get the name of the current bin
         resolve_data['currentBin'] = currentBin.GetName()
 
         #check bin clips
@@ -102,17 +121,14 @@ def get_resolve_data():
                 clip_name = clip.GetName()
 
                 # ignore .srt files since the clip.GetClipProperty() call crashes Resolve
-                if '.srt' not in clip_name:
+                if clip_name is not None and '.srt' not in clip_name:
                     binClips[clip.GetName()] = {'name': clip.GetName(), 'metadata': clip.GetMetadata(),
                                               'markers': clip.GetMarkers(), 'property': clip.GetClipProperty()
                                             }
                 # add clips to return dict
                 resolve_data['binClips'] = binClips
 
-    else:
-        resolve_data['currentBin'] = ''
-        resolve_data['binClips'] = {}
-    
+    resolve_data['currentTimeline'] = resolve_data['currentTC'] = resolve_data['currentTimelineFPS'] = None
     if currentTimeline and currentTimeline != None:
 
         # add timeline info to return dict
@@ -150,8 +166,16 @@ def set_resolve_tc(new_tc):
     """
     
     resolve = GetResolve()
+
+    if resolve is None or not resolve:
+        return False
+
     currentTimeline = resolve.GetProjectManager().GetCurrentProject().GetCurrentTimeline()
-    
+
+    if currentTimeline is None or not currentTimeline:
+        return False
+
+    # take the playhead to new_tc timecode
     if currentTimeline:
         currentTimeline.SetCurrentTimecode(new_tc) 
         
@@ -753,6 +777,7 @@ def render(render_jobs=[], resolve_objects=False, stills=False, render_data={}):
                 notify("Stills Rendered", "Stills based on Markers exported to JPEG.")
 
             # TODO - tiff conversion on other platforms
+            # since ffmpeg is required, we should pass the conversion to it
             '''
             elif platform.system() == 'Windows':    # Windows
                 os.startfile(filepath)

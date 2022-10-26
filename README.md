@@ -36,8 +36,8 @@ https://vimeo.com/759962195/dee07a067a
 - [ ] **Integration with other AI / ML tools**
 - [X] Plus more flashy features as clickbait to unrealistically raise expectations and destroy competition
 
-_The app is in this stage very raw and not polished at all, but we use it daily in our editing room. It's not for free
-only out of sheer generosity, but also because we'd like to change how people approach editing by using AI._
+_The app is in this stage very raw and not polished at all, but we use it daily in our editing room. It's for free
+not only out of sheer generosity, but also because we'd like to change how people approach editing by using AI._
 
 Ideally, it should evolve by incorporating other machine learning models such as CLIP and GPT-3 to assist editors in
 their work, or rather to make editors obsolete (that would be cool, right?).
@@ -95,8 +95,8 @@ not grab an axe and start coding to procrastinate your real work and feel a bit 
 # Setup & Installation
 
 We're currently working to get the app in a standalone binary version for different operating systems and platforms,
-so before anything else, check if there is a release available for your platform
-[here](https://github.com/octimot/StoryToolkitAI/releases) - right now there's a Mac M1 version available.
+so before anything else, check if there is a release available for your OS and platform
+[here](https://github.com/octimot/StoryToolkitAI/releases/latest) - right now there's a Mac M1 version available.
 
 But if a binary isn't available, before you attempt something silly like actually installing this tool on your machine, 
 please keep in mind that by clicking on the instructions you will see many computer commands which are the main method 
@@ -124,7 +124,7 @@ A simple GUI with a mind-bending mid-2000s inspired design should appear on the 
 <img src="help/StoryToolkitAI_GUI.png" width="300">
 
 
-## How to transcribe timelines:
+## How to transcribe:
 
 *Note: The following process assumes that you have Davinci Resolve installed. However, the tool also works without
 Resolve on the machine. We're also assuming that you've already 
@@ -141,8 +141,11 @@ Go to Resolve and open the Timeline that you want to transcribe, then click the 
 
 #### 3. Wait a bit
 
-Your current timeline will automatically render to Audio Only WAV, and then you'll see it appear in the Transcription 
-Log Window. 
+Your current timeline will automatically render to Audio Only WAV, and then a window with the transcription settings
+will pop up. 
+
+Enter the transcription settings (more info about settings 
+[here](https://github.com/octimot/StoryToolkitAI#transcription-settings)) and then hit "Start".
 
 Once the process has started, it needs a bit of time to transcribe. After all, there is a human-like AI trapped in your
 machine doing your job for you on a mechanical typewriter with missing keys, while trying to feed its entire family of
@@ -216,6 +219,15 @@ we recommend at least selecting the source language.
 _Note: when selecting "transcribe+translate" as "task", the tool will add both a transcription and a translation job to
 the queue, as if you selected them individually. The translation will not use the previous transcription process results
 at all, so this means that the process will take 2x the processing time._
+
+Starting with version 0.16.16, we added a setting called "Initial Prompt". This is useful if you want the transcription 
+algorithm to adopt a certain style (for eg. separating speaker sentences, or using caps after punctuation), or even
+prime it to use certain names (for eg. "Helena" instead of "Elena"), or avoid rookie mistakes (for eg. showing 
+"Hey, Wood!" instead of "Heywood"). The default prompt separates speaker sentences and uses caps after punctuation. 
+Remember: this is kind of like telling your assistant editor "do that", but it's up to them if they want to follow your 
+instructions or not - welcome to the wonderful world of AI. This feature is super experimental - it might even accept
+instructions like "separate speakers" or "make me coffee", but you have to try it on your own.
+
 
 ### Linking Transcriptions to Timelines
 In the transcription window, the "Link" button will attach the transcription to the currently opened timeline in
