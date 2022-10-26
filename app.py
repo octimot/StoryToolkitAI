@@ -45,6 +45,10 @@ OLD_USER_DATA_PATH = 'userdata'
 # on Linux, it's probably /home/[username]/StoryToolkitAI
 USER_DATA_PATH = os.path.join(user_home_dir, 'StoryToolkitAI')
 
+# create user data path if it doesn't exist
+if not os.path.exists(USER_DATA_PATH):
+    os.makedirs(USER_DATA_PATH)
+
 # this is where we store the app configuration
 APP_CONFIG_FILE_NAME = 'config.json'
 
@@ -133,15 +137,6 @@ logger.debug('\n--------------\n'
     platform.version(),
     ' '.join(map(str, platform.win32_ver()+platform.mac_ver())),
     '.'.join(map(str, sys.version_info))))
-
-
-'''
-logger.debug('debug message')
-logger.info('info message')
-logger.warning('warn message')
-logger.error('error message')
-logger.critical('critical message')
-'''
 
 
 
