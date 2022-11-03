@@ -7,6 +7,9 @@ We're currently working to get the app in a standalone binary version for differ
 so before anything else and if you don't want to get your hands dirty with terminal commands, check if there is a 
 release available for your platform [here](https://github.com/octimot/StoryToolkitAI/releases).
 
+Please note that the standalone version may not always be up to date with the latest changes in the code, 
+so if you want to be sure to have the latest features, you should install the app from source.
+
 ---
 
 ### Quick Info before we start
@@ -25,7 +28,7 @@ _Note: Unfortunately, only the Studio version of Resolve supports external scrip
 We recommend running the tool inside a virtual environment like virtualenv. This is not required, but it prevents
 messing up your Python installation.
 
-_**Important Disclaimer: you need to be comfortable with using the Terminal on Mac OS, or the Command Prompt on Windows.
+_**Important Disclaimer: you need to be comfortable using the Terminal on Mac OS, or the Command Prompt on Windows.
 You should be fine even with little to no experience, but keep in mind that you are installing stuff on your machine
 and there is a (very) slight chance that you'll affect your Operating System's overall performance or even the performance of
 your other apps. In an unlikely worst-case scenario, some stuff might not work anymore at all and you'll need pro help
@@ -109,15 +112,28 @@ starting the app. In the folder where you created venv, run:_
     
 ## Windows
 
-Detailed Windows installation steps coming soon! 
-
-In principle: 
+#### 0. Open Command Prompt
+First, create the folder where you want to install StoryToolkitAI. 
+Then, open the Command Prompt and navigate to that folder - with Windows Explorer open in the installation folder,
+type in `cmd` then press <enter> in the location bar above.
 
 #### 1. Download and install Python
-Download the latest Python 3.9 version from [here](https://www.python.org/downloads/).
+Download the latest Python 3.9 version from [the official Python website](https://www.python.org/downloads/).
+
+_Note: only use other Python installers / versions if you know what you're doing._
+
+Then simply install it on your machine using the default settings.
+
+To check if you installed the right version, open the Command Prompt and run:
+
+    py --version
+
+And something like `Python 3.9.13` should appear. Anything else besides 3.9.X means that you're in uncharted
+territories! If that is the case, we recommend uninstalling all Python versions (if you don't need them of course)
+and reinstalling Python 3.9.
 
 #### 2. Download and install GIT 
-Download it from [here](https://git-scm.com/download/win)
+Download it from [here](https://git-scm.com/download/win) and then install it.
 
 #### 3. Download and install FFMPEG
 The simplest approach is to use a package manager like [Choco](https://chocolatey.org/install). Once you follow the
@@ -128,13 +144,73 @@ installation steps for "Individual Use" on that page, you can install FFMPEG usi
 Alternatively, you can also try to download FFMPEG from [here](https://www.gyan.dev/ffmpeg/builds/) and manually 
 install it, but you may need to manually add some environment variables after installation.
 
-#### 4. Install everything else
-Use the steps 3-8 from the Mac OS instructions above.
+#### 4. Install virtualenv
 
-_Note: if the pip command doesn't work, you can either try to install it like this:_
+If you installed Python according to step 1, this shouldn't be necessary. But to make sure that you have virtualenv,
+simply run:
 
-    python get-pip.py
+    py -3.9 -m pip install virtualenv
 
-Or, simply replace pip in the commands above with:
+#### 5. Download StoryToolkitAI:
 
-    python -m pip [WHATEVER GOES AFTER PIP]
+Open the Command Prompt and navigate to the folder where you want to install StoryToolkitAI. Then run:
+
+    git clone https://github.com/octimot/StoryToolkitAI.git
+
+#### 6. Set up a virtual environment
+Now create a virtual environment (to prevent messing up with other python packages you may have installed on your OS
+for other stuff):
+
+    py -3.9 -m virtualenv venv
+
+Right now, your installation folder should contain 2 other folders, and the tree should look like this:
+    
+    YOUR_INSTALLATION_FOLDER
+    +- StoryToolkitAI
+    +- venv
+
+#### 7. Activate virtual environment
+Now enable the virtual environment (this means that all the packages you'll install now via pip will be contained in the
+virtual environment, meaning that for the tool to work **you'll ALWAYS have to activate the virtual environment first**
+using the following command!)
+
+    venv\Scripts\activate.bat
+
+
+#### 8. Install OpenAI Whisper
+Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. If you followed the previous steps, your terminal prompt should now have (venv) before everything else.
+
+    pip install git+https://github.com/openai/whisper.git 
+
+For more info regarding Whisper installation, please check https://github.com/openai/whisper
+
+#### 9. Install all the stuff the tool requires:
+
+    pip install -r StoryToolkitAI\requirements.txt
+
+If you are running the tool on a machine with an NVIDIA CUDA GPU, make sure you install Torch with CUDA:
+    
+        pip uninstall torch
+        pip cache purge
+        pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
+
+_Note: If Resolve is not turned on or not available, the transcription and translation functions will work on normal wav
+files too. Simply press the transcribe or translate buttons and follow the process._
+
+#### That's it!
+Inside the virtual environment, you should now be able to start the tool:
+
+    py StoryToolkitAI\app.py
+
+_Note: After restart of the machine or your terminal window, never forget to activate the virtual environment before
+starting the app. In the folder where you created venv, run:_
+
+    venv\Scripts\activate.bat
+
+
+## Feedback
+
+Feedback regarding these instructions is very welcome and might help others! 
+
+Please let us know if you have any issues or suggestions for improvement via the 
+[issues page](https://github.com/octimot/StoryToolkitAI/issues).
