@@ -115,7 +115,8 @@ starting the app. In the folder where you created venv, run:_
 #### 0. Open Command Prompt
 First, create the folder where you want to install StoryToolkitAI. 
 Then, open the Command Prompt and navigate to that folder - with Windows Explorer open in the installation folder,
-type in `cmd` then press <enter> in the location bar above.
+type in `cmd` in the location bar above then press Enter, and your Command Prompt should start directly in the
+installation folder.
 
 #### 1. Download and install Python
 Download the latest Python 3.9 version from [the official Python website](https://www.python.org/downloads/).
