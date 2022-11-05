@@ -40,6 +40,11 @@ In the Terminal:
 #### 1. You'll need Homebrew
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
+In case Homebrew installation fails, please check [this page](https://docs.brew.sh/Common-Issues) for troubleshooting.
+
+One of the most common installation fails is due to the fact that Xcode Command Line Tools is not installed on your 
+Mac, so you could try to install them first with `xcode-select --install`
+
 #### 2. You'll need Python 3.9, Python Tkinter, Git, and FFMPEG:
 
     brew install python@3.9
@@ -64,7 +69,7 @@ This should download the app in the folder that you chose.
 #### 5. Set up a virtual environment
 Now create a virtual environment (to prevent messing up with other python packages you may have installed on your OS for other stuff):
 
-    python3.9 virtualenv -p python3.9 venv
+    python3.9 -m virtualenv -p python3.9 venv
 
 Right now, your installation folder should contain 2 other folders, and the tree should look like this:
 
