@@ -4,18 +4,29 @@
 
 ### Have you looked for standalone version first?
 We're currently working to get the app in a standalone binary version for different operating systems and platforms,
-so before anything else and if you don't want to get your hands dirty with terminal commands, check if there is a 
-release available for your platform [here](https://github.com/octimot/StoryToolkitAI/releases).
+so if you don't want to get your hands dirty with terminal commands, check if there is a release available for your 
+platform [here](https://github.com/octimot/StoryToolkitAI/releases).
 
 Please note that the standalone version may not always be up to date with the latest changes in the code, 
-so if you want to be sure to have the latest features, you should install the app from source.
+so if you want to be sure to have the latest features (some buggy and experimental too), you should install the app 
+from source.
+
+We're looking for contributors to help us with the standalone version for Windows, so if you're interested and know how
+freezing works, please get in touch.
+
+### For updates
+If you've already installed a non-standalone release, make sure to always check for package updates after pulling a 
+new version of the tool: 
+```
+pip -r StoryToolkitAI/requirements.txt
+```
 
 ---
 
 ### Quick Info before we start
 
-Our installation is on MacOS 12.6 running on M1, but the scripts should run fine on other CPUs and GPUs. For both
-production and development we're currently using Python 3.9.13. 
+Our installations are on MacOS 12.6 running on M1 and Windows 10 machines, but the scripts should run fine on other 
+CPUs and GPUs. For both production and development we're currently using Python 3.9.13. 
 
 _Note: Whisper worked fine on Python 3.10.2, but we ran into problems when trying to install some packages which we're
 planning to use for future developments._

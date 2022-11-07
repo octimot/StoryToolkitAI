@@ -1,14 +1,9 @@
 import os
 import platform
-import threading
 import time
 import json
 import sys
 import subprocess
-
-import tkinter as tk
-from tkinter import filedialog, simpledialog, messagebox
-from tkinter import *
 
 import hashlib
 import codecs
@@ -16,12 +11,21 @@ import codecs
 import logging
 import logging.handlers as handlers
 
-from threading import *
+import tkinter as tk
+from tkinter import filedialog, simpledialog, messagebox, font
+from tkinter import *
+
+from threading import Thread
 
 import mots_resolve
 
 import torch
 import whisper
+
+import librosa
+
+import re
+from sentence_transformers import SentenceTransformer, util
 
 from timecode import Timecode
 
@@ -178,6 +182,10 @@ except:
     time.sleep(5)
 
 
+# import non-standard packages after the requirements check
+# (some of them should've been installed by the requirements check)
+
+
 class toolkit_UI:
     '''
     This handles all the GUI operations mainly using tkinter
@@ -224,19 +232,24 @@ class toolkit_UI:
 
             # to store the transcript segments of each window,
             # including their start + end times and who knows what else?!
-            # here, they are simply ordered in their line orders, where the index is line_no-1:
-            #               self.transcript_segments[window_id][index] = segment_dict
+            # here, they are simply ordered in their line orders, where the segment_index is line_no-1:
+            #               self.transcript_segments[window_id][segment_index] = segment_dict
+            # the segment_index is not the segment_id mentioned below!
             self.transcript_segments = {}
 
             # we need this to have a reference between
             # the line number of a segment within the transcript and the id of that segment in the transcription file
             # so the dict should look like: self.transcript_segments_ids[window_id][segment_line_no] = segment_id
+            # the segment_id is not the segment_index mentioned above!
             self.transcript_segments_ids = {}
 
             # all the selected transcript segments of each window
             # the selected segments dict will use the text element line number as an index, for eg:
             # self.selected_segments[window_id][line] = transcript_segment
             self.selected_segments = {}
+
+            # to keep track of the modified transcripts
+            self.transcript_modified = {}
 
             # the active_segment stores the text line number of each window to keep track where
             # the cursor is currently on the transcript
@@ -464,8 +477,8 @@ class toolkit_UI:
                     # go to the next search result
                     text_element.see(self.search_result_indexes[window_id][current_pos])
 
-            # visually tag the results
-            self.tag_results(text_element, text_index, window_id)
+                # visually tag the results
+                self.tag_results(text_element, text_index, window_id)
 
         def get_line_char_from_click(self, event, text_element=None):
 
@@ -486,8 +499,8 @@ class toolkit_UI:
 
             # for now, simply pass to select text lines if it matches one of these keys
             if event.keysym in ['Up', 'Down', 'v', 'V', 'A', 'i', 'o', 'm', 'M', 'C', 'q', 's', 'L',
-                                'g',
-                                'apostrophe', 'semicolon']:
+                                'g', 'BackSpace', 't',
+                                'apostrophe', 'semicolon', 'colon', 'quotedbl']:
                 self.segment_actions(event, **attributes)
 
         def transcription_window_mouse(self, event=None, **attributes):
@@ -521,23 +534,26 @@ class toolkit_UI:
             # CMD/CTRL+Click - add clicked text to selection
             #
             # KEYS
-            # Up, Down keys  - move the cursor up and down on the transcript (we call it "active segment")
-            # Semicolon      - move playhead to start of active segment/selection
-            # Apostrophe     - move playhead to end of active segment/selection
-            # V              - add active segment to selection
-            # Shift+V        - deselect all
-            # Shift+A        - create selection between the previously active and the currently active segment
-            #                   also works to create a selection for the last played segments (if sync is active)
-            # Shift+C        - copy transcript of active segment/selection with timecodes at the beginning
-            #                  of each block of text (or transcript seconds, if resolve is not available)
-            # m              - add duration markers for the active segment/selection
-            #                  in case there are gaps between the text segments,
-            #                  the tool will create a marker for each block of uninterrupted text
-            # Shift+M        - add duration markers as above, but with user prompt for the marker name
-            # q              - close transcript window
-            # Shift+L        - link transcription to the current timeline (if available)
-            # s              - enable sync
-            # Tab            - cycle between search and transcript navigation
+            # Up, Down keys     - move the cursor up and down on the transcript (we call it "active segment")
+            # Semicolon (;)     - move playhead to start of active segment/selection
+            # Apostrophe (')    - move playhead to end of active segment/selection
+            # Colon (:)         - align start of active segment with playhead
+            # DoubleQuote (")   - align end of active segment with playhead
+            # V                 - add active segment to selection
+            # Shift+V           - deselect all
+            # Shift+A           - create selection between the previously active and the currently active segment
+            #                     also works to create a selection for the last played segments (if sync is active)
+            # Shift+C           - copy transcript of active segment/selection with timecodes at the beginning
+            #                     of each block of text (or transcript seconds, if resolve is not available)
+            # m                 - add duration markers for the active segment/selection
+            #                     in case there are gaps between the text segments,
+            #                     the tool will create a marker for each block of uninterrupted text
+            # Shift+M           - add duration markers as above, but with user prompt for the marker name
+            # q                 - close transcript window
+            # Shift+L           - link transcription to the current timeline (if available)
+            # s                 - enable sync
+            # Tab               - cycle between search and transcript navigation
+            # t                 - re-transcribe current transcription or selected segments
 
 
              # initialize the active segment number
@@ -628,13 +644,13 @@ class toolkit_UI:
                     self.segment_to_selection(window_id, text_element, n)
                     n = n+1
 
-            # Shift+C key event
+            # Shift+C key event (copy segment to clipboard)
             if event.keysym == 'C':
                 # copy the text content to clipboard
                 self.get_segments_or_selection(window_id, add_to_clipboard=True, split_by='index')
 
 
-            # m key event
+            # m key event (add duration markers)
             if event.keysym == 'm' or event.keysym == 'M':
 
                 #print('Special Key:', special_key)
@@ -660,8 +676,14 @@ class toolkit_UI:
                     # if Shift+M was pressed, prompt the user for the marker name
                     if event.keysym == 'M':
 
-                        # @todo this doesn't show up on top of everything else if other windows have 'keep on top'
-                        marker_name = simpledialog.askstring(title="Markers Name", prompt="Marker Name:")
+                        marker_name = simpledialog.askstring(
+                                        parent=self.toolkit_UI_obj.windows[window_id],
+                                        title="Markers Name",
+                                        prompt="Marker Name:")
+
+                        # if the user pressed cancel, return
+                        if not marker_name:
+                            return False
 
                     # if we still don't have a marker name
                     if not marker_name or marker_name == '':
@@ -755,26 +777,222 @@ class toolkit_UI:
                         # pass the marker add request to resolve
                         mots_resolve.add_timeline_markers(current_timeline['name'], marker_data, False)
 
-            # q key event
+            # q key event (close transcription window)
             if event.keysym == 'q':
                 # close transcription window
                 self.toolkit_UI_obj.destroy_window_(self.toolkit_UI_obj.windows, window_id=window_id)
 
-            # Shift+L key event
+            # Shift+L key event (link current timeline to this transcription)
             if event.keysym == 'L':
                 # link transcription to file
-                print('linking')
                 self.toolkit_ops_obj.link_transcription_to_timeline(self.transcription_file_paths[window_id])
 
-            # s key event
+            # s key event (sync transcript cursor with playhead)
             if event.keysym == 's':
                 self.sync_with_playhead_update(window_id=window_id)
 
-            # g key event
+            # g key event (group selected)
             if event.keysym == 'g':
                 self.group_selected(window_id=window_id)
 
-        def get_segments_or_selection(self, window_id, add_to_clipboard=False, split_by=None, timecodes=True):
+            # colon key event (align current line start to playhead)
+            if event.keysym == 'colon':
+                self.align_line_to_playhead(window_id=window_id, line_index=line, position='start')
+
+            # double quote key event (align current line end to playhead)
+            if event.keysym == 'quotedbl':
+                self.align_line_to_playhead(window_id=window_id, line_index=line, position='end')
+
+            if event.keysym == 't':
+
+                # first get the selected (or active) text from the transcript
+                text, full_text, start_sec, end_sec = \
+                    self.get_segments_or_selection(window_id, add_to_clipboard=False,
+                                                   split_by='index', timecodes=True, allow_active_segment=False)
+
+                # now turn the text blocks into time intervals
+                time_intervals = ''
+                retranscribe = False
+                ask_message = "Do you want to re-transcribe the entire transcript?"
+                if text is not None and text and len(text) > 0:
+
+                    # get all the time intervals based on the text blocks
+                    for text_block in text:
+                        time_intervals = time_intervals + "{}-{}\n".format(text_block['start'], text_block['end'])
+
+                    ask_message = "Do you want to re-transcribe the selected segments?"
+
+                # ask the user if they want to re-transcribe
+                retranscribe = messagebox.askyesno(title='Re-transcribe',
+                                               message=ask_message)
+
+                # if the user cancels re-transcribe or no segments were selected, cancel
+                if not retranscribe:
+                    return False
+
+                # close the transcription window
+                # @todo (temporary solution until we work on a better way to update transcription windows
+                self.toolkit_UI_obj.destroy_window_(self.toolkit_UI_obj.windows, window_id=window_id)
+
+                # remove the selection references too
+                self.clear_selection(window_id=window_id)
+
+                # and start the transcription config process
+                self.toolkit_ops_obj\
+                    .prepare_transcription_file(toolkit_UI_obj=self.toolkit_UI_obj,
+                                                task='transcribe',
+                                                retranscribe=self.transcription_file_paths[window_id],
+                                                time_intervals=time_intervals)
+
+            # BackSpace key event (delete selected)
+            #if event.keysym == 'BackSpace':
+            #    self.delete_line(window_id=window_id, text_element=text_element, line_no=line)
+
+        def delete_line(self, window_id, text_element, line_no):
+            '''
+            Deletes a specific line of text from the transcript
+            :param window_id:
+            :param text_element:
+            :param line_index:
+            :return:
+            '''
+
+            # WORK IN PROGRESS
+
+            if line_no > len(self.transcript_segments[window_id]):
+                return False
+
+            # ask the user if they are sure
+            if messagebox.askyesno(title='Delete line',
+                                     message='Are you sure you want to delete this line?'):
+
+                print(line_no)
+                print(text_element.get('{}.0'.format(line_no), '{}.0'.format(int(line_no)+1)))
+
+                # delete the line - doesn't work!
+                # remove the line from the text widget
+                text_element.delete(line_no)
+
+                segment_index = int(line_no)-1
+
+                # remove the line from the text list
+                #self.transcript_segments[window_id].pop(segment_index)
+
+                # mark the transcript as modified
+                #self.set_transcript_modified(window_id=window_id, modified=True)
+
+                # save the transcript
+                #self.save_transcript(window_id=window_id, text=False, skip_verification=True)
+
+                return True
+
+            return False
+
+        def align_line_to_playhead(self, window_id, line_index, position=None):
+            """
+            Aligns a transcript line to the playhead (only works if Resolve is connected)
+            by setting the start time or end time of the line to the playhead position.
+
+            :param window_id: the window id
+            :param line_index: the segment index
+            :param position: the position to align to (the start or the end of the segment)
+            :return: None
+            """
+
+            if position is None:
+                logger.error('No position specified for align_line_to_playhead()')
+                return False
+
+            if resolve is None or position is None:
+                logger.error('Resolve is not connected.')
+                return False
+
+            move_playhead = messagebox.askokcancel(title='Move playhead',
+                                   message='Move the Resolve playhead exactly '
+                                            'where you want to align the {} of this segment, '
+                                            'then press OK to align.'.format(position)
+                                   )
+
+            if not move_playhead:
+                logger.debug('User cancelled segment alignment.')
+                return False
+
+            # convert the current_tc to seconds
+            current_tc_sec = self.toolkit_ops_obj.calculate_resolve_timecode_to_sec()
+
+            # check if we actually have a timecode
+            if current_tc_sec is None:
+                self.toolkit_UI_obj.notify_via_messagebox(title='Cannot align line to playhead',
+                                                message='Cannot align to playhead: '
+                                                        'Resolve playhead timecode not available.',
+                                                type='error')
+                return False
+
+            # convert line_index to segment_index (not segment_id!)
+            segment_index = line_index-1
+
+            # stop if the segment index is not in the transcript segments
+            if segment_index > len(self.transcript_segments[window_id])-1:
+                logger.error('Cannot align line to playhead: no segment index found.')
+                return False
+
+            # get the segment data
+            segment_data = self.transcript_segments[window_id][segment_index]
+
+            # replace the start or end time with the current_tc_sec
+            if position == 'start':
+                segment_data['start'] = current_tc_sec
+            elif position == 'end':
+                segment_data['end'] = current_tc_sec
+
+            # return False if no position was specified
+            # (will probably never reach this since we're checking it above)
+            else:
+                logger.error('No position specified for align_line_to_playhead()')
+                return False
+
+            # check if the start time is after the end time
+            # and throw an error and cancel if it is
+            if segment_data['start'] >= segment_data['end']:
+                self.toolkit_UI_obj.notify_via_messagebox(title='Cannot align line to playhead',
+                                                message='Cannot align to playhead: '
+                                                        'Start time is after end time.',
+                                                type='error')
+                return False
+
+            # check if the start time is before the previous segment end time
+            # and throw an error and cancel if it is
+            if segment_index > 0:
+                if segment_data['start'] < self.transcript_segments[window_id][segment_index-1]['end']:
+                    self.toolkit_UI_obj.notify_via_messagebox(title='Cannot align line to playhead',
+                                                    message='Cannot align to playhead: '
+                                                            'Start time is before previous segment\'s end time.',
+                                                    type='error')
+                    return False
+
+            # check if the end time is after the next segment start time
+            # and throw an error and cancel if it is
+            if segment_index < len(self.transcript_segments[window_id])-1:
+                if segment_data['end'] > self.transcript_segments[window_id][segment_index+1]['start']:
+                    self.toolkit_UI_obj.notify_via_messagebox(title='Cannot align line to playhead',
+                                                    message='Cannot align to playhead: '
+                                                            'End time is after next segment\'s start time.',
+                                                    type='error')
+                    return False
+
+            # update the transcript segments
+            self.transcript_segments[window_id][segment_index] = segment_data
+
+            # mark the transcript as modified
+            self.set_transcript_modified(window_id=window_id, modified=True)
+
+            # save the transcript
+            self.save_transcript(window_id=window_id, text=False, skip_verification=True)
+
+            return True
+
+        def get_segments_or_selection(self, window_id, add_to_clipboard=False, split_by=None, timecodes=True,
+                                      allow_active_segment=True):
             '''
             Used to extract the text from either the active segment or from the selection
             Will return the text, and the start and end times
@@ -919,8 +1137,14 @@ class toolkit_UI:
             # if there are no selected segments on this window
             # get the text of the active segment
             else:
-                # if there is no active_segment for the window, create one
+                # if active segments are not allowed
+                if not allow_active_segment:
+                    return None, None, None, None
+
+                # if there is no active_segment for the window
                 if window_id not in self.active_segment:
+
+                    # create one
                     self.active_segment[window_id] = 1
 
                 # get the line number from the active segment
@@ -1036,6 +1260,25 @@ class toolkit_UI:
 
         def set_active_segment(self, window_id=None, text_element=None, line=None, line_calc=None):
 
+            # if no text element is passed,
+            # try to get the transcript text element from the window with the window_id
+            if text_element is None and self.toolkit_UI_obj is not None and window_id is not None\
+                    and window_id in self.toolkit_UI_obj.windows:
+
+                # search through all the elements in the window until we find the transcript text element
+                for child in self.toolkit_UI_obj.windows[window_id].winfo_children():
+
+                   # go another level deeper, since we are expecting the transcript text element to be inside a frame
+                    if len(child.winfo_children()) > 0:
+                        for child2 in child.winfo_children():
+                            if child2.winfo_name() == 'transcript_text':
+                                text_element = child2
+                                break
+
+            # if no text element is found, return
+            if text_element is None:
+                return False
+
             # remove any active segment tags
             text_element.tag_delete('l_active')
 
@@ -1046,6 +1289,7 @@ class toolkit_UI:
             self.active_segment[window_id] = self.get_active_segment(window_id)
 
             # interpret the line number correctly
+            # by passing line_calc, we can add that to the current line number
             if line is None and line_calc:
                 line = self.active_segment[window_id] + line_calc
 
@@ -1086,14 +1330,15 @@ class toolkit_UI:
             :return:
             '''
 
-            if window_id is None or text_element is None:
+            if window_id is None:
                 return False
 
             self.selected_segments[window_id] = {}
 
             self.selected_segments[window_id].clear()
 
-            text_element.tag_delete("l_selected")
+            if text_element is not None:
+                text_element.tag_delete("l_selected")
 
         def segment_to_selection(self, window_id=None, text_element=None, line=None):
             '''
@@ -1195,12 +1440,13 @@ class toolkit_UI:
             return None
 
         def group_selected(self, window_id):
+            '''
+            This adds the selected segments to a group based on their start and end times
+            :param window_id:
+            :return:
+            '''
 
-            # WORK IN PROGRESS
-
-            #print(self.transcript_segments_ids[window_id])
-
-            #print(self.segment_id_to_line(window_id, 20))
+            return
 
             # if we have some selected segments, group them
             if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0:
@@ -1214,23 +1460,22 @@ class toolkit_UI:
                     # save group contents to transcription json file
 
         def on_press_add_segment(self, event, window_id=None, text=None):
+            '''
+            This adds a new segment to the transcript
+            :param event: the event that triggered this function
+            :param window_id: the window id
+            :param text: the text element
+            :return:
+            '''
 
             if window_id is None or text is None:
                 return False
-
-            # WORK IN PROGRESS
-
-            print(event)
 
             # get the cursor position where the event was triggered (key was pressed)
             # and the last character of the line
             line, char, last_char = self.get_current_segment_chars(text=text)
 
-            print('Pos: {}.{}; Last: {}'.format(line, char, last_char))
-
-            # prevent RETURN key from adding another line break in the text
-            return 'break'
-
+            #print('Pos: {}.{}; Last: {}'.format(line, char, last_char))
 
             # initialize the new_line dict
             new_line = {}
@@ -1239,51 +1484,121 @@ class toolkit_UI:
             new_line['end'] = self.transcript_segments[window_id][int(line)-1]['end']
 
             # get the text that is supposed to go on the next line
-            new_line['text'] = text.get(INSERT, "{}.end+1c".format(line))
+            new_line['text'] = text.get(INSERT, "{}.end".format(line))
 
             # the id of the new line is the next available id in the transcript
             new_line['id'] = self.next_segment_id(window_id=window_id)
 
-            print(new_line)
+            # keep in mind the minimum and maximum split times
+            split_time_seconds_min = self.transcript_segments[window_id][int(line)-1]['start']
+            split_time_seconds_max = self.transcript_segments[window_id][int(line)-1]['end']
 
-            # ask user at what time to split the segment
-            # split_time = simpledialog.askstring(title='Where to split?',
-            #                                     prompt='At what time should we split this segment?',
-            #                                     initialvalue=self.transcript_segments[window_id][int(line)-1]['start'])
+            # if resolve is connected, get the timecode from resolve
+            if resolve:
 
-            split_time = (int(self.transcript_segments[window_id][int(line)-1]['end']) \
-                         -int(self.transcript_segments[window_id][int(line)-1]['start']))/2
+                # ask the user to move the playhead in Resolve to where the split should happen via info dialog
+                move_playhead = messagebox.askokcancel(title='Move playhead',
+                                       message='Move the Resolve playhead exactly '
+                                              'where the new segment starts, '
+                                              'then press OK to split.'
+                                       )
 
-            split_time = int(self.transcript_segments[window_id][int(line)-1]['start']) + split_time
+                if not move_playhead:
+                    logger.debug('User cancelled segment split.')
+                    return 'break'
+
+                # convert the current resolve timecode to seconds
+                split_time_seconds = self.toolkit_ops_obj.calculate_resolve_timecode_to_sec()
+
+            # if resolve isn't connected, ask the user to enter the timecode manually
+            else:
+
+                # ask the user to enter the timecode manually
+                split_time_seconds = simpledialog.askstring(
+                                        parent=self.toolkit_UI_obj.windows[window_id],
+                                        title='Where to split?',
+                                        prompt='At what time should we split this segment?\n\n'
+                                               'Enter a value between {} and {}:\n'
+                                                .format(split_time_seconds_min,
+                                                        split_time_seconds_max),
+                                        initialvalue=split_time_seconds_min)
 
             # if the user didn't specify the split time
-            if not split_time:
+            if not split_time_seconds:
                 # cancel
                 return 'break'
 
-            if float(split_time) >= float(self.transcript_segments[window_id][int(line)-1]['end']):
+            if float(split_time_seconds) >= float(split_time_seconds_max):
 
-                self.toolkit_UI_obj.notify_via_messagebox(title='Split time too large',
-                                                          message='The time you entered goes over the end time of '
-                                                                  'the current segment.', type='warning')
+                self.toolkit_UI_obj.notify_via_messagebox(title='Time Value Error',
+                                                          message="The {} time is larger "
+                                                                  "than the end time of "
+                                                                  "the segment you're splitting. Try again.".
+                                                                    format('playhead' if resolve else 'entered'),
+                                                          type='warning')
+                return 'break'
+
+            if float(split_time_seconds) <= float(split_time_seconds_min):
+
+                self.toolkit_UI_obj.notify_via_messagebox(title='Time Value Error',
+                                                          message="The {} time is smaller "
+                                                                  "than the start time of "
+                                                                  "the segment you're splitting. Try again.".
+                                                                    format('playhead' if resolve else 'entered'),
+                                                          type='warning')
+
                 return 'break'
 
             # the split time becomes the start time of the new line
-            new_line['start'] = split_time
+            new_line['start'] = split_time_seconds
 
             # and also the end of the previous line
-            self.transcript_segments[window_id][int(line)-1]['end'] = split_time
+            self.transcript_segments[window_id][int(line)-1]['end'] = split_time_seconds
 
             # add the element to the transcript segments right after the current line
             self.transcript_segments[window_id].insert(int(line), new_line)
 
-            # insert the new line in the text element
-            text.insert('{}.{}'.format(line, char), 'test\n')
+            # remove the text after the split from the current line
+            text.delete("{}.{}".format(line, char), "{}.end".format(line))
 
-            #text.insert(INSERT, text.get('0.0', "{}.end+1c".format(line)))
+            # re-insert the text after the last character of the current line, but also add a line break
+            text.insert("{}.end+1c".format(line), new_line['text']+'\n')
+
+            # remap the line numbers to segment ids for this window
+            self.remap_lines_to_segment_ids(window_id=window_id, text=text)
 
             # prevent RETURN key from adding another line break in the text
             return 'break'
+
+        def remap_lines_to_segment_ids(self, window_id, text):
+
+            if window_id is None or text is None:
+                return False
+
+            # get all the lines of this text widget
+            text_lines = text.get('1.0', END).splitlines()
+
+            # reset self.transcript_segments_ids[window_id]
+            self.transcript_segments_ids[window_id] = {}
+
+            if len(text_lines) > 0:
+
+                # go through all the lines and re check segment ids
+                for line_no, line in enumerate(text_lines):
+
+                    # the last line of the text widget is always empty, so avoid that
+                    if line_no < len(self.transcript_segments[window_id]):
+
+                        # print(line_no, line)
+
+                        # get the segment id for this line directly from the transcript segments dict
+                        # that we updated earlier during the split
+                        line_segment_id = self.transcript_segments[window_id][line_no]['id']
+
+                        # remap the line no to segment ids for this window
+                        self.transcript_segments_ids[window_id][line_no] = line_segment_id
+
+            return True
 
         def edit_transcript(self, window_id=None, text=None, status_label=None):
 
@@ -1298,7 +1613,6 @@ class toolkit_UI:
             # enable transcript_editing for this window
             self.set_transcript_editing(window_id=window_id, editing=True)
 
-            # todo RETURN key splits the segment at cursor according to Resolve playhead position
             text.bind('<Return>', lambda e: self.on_press_add_segment(e, window_id, text))
 
             # ESCAPE key defocuses transcript (and implicitly saves the transcript, see below)
@@ -1308,11 +1622,11 @@ class toolkit_UI:
             text.bind('<FocusOut>', lambda e: self.on_press_save_transcript(e, window_id, text,
                                                                           status_label=status_label))
 
-            # todo BACKSPACE key at first line character merges the current and the previous segment
+            # BACKSPACE key at first line character merges the current and the previous segment
             text.bind('<BackSpace>', lambda e:
                     self.on_press_merge_segments(e, window_id=window_id, text=text, merge='previous'))
 
-            # todo DELETE key at last line character merges the current and the next segment
+            # DELETE key at last line character merges the current and the next segment
             text.bind('<Delete>', lambda e:
                     self.on_press_merge_segments(e, window_id=window_id, text=text, merge='next'))
 
@@ -1341,6 +1655,31 @@ class toolkit_UI:
             _, last_char = text.index("{}.end".format(line)).split('.')
 
             return line, char, last_char
+
+        def set_transcript_modified(self, window_id=None, modified=True):
+            '''
+            This function sets the transcript_modified flag for the given window
+            :param window_id:
+            :param modified:
+            :return:
+            '''
+
+            if window_id is None:
+                return False
+
+            self.transcript_modified[window_id] = modified
+
+        def get_transcript_modified(self, window_id):
+            '''
+            This function returns the transcript_modified flag for the given window
+            :param window_id:
+            :return:
+            '''
+
+            if window_id in self.transcript_modified:
+                return self.transcript_modified[window_id]
+            else:
+                return False
 
         def on_press_merge_segments(self, event, window_id, text, merge=None):
             '''
@@ -1373,17 +1712,76 @@ class toolkit_UI:
 
             # if we are at the beginning of the line
             # and the merge direction is 'prev'
-            if char == '0' and merge != 'previous':
+            if char == '0' and merge == 'previous':
 
+                # get the previous segment
+                previous_segment = self.transcript_segments[window_id][int(line)-2]
+
+                # get the current segment
+                current_segment = self.transcript_segments[window_id][int(line)-1]
+
+                # merge the current segment with the previous one
+                previous_segment['end'] = current_segment['end']
+                previous_segment['text'] = previous_segment['text'] + '' + current_segment['text'].lstrip()
+
+                if 'tokens' in current_segment and 'tokens' in previous_segment:
+                    previous_segment['tokens'] = previous_segment['tokens'] + current_segment['tokens']
+
+                # signal that the transcript segments has been modified
+                previous_segment['merged'] = True
+
+                # remove the line break from the previous line
+                text.delete("{}.end".format(int(line)-1), "{}.end+1c".format(int(line)-1))
+
+                # update the previous segment in the list
+                self.transcript_segments[window_id][int(line)-2] = previous_segment
+
+                # remove the current segment from the list (the list starts with index 0)
+                self.transcript_segments[window_id].pop(int(line)-1)
+
+                # remap self.transcript_segments_ids
+                self.remap_lines_to_segment_ids(window_id=window_id, text=text)
+
+                # update the transcript_modified flag
+                self.set_transcript_modified(window_id=window_id, modified=True)
+
+                # we're done, prevent the event from propagating and deleting any characters
                 return 'break'
-                #print('TODO: Merge previous')
 
             # if we are at the end of the line
             # and the merge direction is 'next'
-            if char == last_char and merge != 'next':
+            if char == last_char and merge == 'next':
 
+                # get the current segment
+                current_segment = self.transcript_segments[window_id][int(line)-1]
+
+                # get the next segment
+                next_segment = self.transcript_segments[window_id][int(line)]
+
+                # merge the current segment with the next one
+                current_segment['end'] = next_segment['end']
+                current_segment['text'] = current_segment['text'] + '' + next_segment['text'].lstrip()
+
+                if 'tokens' in current_segment and 'tokens' in next_segment:
+                    current_segment['tokens'] = current_segment['tokens'] + next_segment['tokens']
+
+                # signal that the transcript segments have been modified
+                current_segment['merged'] = True
+
+                # remove the line break from current line
+                text.delete('{}.end'.format(line), '{}.end+1c'.format(line))
+
+                # remove the next segment from the list (the list starts with index 0)
+                self.transcript_segments[window_id].pop(int(line))
+
+                # remap self.transcript_segments_ids
+                self.remap_lines_to_segment_ids(window_id=window_id, text=text)
+
+                # update the transcript_modified flag
+                self.set_transcript_modified(window_id=window_id, modified=True)
+
+                # we're done
                 return 'break'
-                #print('TODO: Merge next')
 
             return 'break'
 
@@ -1434,9 +1832,20 @@ class toolkit_UI:
                     status_label.config(text='Nothing changed.',
                                         foreground=self.toolkit_UI_obj.resolve_theme_colors['normal'])
 
-        def save_transcript(self, window_id=None, text=None):
+        def save_transcript(self, window_id=None, text=None, skip_verification=False):
+            '''
+            This function saves the transcript to the file
+
+            :param window_id:
+            :param text:
+            :param skip_verification: if this is True, the function will not verify
+                                        if the transcript has been modified and ignore the new text
+                                        (useful for non-text updates, like start/end time changes etc.)
+            :return:
+            '''
 
             if window_id is None or text is None:
+                print('No window id or text provided.')
                 return False
 
             # make sure that we know the path to this transcription file
@@ -1450,73 +1859,121 @@ class toolkit_UI:
             old_transcription_file_data = \
                 self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path=transcription_file_path)
 
-            # compare the edited lines with the existing transcript lines
-            text_lines = text.get('1.0', END).splitlines()
+            # only verify if skip_verification is False or the text is False
+            if not skip_verification or text is not False:
 
-            segment_no = 0
-            changes_exist = False
-            full_text = ''
-            while segment_no < len(text_lines)-1:
+                # compare the edited lines with the existing transcript lines
+                text_lines = text.get('1.0', END).splitlines()
 
-                # add the segment text to a full text variable in case we need it later
-                full_text = full_text+' '+text_lines[segment_no]
+                segment_no = 0
+                full_text = ''
 
-                # if any change to the text was found
-                if text_lines[segment_no].strip() != self.transcript_segments[window_id][segment_no]['text'].strip():
-                    #print('Modified line {}'.format(segment_no+1))
-                    #print(text_lines[segment_no].strip())
-                    #print(self.transcript_segments[window_id][segment_no])
+                # find out if the transcript has been modified
+                modified = self.get_transcript_modified(window_id=window_id)
 
-                    # overwrite the segment text with the new text
-                    self.transcript_segments[window_id][segment_no]['text'] = text_lines[segment_no].strip()+' '
+                # but even if the transcript has not been modified,
+                # we still need to check if the transcript has been edited
+                while segment_no < len(text_lines)-1:
 
-                    # it means that we have to save the new file
-                    changes_exist = True
+                    # add the segment text to a full text variable in case we need it later
+                    full_text = full_text+' '+text_lines[segment_no]
 
-                segment_no = segment_no + 1
+                    # if any change to the text was found
+                    if text_lines[segment_no].strip() != self.transcript_segments[window_id][segment_no]['text'].strip():
 
-            # if changes were detected on any of the lines
-            if changes_exist:
-                #print(json.dumps(old_transcription_file_data, indent=4))
+                        # overwrite the segment text with the new text
+                        self.transcript_segments[window_id][segment_no]['text'] = text_lines[segment_no].strip()+' '
+
+                        # it means that we have to save the new file
+                        modified = True
+
+                    segment_no = segment_no + 1
+
+            # make sure to no longer use the text below if skip_verification is True
+            else:
+                text = False
+                modified = True
+                full_text = None
+
+            # if the transcript has been modified (changes detected above or simply modified flag is True)
+            if modified:
 
                 modified_transcription_file_data = old_transcription_file_data
 
                 # replace the segments in the transcription file
                 modified_transcription_file_data['segments'] = self.transcript_segments[window_id]
 
-                # replace the full text in the trancription file
-                modified_transcription_file_data['text'] = full_text
+                if text is not False:
+                    # replace the full text in the trancription file
+                    modified_transcription_file_data['text'] = full_text
 
                 # add the last modified key
                 modified_transcription_file_data['last_modified'] = str(time.time()).split('.')[0]
 
-                # save the new transcription
-                self.toolkit_ops_obj.save_transcription_file(transcription_file_path=transcription_file_path,
-                                                             transcription_data=modified_transcription_file_data,
-                                                             backup='backup')
-
                 # the directory where the transcription file is
                 transcription_file_dir = os.path.dirname(transcription_file_path)
 
-                # if this transcription has an associated txt file, update it:
-                if 'txt_file_path' in modified_transcription_file_data:
+                # now save the txt file
+                # if there is no txt file associated with this transcription
+                if 'txt_file_path' not in modified_transcription_file_data \
+                        or modified_transcription_file_data['txt_file_path'] == '':
 
-                    # assume that it's in the same folder as the transcription file
-                    txt_file_path = os.path.join(transcription_file_dir,
-                                                 modified_transcription_file_data['txt_file_path'])
+                    txt_file_name = os.path.basename(transcription_file_path).replace('.transcription.json', '.txt')
 
-                    self.toolkit_ops_obj.save_txt_from_transcription(txt_file_path=txt_file_path,
-                                                                 transcription_data=modified_transcription_file_data)
+                else:
+                    txt_file_name = modified_transcription_file_data['txt_file_path']
 
-                # if this transcription has an associated srt file, update it
-                if 'srt_file_path' in modified_transcription_file_data:
+                if txt_file_name is not None and txt_file_name != '':
+                    # the txt file should be in the same folder as the transcription file
+                    txt_file_path = os.path.join(transcription_file_dir, txt_file_name)
 
-                    # assume that it's in the same folder as the transcription file
-                    srt_file_path = os.path.join(transcription_file_dir,
-                                                 modified_transcription_file_data['srt_file_path'])
+                    # add the file to the transcription file data
+                    modified_transcription_file_data['txt_file_path'] = txt_file_name
 
-                    self.toolkit_ops_obj.save_srt_from_transcription(srt_file_path=srt_file_path,
-                                                                 transcription_data=modified_transcription_file_data)
+                    # save the txt file
+                    self.toolkit_ops_obj.save_txt_from_transcription(
+                        txt_file_path=txt_file_path,
+                        transcription_data=modified_transcription_file_data
+                    )
+
+                # now save the srt file
+                srt_file_name = None
+
+                # if there is no srt file associated with this transcription
+                if 'srt_file_path' not in modified_transcription_file_data \
+                        or modified_transcription_file_data['srt_file_path'] == '':
+
+                    # ask the user if they want to create an srt file
+                    create_srt = messagebox.askyesno('Create SRT file?',
+                                                     'An SRT file doesn\'t exist for this transcription.\n'
+                                                     'Do you want to create one?')
+
+                    # if the user wants to create an srt file
+                    if create_srt:
+                        # the name of the srt file is based on the name of the transcription file
+                        srt_file_name = os.path.basename(transcription_file_path).replace('.transcription.json', '.srt')
+
+                else:
+                    srt_file_name = modified_transcription_file_data['srt_file_path']
+
+                if srt_file_name is not None and srt_file_name != '':
+
+                    # the srt file should be in the same folder as the transcription file
+                    srt_file_path = os.path.join(transcription_file_dir, srt_file_name)
+
+                    # add the file to the transcription file data
+                    modified_transcription_file_data['srt_file_path'] = srt_file_name
+
+                    # save the srt file
+                    self.toolkit_ops_obj.save_srt_from_transcription(
+                        srt_file_path=srt_file_path,
+                        transcription_data=modified_transcription_file_data
+                    )
+
+                # finally, save the transcription file
+                self.toolkit_ops_obj.save_transcription_file(transcription_file_path=transcription_file_path,
+                                                             transcription_data=modified_transcription_file_data,
+                                                             backup='backup')
 
                 return True
 
@@ -1551,20 +2008,29 @@ class toolkit_UI:
             # the url to the releases page
             release_url = 'https://github.com/octimot/StoryToolkitAI/releases/latest'
 
-            # the update warning message the user will see
-            warn_message = '\nA newer version of StoryToolkitAI is available.\n\n ' \
-                           'Use git pull or download it from\n ' \
-                           '{}'.format(release_url)
+            goto_projectpage = False
+
+            # if there is a new version available
+            # the user will see a different update message
+            # depending if they're using the standalone version or not
+            if not standalone:
+                warn_message = 'A new standalone version of StoryToolkitAI is available.'
+
+                # add the question to the pop up message box
+                messagebox_message = warn_message+' \n\nDo you want to open the release page?\n'
+
+                # notify the user and ask whether to open the release website or not
+                goto_projectpage = messagebox.askyesno(title="Update available",
+                                                      message=messagebox_message)
+            else:
+                warn_message = 'A new version of StoryToolkitAI is available.\n\n' \
+                               'Use git pull to update.\n '
+
+                messagebox.showinfo(title="Update available",
+                                    message=warn_message)
 
             # notify the user via console
             logger.warning(warn_message)
-
-            # add the question to the pop up message box
-            warn_message = warn_message+' \n\n Do you want to open the release page?'
-
-            # notify the user and ask whether to open the release website or not
-            goto_projectpage = messagebox.askyesno(title="Update available",
-                                                  message=warn_message)
 
             # open the browser and go to the release_url
             if goto_projectpage:
@@ -1592,6 +2058,10 @@ class toolkit_UI:
         self.input_grid_settings = {'sticky': 'w'}
         self.entry_settings = {'width': 30}
         self.entry_settings_half = {'width': 20}
+
+        # set the platform independent fixed font
+        self.font_fixed = font.nametofont(name='TkFixedFont')
+        self.font_fixed.configure(size=13)
 
         # define the pixel size for buttons
         pixel = tk.PhotoImage(width=1, height=1)
@@ -1646,10 +2116,11 @@ class toolkit_UI:
         pass
 
     def _create_or_open_window(self, parent_element=None, window_id=None, title=None, resizable=False,
-                               close_action=None):
+                               close_action=None, open_multiple=False):
 
         # if the window is already opened somewhere, do this
-        if window_id in self.windows:
+        # (but only if open_multiple is False)
+        if window_id in self.windows and not open_multiple:
 
             # bring the window to the top
             # self.windows[window_id].attributes('-topmost', 1)
@@ -1663,6 +2134,12 @@ class toolkit_UI:
             return False
 
         else:
+
+            # if the window exists, but we want to have multiple instances of it
+            # use the current time as a unique suffix to the window_id
+            if window_id in self.windows and open_multiple:
+                window_id = window_id + "_" + str(time.time())
+
             # create a new window
             if parent_element is None:
                 parent_element = self.root
@@ -1686,7 +2163,7 @@ class toolkit_UI:
             # what happens when the user closes this window
             self.windows[window_id].protocol("WM_DELETE_WINDOW", close_action)
 
-            return True
+            return window_id
 
     def hide_main_window_frame(self, frame_name):
         '''
@@ -1835,6 +2312,14 @@ class toolkit_UI:
                                              command=lambda: self.open_transcription_log_window())
         self.main_window.button8.grid(row=2, column=2, **self.paddings)
 
+        # THE ADVANCED SEARCH BUTTON
+        # self.main_window.button9 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings,
+        #                                     **self.button_size,
+        #                                     text="Advanced\nTranscript Search", command=lambda:
+        #                                                    self.open_advanced_search_window())
+        #self.main_window.button9.grid(row=3, column=1, **self.paddings)
+
+
         # self.main_window.link2 = Label(self.main_window.other_buttons_frame, text="project home", font=("Courier", 8), fg='#1F1F1F', cursor="hand2", anchor='s')
         # self.main_window.link2.grid(row=2, column=1, columnspan=2, padx=10, pady=5, sticky='s')
         # self.main_window.link2.bind("<Button-1>", lambda e: webbrowser.open_new("https://github.com/octimot/StoryToolkitAI"))
@@ -1861,7 +2346,9 @@ class toolkit_UI:
         return
 
     def open_transcription_settings_window(self, title="Transcription Settings",
-                                           audio_file_path=None, name=None, task=None, unique_id=None):
+                                           audio_file_path=None, name=None, task=None, unique_id=None,
+                                           transcription_file_path=False, time_intervals=None,
+                                           excluded_time_intervals=None):
 
         if self.toolkit_ops_obj is None or audio_file_path is None or unique_id is None:
             logger.error('Aborting. Unable to open transcription settings window.')
@@ -1889,6 +2376,12 @@ class toolkit_UI:
             ts_form_frame.pack()
 
             # File items start here
+
+            # TRANSCRIPTION FILE PATH (hidden) - for re-transcriptions only
+            if transcription_file_path:
+                transcription_file_path_var = StringVar(ts_form_frame, str(transcription_file_path))
+            else:
+                transcription_file_path_var = StringVar(ts_form_frame, '')
 
             # NAME INPUT
             Label(ts_form_frame, text="Name", **self.label_settings).grid(row=1, column=1,
@@ -1984,6 +2477,28 @@ class toolkit_UI:
             prompt_input.grid(row=7, column=2, **self.input_grid_settings, **self.form_paddings)
             prompt_input.insert(END, " - How are you?\n - I'm fine, thank you.")
 
+            # TIME INTERVALS INPUT
+            Label(ts_form_frame, text="Time Intervals", **self.label_settings).grid(row=8, column=1,
+                                                                            sticky='nw',
+                                                                          #**self.input_grid_settings,
+                                                                          **self.form_paddings)
+            #prompt_var = StringVar(ts_form_frame)
+            time_intervals_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
+            time_intervals_input.grid(row=8, column=2, **self.input_grid_settings, **self.form_paddings)
+            time_intervals_input.insert(END, str(time_intervals) if time_intervals is not None else '')
+
+            # EXCLUDE TIME INTERVALS INPUT
+            Label(ts_form_frame, text="Exclude Time Intervals", **self.label_settings).grid(row=9, column=1,
+                                                                            sticky='nw',
+                                                                          #**self.input_grid_settings,
+                                                                          **self.form_paddings)
+            #prompt_var = StringVar(ts_form_frame)
+            excluded_time_intervals_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
+            excluded_time_intervals_input.grid(row=9, column=2, **self.input_grid_settings, **self.form_paddings)
+            excluded_time_intervals_input.insert(END,
+                                                str(excluded_time_intervals) \
+                                                    if excluded_time_intervals is not None else '')
+
             # START BUTTON
 
             # add all the settings entered by the use into a nice dictionary
@@ -1994,6 +2509,7 @@ class toolkit_UI:
             start_button = Button(ts_form_frame, text='Start')
             start_button.grid(row=10, column=2, **self.input_grid_settings, **self.paddings)
             start_button.config(command=lambda audio_file_path=audio_file_path,
+                                               transcription_file_path_var=transcription_file_path_var,
                                                unique_id=unique_id,
                                                ts_window_id=ts_window_id:
             self.start_transcription_button(ts_window_id,
@@ -2004,9 +2520,106 @@ class toolkit_UI:
                                             name=name_var.get(),
                                             model=model_var.get(),
                                             device=device_var.get(),
-                                            initial_prompt=prompt_input.get(1.0, END)
+                                            initial_prompt=prompt_input.get(1.0, END),
+                                            time_intervals=time_intervals_input.get(1.0, END),
+                                            excluded_time_intervals=excluded_time_intervals_input.get(1.0, END),
+                                            transcription_file_path=transcription_file_path_var.get()
                                             )
                                 )
+
+    def convert_text_to_time_intervals(self, text):
+        time_intervals = []
+
+        # split the text into lines
+        lines = text.splitlines()
+
+        # for each line
+        for line in lines:
+            # split the line into two parts, separated by a dash
+            parts = line.split('-')
+
+            # if there are two parts
+            if len(parts) == 2:
+                # remove any spaces
+                start = parts[0].strip()
+                end = parts[1].strip()
+
+                # convert the start and end times to seconds
+                start_seconds = self.convert_time_to_seconds(start)
+                end_seconds = self.convert_time_to_seconds(end)
+
+                # if both start and end times are valid
+                if start_seconds is not None and end_seconds is not None:
+                    # add the time interval to the list
+                    time_intervals.append([start_seconds, end_seconds])
+
+                else:
+                    # otherwise, show an error message
+                    messagebox.showerror("Error", "Invalid time interval: " + line)
+                    return False
+
+        if time_intervals == []:
+            return True
+
+        return time_intervals
+
+    def convert_time_to_seconds(self, time, fps=None):
+
+        # the text is a string with lines like this:
+        # 0:00:00:00 - 0:00:00:00
+        # or like this:
+        # 0:00:00.000 - 0:00:01.000
+        # or like this:
+        # 0,0 - 0,01
+        # or like this:
+        # 0.0 - 0.01
+
+        # if the format is 0:00:00.000 or 0:00:00:00
+        if ':' in time:
+
+            time_array = time.split(':')
+
+            # if the format is 0:00:00:00 - assume a timecode was passed
+            if len(time_array) == 4:
+
+                if fps is not None:
+                    # if the format is 0:00:00:00
+                    # convert the time to seconds
+                    return int(time_array[0]) * 3600 + int(time_array[1]) * 60 + int(time_array[2]) + \
+                           int(time_array[3]) / fps
+
+                else:
+                    logger.error('The time format is 0:00:00:00, but the fps is not specified.')
+
+            elif len(time_array) == 3:
+                # hours, minutes, seconds
+                return int(time_array[0]) * 3600 + int(time_array[1]) * 60 + float(time_array[2])
+
+            elif len(time_array) == 2:
+                # minutes, seconds
+                return int(time_array[0]) * 60 + float(time_array[1])
+
+            elif len(time_array) == 1:
+                # seconds
+                return float(time_array[0])
+
+            else:
+                return 0
+
+        # if the format is 0,0
+        elif ',' in time:
+            return float(time.replace(',', '.'))
+
+        # if the format is 0.0
+        elif '.' in time:
+            return float(time)
+
+        elif time.isnumeric():
+            return int(time)
+
+        else:
+            logger.error('The time format is not recognized.')
+            return None
 
     def start_transcription_button(self, transcription_settings_window_id=None, **transcription_config):
         '''
@@ -2016,6 +2629,20 @@ class toolkit_UI:
         :param transcription_config:
         :return:
         '''
+
+        # validate the transcription settings
+        transcription_config['time_intervals'] = \
+            self.convert_text_to_time_intervals(transcription_config['time_intervals'])
+
+        if not transcription_config['time_intervals']:
+            return False
+
+        # validate the transcription settings
+        transcription_config['excluded_time_intervals'] = \
+            self.convert_text_to_time_intervals(transcription_config['excluded_time_intervals'])
+
+        if not transcription_config['excluded_time_intervals']:
+            return False
 
         # send transcription to queue
         self.toolkit_ops_obj.add_to_transcription_queue(**transcription_config)
@@ -2039,6 +2666,16 @@ class toolkit_UI:
 
         return False
 
+    def destroy_transcription_window(self, window_id):
+
+        # destroy the associated search window (if it exists)
+        # - in the future, if were to have multiple search windows, we will need to do it differently
+        if window_id+'_search' in self.windows:
+            self.destroy_window_(self.windows, window_id=window_id + '_search')
+
+        # call the default destroy window function
+        self.destroy_window_(parent_element=self.windows, window_id=window_id)
+
     def destroy_window_(self, parent_element, window_id):
         '''
         This makes sure that the window reference is deleted when a user closes a window
@@ -2048,6 +2685,8 @@ class toolkit_UI:
         '''
         # first destroy the window
         parent_element[window_id].destroy()
+
+        logger.debug('Closing window: ' + window_id)
 
         # then remove its reference
         del parent_element[window_id]
@@ -2074,7 +2713,8 @@ class toolkit_UI:
         # why not open the transcript in a transcription window?
         self.open_transcription_window(transcription_file_path=transcription_json_file_path, **options)
 
-    def open_transcription_window(self, title=None, transcription_file_path=None, srt_file_path=None):
+    def open_transcription_window(self, title=None, transcription_file_path=None, srt_file_path=None,
+                                  select_line_no=None):
 
         if self.toolkit_ops_obj is None:
             logger.error('Cannot open transcription window. A toolkit operations object is needed to continue.')
@@ -2084,7 +2724,7 @@ class toolkit_UI:
 
         # only continue if the transcription path was passed and the file exists
         if transcription_file_path is None or os.path.exists(transcription_file_path) is False:
-            logger.error('The transcription file {} doesn\'t exist'.format(transcription_file_path))
+            logger.error('The transcription file {} cannot be found.'.format(transcription_file_path))
             return False
 
         # now read the transcription file contents
@@ -2119,8 +2759,14 @@ class toolkit_UI:
             else:
                 title = os.path.splitext(os.path.basename(transcription_file_path))[0]
 
+        # what happens when the window is closed
+        close_transcription_window_action = lambda t_window_id=t_window_id: \
+            self.destroy_transcription_window(t_window_id)
+
         # create a window for the transcript if one doesn't already exist
-        if self._create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title, resizable=True):
+        if self._create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title, resizable=True,
+                                       close_action=close_transcription_window_action
+                                       ):
 
             # add the path to the transcription_file_paths dict in case we need it later
             self.t_edit_obj.transcription_file_paths[t_window_id] = transcription_file_path
@@ -2141,7 +2787,8 @@ class toolkit_UI:
             if 'segments' in transcription_json:
 
                 # set up the text element where we'll add the actual transcript
-                text = Text(text_form_frame, font=('Courier', 16), width=45, height=30, padx=5, pady=5, wrap=tk.WORD,
+                text = Text(text_form_frame, name='transcript_text',
+                            font=('Courier', 16), width=45, height=30, padx=5, pady=5, wrap=tk.WORD,
                                                     background=self.resolve_theme_colors['black'],
                                                     foreground=self.resolve_theme_colors['normal'])
 
@@ -2223,7 +2870,8 @@ class toolkit_UI:
                 text.config(state=DISABLED, width=longest_segment_num_char)
 
                 # add undo/redo
-                text.config(undo=True)
+                # this will not work for splitting/merging lines
+                # text.config(undo=True)
 
                 # set the top, in-between and bottom text spacing
                 text.config(spacing1=0, spacing2=0.2, spacing3=5)
@@ -2322,6 +2970,17 @@ class toolkit_UI:
                                             self.t_edit_obj.set_typing_in_window(e, t_window_id, typing=True))
                 search_input.bind('<FocusOut>', lambda e, t_window_id=t_window_id:
                                             self.t_edit_obj.set_typing_in_window(e, t_window_id, typing=False))
+
+                # ADVANCED SEARCH
+                # this button will open a new window with advanced search options
+                advanced_search_button = tk.Button(header_frame, text='Advanced Search', command=lambda:
+                                            self.open_advanced_search_window(transcription_window_id=t_window_id,
+                                                                             transcription_file_path=\
+                                                                                transcription_file_path),
+                                            font=20, bg='white')
+
+                advanced_search_button.pack(side=tk.LEFT, **self.paddings)
+
 
                 # KEEP ON TOP BUTTON
                 on_top_button = tk.Button(header_frame, text="Keep on top", takefocus=False)
@@ -2424,8 +3083,6 @@ class toolkit_UI:
                                                      text=text)
                                                 )
 
-
-
             # if no transcript was found in the json file, alert the user
             else:
                 not_a_transcription_message = 'The file {} isn\'t a transcript.'.format(
@@ -2436,6 +3093,11 @@ class toolkit_UI:
                                            type='warning'
                                            )
                 self.destroy_window_(self.windows, t_window_id)
+
+        # if select_line_no was passed
+        if select_line_no is not None:
+            # select the line in the text widget
+            self.t_edit_obj.set_active_segment(window_id=t_window_id, line=select_line_no)
 
     def update_transcription_window(self, window_id, **update_attr):
         '''
@@ -2453,7 +3115,7 @@ class toolkit_UI:
         global current_timeline_fps
 
         # only check if resolve is connected
-        if resolve:
+        if resolve and current_timeline is not None:
 
             # is there a link between the transcription and the resolve timeline?
             link, _ = self.toolkit_ops_obj.get_transcription_to_timeline_link(
@@ -2560,6 +3222,29 @@ class toolkit_UI:
         self.windows[window_id].after(500, lambda window_id=window_id, update_attr=update_attr:
                 self.update_transcription_window(window_id, **update_attr))
 
+    def close_inactive_transcription_windows(self, timeline_transcription_file_paths=None):
+        '''
+        Closes all transcription windows that are not in the timeline_transcription_file_paths list
+        (or all of them if no list is passed)
+        :param timeline_transcription_file_paths: list of transcription file paths
+        :return: None
+        '''
+
+        # get all transcription windows from the self.t_edit_obj.transcription_file_paths
+        transcription_windows = self.t_edit_obj.transcription_file_paths.keys()
+
+        # loop through all transcription windows
+        for transcription_window in transcription_windows:
+
+            # if the transcription window is not in the timeline_transcription_file_paths
+            if timeline_transcription_file_paths is None \
+                or timeline_transcription_file_paths == [] \
+                or self.t_edit_obj.transcription_file_paths[transcription_window] \
+                    not in timeline_transcription_file_paths:
+
+                # close the window
+                self.destroy_window_(self.windows, transcription_window)
+
     def update_transcription_log_window(self):
 
         # only do this if the transcription window exists
@@ -2652,6 +3337,357 @@ class toolkit_UI:
             self.update_transcription_log_window()
 
             return True
+
+    def open_advanced_search_window(self, transcription_window_id=None, transcription_file_path=None):
+
+        if self.toolkit_ops_obj is None:
+            logger.error('Cannot open advanced search window. A toolkit operations object is needed to continue.')
+            return False
+
+        # check if a transcription file path was passed and if it exists
+        if transcription_file_path is not None and not os.path.exists(transcription_file_path):
+            logger.error('The transcription file {} cannot be found.'.format(transcription_file_path))
+            return False
+
+        # if a transcription window id was passed, get the transcription file path from it
+        elif transcription_file_path is None and transcription_window_id is not None:
+            transcription_file_path = self.t_edit_obj.transcription_file_paths[transcription_window_id]
+
+        # otherwise ask the user to select a folder with transcription files
+        elif transcription_file_path is None:
+
+            global current_project
+
+            # first get the project folder if the current project is set
+            if current_project is not None:
+
+                # did we ever save a target dir for this project?
+                last_target_dir = self.stAI.get_project_setting(project_name=current_project,
+                                                                setting_key='last_target_dir')
+                if last_target_dir is not None:
+                    initial_target_dir = last_target_dir
+
+            else:
+                initial_target_dir = None
+
+            # finally, ask the user to select a folder with transcription files
+            target_dir = filedialog.askdirectory(initialdir=initial_target_dir,
+                                                 title='Select a folder with transcriptions')
+
+        # read transcription data from transcription file
+        transcription_data = self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path)
+
+        # get the name of the transcription
+        if transcription_data and type(transcription_data) is dict and 'name' in transcription_data:
+            title_name = transcription_data['name']
+        else:
+            title_name = os.path.basename(transcription_file_path).split('.transcription.json')[0]
+
+        # init the search window id, the title and the parent element
+        # depending if we have a transcription window id or not
+        if transcription_window_id is not None:
+            search_window_id = transcription_window_id + '_search'
+            search_window_title = 'Search - {}'.format(title_name)
+            search_window_parent = self.windows[transcription_window_id]
+
+            # don't open multiple search widows for the same transcription window
+            open_multiple = False
+
+        # if there is no transcription window id
+        else:
+            search_window_id = 'adv_search'
+            search_window_title = 'Search'
+            search_window_parent = self.root
+
+            # this allows us to open multiple search windows at the same time
+            open_multiple = True
+
+
+        # create a window for the advanced search if one doesn't already exist
+        if (search_window_id := self._create_or_open_window(parent_element=search_window_parent,
+                                        window_id=search_window_id, title=search_window_title, resizable=True,
+                                        open_multiple=open_multiple)):
+
+            # and then call the update function to fill the window up
+            #self.update_advanced_search_window()
+
+            current_search_window = self.windows[search_window_id]
+
+            # create a header frame to hold the search inputs
+            header_frame = tk.Frame(current_search_window)
+            header_frame.place(anchor='nw', relwidth=1)
+
+            # create a frame for the results elements
+            results_form_frame = tk.Frame(current_search_window)
+            results_form_frame.pack(pady=50, expand=True, fill='both')
+
+            # THE SEARCH FIELD
+            # first the label
+            Label(header_frame, text="Search:", anchor='w').pack(side=tk.LEFT, **self.paddings)
+
+            # then the search text entry
+            # first the string variable that "monitors" what's being typed in the input
+            search_str = tk.StringVar()
+
+            # the search input
+            search_input = Entry(header_frame, width=60, textvariable=search_str)
+
+            search_input.pack(side=tk.LEFT, **self.paddings)
+
+            # THE SEARCH RESULTS text box
+            # (for now this looks like a console, maybe some improvements can be made later)
+            results_text = tk.Text(results_form_frame,
+                                   font=self.font_fixed, width=45, height=30, padx=5, pady=5, wrap=tk.WORD,
+                                    background=self.resolve_theme_colors['black'],
+                                    foreground=self.resolve_theme_colors['normal'])
+
+
+            results_text.config(spacing1=0, spacing2=0.2, spacing3=5)
+
+            results_text.pack(anchor='w', expand=True, fill='both')
+
+            results_text.insert(tk.END, 'This feature is experimental.\n'
+                                        'Check README for details:\n https://github.com/octimot/StoryToolkitAI/')
+            results_text.config(state=DISABLED)
+
+            # bind return to the search entry box
+            search_input.bind('<Return>', lambda e: self.button_advanced_search(
+                                                                    search_window_id,
+                                                                    search_str.get(),
+                                                                    results_text,
+                                                                    transcription_file_path,
+                                                                    transcription_window_id
+                                                                    )
+                              )
+
+            return True
+
+    def button_advanced_search(self, search_window_id, search_term, results_text_element=None,
+                               transcription_file_path=None, transcription_window_id=None):
+
+        if transcription_file_path is None:
+            logger.error('Cannot search. No transcription file path was passed.')
+            return False
+
+        # define the search corpus
+        search_transcriptions = {}
+
+        # if a specific transcription file was passed, use that in the search
+        if transcription_file_path is not None:
+
+            # now read the transcription file contents
+            search_transcriptions[transcription_file_path] = \
+                self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path=transcription_file_path)
+
+        else:
+            # throw an error if no transcription file was passed
+            logger.error('Cannot search. No transcription file path was passed.')
+
+        # otherwise use all the transcription files in the target dir
+        # else:
+        #
+        #    # get the list of transcription files in the target dir using os.walk
+        #    transcription_files = os.walk
+
+        # re-organize the search corpus into a dictionary of phrases
+        # with the transcription file path as the key
+        # and the value being a list of phrases compiled from the transcription file text using
+        # the punctuation as dividers.
+        # this will make it easier to search for phrases in the transcription files
+        search_corpus_phrases = []
+
+        # use this to keep track of the transcription file path and the phrase index
+        search_corpus_assoc = {}
+
+        results_text_element.config(state=NORMAL)
+
+        # first clear the results text box
+        results_text_element.delete('1.0', tk.END)
+
+        logger.info('Searching for "{}"'.format(search_term))
+
+        # remember when we started the search
+        start_search_time = time.time()
+
+        if search_window_id not in self.toolkit_ops_obj.search_corpuses:
+
+            # loop through all the transcription files in the search_transcriptions dictionary
+            for transcription_file_path, transcription_file_data in search_transcriptions.items():
+
+                logger.debug('Adding {} to the search corpus.'.format(transcription_file_path))
+
+                if 'segments' in transcription_file_data and type(transcription_file_data['segments']) is list:
+
+                    # group the segment texts into phrases using punctuation as dividers
+                    # instead of how they're currently segmented
+                    # once they are grouped, add them to the search corpus
+                    # plus add them to the search corpus association list so we know
+                    # from which transcription file and from which segment they came from originally
+
+                    # initialize the current phrase
+                    current_phrase = ''
+
+                    # loop through the segments of this transcription file
+                    for segment_index, segment in enumerate(transcription_file_data['segments']):
+
+                        # first remember the transcription file path and the segment index
+                        # if this is a new phrase (i.e. the current phrase is empty)
+                        if current_phrase == '':
+
+                            # this is the segment index relative to the whole search corpus that
+                            # contains all the transcription file segments (not just the current transcription file)
+                            general_segment_index = len(search_corpus_phrases)
+
+                            search_corpus_assoc[general_segment_index] = {'transcription_file_path':
+                                                                                   transcription_file_path,
+                                                                                'segment': segment['text'],
+                                                                                'segment_index':
+                                                                                   segment_index,
+                                                                               'start':
+                                                                                    segment['start']
+                                                                               }
+
+                        # add the segment text to the current phrase
+                        # but only if it's longer than 2 characters to avoid adding stuff that is most likely meaningless
+                        # like punctuation marks
+                        # also ignore the words that are in the ignore list
+                        if 'text' in segment and type(segment['text']) is str:
+
+                            # keep adding segments to the current phrase until we find a punctuation mark
+
+                            # first get the segment text
+                            segment_text = str(segment['text'])
+
+                            # add the segment to the current phrase
+                            current_phrase += segment_text.strip() + ' '
+
+                            # if a punctuation mark exists in the last 5 characters of the segment text
+                            # it means that the current phrase is complete
+                            if re.search(r'[\.\?\!]{1}$', segment_text[-5:]):
+
+                                # "close" the current phrase by adding it to the search corpus
+                                search_corpus_phrases.append(current_phrase.strip())
+
+                                # then empty the current phrase
+                                current_phrase = ''
+
+            # add the corpus to the search corpus dict, so we don't have to re-create it every time we search
+            # we're going to use the search window id as the key
+            self.toolkit_ops_obj.search_corpuses[search_window_id] = {'corpus': {}, 'assoc': {}}
+            self.toolkit_ops_obj.search_corpuses[search_window_id]['corpus'] = search_corpus_phrases
+            self.toolkit_ops_obj.search_corpuses[search_window_id]['assoc'] = search_corpus_assoc
+
+        # load the existing corpus (or the one we just compiled above)
+        search_corpus_phrases = self.toolkit_ops_obj.search_corpuses[search_window_id]['corpus']
+        search_corpus_assoc = self.toolkit_ops_obj.search_corpuses[search_window_id]['assoc']
+
+        # load the sentence transformer model if it hasn't been loaded yet
+        if self.toolkit_ops_obj.s_transformer_model is None:
+            logger.info('Loading sentence transformer model {}.'.format(self.toolkit_ops_obj.s_transformer_model_name))
+
+            # if the sentence transformer model was never downloaded, log that we're downloading it
+            model_downloaded_before = True
+            if self.stAI.get_app_setting(setting_name='s_transformer_model_downloaded_{}'
+                                            .format(self.toolkit_ops_obj.s_transformer_model_name),
+                                        default_if_none=False
+                                         ) is False:
+                logger.warning('The sentence transformer model {} may need to be downloaded and could take a while '
+                               'depending on the Internet connection speed. '
+                               .format(self.toolkit_ops_obj.s_transformer_model_name)
+                               )
+                model_downloaded_before = False
+
+            self.toolkit_ops_obj.s_transformer_model \
+                = SentenceTransformer(self.toolkit_ops_obj.s_transformer_model_name)
+
+            # once the model has been loaded, we can note that in the app settings
+            # this is a wat to keep track if the model has been downloaded or not
+            # but it's not 100% reliable and we may need to find a better way to do this in the future
+            if not model_downloaded_before:
+                self.stAI.save_config(setting_name='s_transformer_model_downloaded_{}'
+                                      .format(self.toolkit_ops_obj.s_transformer_model_name),
+                                      setting_value=True)
+
+        # define the model into this variable for easier access
+        embedder = self.toolkit_ops_obj.s_transformer_model
+
+        # encode the search corpus
+        corpus_embeddings = embedder.encode(search_corpus_phrases, convert_to_tensor=True)
+
+        # define the query based on the search terms
+        queries = [search_term]
+
+        # define how many results to return
+        # this will be overridden if the search corpus is smaller than this number
+        max_results = 10
+
+        # Find the closest 5 sentences of the corpus for each query sentence based on cosine similarity
+        logger.info('Finding the closest sentences in the corpus for the query {}.'.format(queries))
+        top_k = min(max_results, len(search_corpus_phrases))
+        for query in queries:
+            query_embedding = embedder.encode(query, convert_to_tensor=True)
+
+            # we use cosine-similarity and torch.topk to find the highest 5 scores
+            cos_scores = util.cos_sim(query_embedding, corpus_embeddings)[0]
+            top_results = torch.topk(cos_scores, k=top_k, sorted=True)
+
+            # first clear the results text box
+            results_text_element.delete('1.0', tk.END)
+
+            # add results to the results_text_element
+            results_text_element.insert(tk.END, 'Searching for: "' + query + '"\n')
+            results_text_element.insert(tk.END, '--------------------------------------\n')
+            results_text_element.insert(tk.END, 'Top {} closest phrases:\n\n'.format(top_k))
+
+            for score, idx in zip(top_results[0], top_results[1]):
+
+                # remember the current insert position
+                current_insert_position = results_text_element.index(tk.INSERT)
+
+                if str(search_corpus_phrases[idx]) != '':
+
+
+                    transcription_file_path = search_corpus_assoc[int(idx)]['transcription_file_path']
+                    segment_index = search_corpus_assoc[int(idx)]['segment_index']
+                    transcript_time = search_corpus_assoc[int(idx)]['start']
+                    line_no = int(segment_index)+1
+
+                    results_text_element.insert(tk.END, str(search_corpus_phrases[idx]).strip() + '\n')
+
+                    # color it in blue
+                    results_text_element.tag_add('white', current_insert_position, tk.INSERT)
+                    results_text_element.tag_config('white', foreground=self.resolve_theme_colors['supernormal'])
+
+                    # add score and segment info to the result
+                    results_text_element.insert(tk.END, ' -- Score: {:.4f}\n'.format(score))
+                    results_text_element.insert(tk.END, ' -- Line {} (second {:.2f}) \n\n'
+                                                .format(segment_index, transcript_time))
+
+                    # add a tag to the above text to make it clickable
+                    tag_name = 'clickable_{}'.format(int(idx))
+                    results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
+
+                    # add the transcription file path and segment index to the tag
+                    # so we can use it to open the transcription window with the transcription file and jump to the segment
+                    results_text_element.tag_bind(tag_name, '<Button-1>',
+                            lambda event, transcription_file_path=transcription_file_path, line_no=line_no:
+                                                  self.open_transcription_window(
+                                                        transcription_file_path=transcription_file_path,
+                                                        select_line_no=line_no))
+
+        # how long did the search take?
+        total_search_time = time.time() - start_search_time
+
+        # log the search time
+        logger.info('Search took {:.2f} seconds.'.format(total_search_time))
+
+        # update the results text element
+        results_text_element.insert(tk.END, '--------------------------------------\n')
+        results_text_element.insert(tk.END, 'Search took {:.2f} seconds\n'.format(total_search_time))
+
+        results_text_element.config(state=DISABLED)
+
+
 
     def ask_for_target_dir(self, title=None, target_dir=None):
 
@@ -2782,15 +3818,19 @@ class toolkit_UI:
         # and log the message
         if type == 'error':
             messagebox.showerror(message=message, **options)
-            logger.error(message)
+            logger.error(message_log)
 
         elif type == 'info':
             messagebox.showinfo(message=message, **options)
-            logger.info(message)
+            logger.info(message_log)
 
         elif type == 'warning':
             messagebox.showwarning(message=message, **options)
-            logger.warning(message)
+            logger.warning(message_log)
+
+        # if no type was passed, just log the message
+        else:
+            logger.debug(message_log)
 
 
 class ToolkitOps:
@@ -2836,6 +3876,18 @@ class ToolkitOps:
 
         self.whisper_device = self.whisper_device_select(self.whisper_device)
 
+        # now let's deal with the sentence transformer model
+        # this is the transformer model name that we will use
+        self.s_transformer_model_name \
+            = self.stAI.get_app_setting(setting_name='s_transformer_model_name', default_if_none='all-mpnet-base-v2')
+
+        # for now define an empty model here which should be loaded the first time it's needed
+        self.s_transformer_model = None
+
+        # keep all the search_corpuses here to find them easy by search_id (or search_window_id when using UI)
+        # this also optimizes the search so that the corpus is only compiled once per search session
+        self.search_corpuses = {}
+
         # start the resolve thread
         # with this, resolve should be constantly polled for data
         self.poll_resolve_thread()
@@ -2872,10 +3924,11 @@ class ToolkitOps:
 
         return self.whisper_device
 
-    def prepare_transcription_file(self, toolkit_UI_obj=None, task=None, unique_id=None):
+    def prepare_transcription_file(self, toolkit_UI_obj=None, task=None, unique_id=None,
+                                   retranscribe=False, time_intervals=None):
         '''
         This asks the user where to save the transcribed files,
-         it choses between transcribing an existing timeline (and first starting the render process)
+         it chooses between transcribing an existing timeline (and first starting the render process)
          and then passes the file to the transcription config
 
         :param toolkit_UI_obj:
@@ -2898,8 +3951,58 @@ class ToolkitOps:
         # set an empty target directory for future use
         target_dir = ''
 
+        # if retranscribe is True, we're going to use an existing transcription item
+        if retranscribe is not False:
+
+            # hope that the retranscribe attribute is the transcription file path too
+            if os.path.isfile(str(retranscribe)):
+
+                transcription_file_path = str(retranscribe)
+
+                # open the transcription file
+                transcription_data = self.get_transcription_file_data(transcription_file_path)
+
+                # prepare an empty audio file path
+                audio_file_path = None
+
+                # make sure the audio file path is in the transcription data and that the audio file exists
+                if 'audio_file_path' in transcription_data:
+
+                    # set the target directory to the transcription file path
+                    target_dir = os.path.dirname(transcription_file_path)
+
+                    # set the audio file path
+                    audio_file_path = os.path.join(target_dir, transcription_data['audio_file_path'])
+
+                    # check if the audio file exists
+                    if not os.path.isfile(audio_file_path):
+                        audio_file_path = None
+
+
+                # if no audio file was found, notify the user
+                if audio_file_path is None:
+                    self.toolkit_UI_obj.notify_via_messagebox(type='error',
+                                                              message='The audio file path is not in the transcription '
+                                                                      'file or doesn\'t exist at it\'s path.')
+                    return False
+
+
+                # get the transcription name from the transcription file
+                name = transcription_data['name'] if 'name' in transcription_data else ''
+
+                # a unique id is also useful to keep track of stuff
+                unique_id = self._generate_transcription_unique_id(name=name)
+
+                # now open up the transcription settings window
+                self.start_transcription_config(audio_file_path=audio_file_path,
+                                                name=name,
+                                                task=task,
+                                                unique_id=unique_id,
+                                                transcription_file_path=transcription_file_path,
+                                                time_intervals=time_intervals)
+
         # if Resolve is available and the user has an open timeline, render the timeline to an audio file
-        if resolve_data['resolve'] != None and 'currentTimeline' in resolve_data and \
+        elif resolve_data['resolve'] != None and 'currentTimeline' in resolve_data and \
                 resolve_data['currentTimeline'] != '' and resolve_data['currentTimeline'] is not None:
 
             # reset any potential yes that the user might have said when asked to continue without resolve
@@ -2997,7 +4100,9 @@ class ToolkitOps:
             else:
                 return False
 
-    def start_transcription_config(self, audio_file_path=None, name=None, task=None, unique_id=None):
+    def start_transcription_config(self, audio_file_path=None, name=None, task=None,
+                                   unique_id=None, transcription_file_path=False,
+                                   time_intervals=None, excluded_time_intervals=None):
         '''
         Opens up a modal to allow the user to configure and start the transcription process for each file
         :return:
@@ -3007,11 +4112,23 @@ class ToolkitOps:
         if not self.is_UI_obj_available():
             return False
 
+        # if no transcription_file_path was passed, start a new transcription
+        if not transcription_file_path:
+            title = "Transcription Settings: " + name
+
+        # if a transcription_file_path was passed, we're going to perform a re-transcription
+        else:
+            title = "Transcription Settings: " + name + " (re-transcribe)"
+
         # open up the transcription settings window via Toolkit_UI
-        return self.toolkit_UI_obj.open_transcription_settings_window(title="Transcription Settings: " + name,
+        return self.toolkit_UI_obj.open_transcription_settings_window(title=title,
                                                                       name=name,
                                                                       audio_file_path=audio_file_path, task=task,
-                                                                      unique_id=unique_id)
+                                                                      unique_id=unique_id,
+                                                                      transcription_file_path=transcription_file_path,
+                                                                      time_intervals=time_intervals,
+                                                                      excluded_time_intervals=excluded_time_intervals
+                                                                      )
 
     def add_to_transcription_log(self, unique_id=None, **attribute):
         '''
@@ -3067,7 +4184,8 @@ class ToolkitOps:
 
     def add_to_transcription_queue(self, toolkit_UI_obj=None, task=None, audio_file_path=None,
                                    name=None, language=None, model=None, device=None,
-                                   unique_id=None, initial_prompt=None):
+                                   unique_id=None, initial_prompt=None,
+                                   time_intervals=None, excluded_time_intervals=None, transcription_file_path=None):
         '''
         Adds files to the transcription queue and then pings the queue in case it's sleeping.
         It also adds the files to the transcription log
@@ -3132,6 +4250,9 @@ class ToolkitOps:
                 file_dict = {'name': c_name, 'audio_file_path': audio_file_path, 'task': c_task,
                              'language': language, 'model': model, 'device': device,
                              'initial_prompt': initial_prompt,
+                             'time_intervals': time_intervals,
+                             'excluded_time_intervals': excluded_time_intervals,
+                             'transcription_file_path': transcription_file_path,
                              'status': 'waiting', 'info': None}
 
                 # add to transcription queue
@@ -3205,8 +4326,9 @@ class ToolkitOps:
             return False
 
         # get file info from queue
-        name, audio_file_path, task, language, model, device, initial_prompt, info \
-            = self.get_queue_file_info(queue_id)
+        name, audio_file_path, task, language, model, device, initial_prompt, \
+            time_intervals, excluded_time_intervals, transcription_file_path, info \
+                = self.get_queue_file_info(queue_id)
 
         logger.info("Starting to transcribe {}".format(name))
 
@@ -3219,7 +4341,10 @@ class ToolkitOps:
         try:
             self.whisper_transcribe(audio_file_path=audio_file_path, task=task, name=name,
                                     queue_id=queue_id, language=language, model=model, initial_prompt=initial_prompt,
-                                    device=device)
+                                    device=device,
+                                    time_intervals=time_intervals,
+                                    excluded_time_intervals=excluded_time_intervals,
+                                    transcription_file_path=transcription_file_path)
 
         # in case the transcription process crashes
         except Exception:
@@ -3248,9 +4373,177 @@ class ToolkitOps:
             return [queue_file['name'], queue_file['audio_file_path'], queue_file['task'],
                     queue_file['language'], queue_file['model'], queue_file['device'],
                     queue_file['initial_prompt'],
+                    queue_file['time_intervals'],
+                    queue_file['excluded_time_intervals'],
+                    queue_file['transcription_file_path'],
                     queue_file['info']]
 
         return False
+
+    def split_audio_by_intervals(self, audio_array, time_intervals=None, sr=16_000):
+        """
+        Splits the audio_array according to the time_intervals
+        and returns a audio_segments list with multiple audio_arrays
+        together with the time_intervals passed to the function
+        """
+
+        # reset the audio segments list
+        audio_segments = []
+
+        # if there are time segments
+        if time_intervals is not None and time_intervals \
+                and type(time_intervals) == list and len(time_intervals) > 0:
+
+            # sort the audio segments by start time
+            time_intervals = sorted(time_intervals, key=lambda x: x[0])
+
+            # take each time segment
+            for time_interval in time_intervals:
+                # calculate duration based on start and end times!!
+
+                # and add it to an audio segments list
+                # the format is [start_time, end_time, audio_array]
+                audio_segment = [time_interval[0],
+                                 time_interval[1],
+                                 audio_array[int(time_interval[0] * sr): int(time_interval[1] * sr)]
+                                 ]
+
+                audio_segments.append(audio_segment)
+            return audio_segments, time_intervals
+
+        # if time_intervals is empty, define it as a single segment,
+        # from the beginning to the end (i.e. we're transcribing the full audio)
+        time_intervals = [[0, len(audio_array) / sr]]
+        audio_segments = [[0, len(audio_array / sr), audio_array]]
+        return audio_segments, time_intervals
+
+
+    def whisper_transcribe_segments(self, audio_segments, task, next_segment_id, other_whisper_options):
+        """
+        Transcribes only the passed audio segments
+        and offsets the transcription segments start and end times
+
+        Only returns the transcription segments
+        """
+
+        results = {'segments': []}
+
+        # this will be counted up for each segment to provide a unique id
+        id_count = 0
+
+        # transcribe each audio segment
+        for audio_segment in audio_segments:
+
+            # run whisper transcribe on the audio segment
+            result = self.whisper_model.transcribe(audio_segment[2],
+                                                   task=task,
+                                                   verbose=True,
+                                                   **other_whisper_options
+                                                   )
+
+            # now process the result and add the original start time offset
+            # to each transcript segment start and end times
+
+            # if there are segments in the result
+            if 'segments' in result and result['segments']:
+
+                # take each segment and add the offset to the start and end time
+                for i, transcript_segment in enumerate(result['segments']):
+                    transcript_segment['start'] += audio_segment[0]
+                    transcript_segment['end'] += audio_segment[0]
+
+                    # avoid end time being larger than the interval end time
+                    # - there seems to be an issue in the whisper model:
+                    #   https://github.com/openai/whisper/discussions/357
+                    if transcript_segment['end'] > audio_segment[1]:
+                        transcript_segment['end'] = audio_segment[1]
+
+                    # also avoid start time being smaller than the interval start time
+                    if transcript_segment['start'] < audio_segment[0]:
+                        transcript_segment['start'] = audio_segment[0]
+
+                    transcript_segment['id'] = next_segment_id + id_count
+                    id_count += 1
+
+                    # update the segment in the result
+                    #result['segments'][i] = transcript_segment
+
+                    # add the transcription of the audio segment to the results list
+                    results['segments'].append(transcript_segment)
+
+        return results
+
+    def exclude_segments_by_intervals(self, audio_array, time_intervals, excluded_time_intervals, sr):
+        """
+        Excludes certain audio segments from audio_array according to the excluded_time_intervals
+        and returns a new audio_array with the excluded segments removed
+        """
+
+        # if there are exclusion time segments and time_intervals
+        if excluded_time_intervals and type(excluded_time_intervals) == list and len(excluded_time_intervals) > 0\
+                and time_intervals and type(time_intervals) == list and len(time_intervals) > 0:
+
+            # sort the excluded segments by start time
+            excluded_time_intervals = \
+                sorted(excluded_time_intervals, key=lambda x: x[0])
+
+            # take each time segment
+            for excluded_time_interval in excluded_time_intervals:
+
+                # and check it against each of the time segments we selected for transcription
+                for time_interval in time_intervals:
+
+                    # if the exclusion is outside the current segment times
+                    if excluded_time_interval[1] <= time_interval[0] \
+                            or excluded_time_interval[0] >= time_interval[1]:
+                        continue
+
+                    # if the exclusion is exactly as the current segment times
+                    elif time_interval[0] == excluded_time_interval[0] \
+                            and time_interval[1] == excluded_time_interval[1]:
+
+                        # simply remove the whole segment
+                        time_intervals.remove(time_interval)
+
+                    else:
+
+                        # if the exclusion start time is equal to the segment start time
+                        if excluded_time_interval[0] == time_interval[0]:
+
+                            # cut out the beginning of the segment
+                            # by using the end time of the exclusion as its start
+                            time_interval[0] = excluded_time_interval[1]
+
+
+                        # if the exclusion end time is equal to the segment end time
+                        elif excluded_time_interval[1] == time_interval[1]:
+
+                            # cut out the end of the segment
+                            # by using the start time of the exclusion as its end
+                            time_interval[1] = excluded_time_interval[0]
+
+
+                        # if the exclusion is in the middle of the segment
+                        elif excluded_time_interval[0] > time_interval[0] \
+                                and excluded_time_interval[1] < time_interval[1]:
+
+                            # remove the segment from the list
+                            time_intervals.remove(time_interval)
+
+                            # but then split it into two segments
+                            # first the segment until the exclusion
+                            time_intervals.append([time_interval[0], excluded_time_interval[0]])
+
+                            # then the segment from the exclusion
+                            time_intervals.append([excluded_time_interval[1], time_interval[1]])
+
+            # sort the selection by start time
+            time_intervals = sorted(time_intervals, key=lambda x: x[0])
+
+        # now split the audio using the newly created intervals
+        audio_segments, time_intervals = self.split_audio_by_intervals(audio_array, time_intervals, sr)
+
+        return audio_segments, time_intervals
 
     def whisper_transcribe(self, name=None, audio_file_path=None, task=None,
                            target_dir=None, queue_id=None, **other_whisper_options):
@@ -3267,10 +4560,11 @@ class ToolkitOps:
         if name is None:
             name = os.path.basename(audio_file_path)
 
-        # save the directory where the file is stored if it wasn't passed
+        # use the directory where the file is stored if another one wasn't passed
         if target_dir is None:
             target_dir = os.path.dirname(audio_file_path)
 
+        # what is the name of the audio file
         audio_file_name = os.path.basename(audio_file_path)
 
         # select the device that was passed (if any)
@@ -3279,8 +4573,8 @@ class ToolkitOps:
             self.whisper_device = self.whisper_device_select(other_whisper_options['device'])
             del other_whisper_options['device']
 
-        # load OpenAI Whisper
-        # and hold on to it for future use (unless another model was passed via other_whisper_options)
+        # load OpenAI Whisper model
+        # and hold it loaded for future use (unless another model was passed via other_whisper_options)
         if self.whisper_model is None \
                 or ('model' in other_whisper_options and self.whisper_model_name != other_whisper_options['model']):
 
@@ -3291,8 +4585,27 @@ class ToolkitOps:
             if 'model' in other_whisper_options and other_whisper_options['model']:
                 self.whisper_model_name = other_whisper_options['model']
 
+            # if the Whisper transformer model was never downloaded, log that we're downloading it
+            model_downloaded_before = True
+            if self.stAI.get_app_setting(setting_name='whisper_model_downloaded_{}'
+                    .format(self.whisper_model_name),
+                                         default_if_none=False
+                                         ) is False:
+                logger.warning('The whisper {} model may need to be downloaded and could take a while '
+                               'depending on the Internet connection speed. '
+                               .format(self.whisper_model_name)
+                               )
+                model_downloaded_before = False
+
             logger.info('Loading Whisper {} model.'.format(self.whisper_model_name))
             self.whisper_model = whisper.load_model(self.whisper_model_name)
+
+            # once the model has been loaded, we can note that in the app settings
+            # this is a wat to keep track if the model has been downloaded or not
+            # but it's not 100% reliable and we may need to find a better way to do this in the future
+            if not model_downloaded_before:
+                self.stAI.save_config(setting_name='whisper_model_downloaded_{}'.format(self.whisper_model_name),
+                                      setting_value=True)
 
             # let the user know if the whisper model is multilingual or english-only
             logger.info('Selected Whisper model is {}.'.format(
@@ -3306,6 +4619,7 @@ class ToolkitOps:
         # update the status of the item in the transcription log
         self.update_transcription_log(unique_id=queue_id, **{'status': 'transcribing'})
 
+        # let the user know the transcription process has started
         notification_msg = "Transcribing {}.\nThis may take a while.".format(name)
         self.toolkit_UI_obj.notify_via_os("Starting Transcription", notification_msg, notification_msg)
 
@@ -3319,11 +4633,98 @@ class ToolkitOps:
         if 'initial_prompt' in other_whisper_options and other_whisper_options['initial_prompt'] == '':
             del other_whisper_options['initial_prompt']
 
-        result = self.whisper_model.transcribe(audio_file_path,
-                                               task=task, verbose=True, **other_whisper_options)
+        # load audio file as array using librosa
+        audio_array, sr = librosa.load(audio_file_path, sr=16_000)
 
+        # if time_intervals was passed, only transcribe those time intervals from the audio file
+        if 'time_intervals' in other_whisper_options:
+            time_intervals = other_whisper_options['time_intervals']
+            del other_whisper_options['time_intervals']
+
+        # otherwise assume no time intervals
+        else:
+            time_intervals = None
+
+        # split the audio into segments according to the time intervals
+        # in case no time intervals were passed, this will just return one audio segment with the whole audio
+        audio_segments, time_intervals = self.split_audio_by_intervals(audio_array, time_intervals, sr)
+
+        # exclude time intervals that need to be excluded
+        if 'excluded_time_intervals' in other_whisper_options:
+            audio_segments, time_intervals = self.exclude_segments_by_intervals(
+                audio_array, time_intervals, other_whisper_options['excluded_time_intervals'], sr=sr
+            )
+            del other_whisper_options['excluded_time_intervals']
+
+        # create an empty list to load existing transcription data (or to save the new data)
+        transcription_data = {}
+
+        existing_transcription = False
+
+        # load the transcription data from the file if a path was passed
+        if 'transcription_file_path' in other_whisper_options:
+
+            if other_whisper_options['transcription_file_path'].strip() != '':
+
+                transcription_file_path = other_whisper_options['transcription_file_path']
+
+                # open the transcription file
+                # load the transcription data from the file
+                transcription_data = self.get_transcription_file_data(transcription_file_path)
+
+                # mark that we're using existing transcription data (re-transcribing)
+                # and remember the name of the transcription file
+                existing_transcription = transcription_file_path
+
+                # change the status of the item in the transcription log to re-transcribing
+                self.update_transcription_log(unique_id=queue_id, **{'status': 're-transcribing'})
+
+            del other_whisper_options['transcription_file_path']
+
+
+
+        # get the next id based on the largest id from transcription_data segments
+        if type(transcription_data) == dict and 'segments' in transcription_data:
+            next_segment_id = max([int(segment['id']) for segment in transcription_data['segments']]) +1
+        else:
+            next_segment_id = 0
+
+        # transcribe the audio segments
+        # (or just one audio segment with the whole audio if no time intervals were passed)
+        result = self.whisper_transcribe_segments(audio_segments=audio_segments,
+                                                  task=task,
+                                                  next_segment_id=next_segment_id,
+                                                  other_whisper_options=other_whisper_options
+                                                  )
+
+        # update the transcription data with the new segments
+        # but first remove all the segments between the time intervals that were passed
+        if type(transcription_data) is dict and 'segments' in transcription_data:
+
+            # for each time interval, remove all the segments that are between the start and end of the interval
+            for time_interval in time_intervals:
+
+                # get the start and end of the time interval
+                start_time = time_interval[0]
+                end_time = time_interval[1]
+
+                # remove all the segments that are between the start and end of the time interval
+                transcription_data['segments'] = [segment for segment in transcription_data['segments'] if
+                                                  segment['start'] < start_time or segment['end'] > end_time]
+
+                # if we have segments in result, add them to the transcription data
+                if type(result) is dict and 'segments' in result:
+
+                    # add the new segments to the transcription data
+                    transcription_data['segments'] += [segment for segment in result['segments']
+                                                        if  segment['start'] >= start_time
+                                                        and segment['end'] <= end_time]
+
+            # now make sure that the segments are sorted by start time
+            transcription_data['segments'] = sorted(transcription_data['segments'], key=lambda k: k['start'])
+
+        # perform speaker diarization if requested
         # self.speaker_diarization(audio_file_path)
-
 
         # let the user know that the speech was processed
         notification_msg = "Finished transcription for {} in {} seconds".format(name,
@@ -3350,45 +4751,63 @@ class ToolkitOps:
         #
         # Furthermore, the same file will be used to save any other information related to the transcription.)
 
-        # first determine if there's another transcription.json file with the same name
-        # and keep adding numbers to it until the name is free
-        file_name = audio_file_name
-        file_num = 2
-        while os.path.exists(os.path.join(target_dir, file_name + '.transcription.json')):
-            file_name = audio_file_name + "_{}".format(file_num)
-            file_num = file_num+1
+        # if we're not updating an older transcription file
+        if not existing_transcription or type(existing_transcription) is not str:
+
+            # first determine if there's another transcription.json file with the same name
+            # and keep adding numbers to it until the name is free
+            file_name = audio_file_name
+            file_num = 2
+            while os.path.exists(os.path.join(target_dir, file_name + '.transcription.json')):
+                file_name = audio_file_name + "_{}".format(file_num)
+                file_num = file_num+1
+
+            # also create the transcription data dictionary
+            transcription_data = result
+
+        else:
+            # for the file name we'll use the name of the existing transcription file,
+            # but remove '.transcription.json' from the end
+            file_name = os.path.basename(existing_transcription).replace('.transcription.json', '')
+
+        # take the full text from the transcription segments since whisper might have given us a text
+        # that is incomplete due to interval splitting
+        # this also takes into account the segments that were passed before transcription
+        #   (in case of re-transcriptions)
+        transcription_data['text'] = ' '.join([segment['text'] for segment in transcription_data['segments']])
 
         txt_file_path = self.save_txt_from_transcription(file_name=file_name, target_dir=target_dir,
-                                                         transcription_data=result)
+                                                         transcription_data=transcription_data)
 
         # only save the filename without the absolute path to the transcript json
-        result['txt_file_path'] = os.path.basename(txt_file_path)
+        transcription_data['txt_file_path'] = os.path.basename(txt_file_path)
 
         # save the SRT file next to the transcription file
         srt_file_path = self.save_srt_from_transcription(file_name=file_name, target_dir=target_dir,
-                                                         transcription_data=result)
+                                                         transcription_data=transcription_data)
 
         # only the basename is needed here too
-        result['srt_file_path'] = os.path.basename(srt_file_path)
+        transcription_data['srt_file_path'] = os.path.basename(srt_file_path)
 
         # remember the audio_file_path this transcription is based on too
-        result['audio_file_path'] = os.path.basename(audio_file_path)
+        transcription_data['audio_file_path'] = os.path.basename(audio_file_path)
 
         # don't forget to add the name of the transcription
-        result['name'] = name
+        transcription_data['name'] = name
 
         # and some more info about the transription
-        result['task'] = task
-        result['model'] = self.whisper_model_name
+        transcription_data['task'] = task
+        transcription_data['model'] = self.whisper_model_name
 
         # save the transcription file with all the added file paths
         transcription_json_file_path = self.save_transcription_file(file_name=file_name, target_dir=target_dir,
-                                                                    transcription_data=result)
+                                                                    transcription_data=transcription_data)
 
         # when done, change the status in the transcription log
         # and also add the file paths to the transcription log
         self.update_transcription_log(unique_id=queue_id, status='done',
-                                      srt_file_path=result['srt_file_path'], txt_file_path=result['txt_file_path'],
+                                      srt_file_path=transcription_data['srt_file_path'],
+                                      txt_file_path=transcription_data['txt_file_path'],
                                       json_file_path=transcription_json_file_path)
 
         # why not open the transcription in a transcription window?
@@ -3463,7 +4882,7 @@ class ToolkitOps:
 
         # make sure the transcription exists
         if not os.path.exists(transcription_file_path):
-            logger.warning('Transcription file {} doesn\'t exist.'.format(transcription_file_path))
+            logger.warning("Transcription file {} doesn't exist.".format(transcription_file_path))
             return False
 
         # get the contents of the transcription file
@@ -3509,9 +4928,9 @@ class ToolkitOps:
         You can either pass the transcription segments or the full transcription data. When both are passed,
         the transcription_segments will be used.
 
-        :param srt_file_path:
+        :param srt_file_path: The full path to the SRT file
         :param transcription_segments:
-        :param name:
+        :param file_name: The name of the SRT file
         :param target_dir:
         :param transcription_data:
         :return: False or srt_file_path
@@ -3530,7 +4949,7 @@ class ToolkitOps:
                 logger.error('No transcription file path, name or target dir were passed.')
                 return False
 
-        if srt_file_path:
+        if srt_file_path and srt_file_path != '':
 
             # if the transcription segments were not passed
             # try to find them in transcription_data (if that was passed too)
@@ -3578,7 +4997,7 @@ class ToolkitOps:
                 logger.error('No transcription file path, name or target dir were passed.')
                 return False
 
-        if txt_file_path:
+        if txt_file_path and txt_file_path != '':
 
             # if the transcription segments were not passed
             # try to find them in transcription_data (if that was passed too)
@@ -3751,7 +5170,7 @@ class ToolkitOps:
 
         # if there's no toolkit_UI_obj in the object or one hasn't been passed, abort
         if toolkit_UI_obj is None and self.toolkit_UI_obj is None:
-            logger.error('No GUI available. Aborting.')
+            logger.info('No GUI available. Aborting.')
             return False
         # if there was a toolkit_UI_obj passed, update the one in the object
         elif toolkit_UI_obj is not None:
@@ -3766,6 +5185,8 @@ class ToolkitOps:
         if resolve:
 
             # poll resolve for some info
+            # @todo avoid polling resolve for this info and use the existing current_timeline_fps
+            #   and current_timeline_startTC
             resolve_data = mots_resolve.get_resolve_data()
 
             # get the framerate of the current timeline
@@ -3794,6 +5215,47 @@ class ToolkitOps:
 
         else:
             return False
+
+    def calculate_resolve_timecode_to_sec(self, timecode=None):
+        global resolve
+        if resolve:
+
+            # poll resolve for some info
+            # @todo avoid polling resolve for this info and use the existing current_timeline_fps
+            #   and current_timeline_startTC
+            resolve_data = mots_resolve.get_resolve_data()
+
+            # get the framerate of the current timeline
+            timeline_fps = resolve_data['currentTimelineFPS']
+
+            # get the start timecode of the current timeline
+            timeline_start_tc = resolve_data['currentTimeline']['startTC']
+
+            # initialize the timecode object for the start tc
+            timeline_start_tc = Timecode(timeline_fps, timeline_start_tc)
+
+            # if no timecode was passed, get it from the variable
+            if timecode is None:
+                timecode = current_tc
+
+            # if we still don't have a timecode, abort and return None
+            if timecode is None:
+                return None
+
+            # initialize the timecode object for the passed timecode
+            tc = Timecode(timeline_fps, timecode)
+
+            # calculate the difference between the start tc and the passed tc
+            tc_diff = tc - timeline_start_tc
+
+            # calculate the seconds from the timecode frames
+            tc_diff_seconds = tc_diff.frames / timeline_fps
+
+            # return the seconds which is the previous calculated difference
+            return tc_diff_seconds
+
+        else:
+            return None
 
     def go_to_time(self, seconds=0):
 
@@ -3835,9 +5297,15 @@ class ToolkitOps:
                 )
 
                 # and open a transcript window for each of them
-                if timeline_transcription_file_paths:
+                if timeline_transcription_file_paths \
+                        and timeline_transcription_file_paths is not None\
+                        and self.toolkit_UI_obj is not None:
                     for transcription_file_path in timeline_transcription_file_paths:
                         self.toolkit_UI_obj.open_transcription_window(transcription_file_path=transcription_file_path)
+
+                # and close all the transcript windows that aren't linked with this timeline
+                if self.stAI.get_app_setting('close_transcripts_on_timeline_change'):
+                    self.toolkit_UI_obj.close_inactive_transcription_windows(timeline_transcription_file_paths)
 
 
     def poll_resolve_thread(self):
@@ -3976,8 +5444,9 @@ class ToolkitOps:
             # take a short break before continuing the loop
             time.sleep(polling_interval/1000)
 
-    def speaker_diarization(audio_path):
-        # work in progress, but whisper vs. pyannote dependencies collide (huggingface-hub)
+    def speaker_diarization(self, audio_path, add_speakers_to_segments):
+
+        # WORK IN PROGRESS
         # print("Detecting speakers.")
 
         # from pyannote.audio import Pipeline
@@ -4133,6 +5602,8 @@ class StoryToolkitAI:
         # import version.py - this holds the version stored locally
         import version
 
+        global standalone
+
         # keep the version in memory
         self.__version__ = version.__version__
 
@@ -4158,7 +5629,8 @@ class StoryToolkitAI:
         # create a project settings variable
         self.project_settings = {}
 
-        logger.info(Style.BOLD+Style.UNDERLINE+"Running StoryToolkitAI version {}".format(self.__version__))
+        logger.info(Style.BOLD+Style.UNDERLINE+"Running StoryToolkitAI version {} {}"
+                    .format(self.__version__, '(standalone)' if standalone else ''))
 
     def user_data_dir_exists(self, create_if_not=True):
         '''
@@ -4479,28 +5951,52 @@ class StoryToolkitAI:
         # if the setting key, or any of the stuff above wasn't found
         return None
 
-    def check_update(self):
+    def check_update(self, release=False):
         '''
         This checks if there's a new version of the app on GitHub and returns True if it is and the version number
+
+        :param: release: if True, it will only check for standalone releases, and ignore the version.py file
         :return: [bool, str online_version]
         '''
+
         from requests import get
-        version_request = "https://raw.githubusercontent.com/octimot/StoryToolkitAI/main/version.py"
 
-        # retrieve the latest version number from github
-        try:
-            r = get(version_request, verify=True)
+        # get the latest release from GitHub if release is True
+        if release:
 
-            # extract the actual version number from the string
-            online_version_raw = r.text.split('"')[1]
+            try:
+                # get the latest release from GitHub
+                latest_release = get('https://api.github.com/repos/octimot/storytoolkitai/releases/latest').json()
 
-        # show exception if it fails, but don't crash
-        except Exception as e:
-            logger.warning('Unable to check the latest version of StoryToolkitAI: {}. '
-                           'Is your Internet connection working?'.format(e))
+                # remove the 'v' from the release version (tag)
+                online_version_raw = latest_release['tag_name'].replace('v', '')
 
-            # return False - no update available and None instead of an online version number
-            return False, None
+            # show exception if it fails, but don't crash
+            except Exception as e:
+                logger.warning('Unable to check the latest release version of StoryToolkitAI: {}. '
+                               '\nIs your Internet connection working?'.format(e))
+
+                # return False - no update available and None instead of an online version number
+                return False, None
+
+        # otherwise get the latest version from the GitHub repo version.py file
+        else:
+            version_request = "https://raw.githubusercontent.com/octimot/StoryToolkitAI/main/version.py"
+
+            # retrieve the latest version number from github
+            try:
+                r = get(version_request, verify=True)
+
+                # extract the actual version number from the string
+                online_version_raw = r.text.split('"')[1]
+
+            # show exception if it fails, but don't crash
+            except Exception as e:
+                logger.warning('Unable to check the latest version of StoryToolkitAI: {}. '
+                               '\nIs your Internet connection working?'.format(e))
+
+                # return False - no update available and None instead of an online version number
+                return False, None
 
         # get the numbers in the version string
         local_version = self.__version__.split(".")
@@ -4548,12 +6044,21 @@ if __name__ == '__main__':
 
     # keep a global StoryToolkitAI object for now
     global stAI
+    global standalone
+
+    # are we running the standalone version?
+    if getattr(sys, 'frozen', False):
+        standalone = True
+    else:
+        standalone = False
 
     # init StoryToolkitAI object
     stAI = StoryToolkitAI()
 
-    # check if a new version of the app exists
-    [update_exists, online_version] = stAI.check_update()
+    # check if a new version of the app exists on GitHub
+    # but use either the release version number or version.py,
+    # depending on standalone is True or False
+    [update_exists, online_version] = stAI.check_update(release=standalone)
 
     # check if ffmpeg is installed
     ffmpeg_status = stAI.check_ffmpeg()

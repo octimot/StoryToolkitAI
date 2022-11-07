@@ -3,12 +3,8 @@
 ## Description
 
 StoryToolkitAI is an editing extension for Davinci Resolve Studio 18 that uses Open AI Whisper to transcribe timelines
-and enables editors to log footage and edit more efficiently.
- 
-**TL;DR:
-this tool is supernatural and will enhance your editing workflow like Harry Potter's Sword of Gryffindor or Batman's 
-Utility Belt - depending on which reference you relate to kind of shows what sort of person you are, but this is a
-discussion for some other time.**
+and sentence transformers for advanced semantic search to enable editors to log footage and edit more efficiently with 
+the help of AI.
 
 <img alt="StoryToolkitAI Demo GIF" src="https://videoapi-muybridge.vimeocdn.com/animated-thumbnails/image/9eb88ee1-4902-4e17-82dc-77411d959eab.gif?ClientID=vimeo-core-prod&Date=1665676352&Signature=52a72df29b216dd2f8cce8ee7360ea38a24b5b6e" width="700">
 https://vimeo.com/759962195/dee07a067a
@@ -16,22 +12,22 @@ https://vimeo.com/759962195/dee07a067a
 ### Key Features
 - [x] **Free Automatic Transcriptions in many languages** on your local machine directly from Resolve
 - [x] **Free Automatic Translation** from many languages to English on your local machine from Resolve
+- [x] **Transcript Advanced Search** - allows you to search transcripts by understanding concepts and meanings
 - [x] Export of transcripts to multiple formats, including SRT
-- [x] Import of transcript SRT file directly into Resolve
+- [x] Import subtitles directly into Resolve
 - [x] Transcription queuing to line up transcription jobs
+- [x] **Sliced Transcriptions** to re-transcribe only parts of the timeline/audio file
 - [x] **Transcript Timeline Navigation** - click or UP/DOWN on transcript moves the playhead in Resolve
 - [x] **Transcript Word Search** - allows you to find specific words or phrases in your transcripts
 - [x] **Mark** Resolve timelines using the phrases you select (see keyboard shortcuts below)
-- [x] **Transcript Segments editing** - editing of transcript lines (to be further developed)
+- [x] **Transcript editing** - edit your transcripts directly in the app
 - [x] Copy Markers between Resolve Timelines and Timeline Source Clip
 - [x] Render Resolve Markers to Stills or Clips
 - [X] Audio Files transcription even without Resolve installed on the machine
 
 ### Work in progress
 - [ ] **Transcript Segment Groups** to select and add phrases to groups that can be recalled later 
-- [ ] **Global Semantic Search** to search stuff in all the project transcripts 
-- [ ] **Full Transcript Editing** from the tool
-- [ ] **Sliced Transcriptions** based on Resolve Duration Markers to transcribe only parts of the timeline
+- [ ] **Global Advanced Search** to search stuff semantically in all the project transcripts 
 - [ ] **Speaker Recognition**
 - [ ] **Integration with other AI / ML tools**
 - [X] Plus more flashy features as clickbait to unrealistically raise expectations and destroy competition
@@ -40,7 +36,7 @@ _The app is in this stage very raw and not polished at all, but we use it daily 
 not only out of sheer generosity, but also because we'd like to change how people approach editing by using AI._
 
 Ideally, it should evolve by incorporating other machine learning models such as CLIP and GPT-3 to assist editors in
-their work, or rather to make editors obsolete (that would be cool, right?).
+their work.
 
 ### Is it really completely free?
 Yes, the tool runs locally like butter and there's no need for any additional account to transcribe, translate to
@@ -49,7 +45,7 @@ English or do stuff with it in Resolve.
 Of course, we won't say no to envelopes with foreign currency banknotes or cases with contraband CRT editing screens.
 
 ### Transcription Results
-The results we get with Whisper are significantly better than any other Speech-to-Text model (including Google, AWS
+The results we get with Whisper are significantly better than other Speech-to-Text model (including Google, AWS
 etc.) out there **and the models are free to use**. According to OpenAI, the models have been trained on data in 98
 different languages (cca. 65% of data in English) **and show strong Automated Speech Recognition results in ~10 
 languages**. More technical blabla on the 
@@ -68,7 +64,7 @@ mess with your feelings.
 
 ### Transcription Speed
 We used the expression "runs like butter" above. There's one thing you need to know about butter - it's good when it's
-fresh, but when it gets old it might get clumpy and it smells. Similar, the more state-of-the-art your machine CPU or
+fresh, but when it gets old it might get clumpy and smelly. Similar, the more state-of-the-art your machine CPU or
 GPU is, the faster you get results. Please don't use this on your grandpa's Pentium 4 from the closet.
 
 **Totally unscientific anecdotal tests:**
@@ -87,8 +83,12 @@ editing faster than that, please stop, you're embarrassing the rest of us.
 This tool is written by Octavian Mot, your friendly filmmaker who hates to code and is trying to keep it together as
 [half of mots](https://mots.us).
 
-Feel free to get in touch with compliments, criticism, and even weird ideas for new features. As a matter of fact, why 
-not grab an axe and start coding to procrastinate your real work and feel a bit better about yourself?
+Feel free to get in touch with compliments, criticism, and even weird ideas for new features.
+
+The tool would be useless without using the following open source projects:
+- [OpenAI Whisper](https://openai.com/blog/whisper/)
+- [Sentence Transformers](https://www.sbert.net/)
+- and many others packages that are listed in the requirements.txt file
 
 ---
 
@@ -96,7 +96,7 @@ not grab an axe and start coding to procrastinate your real work and feel a bit 
 
 We're currently working to get the app in a standalone binary version for different operating systems and platforms,
 so before anything else, check if there is a release available for your OS and platform
-[here](https://github.com/octimot/StoryToolkitAI/releases/latest) - right now there's a Mac M1 version available.
+[here](https://github.com/octimot/StoryToolkitAI/releases/latest)
 
 But if a binary isn't available, before you attempt something silly like actually installing this tool on your machine, 
 please keep in mind that by clicking on the instructions you will see many computer commands which are the main method 
@@ -106,7 +106,8 @@ children out of wedlock, and/or marry your lost non-identical twin by mistake - 
 highly unlikely because of the commands, but still slightly possible. Nevertheless, we're not responsible for any of it 
 or anything else that might happen.
 
-For detailed installation instructions [go here](https://github.com/octimot/StoryToolkitAI/blob/main/INSTALLATION.md).
+Nevertheless, for detailed installation instructions 
+[go here](https://github.com/octimot/StoryToolkitAI/blob/main/INSTALLATION.md).
 
 ---
 
@@ -122,6 +123,12 @@ to start StoryToolkitAI, go to the folder where you installed it previously, act
 A simple GUI with a mind-bending mid-2000s inspired design should appear on the screen. Don't worry, that's intentional:
 
 <img src="help/StoryToolkitAI_GUI.png" width="300">
+
+_Note: if you're running a non-standalone release, make sure you always check for package updates after pulling a new 
+version of the tool:_
+```
+pip -r StoryToolkitAI/requirements.txt
+```
 
 
 ## How to transcribe:
@@ -154,10 +161,8 @@ mini-AIs with negative thoughts about conquering the world.
 As soon as it's done, the transcription will be saved on your machine.
 
 _Important Note: **The first time you transcribe something**, it will take a bit longer to start the process
-because Whisper needs to download the model file (around 1.5GB for the medium model) on your local machine. So if it 
-usually takes you 3 days to download your average Netflix movie, don't expect to download the model any faster. If you
-have 100G Internet we hope you feel good about yourself. But, after the model is saved on your machine, transcriptions
-will take less than your average time spent on Myspace every day._
+because Whisper needs to download the model file (around 1.5GB for the medium model) to your local cache. But, after 
+the model is saved on your machine, transcriptions will take less._
 
 #### 4. Transcription Finished
 When the transcription is ready, a Transcription Window will pop up, showing you the transcript and allowing you to do
@@ -179,8 +184,8 @@ average, don't despair, it's better to be prepared than sorry._
 
 # Known issues
 ### If the tool doesn't connect with Resolve:
-Bad luck, but make sure that, in Davinci Resolve Preferences -> General, "External Scripting using" is set to Local
-Again, this only works with Resolve Studio and not the free version of Resolve (not that we know of)
+Make sure that, in Davinci Resolve Preferences -> General, "External Scripting using" is set to Local.
+Again, the tool only works with Resolve Studio and not the free version of Resolve (not that we know of).
 
 ### Tool freezing during playback
 Currently, the tool gets stuck as it waits a reply from the Resolve API, while Resolve is playing back, but it gets
@@ -220,14 +225,43 @@ _Note: when selecting "transcribe+translate" as "task", the tool will add both a
 the queue, as if you selected them individually. The translation will not use the previous transcription process results
 at all, so this means that the process will take 2x the processing time._
 
-Starting with version 0.16.16, we added a setting called "Initial Prompt". This is useful if you want the transcription 
-algorithm to adopt a certain style (for eg. separating speaker sentences, or using caps after punctuation), or even
-prime it to use certain names (for eg. "Helena" instead of "Elena"), or avoid rookie mistakes (for eg. showing 
-"Hey, Wood!" instead of "Heywood"). The default prompt separates speaker sentences and uses caps after punctuation. 
+Starting with version 0.16.16, we added a setting called **Initial Prompt**. This is useful if you want the
+transcription algorithm to adopt a certain style (for eg. separating speaker sentences, or using caps after 
+punctuation), or even prime it to use certain names (for eg. "Helena" instead of "Elena"), or avoid rookie mistakes 
+(for eg. showing "Hey, Wood!" instead of "Heywood"). The default prompt separates speaker sentences and uses caps after 
+punctuation. 
 Remember: this is kind of like telling your assistant editor "do that", but it's up to them if they want to follow your 
 instructions or not - welcome to the wonderful world of AI. This feature is super experimental - it might even accept
 instructions like "separate speakers" or "make me coffee", but you have to try it on your own.
 
+**Time Intervals** allows you to selectively transcribe only a portion of the timeline and Exclude Time Intervals allows 
+you to exclude certain portions of the timelines. The recommended format for these two fields is: "0.00 - 0.00".
+For eg., if you want to transcribe the first 10 seconds of the audio and the portion between 30 and 40 seconds, 
+you would enter this in the Time Intervals field:
+```
+0.00 - 10.00
+30.00 - 40.00
+```
+
+### Re-transcribing Transcripts
+
+In some instances you might want to re-transcribe a transcript, for example if you want to change the Whisper model,
+or if the speech was in a different language for that particular portion of the transcript.
+
+To re-transcribe the entire transcript, you need to have the transcription window open, and then press the key T on 
+your keyboard.
+
+To re-transcribe only a portion of the transcript, select which segments you want to re-transcribe, and then press the
+key T on your keyboard - the tool will automatically fill the Time Intervals field in the Transcription Settings window.
+
+You can also not select any segments, but press the key T and then manually enter the time intervals that you want
+re-transcribed in the Time Intervals field.
+
+_Note: our tests show that re-transcribing only a short portion of the transcript sometimes doesn't give out the best
+results and most likely messes up with the transcript timings for that particular portion that you've re-transcribed. 
+This is probably due to the fact that the Whisper model works better when it has more context to work with.
+In these cases, try to use either a larger model, or provide Whisper with more info using the Initial Prompt. Let us
+know what tricks you use to get the best results!_
 
 ### Linking Transcriptions to Timelines
 In the transcription window, the "Link" button will attach the transcription to the currently opened timeline in
@@ -255,6 +289,28 @@ Once a transcript is loaded, a basic search function will let you find words in 
 position. Once you find what you're looking for, simply clicking the phrase will move the Resolve playhead to the
 respective timecode.
 
+### Transcript Advanced Search
+Transcription windows have an "Advanced Search" button that will open up a separate search window. The system is now
+quite experimental and very raw, but it will allow you to search transcripts almost like you search something on Google.
+This means that whenever you enter your search term, the tool will try to understand its meaning and find the phrases
+that have the most similar meaning. The results will be ranked by a score that takes into account the semantic
+similarity with your search term. Once the results appear in the window, you can click them and the tool will select
+the respective segment in the transcript and move the playhead to the respective timecode in Resolve (if connected).
+
+This is basically like having a search engine connected to Resolve on your machine.
+
+For now, the search relies on punctuation in the transcripts to separate phrases and feed them to the algorithm, but
+this will be improved in a future update by allowing AI to look deeper into your transcripts.
+
+**The quality of your results will depend on the terms you use for search**. Just like on a web search engine, you should
+be kind of specific, but not too specific about what you're searching. For eg., if you want to search for phrases where
+your characters are talking about "genders", you should probably use "about genders". Simply typing "genders" in the
+search box, will probably also include people names since the alghorithm will think that names are related to genders.
+
+_Important Note: **The first time you use this feature**, it will take a bit longer to start the process because the 
+tool needs to download the model file (around 500MB) to your local cache. But, after the model is saved on your
+machine, the search should work almost in real time._
+
 ### Direct Translations to English
 The tool also supports direct translation to English by clicking the "Translate Timeline to English" button. However,
 it will not generate any original language transcription together with the translation, meaning that you'll have to
@@ -279,47 +335,53 @@ markers from the opened timeline.
 
 ## Transcription Window Shortcuts:
 
-    Mouse Click    - move active segment on clicked text and move playhead to start of active segment
+    Mouse Click     - move active segment on clicked text and move playhead to start of active segment
 
-    CMD/CTRL+Click - add clicked text to selection
+    CMD/CTRL+Click  - add clicked text to selection
 
-    OPT/ALT+Click  - edit transcript segment
+    OPT/ALT+Click   - edit transcript segment
     
-    Up, Down keys  - move the cursor up and down on the transcript (we call it "active segment")
+    Up, Down keys   - move the cursor up and down on the transcript (we call it "active segment")
 
-    Semicolon (;)  - move playhead to start of active segment (or of selection)
+    Semicolon (;)   - move playhead to start of active segment (or of selection)
 
-    Apostrophe (') - move playhead to end of active segment (or of selection)
+    Apostrophe (')  - move playhead to end of active segment (or of selection)
 
-    V              - add active segment to selection
+    Colon (:)       - align start of active segment with Resolve playhead
 
-    Shift+V        - deselect all
+    DoubleQuote (") - align end of active segment with Resolve playhead
 
-    Shift+A        - create selection between the previously active and the currently active segment
-                     also works to create a selection for the last played segments in Resolve (if sync is active):
-                     for eg.: 
-                     press 'sync', click a phrase, press play in Resolve, stop, then press Shift+A in the tool
+    V               - add active segment to selection
 
-    Shift+C        - copy transcript of active segment/selection with timecodes at the beginning of each block of text
-                     (or transcript seconds, if resolve is not available)
+    Shift+V         - deselect all
 
-    m              - add duration markers for the active segment/selection
-                     in case there are gaps between the text segments, 
-                     the tool will create a marker for each block of uninterrupted text
+    Shift+A         - create selection between the previously active and the currently active segment
+                      also works to create a selection for the last played segments in Resolve (if sync is active):
+                      for eg.: 
+                      press 'sync', click a phrase, press play in Resolve, stop, then press Shift+A in the tool
 
-    Shift+M        - add duration markers as above, but with user prompt for the marker name
+    Shift+C         - copy transcript of active segment/selection with timecodes at the beginning of each block of text
+                      (or transcript seconds, if resolve is not available)
 
-    q              - close transcript window
+    m               - add duration markers for the active segment/selection
+                      in case there are gaps between the text segments, 
+                      the tool will create a marker for each block of uninterrupted text
 
-    Shift+L        - link transcription to the current timeline (if available)
+    Shift+M         - add duration markers as above, but with user prompt for the marker name
+
+    q               - close transcript window
+
+    Shift+L         - link transcription to the current timeline (if available)
     
-    s              - enable sync
+    s               - enable sync
     
-    Tab            - cycle between search and transcript navigation
+    Tab             - cycle between search and transcript navigation
 
-    CMD/CTRL+E     - edit transcript
+    CMD/CTRL+E      - edit transcript
 
-    Escape         - when editing transcripts, this will defocus and save the transcript
+    Escape          - when editing transcripts, this will defocus and save the transcript
+    
+    t               - re-transcribe current transcription or selected segments
 
 
 
