@@ -2,7 +2,7 @@
 
 [Click here to the main project page](https://github.com/octimot/StoryToolkitAI)
 
-### Have you looked for standalone version first?
+### Have you looked for a standalone version first?
 We're currently working to get the app in a standalone binary version for different operating systems and platforms,
 so if you don't want to get your hands dirty with terminal commands, check if there is a release available for your 
 platform [here](https://github.com/octimot/StoryToolkitAI/releases).
@@ -11,7 +11,7 @@ Please note that the standalone version may not always be up to date with the la
 so if you want to be sure to have the latest features (some buggy and experimental too), you should install the app 
 from source.
 
-We're looking for contributors to help us with the standalone version for Windows, so if you're interested and know how
+We're looking for contributors to help us with the standalone versions, so if you're interested and know how
 freezing works, please get in touch.
 
 ### For updates

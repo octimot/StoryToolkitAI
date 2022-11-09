@@ -289,15 +289,28 @@ Once a transcript is loaded, a basic search function will let you find words in 
 position. Once you find what you're looking for, simply clicking the phrase will move the Resolve playhead to the
 respective timecode.
 
-### Transcript Advanced Search
+### Advanced Transcript Search
 Transcription windows have an "Advanced Search" button that will open up a separate search window. The system is now
 quite experimental and very raw, but it will allow you to search transcripts almost like you search something on Google.
 This means that whenever you enter your search term, the tool will try to understand its meaning and find the phrases
 that have the most similar meaning. The results will be ranked by a score that takes into account the semantic
 similarity with your search term. Once the results appear in the window, you can click them and the tool will select
 the respective segment in the transcript and move the playhead to the respective timecode in Resolve (if connected).
+CMD/CTRL+Click will select the segments in the transcript and allow you to mark them later in Resolve
+(see Adding Markers section above).
+
+There's also an Advanced Search button in the main window that will allow you to search in all the transcription
+files you select. If you press Shift while clicking the button it will prompt you with a folder selection instead,
+so you can actually feed it multiple transcription from different directories.
 
 This is basically like having a search engine connected to Resolve on your machine.
+
+You can also pass multiple search terms, using the | (pipe) character to separate them. For example, if you want to
+search for "about life events" or "about sports", you can enter `about life events | about sports` in the search field. 
+The tool will then search for each term separately and return separate results for each term in the same search window.
+
+If you want to tell the tool how many results you want to see, just use `[max_results]` at the beginning of the search,
+for eg.: `[20] about life events | about sports`. This will return the top 20 results for each term.
 
 For now, the search relies on punctuation in the transcripts to separate phrases and feed them to the algorithm, but
 this will be improved in a future update by allowing AI to look deeper into your transcripts.
@@ -307,9 +320,19 @@ be kind of specific, but not too specific about what you're searching. For eg., 
 your characters are talking about "genders", you should probably use "about genders". Simply typing "genders" in the
 search box, will probably also include people names since the alghorithm will think that names are related to genders.
 
+Keep in mind that we're using a very basic algorithm for now, so the results might not be perfect, but it can **already
+give you some really good results** if you prompt it right - remember it's a neural network behind the thing!
+Feel free to be as descriptive as you want in your search, and try to tweak the search terms until you get the results
+you're looking for.
+
 _Important Note: **The first time you use this feature**, it will take a bit longer to start the process because the 
 tool needs to download the model file (around 500MB) to your local cache. But, after the model is saved on your
 machine, the search should work almost in real time._
+
+_About search speed: the search is pretty fast, but it will depend on the size of the transcript (or transcripts)
+you're searching. Using a lot of transcripts will make the search slower, so a smaller transform model is recommended
+(more on that later). On a Mac M1, using the all-MiniLM-L6-v2 model, searching through an hour of audio 
+(cca. 700 phrases) takes around 2 seconds, while searching through 40+ hours of audio (cca. 34k phrases) takes around 2 minutes._
 
 ### Direct Translations to English
 The tool also supports direct translation to English by clicking the "Translate Timeline to English" button. However,
@@ -384,5 +407,17 @@ markers from the opened timeline.
     t               - re-transcribe current transcription or selected segments
 
 
+Other shortcuts etc.
+
+    Shift+Click on                      - allows you to batch transcribe multiple files                 
+    "Transcribe/Translate Timeline"       from your drive instead of the current timeline
+   
+    Shift+Click on                      - allows you to select which folders to use 
+    "Advanced Transcript Search"          for the transcript search corpus
+
+    CMD/CTRL+Click on                   - selects all the lines containing the clicked
+    search results                        result in the transcript window
+                                              
+                                                
 
 ---

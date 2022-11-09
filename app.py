@@ -23,6 +23,7 @@ import torch
 import whisper
 
 import librosa
+import soundfile
 
 import re
 from sentence_transformers import SentenceTransformer, util
@@ -152,7 +153,7 @@ try:
 
     # check if all the requirements are met
     import pkg_resources
-    pkg_resources.require(open(os.path.join(os.path.dirname(__file__), 'requirements.txt'), mode='r'))
+    pkg_resources.require(open(os.path.join(os.path.dirname(file_path), 'requirements.txt'), mode='r'))
 
     logger.debug('All package requirements met.')
 
@@ -1258,6 +1259,24 @@ class toolkit_UI:
 
             return self.active_segment[window_id]
 
+        def get_transcription_window_text_element(self, window_id=None):
+
+            if window_id is None:
+                logger.error('No window id was passed.')
+                return None
+
+            # search through all the elements in the window until we find the transcript text element
+            for child in self.toolkit_UI_obj.windows[window_id].winfo_children():
+
+                # go another level deeper, since we are expecting the transcript text element to be inside a frame
+                if len(child.winfo_children()) > 0:
+                    for child2 in child.winfo_children():
+                        if child2.winfo_name() == 'transcript_text':
+                            return child2
+
+            # if we get here, we didn't find the transcript text element
+            return None
+
         def set_active_segment(self, window_id=None, text_element=None, line=None, line_calc=None):
 
             # if no text element is passed,
@@ -1265,15 +1284,7 @@ class toolkit_UI:
             if text_element is None and self.toolkit_UI_obj is not None and window_id is not None\
                     and window_id in self.toolkit_UI_obj.windows:
 
-                # search through all the elements in the window until we find the transcript text element
-                for child in self.toolkit_UI_obj.windows[window_id].winfo_children():
-
-                   # go another level deeper, since we are expecting the transcript text element to be inside a frame
-                    if len(child.winfo_children()) > 0:
-                        for child2 in child.winfo_children():
-                            if child2.winfo_name() == 'transcript_text':
-                                text_element = child2
-                                break
+                text_element = self.get_transcription_window_text_element(window_id=window_id)
 
             # if no text element is found, return
             if text_element is None:
@@ -1350,6 +1361,13 @@ class toolkit_UI:
             :param line:
             :return:
             '''
+
+            # if no text element is passed,
+            # try to get the transcript text element from the window with the window_id
+            if text_element is None and self.toolkit_UI_obj is not None and window_id is not None\
+                    and window_id in self.toolkit_UI_obj.windows:
+
+                text_element = self.get_transcription_window_text_element(window_id=window_id)
 
             if window_id is None or text_element is None or line is None:
                 return False
@@ -1445,6 +1463,8 @@ class toolkit_UI:
             :param window_id:
             :return:
             '''
+
+            # WORK IN PROGRESS
 
             return
 
@@ -2013,7 +2033,7 @@ class toolkit_UI:
             # if there is a new version available
             # the user will see a different update message
             # depending if they're using the standalone version or not
-            if not standalone:
+            if standalone:
                 warn_message = 'A new standalone version of StoryToolkitAI is available.'
 
                 # add the question to the pop up message box
@@ -2292,6 +2312,10 @@ class toolkit_UI:
                                              **self.button_size, text="Transcribe\nTimeline",
                                              command=lambda: toolkit_ops_obj.prepare_transcription_file(
                                                  toolkit_UI_obj=self))
+        # add the shift+click binding to the button
+        self.main_window.button5.bind('<Shift-Button-1>',
+                                      lambda event: toolkit_ops_obj.prepare_transcription_file(
+                                                 toolkit_UI_obj=self, select_files=True))
         self.main_window.button5.grid(row=1, column=1, **self.paddings)
 
         self.main_window.button6 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings,
@@ -2299,6 +2323,11 @@ class toolkit_UI:
                                              text="Translate\nTimeline to English",
                                              command=lambda: toolkit_ops_obj.prepare_transcription_file(
                                                  toolkit_UI_obj=self, task='translate'))
+        # add the shift+click binding to the button
+        self.main_window.button6.bind('<Shift-Button-1>',
+                                      lambda event: toolkit_ops_obj.prepare_transcription_file(
+                                                 toolkit_UI_obj=self, task='translate', select_files=True))
+
         self.main_window.button6.grid(row=1, column=2, **self.paddings)
 
         self.main_window.button7 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings,
@@ -2313,11 +2342,15 @@ class toolkit_UI:
         self.main_window.button8.grid(row=2, column=2, **self.paddings)
 
         # THE ADVANCED SEARCH BUTTON
-        # self.main_window.button9 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings,
-        #                                     **self.button_size,
-        #                                     text="Advanced\nTranscript Search", command=lambda:
-        #                                                    self.open_advanced_search_window())
-        #self.main_window.button9.grid(row=3, column=1, **self.paddings)
+        self.main_window.button9 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings,
+                                             **self.button_size,
+                                             text="Advanced\nTranscript Search", command=lambda:
+                                                            self.open_advanced_search_window())
+        # add the shift+click binding to the button
+        self.main_window.button9.bind('<Shift-Button-1>',
+                                      lambda event: self.open_advanced_search_window(select_dir=True))
+
+        self.main_window.button9.grid(row=3, column=1, **self.paddings)
 
 
         # self.main_window.link2 = Label(self.main_window.other_buttons_frame, text="project home", font=("Courier", 8), fg='#1F1F1F', cursor="hand2", anchor='s')
@@ -2706,6 +2739,12 @@ class toolkit_UI:
         transcription_json_file_path = self.ask_for_target_file(filetypes=[("Json files", "json")],
                                                                 target_dir=last_target_dir)
 
+        # if resolve is connected, save the last target dir
+        if resolve and transcription_json_file_path and os.path.exists(transcription_json_file_path):
+            self.stAI.save_project_setting(project_name=current_project,
+                                           setting_key='last_target_dir',
+                                           setting_value=os.path.dirname(transcription_json_file_path))
+
         # abort if user cancels
         if not transcription_json_file_path:
             return False
@@ -2714,7 +2753,7 @@ class toolkit_UI:
         self.open_transcription_window(transcription_file_path=transcription_json_file_path, **options)
 
     def open_transcription_window(self, title=None, transcription_file_path=None, srt_file_path=None,
-                                  select_line_no=None):
+                                  select_line_no=None, add_to_selection=None):
 
         if self.toolkit_ops_obj is None:
             logger.error('Cannot open transcription window. A toolkit operations object is needed to continue.')
@@ -3099,6 +3138,16 @@ class toolkit_UI:
             # select the line in the text widget
             self.t_edit_obj.set_active_segment(window_id=t_window_id, line=select_line_no)
 
+        # if add_to_selection was passed
+        if add_to_selection is not None and add_to_selection and type(add_to_selection) is list:
+
+            # go through all the add_to_selection items
+            for selection_line_no in add_to_selection:
+                # and add them to the selection
+
+                # select the line in the text widget
+                self.t_edit_obj.segment_to_selection(window_id=t_window_id, line=selection_line_no)
+
     def update_transcription_window(self, window_id, **update_attr):
         '''
         Auto-updates a transcription window and then calls itself again after a few seconds.
@@ -3320,13 +3369,6 @@ class toolkit_UI:
                                     self.open_transcription_window(title=name,
                                                                    transcription_file_path=json_file_path)
                                     )
-                    label_status.bind("<Button-1>",
-                                      lambda e,
-                                             json_file_path=json_file_path,
-                                             name=name:
-                                      self.open_transcription_window(title=name,
-                                                                     transcription_file_path=json_file_path)
-                                      )
 
     def open_transcription_log_window(self):
 
@@ -3338,11 +3380,15 @@ class toolkit_UI:
 
             return True
 
-    def open_advanced_search_window(self, transcription_window_id=None, transcription_file_path=None):
+    def open_advanced_search_window(self, transcription_window_id=None, transcription_file_path=None,
+                                    select_dir=False):
 
         if self.toolkit_ops_obj is None:
             logger.error('Cannot open advanced search window. A toolkit operations object is needed to continue.')
             return False
+
+        # declare the empty list of transcription file paths
+        transcription_file_paths = []
 
         # check if a transcription file path was passed and if it exists
         if transcription_file_path is not None and not os.path.exists(transcription_file_path):
@@ -3353,45 +3399,78 @@ class toolkit_UI:
         elif transcription_file_path is None and transcription_window_id is not None:
             transcription_file_path = self.t_edit_obj.transcription_file_paths[transcription_window_id]
 
-        # otherwise ask the user to select a folder with transcription files
-        elif transcription_file_path is None:
 
+        # if we still don't have a transcription file path (or paths), ask the user to manually select thetranscription files
+        if transcription_file_path is None and not transcription_file_paths:
+            # use the global initial_target_dir
+            # global initial_target_dir
+
+            # if resolve is connected, check the last target dir
+            global resolve
             global current_project
 
-            # first get the project folder if the current project is set
-            if current_project is not None:
-
-                # did we ever save a target dir for this project?
-                last_target_dir = self.stAI.get_project_setting(project_name=current_project,
-                                                                setting_key='last_target_dir')
-                if last_target_dir is not None:
-                    initial_target_dir = last_target_dir
+            if resolve:
+                initial_dir = self.stAI.get_project_setting(project_name=current_project,
+                                                            setting_key='last_target_dir')
 
             else:
-                initial_target_dir = None
+                initial_dir = '~'
 
-            # finally, ask the user to select a folder with transcription files
-            target_dir = filedialog.askdirectory(initialdir=initial_target_dir,
-                                                 title='Select a folder with transcriptions')
+            # if select_dir is true, allow the user to select a directory
+            if select_dir:
+                # ask the user to select a folder with transcription files
+                transcription_file_dirs = filedialog.askdirectory(initialdir=initial_dir,
+                                                                   title='Select a folder with transcriptions')
 
-        # read transcription data from transcription file
-        transcription_data = self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path)
+                # now go through all the .transcription.json files in the folder and add them to the list
+                if transcription_file_dirs:
+                    for root, dirs, files in os.walk(transcription_file_dirs):
+                        for file in files:
+                            if file.endswith('.transcription.json'):
+                                transcription_file_paths.append(os.path.join(root, file))
 
-        # get the name of the transcription
-        if transcription_data and type(transcription_data) is dict and 'name' in transcription_data:
-            title_name = transcription_data['name']
-        else:
-            title_name = os.path.basename(transcription_file_path).split('.transcription.json')[0]
+            else:
+                # ask the user to select the transcription files to use in the search corpus
+                transcription_file_paths \
+                    = filedialog.askopenfilenames(initialdir=initial_dir,
+                                                            title='Select transcription files to use in the search',
+                                                            filetypes=[('Transcription files', '*.json')])
+
+            # if resolve is connected, save the last target dir
+            if resolve and transcription_file_paths \
+                and type(transcription_file_paths) is list and os.path.exists(transcription_file_paths[0]):
+
+                self.stAI.save_project_setting(project_name=current_project,
+                                               setting_key='last_target_dir',
+                                               setting_value=os.path.dirname(transcription_file_paths[0]))
+
+
+            if not transcription_file_paths:
+                logger.info('No transcription files were selected. Aborting.')
+                return False
 
         # init the search window id, the title and the parent element
         # depending if we have a transcription window id or not
-        if transcription_window_id is not None:
+        if transcription_window_id is not None and transcription_file_path is not None:
+
+            # read transcription data from transcription file
+            transcription_data = self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path)
+
+            # get the name of the transcription
+            if transcription_data and type(transcription_data) is dict and 'name' in transcription_data:
+                title_name = transcription_data['name']
+            else:
+                title_name = os.path.basename(transcription_file_path).split('.transcription.json')[0]
+
             search_window_id = transcription_window_id + '_search'
             search_window_title = 'Search - {}'.format(title_name)
             search_window_parent = self.windows[transcription_window_id]
 
             # don't open multiple search widows for the same transcription window
             open_multiple = False
+
+            # the transcription_file_paths has only one element
+            transcription_file_paths = [transcription_file_path]
 
         # if there is no transcription window id
         else:
@@ -3401,7 +3480,6 @@ class toolkit_UI:
 
             # this allows us to open multiple search windows at the same time
             open_multiple = True
-
 
         # create a window for the advanced search if one doesn't already exist
         if (search_window_id := self._create_or_open_window(parent_element=search_window_parent,
@@ -3455,49 +3533,18 @@ class toolkit_UI:
                                                                     search_window_id,
                                                                     search_str.get(),
                                                                     results_text,
-                                                                    transcription_file_path,
-                                                                    transcription_window_id
+                                                                    transcription_file_paths
                                                                     )
                               )
 
             return True
 
     def button_advanced_search(self, search_window_id, search_term, results_text_element=None,
-                               transcription_file_path=None, transcription_window_id=None):
+                               transcription_file_paths=None):
 
-        if transcription_file_path is None:
+        if transcription_file_paths is None:
             logger.error('Cannot search. No transcription file path was passed.')
             return False
-
-        # define the search corpus
-        search_transcriptions = {}
-
-        # if a specific transcription file was passed, use that in the search
-        if transcription_file_path is not None:
-
-            # now read the transcription file contents
-            search_transcriptions[transcription_file_path] = \
-                self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path=transcription_file_path)
-
-        else:
-            # throw an error if no transcription file was passed
-            logger.error('Cannot search. No transcription file path was passed.')
-
-        # otherwise use all the transcription files in the target dir
-        # else:
-        #
-        #    # get the list of transcription files in the target dir using os.walk
-        #    transcription_files = os.walk
-
-        # re-organize the search corpus into a dictionary of phrases
-        # with the transcription file path as the key
-        # and the value being a list of phrases compiled from the transcription file text using
-        # the punctuation as dividers.
-        # this will make it easier to search for phrases in the transcription files
-        search_corpus_phrases = []
-
-        # use this to keep track of the transcription file path and the phrase index
-        search_corpus_assoc = {}
 
         results_text_element.config(state=NORMAL)
 
@@ -3509,171 +3556,17 @@ class toolkit_UI:
         # remember when we started the search
         start_search_time = time.time()
 
-        if search_window_id not in self.toolkit_ops_obj.search_corpuses:
-
-            # loop through all the transcription files in the search_transcriptions dictionary
-            for transcription_file_path, transcription_file_data in search_transcriptions.items():
-
-                logger.debug('Adding {} to the search corpus.'.format(transcription_file_path))
-
-                if 'segments' in transcription_file_data and type(transcription_file_data['segments']) is list:
-
-                    # group the segment texts into phrases using punctuation as dividers
-                    # instead of how they're currently segmented
-                    # once they are grouped, add them to the search corpus
-                    # plus add them to the search corpus association list so we know
-                    # from which transcription file and from which segment they came from originally
-
-                    # initialize the current phrase
-                    current_phrase = ''
-
-                    # loop through the segments of this transcription file
-                    for segment_index, segment in enumerate(transcription_file_data['segments']):
-
-                        # first remember the transcription file path and the segment index
-                        # if this is a new phrase (i.e. the current phrase is empty)
-                        if current_phrase == '':
-
-                            # this is the segment index relative to the whole search corpus that
-                            # contains all the transcription file segments (not just the current transcription file)
-                            general_segment_index = len(search_corpus_phrases)
-
-                            search_corpus_assoc[general_segment_index] = {'transcription_file_path':
-                                                                                   transcription_file_path,
-                                                                                'segment': segment['text'],
-                                                                                'segment_index':
-                                                                                   segment_index,
-                                                                               'start':
-                                                                                    segment['start']
-                                                                               }
-
-                        # add the segment text to the current phrase
-                        # but only if it's longer than 2 characters to avoid adding stuff that is most likely meaningless
-                        # like punctuation marks
-                        # also ignore the words that are in the ignore list
-                        if 'text' in segment and type(segment['text']) is str:
-
-                            # keep adding segments to the current phrase until we find a punctuation mark
-
-                            # first get the segment text
-                            segment_text = str(segment['text'])
-
-                            # add the segment to the current phrase
-                            current_phrase += segment_text.strip() + ' '
-
-                            # if a punctuation mark exists in the last 5 characters of the segment text
-                            # it means that the current phrase is complete
-                            if re.search(r'[\.\?\!]{1}$', segment_text[-5:]):
-
-                                # "close" the current phrase by adding it to the search corpus
-                                search_corpus_phrases.append(current_phrase.strip())
-
-                                # then empty the current phrase
-                                current_phrase = ''
-
-            # add the corpus to the search corpus dict, so we don't have to re-create it every time we search
-            # we're going to use the search window id as the key
-            self.toolkit_ops_obj.search_corpuses[search_window_id] = {'corpus': {}, 'assoc': {}}
-            self.toolkit_ops_obj.search_corpuses[search_window_id]['corpus'] = search_corpus_phrases
-            self.toolkit_ops_obj.search_corpuses[search_window_id]['assoc'] = search_corpus_assoc
-
-        # load the existing corpus (or the one we just compiled above)
-        search_corpus_phrases = self.toolkit_ops_obj.search_corpuses[search_window_id]['corpus']
-        search_corpus_assoc = self.toolkit_ops_obj.search_corpuses[search_window_id]['assoc']
-
-        # load the sentence transformer model if it hasn't been loaded yet
-        if self.toolkit_ops_obj.s_transformer_model is None:
-            logger.info('Loading sentence transformer model {}.'.format(self.toolkit_ops_obj.s_transformer_model_name))
-
-            # if the sentence transformer model was never downloaded, log that we're downloading it
-            model_downloaded_before = True
-            if self.stAI.get_app_setting(setting_name='s_transformer_model_downloaded_{}'
-                                            .format(self.toolkit_ops_obj.s_transformer_model_name),
-                                        default_if_none=False
-                                         ) is False:
-                logger.warning('The sentence transformer model {} may need to be downloaded and could take a while '
-                               'depending on the Internet connection speed. '
-                               .format(self.toolkit_ops_obj.s_transformer_model_name)
-                               )
-                model_downloaded_before = False
-
-            self.toolkit_ops_obj.s_transformer_model \
-                = SentenceTransformer(self.toolkit_ops_obj.s_transformer_model_name)
-
-            # once the model has been loaded, we can note that in the app settings
-            # this is a wat to keep track if the model has been downloaded or not
-            # but it's not 100% reliable and we may need to find a better way to do this in the future
-            if not model_downloaded_before:
-                self.stAI.save_config(setting_name='s_transformer_model_downloaded_{}'
-                                      .format(self.toolkit_ops_obj.s_transformer_model_name),
-                                      setting_value=True)
-
-        # define the model into this variable for easier access
-        embedder = self.toolkit_ops_obj.s_transformer_model
-
-        # encode the search corpus
-        corpus_embeddings = embedder.encode(search_corpus_phrases, convert_to_tensor=True)
-
-        # define the query based on the search terms
-        queries = [search_term]
-
-        # define how many results to return
-        # this will be overridden if the search corpus is smaller than this number
+        # define the default max_results
+        # this might be replaced by a user input later
         max_results = 10
 
-        # Find the closest 5 sentences of the corpus for each query sentence based on cosine similarity
-        logger.info('Finding the closest sentences in the corpus for the query {}.'.format(queries))
-        top_k = min(max_results, len(search_corpus_phrases))
-        for query in queries:
-            query_embedding = embedder.encode(query, convert_to_tensor=True)
-
-            # we use cosine-similarity and torch.topk to find the highest 5 scores
-            cos_scores = util.cos_sim(query_embedding, corpus_embeddings)[0]
-            top_results = torch.topk(cos_scores, k=top_k, sorted=True)
-
-            # first clear the results text box
-            results_text_element.delete('1.0', tk.END)
-
-            # add results to the results_text_element
-            results_text_element.insert(tk.END, 'Searching for: "' + query + '"\n')
-            results_text_element.insert(tk.END, '--------------------------------------\n')
-            results_text_element.insert(tk.END, 'Top {} closest phrases:\n\n'.format(top_k))
-
-            for score, idx in zip(top_results[0], top_results[1]):
-
-                # remember the current insert position
-                current_insert_position = results_text_element.index(tk.INSERT)
-
-                if str(search_corpus_phrases[idx]) != '':
-
-
-                    transcription_file_path = search_corpus_assoc[int(idx)]['transcription_file_path']
-                    segment_index = search_corpus_assoc[int(idx)]['segment_index']
-                    transcript_time = search_corpus_assoc[int(idx)]['start']
-                    line_no = int(segment_index)+1
-
-                    results_text_element.insert(tk.END, str(search_corpus_phrases[idx]).strip() + '\n')
-
-                    # color it in blue
-                    results_text_element.tag_add('white', current_insert_position, tk.INSERT)
-                    results_text_element.tag_config('white', foreground=self.resolve_theme_colors['supernormal'])
-
-                    # add score and segment info to the result
-                    results_text_element.insert(tk.END, ' -- Score: {:.4f}\n'.format(score))
-                    results_text_element.insert(tk.END, ' -- Line {} (second {:.2f}) \n\n'
-                                                .format(segment_index, transcript_time))
-
-                    # add a tag to the above text to make it clickable
-                    tag_name = 'clickable_{}'.format(int(idx))
-                    results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
-
-                    # add the transcription file path and segment index to the tag
-                    # so we can use it to open the transcription window with the transcription file and jump to the segment
-                    results_text_element.tag_bind(tag_name, '<Button-1>',
-                            lambda event, transcription_file_path=transcription_file_path, line_no=line_no:
-                                                  self.open_transcription_window(
-                                                        transcription_file_path=transcription_file_path,
-                                                        select_line_no=line_no))
+        # perform the search
+        search_results, max_results \
+            = self.toolkit_ops_obj.t_search_obj.t_search(query=search_term,
+                                                       transcription_file_paths=transcription_file_paths,
+                                                       search_id=search_window_id,
+                                                       max_results=max_results
+                                                       )
 
         # how long did the search take?
         total_search_time = time.time() - start_search_time
@@ -3681,13 +3574,74 @@ class toolkit_UI:
         # log the search time
         logger.info('Search took {:.2f} seconds.'.format(total_search_time))
 
-        # update the results text element
-        results_text_element.insert(tk.END, '--------------------------------------\n')
-        results_text_element.insert(tk.END, 'Search took {:.2f} seconds\n'.format(total_search_time))
+        # now add the search results to the search results window
+        if len(search_results) > 0:
 
-        results_text_element.config(state=DISABLED)
+            # reset the previous search_term
+            result_search_term = ''
+
+            for result in search_results:
+
+                # if we've changed the search term, add a new header
+                if result['search_term'] != result_search_term:
+
+                    result_search_term = result['search_term']
+
+                    # add the search term header
+                    results_text_element.insert(tk.END, 'Searching for: "' + result_search_term + '"\n')
+                    results_text_element.insert(tk.END, '--------------------------------------\n')
+                    results_text_element.insert(tk.END, 'Top {} closest phrases:\n\n'.format(max_results))
 
 
+                # remember the current insert position
+                current_insert_position = results_text_element.index(tk.INSERT)
+
+                results_text_element.insert(tk.END, str(result['text']).strip() + '\n')
+
+                # color it in blue
+                results_text_element.tag_add('white', current_insert_position, tk.INSERT)
+                results_text_element.tag_config('white', foreground=self.resolve_theme_colors['supernormal'])
+
+                # add score and segment info to the result
+                results_text_element.insert(tk.END, ' -- Score: {:.4f}\n'.format(result['score']))
+                results_text_element.insert(tk.END, ' -- Transcript: {}\n'
+                                            .format(os.path.basename(result['transcription_file_path'])))
+                results_text_element.insert(tk.END, ' -- Line {} (second {:.2f}) \n\n'
+                                            .format(result['segment_index'], result['transcript_time']))
+
+                # add a tag to the above text to make it clickable
+                tag_name = 'clickable_{}'.format(result['idx'])
+                results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
+
+                # add the transcription file path and segment index to the tag
+                # so we can use it to open the transcription window with the transcription file and jump to the segment
+                results_text_element.tag_bind(tag_name, '<Button-1>',
+                                              lambda event, transcription_file_path=result['transcription_file_path'],
+                                                     line_no=result['line_no']:
+                                              self.open_transcription_window(
+                                                  transcription_file_path=transcription_file_path,
+                                                  select_line_no=line_no))
+
+                # bind mouse clicks press events on the results text box
+                # bind CMD/CTRL + mouse Clicks to text
+                results_text_element.tag_bind(tag_name, "<"+self.ctrl_cmd_bind+"-Button-1>",
+                                              lambda event, transcription_file_path=result['transcription_file_path'],
+                                                     line_no=result['line_no'],
+                                                     all_lines=result['all_lines']:
+                                              self.open_transcription_window(
+                                                  transcription_file_path=transcription_file_path,
+                                                  select_line_no=line_no,
+                                                  add_to_selection=all_lines)
+                                              )
+
+
+            # update the results text element
+            results_text_element.insert(tk.END, '--------------------------------------\n')
+            results_text_element.insert(tk.END, 'Search took {:.2f} seconds\n'.format(total_search_time))
+
+            results_text_element.config(state=DISABLED)
+
+        return True
 
     def ask_for_target_dir(self, title=None, target_dir=None):
 
@@ -3843,6 +3797,9 @@ class ToolkitOps:
         # keep a reference to the StoryToolkitAI object here if one was passed
         self.stAI = stAI
 
+        # initialize the toolkit search engine
+        self.t_search_obj = self.ToolkitSearch(toolkit_ops_obj=self)
+
         # transcription queue thread - this will be useful when trying to figure out
         # if there's any transcription thread active or not
         self.transcription_queue_thread = None
@@ -3877,16 +3834,13 @@ class ToolkitOps:
         self.whisper_device = self.whisper_device_select(self.whisper_device)
 
         # now let's deal with the sentence transformer model
-        # this is the transformer model name that we will use
-        self.s_transformer_model_name \
-            = self.stAI.get_app_setting(setting_name='s_transformer_model_name', default_if_none='all-mpnet-base-v2')
+        # this is the transformer model name that we will use to search semantically
+        self.s_semantic_search_model_name \
+            = self.stAI.get_app_setting(setting_name='s_semantic_search_model_name',
+                                        default_if_none='all-MiniLM-L6-v2')
 
         # for now define an empty model here which should be loaded the first time it's needed
-        self.s_transformer_model = None
-
-        # keep all the search_corpuses here to find them easy by search_id (or search_window_id when using UI)
-        # this also optimizes the search so that the corpus is only compiled once per search session
-        self.search_corpuses = {}
+        self.s_semantic_search_model = None
 
         # start the resolve thread
         # with this, resolve should be constantly polled for data
@@ -3895,6 +3849,368 @@ class ToolkitOps:
         # toolkit_UI_obj.create_transcription_settings_window()
         # time.sleep(120)
         # return
+
+    class ToolkitSearch:
+
+        def __init__(self, toolkit_ops_obj):
+
+            # load the toolkit ops object
+            self.toolkit_ops_obj = toolkit_ops_obj
+
+            # load the stAI object
+            self.stAI = self.toolkit_ops_obj.stAI
+
+            # keep all the search_corpuses here to find them easy by search_id
+            # this also optimizes the search so that the corpus is only compiled once per search session
+            self.search_corpuses = {}
+
+        def load_transcription_paths_to_search_dict(self, transcription_file_paths):
+            '''
+            Loads the transcription file paths to a dictionary that can be used for searching
+            :param transcription_file_paths: this can be a list of file paths or a single file path
+            :return:
+            '''
+
+            # if no transcription file paths were provided
+            if transcription_file_paths is None or len(transcription_file_paths) == 0:
+                # throw an error if no transcription file was passed
+                logger.error('Cannot search. No transcription file path was passed.')
+
+            # otherwise use all the transcription files in the target dir
+            # else:
+            #
+            #    # get the list of transcription files in the target dir using os.walk
+            #    transcription_files = os.walk
+
+            # if only one transcription file path is given, make it a list
+            if type(transcription_file_paths) is str:
+                transcription_file_paths = [transcription_file_paths]
+
+            # define the transcriptions dict
+            search_transcriptions = {}
+
+            # take all the transcription file paths and load them into the search_transcriptions dictionary
+            for transcription_file_path in transcription_file_paths:
+
+                # if a specific transcription file was passed, use that in the search
+                if transcription_file_path is not None:
+
+                    # don't include the file if it doesn't exist
+                    if not os.path.isfile(transcription_file_path):
+                        logger.error('Transcription file {} not found. Skipping.'.format(transcription_file_path))
+                        continue
+
+                    # now read the transcription file contents
+                    search_transcriptions[transcription_file_path] = \
+                        self.toolkit_ops_obj.get_transcription_file_data(
+                            transcription_file_path=transcription_file_path)
+
+            return search_transcriptions
+
+        def prepare_search_corpus(self, search_transcriptions, search_id):
+            '''
+            Takes all the segments from the search_transcriptions and turns them into a search corpus
+            :param search_transcriptions:
+            :param search_id:
+            :return:
+            '''
+
+            # re-organize the search corpus into a dictionary of phrases
+            # with the transcription file path as the key
+            # and the value being a list of phrases compiled from the transcription file text using
+            # the punctuation as dividers.
+            # this will make it easier to search for phrases in the transcription files
+            search_corpus_phrases = []
+
+            # use this to keep track of the transcription file path and the phrase index
+            search_corpus_assoc = {}
+
+            # and if the hasn't already been created, just create it
+            if search_id not in self.toolkit_ops_obj.t_search_obj.search_corpuses:
+
+                logger.info('Clustering search corpus by phrases.')
+
+                # loop through all the transcription files in the search_transcriptions dictionary
+                for transcription_file_path, transcription_file_data in search_transcriptions.items():
+
+                    logger.debug('Adding {} to the search corpus.'.format(transcription_file_path))
+
+                    if 'segments' in transcription_file_data and type(transcription_file_data['segments']) is list:
+
+                        # group the segment texts into phrases using punctuation as dividers
+                        # instead of how they're currently segmented
+                        # once they are grouped, add them to the search corpus
+                        # plus add them to the search corpus association list so we know
+                        # from which transcription file and from which segment they came from originally
+
+                        # initialize the current phrase
+                        current_phrase = ''
+
+                        # loop through the segments of this transcription file
+                        for segment_index, segment in enumerate(transcription_file_data['segments']):
+
+                            # first remember the transcription file path and the segment index
+                            # if this is a new phrase (i.e. the current phrase is empty)
+                            if current_phrase == '':
+                                # this is the segment index relative to the whole search corpus that
+                                # contains all the transcription file segments (not just the current transcription file)
+                                general_segment_index = len(search_corpus_phrases)
+
+                                search_corpus_assoc[general_segment_index] = {'transcription_file_path':
+                                                                                  transcription_file_path,
+                                                                              'segment': segment['text'],
+                                                                              'segment_index':
+                                                                                  segment_index,
+                                                                              'start':
+                                                                                  segment['start'],
+                                                                              'all_lines':
+                                                                                  [int(segment_index)+1],
+                                                                              }
+
+                            # otherwise, if this is not a new phrase
+                            else:
+                                # just append the current segment index to the list of all lines
+                                search_corpus_assoc[general_segment_index]['all_lines'].append(int(segment_index)+1)
+
+
+                            # add the segment text to the current phrase
+                            # but only if it's longer than 2 characters to avoid adding stuff that is most likely meaningless
+                            # like punctuation marks
+                            # also ignore the words that are in the ignore list
+                            if 'text' in segment and type(segment['text']) is str:
+
+                                # keep adding segments to the current phrase until we find a punctuation mark
+
+                                # first get the segment text
+                                segment_text = str(segment['text'])
+
+                                # add the segment to the current phrase
+                                current_phrase += segment_text.strip() + ' '
+
+                                # if a punctuation mark exists in the last 5 characters of the segment text
+                                # it means that the current phrase is complete
+                                if re.search(r'[\.\?\!]{1}$', segment_text[-5:]):
+                                    # "close" the current phrase by adding it to the search corpus
+                                    search_corpus_phrases.append(current_phrase.strip())
+
+                                    # then empty the current phrase
+                                    current_phrase = ''
+
+                # add the corpus to the search corpus dict, so we don't have to re-create it every time we search
+                # we're going to use the search window id as the key
+                self.search_corpuses[search_id] = {'corpus': {}, 'assoc': {}}
+                self.search_corpuses[search_id]['corpus'] = search_corpus_phrases
+                self.search_corpuses[search_id]['assoc'] = search_corpus_assoc
+
+            return self.search_corpuses[search_id]['corpus'], self.search_corpuses[search_id]['assoc']
+
+        def t_search(self, query, transcription_file_paths, search_id, max_results=10):
+            '''
+            Searches the transcription files for the query using the search type passed by the user
+            :param query:
+            :param transcription_file_paths:
+            :param search_id:
+            :param max_results:
+            :return:
+            '''
+
+            # define the possible search types here
+            search_types = ['semantic']
+
+            # the default search type is semantic
+            search_type = 'semantic'
+
+            # the users can include a "[search_type]" in the query to specify the search type
+            # if they do, then use that search type instead of the default
+            if re.search(r'\[(.+?)\]', query):
+                query_search_type = re.search(r'\[(.+?)\]', query).group(1)
+
+                # if the query search type is just a number, then it's a max results value
+                if query_search_type.isdigit():
+                    query_max_results = str(query_search_type)
+
+                    # but that means that the user didn't specify a search type
+                    # so use the default search type
+                    query_search_type = search_type
+
+                    just_max_results = True
+
+                # if the search type also contains a comma, then it means that the user also specified a max results
+                # so extract that too
+                elif not query_search_type.isdigit() and re.search(r',', query_search_type):
+                    query_search_type_list = query_search_type.split(',')
+                    query_search_type = query_search_type_list[0]
+                    query_max_results = str(query_search_type_list[1]).strip()
+                else:
+                    query_max_results = str(max_results)
+
+                # if the search type is valid, use it
+                if query_search_type in search_types:
+                    search_type = query_search_type
+
+                # if the max results is valid, use it
+                if query_max_results.isdigit():
+                    max_results = int(query_max_results)
+
+                # remove the search type and max results from the query
+                query = re.sub(r'\[(.+?)\]', '', query).strip()
+
+            # the user can divide multiple search terms with a | character
+            # if that is the case, split them into multiple queries
+            # so that we can search for each of them separately later
+            if '|' in query:
+                # split the query into multiple queries
+                query = query.split('|')
+
+            # first load the transcription file paths to a dictionary that can be used for searching
+            search_transcriptions = self.load_transcription_paths_to_search_dict(transcription_file_paths)
+
+            # prepare the search corpus based on the passed transcriptions
+            search_corpus, search_corpus_assoc \
+                = self.prepare_search_corpus(search_transcriptions=search_transcriptions, search_id=search_id)
+
+            # now let's search the corpus based on the search type
+            if search_type == 'semantic':
+                results, max_results = self.search_semantic(query=query,
+                                                            search_corpus_phrases=search_corpus,
+                                                            search_corpus_assoc=search_corpus_assoc,
+                                                            max_results=max_results)
+
+            elif search_type == 'similar':
+                results, max_results = self.search_similar(query=query,
+                                                            search_corpus_phrases=search_corpus,
+                                                            search_corpus_assoc=search_corpus_assoc,
+                                                            max_results=max_results)
+            # return the results
+            return results, max_results
+
+        def search_similar(self, query, search_corpus_phrases, search_corpus_assoc, max_results=10):
+
+            # WORK IN PROGRESS
+
+            from transformers import AutoTokenizer, AutoModelForSequenceClassification
+            import torch
+
+            # reset the search results
+            search_results = []
+
+            top_k = max_results
+
+            model = SentenceTransformer('all-MiniLM-L6-v2')
+
+            paraphrase_results = []
+
+            # take each phrase in the search corpus and compare it to the query
+            paraphrases = util.paraphrase_mining(model, search_corpus_phrases, top_k=max_results)
+
+            for paraphrase in paraphrases:
+                score, i, j = paraphrase
+                if score < 1.0:
+                    print("{} \t\t {} \t\t Score: {:.4f}".format(search_corpus_phrases[i], search_corpus_phrases[j], score))
+
+
+            return search_results, top_k
+
+        def search_semantic(self, query, search_corpus_phrases, search_corpus_assoc, max_results=10):
+            '''
+            This function searches for a search term in a search corpus and returns the results.
+            :param search_term:
+            :param search_corpus_phrases:
+            :param search_corpus_assoc:
+            :param max_results: the maximum number of results to return (default: 10, maximum = corpus len)
+            :return:
+            '''
+
+            # if the corpus is empty, abort
+            if not search_corpus_phrases:
+                logger.warning('Search corpus empty.')
+                return [], 0
+
+            logger.debug('Performing semantic search on {} phrases.'.format(len(search_corpus_phrases)))
+
+            # load the sentence transformer model if it hasn't been loaded yet
+            if self.toolkit_ops_obj.s_semantic_search_model is None:
+                logger.info(
+                    'Loading sentence transformer model {}.'.format(self.toolkit_ops_obj.s_semantic_search_model_name))
+
+                # if the sentence transformer model was never downloaded, log that we're downloading it
+                model_downloaded_before = True
+                if self.stAI.get_app_setting(setting_name='s_semantic_search_model_downloaded_{}'
+                        .format(self.toolkit_ops_obj.s_semantic_search_model_name),
+                                             default_if_none=False
+                                             ) is False:
+                    logger.warning('The sentence transformer model {} may need to be downloaded and could take a while '
+                                   'depending on the Internet connection speed. '
+                                   .format(self.toolkit_ops_obj.s_semantic_search_model_name)
+                                   )
+                    model_downloaded_before = False
+
+                self.toolkit_ops_obj.s_semantic_search_model \
+                    = SentenceTransformer(self.toolkit_ops_obj.s_semantic_search_model_name)
+
+                # once the model has been loaded, we can note that in the app settings
+                # this is a wat to keep track if the model has been downloaded or not
+                # but it's not 100% reliable and we may need to find a better way to do this in the future
+                if not model_downloaded_before:
+                    self.stAI.save_config(setting_name='s_semantic_search_model_downloaded_{}'
+                                          .format(self.toolkit_ops_obj.s_semantic_search_model_name),
+                                          setting_value=True)
+
+            # define the model into this variable for easier access
+            embedder = self.toolkit_ops_obj.s_semantic_search_model
+
+            # encode the search corpus
+            corpus_embeddings = embedder.encode(search_corpus_phrases, convert_to_tensor=True)
+
+            # if the query is string, consider that the query consists of a single search term
+            # otherwise, consider that the query is a list of search terms
+            queries = [query] if isinstance(query, str) else query
+
+            # reset the search results
+            search_results = []
+
+            # Find the closest 5 sentences of the corpus for each query sentence based on cosine similarity
+            logger.info('Finding the closest sentences in the corpus for the query {}.'.format(queries))
+
+            # the top_k parameter defines how many results to return
+            # it's either the max_results parameter or the length of the search corpus,
+            # whatever is smaller
+            top_k = min(max_results, len(search_corpus_phrases))
+            for query in queries:
+
+                # remove whitespaces from the query
+                query = query.strip()
+
+                query_embedding = embedder.encode(query, convert_to_tensor=True)
+
+                # we use cosine-similarity and torch.topk to find the highest 5 scores
+                cos_scores = util.cos_sim(query_embedding, corpus_embeddings)[0]
+                top_results = torch.topk(cos_scores, k=top_k, sorted=True)
+
+                for score, idx in zip(top_results[0], top_results[1]):
+
+                    if str(search_corpus_phrases[idx]) != '':
+                        transcription_file_path = search_corpus_assoc[int(idx)]['transcription_file_path']
+                        segment_index = search_corpus_assoc[int(idx)]['segment_index']
+                        transcript_time = search_corpus_assoc[int(idx)]['start']
+                        line_no = int(segment_index) + 1
+                        all_lines = search_corpus_assoc[int(idx)]['all_lines']
+
+                        # compile the results into the search results dict
+                        search_results.append({
+                            'search_term': query,
+                            'transcription_file_path': transcription_file_path,
+                            'idx': int(idx),
+                            'segment_index': segment_index,
+                            'line_no': line_no,
+                            'all_lines': all_lines,
+                            'transcript_time': transcript_time,
+                            'score': score,
+                            'text': search_corpus_phrases[idx]
+                        })
+
+            return search_results, top_k
+
 
     def whisper_device_select(self, device):
         '''
@@ -3925,7 +4241,7 @@ class ToolkitOps:
         return self.whisper_device
 
     def prepare_transcription_file(self, toolkit_UI_obj=None, task=None, unique_id=None,
-                                   retranscribe=False, time_intervals=None):
+                                   retranscribe=False, time_intervals=None, select_files=False):
         '''
         This asks the user where to save the transcribed files,
          it chooses between transcribing an existing timeline (and first starting the render process)
@@ -4002,7 +4318,8 @@ class ToolkitOps:
                                                 time_intervals=time_intervals)
 
         # if Resolve is available and the user has an open timeline, render the timeline to an audio file
-        elif resolve_data['resolve'] != None and 'currentTimeline' in resolve_data and \
+        # but only if select files is False
+        elif not select_files and resolve_data['resolve'] != None and 'currentTimeline' in resolve_data and \
                 resolve_data['currentTimeline'] != '' and resolve_data['currentTimeline'] is not None:
 
             # reset any potential yes that the user might have said when asked to continue without resolve
@@ -4064,7 +4381,7 @@ class ToolkitOps:
         else:
 
             # ask the user if they want to simply transcribe a file from the drive
-            if toolkit_UI_obj.no_resolve_ok \
+            if select_files or toolkit_UI_obj.no_resolve_ok \
                     or messagebox.askyesno(message='A Resolve Timeline is not available.\n\n'
                                                     'Do you want to transcribe existing audio files instead?'):
 
@@ -5358,8 +5675,23 @@ class ToolkitOps:
                     # logger.info('Current Project: {}'.format(current_project))
 
                 if current_timeline != resolve_data['currentTimeline']:
-                    current_timeline = resolve_data['currentTimeline']
-                    self.on_resolve('timeline_changed')
+
+                    # if the names or the types differ, then the timeline has changed
+                    # otherwise timeline_change will be triggered on any setting change
+                    if type(current_timeline) != type(resolve_data['currentTimeline']) \
+                       or 'name' in current_timeline and not 'name' in resolve_data['currentTimeline'] \
+                        or not 'name' in current_timeline and 'name' in resolve_data['currentTimeline'] \
+                        or current_timeline['name'] != resolve_data['currentTimeline']['name']:
+
+                        # update the current timeline
+                        current_timeline = resolve_data['currentTimeline']
+
+                        self.on_resolve('timeline_changed')
+
+                    else:
+                        # nevertheless update the current timeline
+                        current_timeline = resolve_data['currentTimeline']
+
                     # self.on_resolve_timeline_changed()
                     # logger.info("Current Timeline: {}".format(current_timeline))
 
@@ -6024,13 +6356,21 @@ class StoryToolkitAI:
         # check if ffmpeg is installed
 
         try:
+
+            logger.debug('Looking for ffmpeg in env variable.')
+
             # get the FFMPEG_BINARY variable or try the ffmpeg command if not
             ffmpeg_binary = os.getenv('FFMPEG_BINARY', 'ffmpeg')
+
             cmd = [
                 ffmpeg_binary]
 
+            logger.debug('Checking ffmpeg binary: {}'.format(ffmpeg_binary))
+
             # check if ffmpeg answers the call
             exit_code = subprocess.call(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            logger.debug('FFMPEG exit code: {}'.format(exit_code))
 
             # if it does, just return true
             return True
