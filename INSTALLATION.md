@@ -11,15 +11,6 @@ Please note that the standalone version may not always be up to date with the la
 so if you want to be sure to have the latest features (some buggy and experimental too), you should install the app 
 from source.
 
-We're looking for contributors to help us with the standalone versions, so if you're interested and know how
-freezing works, please get in touch.
-
-### For updates
-If you've already installed a non-standalone release, make sure to always check for package updates after pulling a 
-new version of the tool: 
-```
-pip -r StoryToolkitAI/requirements.txt
-```
 
 ---
 
@@ -49,6 +40,7 @@ to fix them back._
 In the Terminal:
 
 #### 1. You'll need Homebrew
+
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 In case Homebrew installation fails, please check [this page](https://docs.brew.sh/Common-Issues) for troubleshooting.
@@ -207,9 +199,9 @@ For more info regarding Whisper installation, please check https://github.com/op
 
 If you are running the tool on a machine with an NVIDIA CUDA GPU, make sure you install Torch with CUDA:
     
-        pip uninstall torch
-        pip cache purge
-        pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
+    pip uninstall torch
+    pip cache purge
+    pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
 
 _Note: If Resolve is not turned on or not available, the transcription and translation functions will work on normal wav
 files too. Simply press the transcribe or translate buttons and follow the process._
@@ -224,6 +216,39 @@ starting the app. In the folder where you created venv, run:_
 
     venv\Scripts\activate.bat
 
+
+## Running the non-standalone tool
+
+If you haven't downloaded the app in a binary format, simply activate the virtual environment and run the app.py file.
+
+### On windows:
+
+    venv\Scripts\activate.bat
+    py StoryToolkitAI\app.py
+
+### On Mac OS:
+
+    source venv/bin/activate
+    python StoryToolkitAI/app.py
+
+A simple GUI with a mind-bending mid-2000s inspired design should appear on the screen.
+Don't worry, that's intentional:
+
+<img src="help/StoryToolkitAI_GUI.png" width="300">
+
+## Updates on the non-standalone tool
+To update the tool, simply pull the latest changes from the repository while inside the folder where you installed the 
+tool:
+
+    git pull
+
+Also make sure to always check for package updates after pulling a new version of the tool: 
+
+     # on Windows
+    pip -r StoryToolkitAI\requirements.txt
+
+    # on MacOS
+    pip -r StoryToolkitAI/requirements.txt
 
 ## Feedback
 

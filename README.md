@@ -12,7 +12,7 @@ https://vimeo.com/759962195/dee07a067a
 ### Key Features
 - [x] **Free Automatic Transcriptions in many languages** on your local machine directly from Resolve
 - [x] **Free Automatic Translation** from many languages to English on your local machine from Resolve
-- [x] **Transcript Advanced Search** - allows you to search transcripts by understanding concepts and meanings
+- [x] **Advanced Search** - allows you to search one or many transcripts semantically using AI
 - [x] Export of transcripts to multiple formats, including SRT
 - [x] Import subtitles directly into Resolve
 - [x] Transcription queuing to line up transcription jobs
@@ -27,10 +27,11 @@ https://vimeo.com/759962195/dee07a067a
 
 ### Work in progress
 - [ ] **Transcript Segment Groups** to select and add phrases to groups that can be recalled later 
-- [ ] **Global Advanced Search** to search stuff semantically in all the project transcripts 
 - [ ] **Speaker Recognition**
 - [ ] **Integration with other AI / ML tools**
 - [X] Plus more flashy features as clickbait to unrealistically raise expectations and destroy competition
+
+For more details regarding features, go here.
 
 _The app is in this stage very raw and not polished at all, but we use it daily in our editing room. It's for free
 not only out of sheer generosity, but also because we'd like to change how people approach editing by using AI._
@@ -111,27 +112,7 @@ Nevertheless, for detailed installation instructions
 
 ---
 
-# Running the Tool
-
-If you haven't downloaded the app in a binary format from [here](https://github.com/octimot/StoryToolkitAI/releases), 
-to start StoryToolkitAI, go to the folder where you installed it previously, activate the virtual environment 
-(if you created one) and then start the tool:
-    
-    source venv/bin/activate
-    python StoryToolkitAI/app.py
-
-A simple GUI with a mind-bending mid-2000s inspired design should appear on the screen. Don't worry, that's intentional:
-
-<img src="help/StoryToolkitAI_GUI.png" width="300">
-
-_Note: if you're running a non-standalone release, make sure you always check for package updates after pulling a new 
-version of the tool:_
-```
-pip -r StoryToolkitAI/requirements.txt
-```
-
-
-## How to transcribe:
+# How to transcribe:
 
 *Note: The following process assumes that you have Davinci Resolve installed. However, the tool also works without
 Resolve on the machine. We're also assuming that you've already 
@@ -155,8 +136,7 @@ Enter the transcription settings (more info about settings
 [here](https://github.com/octimot/StoryToolkitAI#transcription-settings)) and then hit "Start".
 
 Once the process has started, it needs a bit of time to transcribe. After all, there is a human-like AI trapped in your
-machine doing your job for you on a mechanical typewriter with missing keys, while trying to feed its entire family of
-mini-AIs with negative thoughts about conquering the world.
+machine doing your job for you on a mechanical typewriter with missing keys... It has the right to have day-dreams too.
 
 As soon as it's done, the transcription will be saved on your machine.
 
@@ -170,7 +150,7 @@ all sorts of magic things, like:
 - linking the transcript to the current Resolve timeline
   (which will automatically open the transcript whenever you open the timeline in resolve)
 - importing the generated SRT file into the current Resolve bin. 
-- searching words or phrases on the transcript
+- searching words or concepts in the transcript
 - clicking on phrases to take your Resolve playhead on the right timecode
 - etc.
 
@@ -181,38 +161,6 @@ average, don't despair, it's better to be prepared than sorry._
 
 ---
 
-
-# Known issues
-### If the tool doesn't connect with Resolve:
-Make sure that, in Davinci Resolve Preferences -> General, "External Scripting using" is set to Local.
-Again, the tool only works with Resolve Studio and not the free version of Resolve (not that we know of).
-
-### Tool freezing during playback
-Currently, the tool gets stuck as it waits a reply from the Resolve API, while Resolve is playing back, but it gets
-un-stuck as soon as the playhead stops moving. This will be fixed in a future update soon.
-
-### Hallucinations during audio silence
-In some cases, on chunks of audio that are silent, Whisper sometimes writes phrases that aren't there. This is a known
-issue, and we'll code a workaround soon.
-
-### Timecode issues with 23.976 timelines
-A bug in the Resolve API which sometimes reports 23.976 fps as 23fps creates a bunch of issues mainly for operations
-that use timecode (transcript to playhead navigation, adding markers at the precise frame etc.). Unfortunately, this
-can only be fixed by Blackmagic within Resolve itself (fingers crossed for an update?)
-
-### Black Interface / Flickering on Intel Macs
-Some users are experiencing weirdness with the interface on Intel Macs. This is due to a bug in Tcl/Tk - a package
-required to create the interface, which needs to be re-installed together with Python and everything else on the 
-machine. Details here and a possible fix 
-[here](https://github.com/octimot/StoryToolkitAI/issues/6#issuecomment-1283519594).
-
-### Please report any other issues
-As mentioned, the tool is in a super raw state of development. We use it every day in our editing workflow, but some 
-issues might escape us. Please report anything weird that you notice and we'll look into it.
-
-To report any issues, please use the Issues tab here on Github: https://github.com/octimot/StoryToolkitAI/issues
-
----
 
 # Features Info
 
@@ -419,5 +367,38 @@ Other shortcuts etc.
     search results                        result in the transcript window
                                               
                                                 
+
+---
+
+
+# Known issues
+### If the tool doesn't connect with Resolve:
+Make sure that, in Davinci Resolve Preferences -> General, "External Scripting using" is set to Local.
+Again, the tool only works with Resolve Studio and not the free version of Resolve (not that we know of).
+
+### Tool freezing during playback
+Currently, the tool gets stuck as it waits a reply from the Resolve API, while Resolve is playing back, but it gets
+un-stuck as soon as the playhead stops moving. This will be fixed in a future update soon.
+
+### Hallucinations during audio silence
+In some cases, on chunks of audio that are silent, Whisper sometimes writes phrases that aren't there. This is a known
+issue, and we'll code a workaround soon.
+
+### Timecode issues with 23.976 timelines
+A bug in the Resolve API which sometimes reports 23.976 fps as 23fps creates a bunch of issues mainly for operations
+that use timecode (transcript to playhead navigation, adding markers at the precise frame etc.). Unfortunately, this
+can only be fixed by Blackmagic within Resolve itself (fingers crossed for an update?)
+
+### Black Interface / Flickering on Intel Macs
+Some users are experiencing weirdness with the interface on Intel Macs. This is due to a bug in Tcl/Tk - a package
+required to create the interface, which needs to be re-installed together with Python and everything else on the 
+machine. Details here and a possible fix 
+[here](https://github.com/octimot/StoryToolkitAI/issues/6#issuecomment-1283519594).
+
+### Please report any other issues
+As mentioned, the tool is in a super raw state of development. We use it every day in our editing workflow, but some 
+issues might escape us. Please report anything weird that you notice and we'll look into it.
+
+To report any issues, please use the Issues tab here on Github: https://github.com/octimot/StoryToolkitAI/issues
 
 ---
