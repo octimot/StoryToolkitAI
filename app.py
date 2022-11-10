@@ -6357,10 +6357,34 @@ class StoryToolkitAI:
 
         try:
 
+            # first, check if the user added the ffmpeg path to the app settings
+            ffmpeg_path_custom = self.get_app_setting(setting_name='ffmpeg_path')
+
+            # if the ffmpeg path is not empty
+            if ffmpeg_path_custom is not None:
+
+                logger.debug('Found custom ffmpeg path in the app settings: {}'.format(ffmpeg_path_custom))
+
+                # add it to the environment variables
+                os.environ['FFMPEG_BINARY'] = ffmpeg_path_custom
+
+            # and check if it's working
+
             logger.debug('Looking for ffmpeg in env variable.')
 
-            # get the FFMPEG_BINARY variable or try the ffmpeg command if not
-            ffmpeg_binary = os.getenv('FFMPEG_BINARY', 'ffmpeg')
+            # get the FFMPEG_BINARY variable
+            ffmpeg_binary = os.getenv('FFMPEG_BINARY')
+
+            # if the variable is empty, try to find ffmpeg in the PATH
+            if ffmpeg_binary is None or ffmpeg_binary == '':
+                logger.warning('FFMPEG_BINARY env variable is empty. Looking for ffmpeg in PATH.')
+                import shutil
+                ffmpeg_binary = ffmpeg_binary if ffmpeg_binary else shutil.which('ffmpeg')
+
+            # if ffmpeg is still not found in the path either, try to brute force it
+            if ffmpeg_binary is None:
+                logger.warning('FFMPEG_BINARY environment variable not set. Trying to use "ffmpeg".')
+                ffmpeg_binary = 'ffmpeg'
 
             cmd = [
                 ffmpeg_binary]
@@ -6372,10 +6396,20 @@ class StoryToolkitAI:
 
             logger.debug('FFMPEG exit code: {}'.format(exit_code))
 
+            if exit_code == 1:
+                logger.debug('FFMPEG found at {}'.format(ffmpeg_binary))
+
             # if it does, just return true
             return True
 
         except FileNotFoundError:
+
+            # print the exact exception
+            import traceback
+            traceback_str = traceback.format_exc()
+
+            logger.error(traceback_str)
+
             # if the ffmpeg binary wasn't found, we presume that ffmpeg is not installed on the machine
             return False
 
