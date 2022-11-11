@@ -1104,7 +1104,7 @@ class toolkit_UI:
 
                             # init the segment start timecode object
                             # but only if the start seconds are larger than 0
-                            if selected_segment['start'] > 0:
+                            if float(selected_segment['start']) > 0:
                                 segment_start_timecode = Timecode(timeline_start_tc.framerate,
                                                                   start_seconds=selected_segment['start'])
 
@@ -5323,7 +5323,7 @@ class ToolkitOps:
                     idx = int(line_string)
 
                     # so create a new subtitle segment
-                    srt_segments.append({'id': str(idx), 'start': '', 'end': '', 'text': ''})
+                    srt_segments.append({'id': str(idx), 'start': 0.0, 'end': 0.0, 'text': ''})
 
                 # if the line is not a number, it's either the time or the text
                 else:
@@ -5333,8 +5333,8 @@ class ToolkitOps:
                         start_time, end_time = line_string.split('-->')
 
                         # add these to the last subtitle segment
-                        srt_segments[-1]['start'] = str(self.time_str_to_seconds(start_time.strip()))
-                        srt_segments[-1]['end'] = str(self.time_str_to_seconds(end_time.strip()))
+                        srt_segments[-1]['start'] = self.time_str_to_seconds(start_time.strip())
+                        srt_segments[-1]['end'] = self.time_str_to_seconds(end_time.strip())
 
                     # if the line doesn't contain '-->', it's the text
                     else:
