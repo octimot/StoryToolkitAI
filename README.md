@@ -264,11 +264,11 @@ The tool also supports direct translation to English by clicking the "Translate 
 it will not generate any original language transcription together with the translation, meaning that you'll have to
 transcribe and translate in two different processes.
 
-### Openning SRT Files as Transcripts
+### Opening SRT Files as Transcripts
 (only available in non-standalone version until next release)
 If you click on "Open Transcript" and select an SRT file, the tool will automatically convert it to a transcription
 file and open it in the transcription window. This is useful if you want to use transcripts made by other apps in the
-tool, for eg. to search through them, mark timelines in Resolve etc.
+tool, for eg. to search through them, navigate and mark timelines in Resolve etc.
 
 ## Davinci Resolve integrations
 
