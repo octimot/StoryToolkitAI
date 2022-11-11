@@ -2,28 +2,28 @@
 
 ## Description
 
-StoryToolkitAI is an editing extension for Davinci Resolve Studio 18 that uses Open AI Whisper to transcribe timelines
-and sentence transformers for advanced semantic search to enable editors to log footage and edit more efficiently with 
-the help of AI.
+StoryToolkitAI is an film editing extension that uses Open AI Whisper to transcribe timelines and sentence transformers 
+for advanced semantic search to enable editors to log footage and edit more efficiently with the help of AI.
+
+It's integrated with Davinci Resolve Studio 18 via API but also works independently from editing softwares.
 
 <img alt="StoryToolkitAI Demo GIF" src="https://videoapi-muybridge.vimeocdn.com/animated-thumbnails/image/9eb88ee1-4902-4e17-82dc-77411d959eab.gif?ClientID=vimeo-core-prod&Date=1665676352&Signature=52a72df29b216dd2f8cce8ee7360ea38a24b5b6e" width="700">
 https://vimeo.com/759962195/dee07a067a
 
 ### Key Features
-- [x] **Free Automatic Transcriptions in many languages** on your local machine directly from Resolve
-- [x] **Free Automatic Translation** from many languages to English on your local machine from Resolve
+- [x] **Free Automatic Transcriptions in many languages** on your local machine directly from Resolve or local files
+- [x] **Free Automatic Translation** to English on your local machine
 - [x] **Advanced Search** - allows you to search one or many transcripts semantically using AI
-- [x] Export of transcripts to multiple formats, including SRT
-- [x] Import subtitles directly into Resolve
-- [x] Transcription queuing to line up transcription jobs
-- [x] **Sliced Transcriptions** to re-transcribe only parts of the timeline/audio file
 - [x] **Transcript Timeline Navigation** - click or UP/DOWN on transcript moves the playhead in Resolve
-- [x] **Transcript Word Search** - allows you to find specific words or phrases in your transcripts
 - [x] **Mark** Resolve timelines using the phrases you select (see keyboard shortcuts below)
-- [x] **Transcript editing** - edit your transcripts directly in the app
+- [x] **Import subtitles** from tool directly into Resolve
+- [x] **Transcript editing** - edit your transcripts directly in the tool
+- [x] **Convert existing SRT files** to transcripts (non-standalone version only until next release)
+- [x] Export of transcripts to multiple formats, including SRT
+- [x] Batch transcriptions using transcription queuing
+- [x] Option to re-transcribe only parts of the timeline/audio file or even exclude certain parts
 - [x] Copy Markers between Resolve Timelines and Timeline Source Clip
 - [x] Render Resolve Markers to Stills or Clips
-- [X] Audio Files transcription even without Resolve installed on the machine
 
 ### Work in progress
 - [ ] **Transcript Segment Groups** to select and add phrases to groups that can be recalled later 
@@ -33,7 +33,7 @@ https://vimeo.com/759962195/dee07a067a
 
 For more details regarding features, go here.
 
-_The app is in this stage very raw and not polished at all, but we use it daily in our editing room. It's for free
+_The app is in this stage raw and not polished at all, but we use it daily in our editing room. It's for free
 not only out of sheer generosity, but also because we'd like to change how people approach editing by using AI._
 
 Ideally, it should evolve by incorporating other machine learning models such as CLIP and GPT-3 to assist editors in
@@ -114,10 +114,8 @@ Nevertheless, for detailed installation instructions
 
 # How to transcribe:
 
-*Note: The following process assumes that you have Davinci Resolve installed. However, the tool also works without
-Resolve on the machine. We're also assuming that you've already 
-[installed the tool](https://github.com/octimot/StoryToolkitAI/blob/main/INSTALLATION.md) (although if this still had a 
-question mark, please stay off the Internet).*
+The following process assumes that you have Davinci Resolve Studio installed. However, the tool also works without
+Resolve on the machine.
 
 #### 1. Open Resolve and StoryToolkitAI
 Open a project in Resolve and then StoryToolkitAI
@@ -211,32 +209,6 @@ This is probably due to the fact that the Whisper model works better when it has
 In these cases, try to use either a larger model, or provide Whisper with more info using the Initial Prompt. Let us
 know what tricks you use to get the best results!_
 
-### Linking Transcriptions to Timelines
-In the transcription window, the "Link" button will attach the transcription to the currently opened timeline in
-Resolve. This will make the tool automatically open the right transcription when you switch between timelines in
-Resolve. In a future update, this will also help the Global Search function know in which timeline, at what timecode
-you can find the term you're looking for.
-
-### Timeline Navigation via Transcript
-Clicking on the transcript segments (phrases) will move the playhead to the respective timecode in Resolve.
-UP/DOWN keys will also let you navigate between transcript phrases (see more transcription window shortcuts below)
-
-### Adding Markers to Timeline via Transcript
-You can now add markers that include the selected phrases in the transcript by pressing either M or SHIFT+M
-(see more shortcuts below)
-
-### Resolve Playhead to Transcript Sync
-The tool highlights the transcript words at the current timecode in Resolve. To activate this function, simply press
-"sync" in the transcription window and the words will be highlighted each time the playhead stops moving in Resolve.
-
-_Note: we found some issues when synching timelines that have a frame rate of 23.976fps because of a bug in the Resolve
-API. Unfortunately, the synching of these timelines might drift until Blackmagic solves the bug._ 
-
-### Transcript Word Search
-Once a transcript is loaded, a basic search function will let you find words in the transcript and show you their 
-position. Once you find what you're looking for, simply clicking the phrase will move the Resolve playhead to the
-respective timecode.
-
 ### Advanced Transcript Search
 Transcription windows have an "Advanced Search" button that will open up a separate search window. The system is now
 quite experimental and very raw, but it will allow you to search transcripts almost like you search something on Google.
@@ -282,10 +254,38 @@ you're searching. Using a lot of transcripts will make the search slower, so a s
 (more on that later). On a Mac M1, using the all-MiniLM-L6-v2 model, searching through an hour of audio 
 (cca. 700 phrases) takes around 2 seconds, while searching through 40+ hours of audio (cca. 34k phrases) takes around 2 minutes._
 
+### Transcript Word Search
+Once a transcript is loaded, a basic search function will let you find words in the transcript and show you their 
+position. Once you find what you're looking for, simply clicking the phrase will move the Resolve playhead to the
+respective timecode.
+
 ### Direct Translations to English
 The tool also supports direct translation to English by clicking the "Translate Timeline to English" button. However,
 it will not generate any original language transcription together with the translation, meaning that you'll have to
 transcribe and translate in two different processes.
+
+## Davinci Resolve integrations
+
+### Linking Transcriptions to Timelines
+In the transcription window, the "Link" button will attach the transcription to the currently opened timeline in
+Resolve. This will make the tool automatically open the right transcription when you switch between timelines in
+Resolve. In a future update, this will also help the Global Search function know in which timeline, at what timecode
+you can find the term you're looking for.
+
+### Timeline Navigation via Transcript
+Clicking on the transcript segments (phrases) will move the playhead to the respective timecode in Resolve.
+UP/DOWN keys will also let you navigate between transcript phrases (see more transcription window shortcuts below)
+
+### Adding Markers to Timeline via Transcript
+You can now add markers that include the selected phrases in the transcript by pressing either M or SHIFT+M
+(see more shortcuts below)
+
+### Resolve Playhead to Transcript Sync
+The tool highlights the transcript words at the current timecode in Resolve. To activate this function, simply press
+"sync" in the transcription window and the words will be highlighted each time the playhead stops moving in Resolve.
+
+_Note: we found some issues when synching timelines that have a frame rate of 23.976fps because of a bug in the Resolve
+API. Unfortunately, the synching of these timelines might drift until Blackmagic solves the bug._
 
 ### Copy Timeline Markers to Same Clip
 This copies the current markers to its corresponding clip in the media bin. 

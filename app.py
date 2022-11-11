@@ -17,13 +17,13 @@ from tkinter import *
 
 from threading import Thread
 
-import mots_resolve
-
 import torch
 import whisper
 
 import librosa
 import soundfile
+
+import mots_resolve
 
 import re
 from sentence_transformers import SentenceTransformer, util
@@ -181,10 +181,6 @@ except:
 
     # keep this message in the console for a bit
     time.sleep(5)
-
-
-# import non-standard packages after the requirements check
-# (some of them should've been installed by the requirements check)
 
 
 class toolkit_UI:
@@ -1944,7 +1940,7 @@ class toolkit_UI:
                     txt_file_name = modified_transcription_file_data['txt_file_path']
 
                 if txt_file_name is not None and txt_file_name != '':
-                    # the txt file should be in the same folder as the transcription file
+                    # the txt file should be in the same directory as the transcription file
                     txt_file_path = os.path.join(transcription_file_dir, txt_file_name)
 
                     # add the file to the transcription file data
@@ -1978,7 +1974,7 @@ class toolkit_UI:
 
                 if srt_file_name is not None and srt_file_name != '':
 
-                    # the srt file should be in the same folder as the transcription file
+                    # the srt file should be in the same directory as the transcription file
                     srt_file_path = os.path.join(transcription_file_dir, srt_file_name)
 
                     # add the file to the transcription file data
@@ -2736,18 +2732,68 @@ class toolkit_UI:
             last_target_dir = self.stAI.get_project_setting(project_name=current_project, setting_key='last_target_dir')
 
         # ask user which transcript to open
-        transcription_json_file_path = self.ask_for_target_file(filetypes=[("Json files", "json")],
+        transcription_json_file_path = self.ask_for_target_file(filetypes=[("Json files", "json srt")],
                                                                 target_dir=last_target_dir)
 
-        # if resolve is connected, save the last target dir
+        # abort if user cancels
+        if not transcription_json_file_path:
+            return False
+
+
+        # if resolve is connected, save the directory where the file is as a last last target dir
         if resolve and transcription_json_file_path and os.path.exists(transcription_json_file_path):
             self.stAI.save_project_setting(project_name=current_project,
                                            setting_key='last_target_dir',
                                            setting_value=os.path.dirname(transcription_json_file_path))
 
-        # abort if user cancels
-        if not transcription_json_file_path:
+        # if this is an srt file, but a .transcription.json file exists in the same directory,
+        # ask the user if they want to open the .transcription.json file instead
+        if transcription_json_file_path.endswith('.srt') \
+            and os.path.exists(transcription_json_file_path.replace('.srt', '.transcription.json')):
+
+            # ask user
+            if messagebox.askyesno(title="Open Transcript",
+                                   message='The file you selected is an SRT file, '
+                                           'but a transcription.json file with the exact name '
+                                           'exists in the same directory.\n\n'
+                                           'Do you want to open the transcription.json file instead?'
+                                           '\n\n'
+                                           'If you answer NO, the transcription.json will be '
+                                           'overwritten with the content of the SRT file.'
+                                           ''):
+
+                # change the file path
+                transcription_json_file_path = transcription_json_file_path.replace('.srt', '.transcription.json')
+
+        # if this is an srt file, ask the user if they want to convert it to json
+        if transcription_json_file_path.endswith('.srt'):
+
+            convert_from_srt = messagebox.askyesno(title="Convert SRT?",
+                                                   message='Do you want to convert this SRT file '
+                                                           'to a transcription file?')
+
+            # if the user wants to convert the srt file to json
+            if convert_from_srt:
+
+                # convert the srt file to json
+                # (it will overwrite any existing transcription.json with the same name in the same directory)
+                transcription_json_file_path \
+                    = self.toolkit_ops_obj.convert_srt_to_transcription_json(
+                                                        srt_file_path=transcription_json_file_path,
+                                                        overwrite=True
+                                                        )
+
+        # if the file is not a json file, abort
+        if not transcription_json_file_path.endswith('.json'):
+            self.notify_via_messagebox(title='Not a transcription',
+                                            message='The file \n{}\nis not a transcription file.'
+                                                        .format(os.path.basename(transcription_json_file_path)),
+                                            message_log='The file {} is not a transcription file.',
+                                            type='error')
             return False
+
+        # open the transcript in a transcript window
+
 
         # why not open the transcript in a transcription window?
         self.open_transcription_window(transcription_file_path=transcription_json_file_path, **options)
@@ -2782,7 +2828,7 @@ class toolkit_UI:
 
             # if not we're dealing with an absolute path
             if not os.path.isabs(srt_file_path):
-                # assume that the srt is in the same folder as the transcription
+                # assume that the srt is in the same directory as the transcription
                 srt_file_path = os.path.join(os.path.dirname(transcription_file_path), srt_file_path)
 
         # hash the url and use it as a unique id for the transcription window
@@ -3418,11 +3464,11 @@ class toolkit_UI:
 
             # if select_dir is true, allow the user to select a directory
             if select_dir:
-                # ask the user to select a folder with transcription files
+                # ask the user to select a directory with transcription files
                 transcription_file_dirs = filedialog.askdirectory(initialdir=initial_dir,
-                                                                   title='Select a folder with transcriptions')
+                                                                   title='Select a directory with transcriptions')
 
-                # now go through all the .transcription.json files in the folder and add them to the list
+                # now go through all the .transcription.json files in the directory and add them to the list
                 if transcription_file_dirs:
                     for root, dirs, files in os.walk(transcription_file_dirs):
                         for file in files:
@@ -3671,7 +3717,7 @@ class toolkit_UI:
 
         return target_dir
 
-    def ask_for_target_file(self, filetypes=[("Audio files", ".mp4 .wav .mp3")], target_dir=None, multiple=False):
+    def ask_for_target_file(self, filetypes=[("Audio files", ".mov .mp4 .wav .mp3")], target_dir=None, multiple=False):
         global initial_target_dir
 
         # if an initial target_dir was passed
@@ -4377,7 +4423,7 @@ class ToolkitOps:
                                                 name=currentTimelineName,
                                                 task=task, unique_id=unique_id)
 
-        # if resolve is not available
+        # if resolve is not available or select_files is True, ask the user to select an audio file
         else:
 
             # ask the user if they want to simply transcribe a file from the drive
@@ -4733,7 +4779,6 @@ class ToolkitOps:
         time_intervals = [[0, len(audio_array) / sr]]
         audio_segments = [[0, len(audio_array / sr), audio_array]]
         return audio_segments, time_intervals
-
 
     def whisper_transcribe_segments(self, audio_segments, task, next_segment_id, other_whisper_options):
         """
@@ -5172,17 +5217,17 @@ class ToolkitOps:
                 backup_transcription_file_path = \
                     os.path.splitext(os.path.basename(transcription_file_path))[0]+'.'+str(backup)+'.json'
 
-                backups_folder = os.path.join(os.path.dirname(transcription_file_path), '.backups')
+                backups_dir = os.path.join(os.path.dirname(transcription_file_path), '.backups')
 
-                # if the backups folder doesn't exist, create it
-                if not os.path.exists(backups_folder):
-                    os.mkdir(backups_folder)
+                # if the backups directory doesn't exist, create it
+                if not os.path.exists(backups_dir):
+                    os.mkdir(backups_dir)
 
-                # copy the existing file to the backups folder
+                # copy the existing file to the backups directory
                 # if it doesn't already exist
-                if not os.path.exists(os.path.join(backups_folder, backup_transcription_file_path)):
+                if not os.path.exists(os.path.join(backups_dir, backup_transcription_file_path)):
                     shutil.copyfile(transcription_file_path,
-                                    os.path.join(backups_folder, backup_transcription_file_path))
+                                    os.path.join(backups_dir, backup_transcription_file_path))
 
             # Finally,
             # save the whole whisper result in the transcription json file
@@ -5207,6 +5252,138 @@ class ToolkitOps:
             transcription_json = json.load(json_file)
 
         return transcription_json
+
+    def time_str_to_seconds(self, time_str: str) -> float:
+        '''
+        Converts 00:00:00.000 time formats to seconds.
+        :param time_str: 00:00:00.000 (string)
+        :return:
+        '''
+
+        # use regex to get the hours, minutes, seconds and milliseconds
+        # from the time string
+        time_regex = re.compile(r'(\d{2}):(\d{2}):(\d{2}).(\d)')
+        time_match = time_regex.match(time_str)
+
+        # if the time string matches the regex
+        if time_match:
+
+            # calculate the seconds
+            seconds = int(time_match.group(1)) * 3600 + \
+                        int(time_match.group(2)) * 60 + \
+                        int(time_match.group(3)) + \
+                        int(time_match.group(4)) / 1000
+
+        # otherwise, throw an error
+        else:
+            exception = 'The passed time string {} is not formatted correctly.'.format(time_str)
+            logger.error(exception)
+
+            # throw exception
+            raise ValueError(exception)
+
+        return seconds
+
+    def convert_srt_to_transcription_json(self, srt_file_path: str, transcription_file_path: str = None,
+                                          overwrite: bool = False):
+        '''
+        Converts an srt file to a transcription json file, saves it in the same directory
+         and returns the name of the transcription file.
+
+        If it's impossible to convert or save the srt file, it will return None
+
+        If overwrite is True, it will overwrite any existing transcription file from the same directory.
+
+        :param srt_file_path:
+        :param transcription_file_path:
+        :param overwrite:
+        :return:
+        '''
+
+        # make sure the srt file exists
+        if not os.path.exists(srt_file_path):
+            logger.warning("SRT file {} doesn't exist.".format(srt_file_path))
+            return None
+
+        # get the contents of the srt file
+        with codecs.open(srt_file_path, 'r', 'utf-8-sig') as srt_file:
+            srt_contents = srt_file.read()
+
+        srt_segments = []
+        full_text = ''
+
+        # if properly formatted, the srt file should have 2 new lines between each subtitle
+        # so go through all of them
+        for line_string in srt_contents.split('\r\n'):
+
+            if line_string != '':
+
+                # if the line is a number, it's the subtitle number
+                if line_string.isdigit():
+                    idx = int(line_string)
+
+                    # so create a new subtitle segment
+                    srt_segments.append({'id': str(idx), 'start': '', 'end': '', 'text': ''})
+
+                # if the line is not a number, it's either the time or the text
+                else:
+                    # if the line contains '-->', it's the time
+                    if '-->' in line_string:
+                        # split the line in the middle to get the start and end times
+                        start_time, end_time = line_string.split('-->')
+
+                        # add these to the last subtitle segment
+                        srt_segments[-1]['start'] = str(self.time_str_to_seconds(start_time.strip()))
+                        srt_segments[-1]['end'] = str(self.time_str_to_seconds(end_time.strip()))
+
+                    # if the line doesn't contain '-->', it's the text
+                    else:
+
+                        # add the text to the last subtitle segment
+                        # but also a white space if there's already a string inside the segment text
+                        srt_segments[-1]['text'] += \
+                            ' '+line_string if len(srt_segments[-1]['text']) > 0 else line_string
+
+                        # add the text to the full text
+                        full_text += ' '+line_string if len(full_text) > 0 else line_string
+
+        # initialize the transcription_data for the transcription_file
+        transcription_data = {'text': full_text,
+                              'segments': srt_segments,
+                              'task': 'convert_srt_to_transcription_json',
+                              'audio_file_path': '',
+                              'srt_file_path': os.path.basename(srt_file_path),
+                              'name': os.path.splitext(os.path.basename(srt_file_path))[0]
+                              }
+
+        # if no transcription file path was passed, create one based on the srt file name
+        if transcription_file_path is None:
+            transcription_file_path = os.path.splitext(srt_file_path)[0] + '.transcription.json'
+
+        if not overwrite and os.path.exists(transcription_file_path):
+            logger.error("Transcription file {} already exists. Cannot overwite.".format(transcription_file_path))
+            return None
+
+        # if the transcription file already exists, log that we're overwriting it
+        elif overwrite and os.path.exists(transcription_file_path):
+            logger.info("Overwritting {} with transcription from SRT.".format(transcription_file_path))
+
+        else:
+            logger.info("Saving transcription from SRT to {}.".format(transcription_file_path))
+
+        # save the full text to a text file
+        transcription_txt_file_path = os.path.splitext(transcription_file_path)[0] + '.txt'
+        self.save_txt_from_transcription(transcription_txt_file_path, transcription_data)
+
+        # save the transcription data to the transcription file
+        self.save_transcription_file(transcription_file_path, transcription_data)
+
+        return transcription_file_path
+
+
+
+
+
 
     def process_transcription_data(self, transcription_segments=None, transcription_data=None):
         '''
@@ -5654,6 +5831,8 @@ class ToolkitOps:
 
         global resolve_error
 
+        # first check if resolve API exists on machine
+
         # do this continuously
         while True:
 
@@ -5948,7 +6127,7 @@ class StoryToolkitAI:
         else:
             self.user_data_path = USER_DATA_PATH
 
-        # the config file should be in the user data folder
+        # the config file should be in the user data directory
         self.config_file_path = os.path.join(self.user_data_path, APP_CONFIG_FILE_NAME)
 
         # create a config variable
@@ -5982,8 +6161,8 @@ class StoryToolkitAI:
                 # and create the whole path to it if it doesn't
                 os.makedirs(self.user_data_path)
 
-                # for users of versions prior to 0.16.14, the user data folder was at OLD_USER_DATA_PATH
-                # so make sure we copy everything from the old path to the new folder
+                # for users of versions prior to 0.16.14, the user data directory was at OLD_USER_DATA_PATH
+                # so make sure we copy everything from the old path to the new directory
                 old_user_data_path_abs = os.path.join(os.path.dirname(os.path.abspath(__file__)), OLD_USER_DATA_PATH)
 
                 # we first check if the old_user_data_path_abs exists
@@ -6114,7 +6293,7 @@ class StoryToolkitAI:
         self.config[setting_name] = setting_value
 
         # before writing the configuration to the config file
-        # check if the user data folder exists (and create it if not)
+        # check if the user data directory exists (and create it if not)
         self.user_data_dir_exists(create_if_not=True)
 
         # then write the config to the config json
@@ -6333,6 +6512,18 @@ class StoryToolkitAI:
         # get the numbers in the version string
         local_version = self.__version__.split(".")
         online_version = online_version_raw.split(".")
+
+        # did the use choose to ignore the update?
+        ignore_update = self.get_app_setting(setting_name='ignore_update', default_if_none=False)
+
+        # if they did, is the online version the same as the one they ignored?
+        if ignore_update and ignore_update.split(".") == online_version:
+
+            logger.info('Ignoring the new update (version {}) according to app settings.'.format(ignore_update))
+
+            # return False - no update available and the local version number instead of what's online
+            return False, self.__version__
+
 
         # take each number in the version string and compare it with the local numbers
         for n in range(len(online_version)):
