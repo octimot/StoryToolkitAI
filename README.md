@@ -2,15 +2,16 @@
 
 ## Description
 
-StoryToolkitAI is an film editing extension that uses Open AI Whisper to transcribe timelines and sentence transformers 
-for advanced semantic search to enable editors to log footage and edit more efficiently with the help of AI.
+**StoryToolkitAI is a film editing tool that can help editors edit more efficiently by automatically transcribing audio
+and finding concepts with the help of AI.**
 
-It's integrated with Davinci Resolve Studio 18 via API but also works independently from editing softwares.
+The tool works locally independent of any editing software, but it's integrated with Davinci Resolve Studio 18 via API. It is
+using OpenAI Whisper for speech-to-text, sentence transformers for semantic search and a few other AI technologies.
 
 <img alt="StoryToolkitAI Demo GIF" src="https://videoapi-muybridge.vimeocdn.com/animated-thumbnails/image/9eb88ee1-4902-4e17-82dc-77411d959eab.gif?ClientID=vimeo-core-prod&Date=1665676352&Signature=52a72df29b216dd2f8cce8ee7360ea38a24b5b6e" width="700">
 https://vimeo.com/759962195/dee07a067a
 
-### Key Features
+## Key Features
 - [x] **Free Automatic Transcriptions in many languages** on your local machine directly from Resolve or local files
 - [x] **Free Automatic Translation** to English on your local machine
 - [x] **Advanced Search** - allows you to search one or many transcripts semantically using AI
@@ -31,7 +32,7 @@ https://vimeo.com/759962195/dee07a067a
 - [ ] **Integration with other AI / ML tools**
 - [X] Plus more flashy features as clickbait to unrealistically raise expectations and destroy competition
 
-For more details regarding features, go here.
+For more details regarding features, go [here](github.com/octimot/StoryToolkitAI).
 
 _The app is in this stage raw and not polished at all, but we use it daily in our editing room. It's for free
 not only out of sheer generosity, but also because we'd like to change how people approach editing by using AI._
