@@ -2,11 +2,12 @@
 
 ## Description
 
-**StoryToolkitAI is a film editing tool that can help editors edit more efficiently by automatically transcribing audio
-and finding concepts with the help of AI.**
+**StoryToolkitAI is a film editing tool that can help editors work more efficiently by automatically transcribing audio
+and allowing them to search transcripts semantically with the help of AI.**
 
-The tool works locally independent of any editing software, but it's integrated with Davinci Resolve Studio 18 via API. It is
-using OpenAI Whisper for speech-to-text, sentence transformers for semantic search and a few other AI technologies.
+The tool works on locally independent of any editing software, but it's also integrated with Davinci Resolve Studio 18 
+via API. It is using OpenAI Whisper for speech-to-text, sentence transformers for semantic search and a few other AI 
+technologies to get stuff done.
 
 <img alt="StoryToolkitAI Demo GIF" src="https://videoapi-muybridge.vimeocdn.com/animated-thumbnails/image/9eb88ee1-4902-4e17-82dc-77411d959eab.gif?ClientID=vimeo-core-prod&Date=1665676352&Signature=52a72df29b216dd2f8cce8ee7360ea38a24b5b6e" width="700">
 https://vimeo.com/759962195/dee07a067a
@@ -190,6 +191,11 @@ you would enter this in the Time Intervals field:
 30.00 - 40.00
 ```
 
+If you're transcribing timelines directly from Resolve and prefer to save them in wav format, instead of mov,
+go to the Resolve Render Page, select the Audio Only preset, make sure that the "Export Video" in the Video tab is
+disabled, then, in the "Audio" tab, select the "Wave" format and "Linear PCM" as codec. Then save this preset as
+"transcription_WAV", and the next time you transcribe, you should see Resolve rendering wav files.
+
 ### Re-transcribing Transcripts
 
 In some instances you might want to re-transcribe a transcript, for example if you want to change the Whisper model,
@@ -305,11 +311,13 @@ Same as the function above, but in this case, the markers of the clip are copied
 
 ### Render Markers to Stills
 This will render to TIFF and JPEG the first frame of the markers of a certain color. Works only on markers from the 
-opened timeline.
+opened timeline. The first time you use this function, it should also add a Still_TIFF render preset in Resolve. This
+is necessary to render the stills in TIFF format, which then should get converted to JPEG if you have FFMPEG on your 
+machine.
 
 ### Render Markers to Clips
-This will render to H.264 the entire duration of the markers of a certain color. Same as above, it only works for
-markers from the opened timeline.
+This will render to H.264 the entire duration of the markers of a certain color from your currently opened Resolve
+timeline.
 
 ## Transcription Window Shortcuts:
 

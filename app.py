@@ -23,7 +23,7 @@ import whisper
 import librosa
 import soundfile
 
-import mots_resolve
+from mots_resolve import MotsResolve
 
 import re
 from sentence_transformers import SentenceTransformer, util
@@ -107,13 +107,15 @@ class Logger_ConsoleFormatter(logging.Formatter):
 # enable logger
 logger = logging.getLogger('StAI')
 
-# if --debug was used in the command line arguments, use the DEBUG logging level
-# otherwise use INFO level
-logger.setLevel(logging.INFO if '--debug' not in sys.argv else logging.DEBUG)
+# set the maximum log level
+logger.setLevel(logging.DEBUG)
 
 # create console handler and set level to info
 logger_console_handler = logging.StreamHandler()
-logger_console_handler.setLevel(logging.DEBUG)
+
+# if --debug was used in the command line arguments, use the DEBUG logging level for the console
+# otherwise use INFO level
+logger_console_handler.setLevel(logging.INFO if '--debug' not in sys.argv else logging.DEBUG)
 
 # add console formatter to ch
 logger_console_handler.setFormatter(Logger_ConsoleFormatter())
@@ -125,7 +127,7 @@ logger.addHandler(logger_console_handler)
 # format the file logging
 file_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s: %(message)s (%(filename)s:%(lineno)d)")
 
-# create file handler and set level to debug
+# create file handler and set level to debug (we want to log everything in the file)
 logger_file_handler = handlers.RotatingFileHandler(APP_LOG_FILE, maxBytes=1000000, backupCount=3)
 logger_file_handler.setFormatter(file_formatter)
 logger_file_handler.setLevel(logging.DEBUG)
@@ -772,7 +774,9 @@ class toolkit_UI:
                         marker_data[marker_index]['customData'] = ''
 
                         # pass the marker add request to resolve
-                        mots_resolve.add_timeline_markers(current_timeline['name'], marker_data, False)
+                        self.toolkit_ops_obj.resolve_api.add_timeline_markers(current_timeline['name'],
+                                                                              marker_data,
+                                                                              False)
 
             # q key event (close transcription window)
             if event.keysym == 'q':
@@ -2283,30 +2287,30 @@ class toolkit_UI:
         self.main_window.button1 = tk.Button(self.main_window.resolve_buttons_frame, **self.blank_img_button_settings,
                                              **self.button_size,
                                              text="Copy Timeline\nMarkers to Same Clip",
-                                             command=lambda: execute_operation('copy_markers_timeline_to_clip', self))
+                                             command=lambda: self.toolkit_ops_obj.execute_operation('copy_markers_timeline_to_clip', self))
         self.main_window.button1.grid(row=1, column=1, **self.paddings)
 
         self.main_window.button2 = tk.Button(self.main_window.resolve_buttons_frame, **self.blank_img_button_settings,
                                              **self.button_size,
                                              text="Copy Clip Markers\nto Same Timeline",
-                                             command=lambda: execute_operation('copy_markers_clip_to_timeline', self))
+                                             command=lambda: self.toolkit_ops_obj.execute_operation('copy_markers_clip_to_timeline', self))
         self.main_window.button2.grid(row=1, column=2, **self.paddings)
 
         # resolve buttons frame row 2
         self.main_window.button3 = tk.Button(self.main_window.resolve_buttons_frame, **self.blank_img_button_settings,
                                              **self.button_size, text="Render Markers\nto Stills",
-                                             command=lambda: execute_operation('render_markers_to_stills', self))
+                                             command=lambda: self.toolkit_ops_obj.execute_operation('render_markers_to_stills', self))
         self.main_window.button3.grid(row=2, column=1, **self.paddings)
 
         self.main_window.button4 = tk.Button(self.main_window.resolve_buttons_frame, **self.blank_img_button_settings,
                                              **self.button_size, text="Render Markers\nto Clips",
-                                             command=lambda: execute_operation('render_markers_to_clips', self))
+                                             command=lambda: self.toolkit_ops_obj.execute_operation('render_markers_to_clips', self))
         self.main_window.button4.grid(row=2, column=2, **self.paddings)
 
         # Other Frame Row 1
         self.main_window.button5 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings,
                                              **self.button_size, text="Transcribe\nTimeline",
-                                             command=lambda: toolkit_ops_obj.prepare_transcription_file(
+                                             command=lambda: self.toolkit_ops_obj.prepare_transcription_file(
                                                  toolkit_UI_obj=self))
         # add the shift+click binding to the button
         self.main_window.button5.bind('<Shift-Button-1>',
@@ -2317,7 +2321,7 @@ class toolkit_UI:
         self.main_window.button6 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings,
                                              **self.button_size,
                                              text="Translate\nTimeline to English",
-                                             command=lambda: toolkit_ops_obj.prepare_transcription_file(
+                                             command=lambda: self.toolkit_ops_obj.prepare_transcription_file(
                                                  toolkit_UI_obj=self, task='translate'))
         # add the shift+click binding to the button
         self.main_window.button6.bind('<Shift-Button-1>',
@@ -3088,7 +3092,8 @@ class toolkit_UI:
                     import_srt_button = tk.Button(footer_frame,
                                                   text="Import SRT into Bin",
                                                   takefocus=False,
-                                                  command=lambda: mots_resolve.import_media(srt_file_path)
+                                                  command=lambda:
+                                                    self.toolkit_ops_obj.resolve_api.import_media(srt_file_path)
                                                   )
                     import_srt_button.pack(side=tk.RIGHT, **self.paddings, anchor='e')
 
@@ -3888,6 +3893,9 @@ class ToolkitOps:
         # for now define an empty model here which should be loaded the first time it's needed
         self.s_semantic_search_model = None
 
+        # init Resolve
+        self.resolve_api = MotsResolve(logger=logger)
+
         # start the resolve thread
         # with this, resolve should be constantly polled for data
         self.poll_resolve_thread()
@@ -4305,7 +4313,7 @@ class ToolkitOps:
 
         # get info from resolve
         try:
-            resolve_data = mots_resolve.get_resolve_data()
+            resolve_data = self.resolve_api.get_resolve_data()
         # in case of exception still create a dict with an empty resolve object
         except:
             resolve_data = {'resolve': None}
@@ -4398,24 +4406,27 @@ class ToolkitOps:
                 unique_id = self._generate_transcription_unique_id(name=currentTimelineName)
 
             # update the transcription log
-            # @todo this doesn't work - maybe due to resolve API taking over,
-            #   so we should try to move it to another thread?
+            # @todo this doesn't work - maybe because resolve polling is hanging the main thread
             self.add_to_transcription_log(unique_id=unique_id, name=currentTimelineName, status='rendering')
 
             # use transcription_WAV render preset if it exists
             # transcription_WAV is an Audio only custom render preset that renders Linear PCM codec in a Wave format instead
             # of Quicktime mp4; this is just to work with wav files instead of mp4 to improve compatibility.
-            if 'transcription_WAV' in resolve_data['renderPresets']:
-                render_preset = 'transcription_WAV'
-            else:
-                render_preset = 'Audio Only'
+            # but the user needs to add it manually to resolve in order for it to work since the Resolve API
+            # doesn't permit choosing the audio format (only the codec)
+            render_preset = 'transcription_WAV'
 
             # let the user know that we're starting the render
             toolkit_UI_obj.notify_via_os("Starting Render", "Starting Render in Resolve",
                                          "Saving into {} and starting render.".format(target_dir))
 
             # render the timeline in Resolve
-            rendered_files = mots_resolve.render_timeline(target_dir, render_preset, True, False, False, True)
+            rendered_files = self.resolve_api.render_timeline(target_dir, render_preset, True, False, False, True)
+
+            if not rendered_files:
+                self.update_transcription_log(unique_id=unique_id, **{'status': 'failed'})
+                logger.error("Timeline render failed.")
+                return False
 
             # now open up the transcription settings window
             for rendered_file in rendered_files:
@@ -5681,7 +5692,7 @@ class ToolkitOps:
             # poll resolve for some info
             # @todo avoid polling resolve for this info and use the existing current_timeline_fps
             #   and current_timeline_startTC
-            resolve_data = mots_resolve.get_resolve_data()
+            resolve_data = self.resolve_api.get_resolve_data()
 
             # get the framerate of the current timeline
             timeline_fps = resolve_data['currentTimelineFPS']
@@ -5717,7 +5728,7 @@ class ToolkitOps:
             # poll resolve for some info
             # @todo avoid polling resolve for this info and use the existing current_timeline_fps
             #   and current_timeline_startTC
-            resolve_data = mots_resolve.get_resolve_data()
+            resolve_data = self.resolve_api.get_resolve_data()
 
             # get the framerate of the current timeline
             timeline_fps = resolve_data['currentTimelineFPS']
@@ -5758,7 +5769,7 @@ class ToolkitOps:
             new_timeline_tc = self.calculate_sec_to_resolve_timecode(seconds)
 
             # move playhead in resolve
-            mots_resolve.set_resolve_tc(str(new_timeline_tc))
+            self.resolve_api.set_resolve_tc(str(new_timeline_tc))
 
     def on_resolve(self, event_name):
         '''
@@ -5838,7 +5849,14 @@ class ToolkitOps:
 
             # try to poll resolve
             try:
-                resolve_data = mots_resolve.get_resolve_data(silent=True)
+
+                # first, check if the API module is available on this machine
+                if not self.resolve_api.api_module_available:
+                    logger.debug('Resolve API module not available on this machine. '
+                                 'Aborting Resolve API polling until restart.')
+                    return None
+
+                resolve_data = self.resolve_api.get_resolve_data(silent=True)
 
                 #print(resolve)
                 #print(resolve_data['resolve'])
@@ -5930,7 +5948,7 @@ class ToolkitOps:
 
                     # only show this error one more time
                     if resolve_error == 21:
-                        logger.error('Resolve is still not reachable. '
+                        logger.warning('Resolve is still not reachable. '
                                             'Muting errors. Now retrying every 30 seconds. ')
 
                     # and increase the polling interval to 30 seconds
@@ -5972,131 +5990,127 @@ class ToolkitOps:
         return False
 
 
-def resolve_check_timeline(resolve_data, toolkit_UI_obj):
-    '''
-    This checks if a timeline is available and returns bool
-    :param resolve:
-    :return:
-    '''
+    def resolve_check_timeline(self, resolve_data, toolkit_UI_obj):
+        '''
+        This checks if a timeline is available and returns bool
+        :param resolve:
+        :return:
+        '''
 
-    # trigger warning if there is no current timeline
-    if resolve_data['currentTimeline'] is None:
-        toolkit_UI_obj.notify_via_messagebox(
-            message='Timeline not available. Make sure that you\'ve opened a Timeline in Resolve.',
-            type='warning')
-        return False
-
-    else:
-        return True
-
-
-def execute_operation(operation, toolkit_UI_obj):
-    if not operation or operation == '':
-        return False
-
-    global stAI
-
-    # get info from resolve for later
-    resolve_data = mots_resolve.get_resolve_data()
-
-    # copy markers operation
-    if operation == 'copy_markers_timeline_to_clip' or operation == 'copy_markers_clip_to_timeline':
-
-        # set source and destination depending on the operation
-        if operation == 'copy_markers_timeline_to_clip':
-            source = 'timeline'
-            destination = 'clip'
-
-        elif operation == 'copy_markers_clip_to_timeline':
-            source = 'clip'
-            destination = 'timeline'
-
-        # this else will never be triggered but let's leave it here for safety for now
-        else:
-            return False
-
-        # trigger warning and stop if there is no current timeline
-        if not resolve_check_timeline(resolve_data, toolkit_UI_obj):
-            return False
-
-        # trigger warning and stop if there are no bin clips
-        if resolve_data['binClips'] is None:
+        # trigger warning if there is no current timeline
+        if resolve_data['currentTimeline'] is None:
             toolkit_UI_obj.notify_via_messagebox(
-                message='Bin clips not available. Make sure that a bin is opened in Resolve.\n\n'
-                        'This doesn\'t work if multiple bins or smart bins are selected due to API.',
+                message='Timeline not available. Make sure that you\'ve opened a Timeline in Resolve.',
                 type='warning')
             return False
 
-        # execute operation without asking for any prompts
-        # this will delete the existing clip/timeline destination markers,
-        # but the user can undo the operation from Resolve
-        return mots_resolve.copy_markers(source, destination,
-                                         resolve_data['currentTimeline']['name'],
-                                         resolve_data['currentTimeline']['name'],
-                                         True)
-
-    # render marker operation
-    elif operation == 'render_markers_to_stills' or operation == 'render_markers_to_clips':
-
-        # ask user for marker color
-
-        # but first make a list of all the available marker colors based on the timeline markers
-        current_timeline_marker_colors = []
-        if resolve_check_timeline(resolve_data, toolkit_UI_obj) and \
-                current_timeline and 'markers' in current_timeline:
-
-            # take each marker from timeline and get its color
-            for marker in current_timeline['markers']:
-
-                # only append the marker to the list if it wasn't added already
-                if current_timeline['markers'][marker]['color'] not in current_timeline_marker_colors:
-                    current_timeline_marker_colors.append(current_timeline['markers'][marker]['color'])
-
-        # if no markers exist, cancel operation and let the user know that there are no markers to render
-        if current_timeline_marker_colors:
-            marker_color = simpledialog.askstring(title="Markers Color",
-                                                  prompt="What color markers should we render?\n\n"
-                                                         "These are the marker colors on the current timeline:\n"
-                                                         + ", ".join(current_timeline_marker_colors))
         else:
-            no_markers_alert = 'The timeline doesn\'t contain any markers'
-            logger.warning(no_markers_alert)
+            return True
+
+    def execute_operation(self, operation, toolkit_UI_obj):
+        if not operation or operation == '':
             return False
 
-        if not marker_color:
-            #print("User canceled render operation.")
-            return False
+        global stAI
 
-        if marker_color not in current_timeline_marker_colors:
-            toolkit_UI_obj.notify_via_messagebox(title='Unavailable marker color',
-                                                 message='The marker color you\'ve entered doesn\'t exist on the timeline.',
-                                                 message_log="Aborting. User entered a marker color that doesn't exist on the timeline.",
-                                                 type='error'
-                                                 )
+        # get info from resolve for later
+        resolve_data = self.resolve_api.get_resolve_data()
 
-            return False
+        # copy markers operation
+        if operation == 'copy_markers_timeline_to_clip' or operation == 'copy_markers_clip_to_timeline':
 
-        render_target_dir = toolkit_UI_obj.ask_for_target_dir()
+            # set source and destination depending on the operation
+            if operation == 'copy_markers_timeline_to_clip':
+                source = 'timeline'
+                destination = 'clip'
 
-        if not render_target_dir or render_target_dir == '':
-            #print("User canceled render operation.")
-            return False
+            elif operation == 'copy_markers_clip_to_timeline':
+                source = 'clip'
+                destination = 'timeline'
 
-        if operation == 'render_markers_to_stills':
-            stills = True
-            render = True
-            render_preset = "Still_TIFF"
-        else:
-            stills = False
-            render = False
+            # this else will never be triggered but let's leave it here for safety for now
+            else:
+                return False
 
-            # @todo ask user for render preset or assign one
-            render_preset = False
+            # trigger warning and stop if there is no current timeline
+            if not self.resolve_check_timeline(resolve_data, toolkit_UI_obj):
+                return False
 
-        mots_resolve.render_markers(marker_color, render_target_dir, False,
-                                    stills, render, render_preset)
+            # trigger warning and stop if there are no bin clips
+            if resolve_data['binClips'] is None:
+                toolkit_UI_obj.notify_via_messagebox(
+                    message='Bin clips not available. Make sure that a bin is opened in Resolve.\n\n'
+                            'This doesn\'t work if multiple bins or smart bins are selected due to API.',
+                    type='warning')
+                return False
 
-    return False
+            # execute operation without asking for any prompts
+            # this will delete the existing clip/timeline destination markers,
+            # but the user can undo the operation from Resolve
+            return self.resolve_api.copy_markers(source, destination,
+                                             resolve_data['currentTimeline']['name'],
+                                             resolve_data['currentTimeline']['name'],
+                                             True)
+
+        # render marker operation
+        elif operation == 'render_markers_to_stills' or operation == 'render_markers_to_clips':
+
+            # ask user for marker color
+
+            # but first make a list of all the available marker colors based on the timeline markers
+            current_timeline_marker_colors = []
+            if self.resolve_check_timeline(resolve_data, toolkit_UI_obj) and \
+                    current_timeline and 'markers' in current_timeline:
+
+                # take each marker from timeline and get its color
+                for marker in current_timeline['markers']:
+
+                    # only append the marker to the list if it wasn't added already
+                    if current_timeline['markers'][marker]['color'] not in current_timeline_marker_colors:
+                        current_timeline_marker_colors.append(current_timeline['markers'][marker]['color'])
+
+            # if no markers exist, cancel operation and let the user know that there are no markers to render
+            if current_timeline_marker_colors:
+                marker_color = simpledialog.askstring(title="Markers Color",
+                                                      prompt="What color markers should we render?\n\n"
+                                                             "These are the marker colors on the current timeline:\n"
+                                                             + ", ".join(current_timeline_marker_colors))
+            else:
+                no_markers_alert = 'The timeline doesn\'t contain any markers'
+                logger.warning(no_markers_alert)
+                return False
+
+            if not marker_color:
+                logger.debug("User canceled Resolve render operation by not selecting a marker color")
+                return False
+
+            if marker_color not in current_timeline_marker_colors:
+                toolkit_UI_obj.notify_via_messagebox(title='Unavailable marker color',
+                                                     message='The marker color you\'ve entered doesn\'t exist on the timeline.',
+                                                     message_log="Aborting. User entered a marker color that doesn't exist on the timeline.",
+                                                     type='error'
+                                                     )
+
+                return False
+
+            render_target_dir = toolkit_UI_obj.ask_for_target_dir()
+
+            if not render_target_dir or render_target_dir == '':
+                logger.debug("User canceled Resolve render operation")
+                return False
+
+            if operation == 'render_markers_to_stills':
+                stills = True
+                render = True
+                render_preset = "Still_TIFF"
+            else:
+                stills = False
+                render = False
+                render_preset = False
+
+            self.resolve_api.render_markers(marker_color, render_target_dir, False, stills, render, render_preset)
+
+        return False
 
 
 current_project = ''
@@ -6588,7 +6602,7 @@ class StoryToolkitAI:
             logger.debug('FFMPEG exit code: {}'.format(exit_code))
 
             if exit_code == 1:
-                logger.debug('FFMPEG found at {}'.format(ffmpeg_binary))
+                logger.info('FFMPEG found at {}'.format(ffmpeg_binary))
 
             # if it does, just return true
             return True
