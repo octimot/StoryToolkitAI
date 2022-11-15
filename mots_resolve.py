@@ -82,9 +82,13 @@ class MotsResolve:
                 # by specifying absolute path (see ExceptionHandler logic)
                 import DaVinciResolveScript as bmd
 
+                self.bmd = bmd
+
                 # remember that the API module was loaded
                 self.api_module_available = True
                 self.api_module_loaded = True
+
+                self.logger.debug("DaVinciResolveScript module loaded from PYTHONPATH.")
 
             except ImportError:
 
@@ -175,6 +179,9 @@ class MotsResolve:
                     return None
 
             self.logger.info('Resolve API module found and loaded')
+
+        #if self.bmd is None:
+        #    return None
 
         # return the API module
         return self.bmd.scriptapp("Resolve")
