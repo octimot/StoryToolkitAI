@@ -88,7 +88,7 @@ class MotsResolve:
                 self.api_module_available = True
                 self.api_module_loaded = True
 
-                self.logger.debug("DaVinciResolveScript module loaded from PYTHONPATH.")
+                self.logger.debug("DaVinciResolveScript module loaded from PYTHONPATH")
 
             except ImportError:
 
