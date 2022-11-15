@@ -666,7 +666,7 @@ class toolkit_UI:
                 # and move playhead to that time
                 self.go_to_selected_time(window_id, 'start', ignore_selection=True)
 
-                # if shift was also pressed
+                # if cmd was also pressed
                 if special_key == 'cmd':
 
                     # add clicked segment to selection
@@ -3120,9 +3120,9 @@ class toolkit_UI:
                                                                                              **select_options))
 
                 # bind CMD/CTRL + key presses to transcription window actions
-                # self.windows[t_window_id].bind("<" + self.ctrl_cmd_bind + "-KeyPress>",
+                #self.windows[t_window_id].bind("<" + self.ctrl_cmd_bind + "-KeyPress>",
                 #                               lambda e:
-                #                               self.t_edit_obj.transcription_window_keypress(event=e, special_key='cmd'
+                #                               self.t_edit_obj.transcription_window_keypress(event=e, special_key='cmd',
                 #                                                                             **select_options))
 
                 # bind all mouse clicks on text
@@ -6256,7 +6256,7 @@ class ToolkitOps:
                 polling_time = time.time() - polling_start_time
 
                 # if the polling time takes longer than 1 second, throttle the polling interval
-                if polling_time > 1:
+                if polling_interval is not None and polling_time > 1:
                     polling_interval = polling_interval + polling_time
 
 

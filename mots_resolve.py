@@ -141,8 +141,6 @@ class MotsResolve:
                 else:
                     self.logger.debug("Found DaVinci Resolve at the default location: {}".format(default_resolve_dir))
 
-
-
                 if sys.platform.startswith("darwin"):
                     expectedPath = "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules/"
                 elif sys.platform.startswith("win") or sys.platform.startswith("cygwin"):
@@ -153,7 +151,7 @@ class MotsResolve:
                     expectedPath = "/opt/resolve/libs/Fusion/Modules/"
 
                 # check if the default path has it...
-                self.logger.debug("Unable to find module DaVinciResolveScript from $PYTHONPATH "
+                self.logger.debug("Unable to find module DaVinciResolveScript from PYTHONPATH "
                                   "- trying default locations next")
 
                 # check if the default path has it...
@@ -161,12 +159,13 @@ class MotsResolve:
                     import imp
                     self.bmd = imp.load_source('DaVinciResolveScript', expectedPath + "DaVinciResolveScript.py")
 
+                    # if no exception was thrown so far, it's safe to assume that the module has been imported
                     self.api_module_available = True
                     self.api_module_loaded = True
 
                 except (ImportError, FileNotFoundError):
 
-                    # No fallbacks ... report error:
+                    # if the module is not available, return None and say that the module is not available
                     self.logger.error(
                         "Unable to find module DaVinciResolveScript.py")
                     self.logger.error(
