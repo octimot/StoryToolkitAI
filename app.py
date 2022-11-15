@@ -596,33 +596,7 @@ class toolkit_UI:
             #     print(special_key)
 
             # HERE ARE SOME USEFUL SHORTCUTS FOR THE TRANSCRIPTION WINDOW:
-            #
-            # MOUSE
-            # Click          - move active segment on clicked text and move playhead to start of active segment
-            # CMD/CTRL+Click - add clicked text to selection
-            #
-            # KEYS
-            # Up, Down keys     - move the cursor up and down on the transcript (we call it "active segment")
-            # Semicolon (;)     - move playhead to start of active segment/selection
-            # Apostrophe (')    - move playhead to end of active segment/selection
-            # Colon (:)         - align start of active segment with playhead
-            # DoubleQuote (")   - align end of active segment with playhead
-            # V                 - add active segment to selection
-            # Shift+V           - deselect all
-            # Shift+A           - create selection between the previously active and the currently active segment
-            #                     also works to create a selection for the last played segments (if sync is active)
-            # Shift+C           - copy transcript of active segment/selection with timecodes at the beginning
-            #                     of each block of text (or transcript seconds, if resolve is not available)
-            # m                 - add duration markers for the active segment/selection
-            #                     in case there are gaps between the text segments,
-            #                     the tool will create a marker for each block of uninterrupted text
-            # Shift+M           - add duration markers as above, but with user prompt for the marker name
-            # q                 - close transcript window
-            # Shift+L           - link transcription to the current timeline (if available)
-            # s                 - enable sync
-            # Tab               - cycle between search and transcript navigation
-            # t                 - re-transcribe current transcription or selected segments
-
+            # see the shortcuts in the README file
 
              # initialize the active segment number
             self.active_segment[window_id] = self.get_active_segment(window_id, 1)
@@ -714,8 +688,18 @@ class toolkit_UI:
 
             # Shift+C key event (copy segment to clipboard)
             if event.keysym == 'C':
-                # copy the text content to clipboard
-                self.get_segments_or_selection(window_id, add_to_clipboard=True, split_by='index')
+
+                # is control also pressed?
+                if special_key == 'cmd':
+                    # copy segment with timecodes
+                    # self.copy_segment_timecodes(window_id, text_element, line)
+                    text, _, _, _ \
+                        = self.get_segments_or_selection(window_id, split_by='line',
+                                                         add_to_clipboard=True, add_time_column=True)
+
+                else:
+                    # copy the text content to clipboard
+                    self.get_segments_or_selection(window_id, add_to_clipboard=True, split_by='index')
 
 
             # m key event (add duration markers)
@@ -1062,18 +1046,18 @@ class toolkit_UI:
             return True
 
         def get_segments_or_selection(self, window_id, add_to_clipboard=False, split_by=None, timecodes=True,
-                                      allow_active_segment=True):
+                                      allow_active_segment=True, add_time_column=False):
             '''
             Used to extract the text from either the active segment or from the selection
             Will return the text, and the start and end times
 
-            If the split_by parameter is 'index', the text will be split into chunks of text that
+            If the split_by parameter is 'index', the text will be split into blocks of text that
             are next to each other in the main transcript_segments[window_id] list.
 
-            If the split_by parameter is 'time', the text will be split into chunks of text that
+            If the split_by parameter is 'time', the text will be split into blocks of text that
             have no time gaps between them.
 
-            If timecodes is true, the return will also include the text chunks start and end timecodes
+            If timecodes is true, the return will also include the text blocks' start and end timecodes
             (if Resolve is available)
 
             If add_to_clipboard is True, the function copies the full_text to the clipboard
@@ -1098,6 +1082,8 @@ class toolkit_UI:
             # get the start timecode from Resolve
             if timecodes:
                 timeline_start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(0)
+
+                # @todo try to get the start timecode and fps from the transcription file
 
                 # if no timecode was received it probably means Resolve is disconnected so disable timecodes
                 if not timeline_start_tc:
@@ -1131,6 +1117,7 @@ class toolkit_UI:
                     # see where this selected_segment is in the original transcript
                     transcript_segment_index = self.transcript_segments[window_id].index(selected_segment)
 
+                    # split each blocks of text that are next to each other in the main transcript_segments[window_id] list
                     if split_by == 'index':
 
                         # assign a value if this is the first transcript_segment_index of this iteration
@@ -1146,6 +1133,7 @@ class toolkit_UI:
                             # show that there might be missing text from the transcription
                             full_text = full_text+'\n[...]\n'
 
+                    # split into blocks of text that have no time gaps between them
                     if split_by == 'time':
 
                         # assign the end time of the first selected segment
@@ -1166,13 +1154,15 @@ class toolkit_UI:
                         text[current_chunk_num]['text']+'\n'+selected_segment['text'].strip() \
                         if 'text' in text[current_chunk_num] else selected_segment['text']
 
-                    # add the start time to the current text chunk
-                    # but only for the first segment of this text chunk
+                    # add the start time to the current text block
+                    # but only for the first segment of this text block
+                    # and we determine that by checking if the start time is not already set
                     if 'start' not in text[current_chunk_num]:
                         text[current_chunk_num]['start'] = selected_segment['start']
 
                         # also calculate the start timecode of this text chunk (only if Resolve available)
                         # the end timecode isn't needed at this point, so no sense in wasting resources
+                        text[current_chunk_num]['start_tc'] = None
                         if timecodes:
 
                             # init the segment start timecode object
@@ -1193,16 +1183,33 @@ class toolkit_UI:
                                 text[current_chunk_num]['start_tc']+':\n'+text[current_chunk_num]['text'].strip()
 
                             # add it to the full text body
-                            full_text = full_text+'\n'+text[current_chunk_num]['start_tc']+':\n'
+                            # but only if we're not adding a time column later
+                            if not add_time_column:
+                                full_text = full_text+'\n'+text[current_chunk_num]['start_tc']+':\n'
 
                     # add the end time of the current text chunk
                     text[current_chunk_num]['end'] = selected_segment['end']
+
+                    # add the time to the full text, if this was requested
+                    if add_time_column:
+                        # use timecode or seconds depending on the timecodes parameter
+                        time_column = text[current_chunk_num]['start_tc'] \
+                                        if timecodes else '{:.2f}'.format(text[current_chunk_num]['start'])
+
+                        full_text = '{}{}\t'.format(full_text, str(time_column))
 
                     # add the segment text to the full text variable
                     full_text = (full_text+selected_segment['text'].strip()+'\n')
 
                     # remember the index for the next iteration
                     prev_transcript_segment_index = transcript_segment_index
+
+                    # split the text by each line, no matter if they're next to each other or not
+                    if split_by == 'line':
+                        current_chunk_num = current_chunk_num+1
+                        text.append({})
+
+
 
             # if there are no selected segments on this window
             # get the text of the active segment
@@ -1223,6 +1230,10 @@ class toolkit_UI:
                 # we need to convert the line number to the segment_index used in the transcript_segments list
                 segment_index = line - 1
 
+                # add the time in front of the text
+                #if add_time_column:
+                #    full_text = str(self.transcript_segments[window_id][segment_index]['start']) + '\t'
+
                 # get the text form the active segment
                 full_text = self.transcript_segments[window_id][segment_index]['text'].strip()
 
@@ -1230,8 +1241,12 @@ class toolkit_UI:
                 start_sec = self.transcript_segments[window_id][segment_index]['start']
                 end_sec = self.transcript_segments[window_id][segment_index]['end']
 
-                if timecodes:
+                # add this to the return list
+                text = [{'text': full_text.strip(), 'start': start_sec, 'end': end_sec, 'start_tc': None}]
+
+                if resolve and timecodes:
                     start_seconds = start_sec if int(start_sec) > 0 else 0.01
+                    start_tc = None
 
                     # init the segment start timecode object
                     # but only if the start seconds are larger than 0
@@ -1245,15 +1260,20 @@ class toolkit_UI:
                     else:
                         start_tc = str(timeline_start_tc)
 
-                    # add it to the full text body
+                    # add it at the beginning of the text body
                     full_text = start_tc+':\n'+full_text
 
-                # add this to the return list
-                text = [{'text': full_text.strip(), 'start': start_sec, 'end': end_sec, 'start_tc': start_tc}]
+                    # add this to the return list
+                    text = [{'text': full_text.strip(), 'start': start_sec, 'end': end_sec, 'start_tc': start_tc}]
+
+            # remove the last empty text chunk
+            if 'text' not in text[-1]:
+                text.pop()
 
             if add_to_clipboard:
                 self.root.clipboard_clear()
                 self.root.clipboard_append(full_text.strip())
+                logger.debug('Copied segments to clipboard')
 
             # now get the start_sec and the end_sec for the whole text
             start_sec = text[0]['start']
@@ -3120,10 +3140,10 @@ class toolkit_UI:
                                                                                              **select_options))
 
                 # bind CMD/CTRL + key presses to transcription window actions
-                #self.windows[t_window_id].bind("<" + self.ctrl_cmd_bind + "-KeyPress>",
-                #                               lambda e:
-                #                               self.t_edit_obj.transcription_window_keypress(event=e, special_key='cmd',
-                #                                                                             **select_options))
+                self.windows[t_window_id].bind("<" + self.ctrl_cmd_bind + "-KeyPress>",
+                                               lambda e:
+                                               self.t_edit_obj.transcription_window_keypress(event=e, special_key='cmd',
+                                                                                             **select_options))
 
                 # bind all mouse clicks on text
                 text.bind("<Button-1>", lambda e,
@@ -3195,8 +3215,7 @@ class toolkit_UI:
                 advanced_search_button = tk.Button(header_frame, text='Advanced Search', command=lambda:
                                             self.open_advanced_search_window(transcription_window_id=t_window_id,
                                                                              transcription_file_path=\
-                                                                                transcription_file_path),
-                                            font=20, bg='white')
+                                                                                transcription_file_path))
 
                 advanced_search_button.pack(side=tk.LEFT, **self.paddings)
 
@@ -6085,7 +6104,8 @@ class ToolkitOps:
 
                 # and close all the transcript windows that aren't linked with this timeline
                 if self.stAI.get_app_setting('close_transcripts_on_timeline_change'):
-                    self.toolkit_UI_obj.close_inactive_transcription_windows(timeline_transcription_file_paths)
+                    if self.toolkit_UI_obj is not None:
+                        self.toolkit_UI_obj.close_inactive_transcription_windows(timeline_transcription_file_paths)
 
 
     def poll_resolve_thread(self):

@@ -360,7 +360,10 @@ timeline.
                       press 'sync', click a phrase, press play in Resolve, stop, then press Shift+A in the tool
 
     Shift+C         - copy transcript of active segment/selection with timecodes at the beginning of each block of text
-                      (or transcript seconds, if resolve is not available)
+                      (if Resolve is available)
+
+    CMD/CTRL+Shift+C- copy transcript of selection with timecodes at the beginning of each transcript line
+                      (or transcript seconds, if Resolve is not available) - since version 0.17.4.4
 
     m               - add duration markers for the active segment/selection
                       in case there are gaps between the text segments, 
