@@ -190,6 +190,75 @@ class toolkit_UI:
     This handles all the GUI operations mainly using tkinter
     '''
 
+    class UImenus:
+
+        def __init__(self, toolkit_UI_obj):
+
+            # declare the main objects
+            self.toolkit_UI_obj = toolkit_UI_obj
+            self.toolkit_ops_obj = toolkit_UI_obj.toolkit_ops_obj
+            self.stAI = toolkit_UI_obj.stAI
+
+            # this is the main menubar (it's been declared in the main UI class to clear it before init)
+            self.main_menubar = Menu(self.toolkit_UI_obj.root)
+
+            # reset it for now so we don't see weird menus before it is populated
+            self.toolkit_UI_obj.root.config(menu=self.main_menubar)
+
+        def load_menubar(self):
+
+            # change the link in the about dialogue
+            self.toolkit_UI_obj.root.createcommand('tkAboutDialog', self.about_dialog)
+
+            filemenu = Menu(self.main_menubar, tearoff=0)
+            filemenu.add_command(label="Configuration directory", command=self.open_userdata_dir)
+            # filemenu.add_command(label="New", command=donothing)
+            # filemenu.add_command(label="Open", command=donothing)
+            # filemenu.add_command(label="Save", command=donothing)
+            # filemenu.add_separator()
+            # filemenu.add_command(label="Exit", command=lambda: sys.exit())
+            self.main_menubar.add_cascade(label="File", menu=filemenu)
+
+            helpmenu = Menu(self.main_menubar, tearoff=0)
+            helpmenu.add_command(label="Go to project page", command=self.open_project_page)
+            helpmenu.add_command(label="Features info", command=self.open_features_info)
+            helpmenu.add_command(label="Report an issue", command=self.open_issue)
+            self.main_menubar.add_cascade(label="Help", menu=helpmenu)
+
+            self.toolkit_UI_obj.root.config(menu=self.main_menubar)
+
+        def donothing(self):
+            return
+
+        def open_userdata_dir(self):
+            # if we're on a Mac, open the user data dir in Finder
+            if platform.system() == 'Darwin':
+                subprocess.call(['open', '-R', self.stAI.user_data_path])
+
+            # if we're on Windows, open the user data dir in Explorer
+            elif platform.system() == 'Windows':
+                subprocess.call(['explorer', self.stAI.user_data_path])
+
+            # if we're on Linux, open the user data dir in the file manager
+            elif platform.system() == 'Linux':
+                subprocess.call(['xdg-open', self.stAI.user_data_path])
+
+
+        def open_project_page(self):
+            webbrowser.open_new("http://storytoolkit.ai")
+            return
+
+        def open_features_info(self):
+            webbrowser.open_new("https://github.com/octimot/StoryToolkitAI#features-info")
+            return
+
+        def open_issue(self):
+            webbrowser.open_new("https://github.com/octimot/StoryToolkitAI/issues")
+            return
+
+        def about_dialog(self):
+            self.open_project_page()
+
     class TranscriptEdit:
         '''
         All the functions available in the transcript window should be part of this class
@@ -2011,6 +2080,9 @@ class toolkit_UI:
         # initialize tkinter as the main GUI
         self.root = tk.Tk()
 
+        # load menu object
+        self.UI_menus = self.UImenus(toolkit_UI_obj=self)
+
         logger.debug('Running with TK {}'.format(self.root.call("info", "patchlevel")))
 
         # set the main window title
@@ -2079,9 +2151,44 @@ class toolkit_UI:
         self.entry_settings = {'width': 30}
         self.entry_settings_half = {'width': 20}
 
-        # set the platform independent fixed font
-        self.font_fixed = font.nametofont(name='TkFixedFont')
-        self.font_fixed.configure(size=13)
+        # the font size ratio
+        if sys.platform == "darwin":
+            font_size_ratio = 1.30
+        else:
+            font_size_ratio = 1
+
+        # we're calculating the size based on the screen size
+        screen_width, screen_height = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        font_size_ratio *= (screen_width if screen_width>screen_height else screen_height) / 1920
+
+        # set platform independent transcript font
+        self.transcript_font = font.Font()
+
+        # first - find out if there is any "courier" font installed
+        # and select one of the versions
+        available_fonts = font.families()
+        if 'Courier' in available_fonts:
+            self.transcript_font.configure(family='Courier')
+        elif 'Courier New' in available_fonts:
+            self.transcript_font.configure(family='Courier New')
+        else:
+            logger.debug('No "Courier" font found. Using default fixed font.')
+            self.transcript_font = font.nametofont(name='TkFixedFont')
+
+        # get transcript font size
+        transcript_font_size = self.stAI.get_app_setting('transcript_font_size', default_if_none=15)
+
+        # set the transcript font size based on the font ratio
+        self.transcript_font.configure(size=int(transcript_font_size * font_size_ratio))
+
+        #self.transcript_font.configure(size=16)
+
+        # get console font size
+        console_font_size = self.stAI.get_app_setting('console_font_size', default_if_none=13)
+
+        # set the platform independent fixed font (for console)
+        self.console_font = font.nametofont(name='TkFixedFont')
+        self.console_font.configure(size=int(console_font_size * font_size_ratio))
 
         # define the pixel size for buttons
         pixel = tk.PhotoImage(width=1, height=1)
@@ -2254,6 +2361,7 @@ class toolkit_UI:
 
         # now show the other buttons too if they're not visible already
         self.show_main_window_frame('other_buttons_frame')
+        self.show_main_window_frame('footer_frame')
 
         return
 
@@ -2277,6 +2385,9 @@ class toolkit_UI:
 
         # create the frame that will hold the other buttons
         self.main_window.other_buttons_frame = tk.Frame(self.root)
+
+        # add footer frame
+        self.main_window.footer_frame = tk.Frame(self.root)
 
         # draw buttons
 
@@ -2353,8 +2464,12 @@ class toolkit_UI:
         self.main_window.button9.grid(row=3, column=1, **self.paddings)
 
 
-        # self.main_window.link2 = Label(self.main_window.other_buttons_frame, text="project home", font=("Courier", 8), fg='#1F1F1F', cursor="hand2", anchor='s')
-        # self.main_window.link2.grid(row=2, column=1, columnspan=2, padx=10, pady=5, sticky='s')
+        # self.main_window.link2 = Label(self.main_window.footer_frame, text="made by mots", font=("Courier", 10), cursor="hand2", anchor='s')
+        # self.main_window.link2.grid(row=1, column=1, columnspan=1, padx=10, pady=5, sticky='s')
+        # self.main_window.link2.bind("<Button-1>", lambda e: webbrowser.open_new("https://mots.us"))
+
+        # self.main_window.link2 = Label(self.main_window.footer_frame, text="StoryToolkitAI home", font=("Courier", 10), cursor="hand2", anchor='s')
+        # self.main_window.link2.grid(row=1, column=2, columnspan=1, padx=10, pady=5, sticky='s')
         # self.main_window.link2.bind("<Button-1>", lambda e: webbrowser.open_new("https://github.com/octimot/StoryToolkitAI"))
 
         # Other Frame row 2 (disabled for now)
@@ -2374,6 +2489,11 @@ class toolkit_UI:
         self.root.after(500, self.update_main_window())
 
         logger.info("Starting StoryToolkitAI GUI")
+
+        # load menubar items
+        self.UI_menus.load_menubar()
+
+        # load Tk mainloop
         self.root.mainloop()
 
         return
@@ -2449,7 +2569,9 @@ class toolkit_UI:
             if not available_languages or available_languages is None:
                 available_languages = []
 
-            language_var = StringVar(ts_form_frame)
+            default_language = self.stAI.get_app_setting('transcription_default_language', default_if_none='')
+
+            language_var = StringVar(ts_form_frame, default_language)
             available_languages = sorted(available_languages)
             language_input = OptionMenu(ts_form_frame, language_var, *available_languages)
             language_input.grid(row=3, column=2, **self.input_grid_settings, **self.form_paddings)
@@ -2706,6 +2828,14 @@ class toolkit_UI:
         if window_id+'_search' in self.windows:
             self.destroy_window_(self.windows, window_id=window_id + '_search')
 
+        # remove the transcription segments from the transcription_segments dict
+        if window_id in self.t_edit_obj.transcript_segments:
+            del self.t_edit_obj.transcript_segments[window_id]
+
+        # remove all the ids from the transcription_segments dict
+        if window_id in self.t_edit_obj.transcript_segments_ids:
+            del self.t_edit_obj.transcript_segments_ids[window_id]
+
         # call the default destroy window function
         self.destroy_window_(parent_element=self.windows, window_id=window_id)
 
@@ -2877,7 +3007,7 @@ class toolkit_UI:
 
                 # set up the text element where we'll add the actual transcript
                 text = Text(text_form_frame, name='transcript_text',
-                            font=('Courier', 16), width=45, height=30, padx=5, pady=5, wrap=tk.WORD,
+                            font=(self.transcript_font), width=45, height=30, padx=5, pady=5, wrap=tk.WORD,
                                                     background=self.resolve_theme_colors['black'],
                                                     foreground=self.resolve_theme_colors['normal'])
 
@@ -3566,7 +3696,7 @@ class toolkit_UI:
             # THE SEARCH RESULTS text box
             # (for now this looks like a console, maybe some improvements can be made later)
             results_text = tk.Text(results_form_frame,
-                                   font=self.font_fixed, width=45, height=30, padx=5, pady=5, wrap=tk.WORD,
+                                   font=self.console_font, width=45, height=30, padx=5, pady=5, wrap=tk.WORD,
                                     background=self.resolve_theme_colors['black'],
                                     foreground=self.resolve_theme_colors['normal'])
 
@@ -3840,13 +3970,21 @@ class toolkit_UI:
 
 class ToolkitOps:
 
-    def __init__(self, stAI=None):
+    def __init__(self, stAI=None, disable_resolve_api=False):
 
         # this will be used to store all the transcripts that are ready to be transcribed
         self.transcription_queue = {}
 
         # keep a reference to the StoryToolkitAI object here if one was passed
         self.stAI = stAI
+
+        # define the path to the transcription queue file relative to the user_data_path
+        if self.stAI is not None:
+            self.TRANSCRIPTION_QUEUE_FILE_PATH = os.path.join(stAI.user_data_path, 'transcription_queue.json')
+
+        # use a relative path for the transcription queue file, if no stAI was passed
+        else:
+            self.TRANSCRIPTION_QUEUE_FILE_PATH = 'transcription_queue.json'
 
         # initialize the toolkit search engine
         self.t_search_obj = self.ToolkitSearch(toolkit_ops_obj=self)
@@ -3858,6 +3996,7 @@ class ToolkitOps:
         # use these attributes for the transcription items (both queue and log)
         # this will be useful in case we need to add additional attributes to the transcription items
         # so that we don't have to update every single function that is using the transcription items
+        # @todo make sure this is correctly implemented across the toolkit
         self.transcription_item_attr = ['name', 'audio_file_path', 'translate', 'info', 'status',
                                         'json_file_path', 'srt_file_path', 'txt_file_path']
 
@@ -3866,6 +4005,10 @@ class ToolkitOps:
 
         # this is used to get fast the name of what is being transcribed currently
         self.transcription_queue_current_name = None
+
+        # this is to keep track of the current transcription item
+        # the format is {unique_id: transcription_item_attributes}
+        self.transcription_queue_current_item = {}
 
         # declare this as none for now so we know it exists
         self.toolkit_UI_obj = None
@@ -3893,12 +4036,22 @@ class ToolkitOps:
         # for now define an empty model here which should be loaded the first time it's needed
         self.s_semantic_search_model = None
 
-        # init Resolve
-        self.resolve_api = MotsResolve(logger=logger)
+        # init Resolve (if resolve API isn't disabled via config or parameter)
+        if not self.stAI.get_app_setting('disable_resolve_api', default_if_none=False) \
+                and not disable_resolve_api:
+            self.resolve_api = MotsResolve(logger=logger)
 
-        # start the resolve thread
-        # with this, resolve should be constantly polled for data
-        self.poll_resolve_thread()
+            # start the resolve thread
+            # with this, resolve should be constantly polled for data
+            self.poll_resolve_thread()
+
+        else:
+            self.resolve_api = None
+            logger.debug('Resolve API disabled via config')
+
+        # resume the transcription queue if there's anything in it
+        if self.resume_transcription_queue_from_file():
+            logger.info('Resuming transcription queue from file')
 
         # toolkit_UI_obj.create_transcription_settings_window()
         # time.sleep(120)
@@ -4309,6 +4462,7 @@ class ToolkitOps:
 
         # check if there's a UI object available
         if not self.is_UI_obj_available(toolkit_UI_obj):
+            logger.error('No UI object available, aborting')
             return False
 
         # get info from resolve
@@ -4351,9 +4505,13 @@ class ToolkitOps:
 
                 # if no audio file was found, notify the user
                 if audio_file_path is None:
-                    self.toolkit_UI_obj.notify_via_messagebox(type='error',
-                                                              message='The audio file path is not in the transcription '
-                                                                      'file or doesn\'t exist at it\'s path.')
+                    audio_file_error = 'The audio file path is not in the transcription file ' \
+                                       'or the audio file cannot be found.'
+                    if self.is_UI_obj_available():
+                        self.toolkit_UI_obj.notify_via_messagebox(type='error',
+                                                                  message=audio_file_error)
+                    else:
+                        logger.error(audio_file_error)
                     return False
 
 
@@ -4410,11 +4568,12 @@ class ToolkitOps:
             self.add_to_transcription_log(unique_id=unique_id, name=currentTimelineName, status='rendering')
 
             # use transcription_WAV render preset if it exists
-            # transcription_WAV is an Audio only custom render preset that renders Linear PCM codec in a Wave format instead
-            # of Quicktime mp4; this is just to work with wav files instead of mp4 to improve compatibility.
+            # transcription_WAV is an audio only custom render preset that renders Linear PCM codec in a Wave format
+            # instead of Quicktime mp4; this is just to work with wav files instead of mp4 to improve compatibility.
             # but the user needs to add it manually to resolve in order for it to work since the Resolve API
             # doesn't permit choosing the audio format (only the codec)
-            render_preset = 'transcription_WAV'
+            render_preset = self.stAI.get_app_setting(setting_name='transcription_render_preset',
+                                                      default_if_none='transcription_WAV')
 
             # let the user know that we're starting the render
             toolkit_UI_obj.notify_via_os("Starting Render", "Starting Render in Resolve",
@@ -4478,12 +4637,13 @@ class ToolkitOps:
                                    unique_id=None, transcription_file_path=False,
                                    time_intervals=None, excluded_time_intervals=None):
         '''
-        Opens up a modal to allow the user to configure and start the transcription process for each file
+        Opens up a window to allow the user to configure and start the transcription process for each file
         :return:
         '''
 
         # check if there's a UI object available
         if not self.is_UI_obj_available():
+            logger.error('No UI object available.')
             return False
 
         # if no transcription_file_path was passed, start a new transcription
@@ -4519,7 +4679,8 @@ class ToolkitOps:
             self.update_transcription_log(unique_id, **attribute)
 
             # finally open or focus the transcription log window
-            self.toolkit_UI_obj.open_transcription_log_window()
+            if self.is_UI_obj_available():
+                self.toolkit_UI_obj.open_transcription_log_window()
 
             return True
 
@@ -4553,13 +4714,37 @@ class ToolkitOps:
                     # populate the transcription log
                     self.transcription_log[unique_id][attribute] = attributes[attribute]
 
-        # whenever the transcription log is update, make sure you update the window too
-        self.toolkit_UI_obj.update_transcription_log_window()
+        # whenever the transcription log is updated, make sure you update the window too
+        # but only if the UI object exists
+        if self.is_UI_obj_available():
+            self.toolkit_UI_obj.update_transcription_log_window()
 
-    def add_to_transcription_queue(self, toolkit_UI_obj=None, task=None, audio_file_path=None,
+    def transcription_queue_attr(self, attributes):
+        '''
+        Cleans up the attributes passed to the transcription queue
+        :param attributes:
+        :return:
+        '''
+
+        # define the permitted attributes
+        permitted_attributes = ['task', 'audio_file_path', 'name', 'language', 'model', 'device', 'unique_id',
+                                'transcription_file_path', 'time_intervals', 'excluded_time_intervals', 'initial_prompt'
+                                ]
+
+        clean_attributes = {}
+
+        # re-create the attributes dict with only the permitted attributes
+        for attribute in attributes:
+            if attribute in permitted_attributes:
+                clean_attributes[attribute] = attributes[attribute]
+
+        return clean_attributes
+
+    def add_to_transcription_queue(self, task=None, audio_file_path=None,
                                    name=None, language=None, model=None, device=None,
                                    unique_id=None, initial_prompt=None,
-                                   time_intervals=None, excluded_time_intervals=None, transcription_file_path=None):
+                                   time_intervals=None, excluded_time_intervals=None, transcription_file_path=None,
+                                   save_queue=True):
         '''
         Adds files to the transcription queue and then pings the queue in case it's sleeping.
         It also adds the files to the transcription log
@@ -4571,8 +4756,8 @@ class ToolkitOps:
         '''
 
         # check if there's a UI object available
-        if not self.is_UI_obj_available(toolkit_UI_obj):
-            return False
+        # if not self.is_UI_obj_available(toolkit_UI_obj):
+        #     return False
 
         # select the transcribe task automatically if neither transcribe or translate was passed
         if task is None or task not in ['transcribe', 'translate', 'transcribe+translate']:
@@ -4632,6 +4817,10 @@ class ToolkitOps:
                 # add to transcription queue
                 self.transcription_queue[next_queue_id] = file_dict
 
+                # write transcription queue to file
+                if save_queue:
+                    self.save_transcription_queue()
+
                 # add the file to the transcription log too (the add function will check if it's already there)
                 self.add_to_transcription_log(unique_id=next_queue_id, **file_dict)
 
@@ -4647,6 +4836,67 @@ class ToolkitOps:
 
         return True
 
+    def resume_transcription_queue_from_file(self):
+        '''
+        Reads the transcription queue from file and adds all the items to the queue
+        :return:
+        '''
+
+        # if the file exists, read it
+        if os.path.exists(self.TRANSCRIPTION_QUEUE_FILE_PATH):
+            with open(self.TRANSCRIPTION_QUEUE_FILE_PATH, 'r') as f:
+                transcription_queue = json.load(f)
+
+            resume = False
+
+            if transcription_queue and len(transcription_queue) > 0:
+
+                # add each element to the transcription queue
+                for unique_id in transcription_queue:
+
+                    # clean up the attributes
+                    transcription_queue_attributes = self.transcription_queue_attr(transcription_queue[unique_id])
+
+                    # add item to the transcription queue
+                    # but do not save the queue to the file again (since we're reading everything from the file) -
+                    #  - this is also to prevent deleting the items that are currently being transcribed, but are
+                    #    no longer in the app memory queue (self.transcription_queue)
+                    self.add_to_transcription_queue(unique_id=unique_id, save_queue=False,
+                                                    **transcription_queue_attributes)
+
+                    resume = True
+
+            return resume
+
+        else:
+            return False
+
+    def save_transcription_queue(self):
+        '''
+        Saves the transcription queue to a file
+        :return:
+        '''
+
+        transcription_queue = {}
+
+        # first add the current item in the dictionary that will be saved to file
+        # this is to prevent losing track of the item that is currently being transcribed if the app crashes
+        # because normally, it's not in the queue memory anymore (self.transcription_queue), but it's also not done yet
+        if self.transcription_queue_current_item is not None and self.transcription_queue_current_item != {}:
+            transcription_queue = self.transcription_queue_current_item
+
+        # then add the rest of the items in the queue
+        transcription_queue = transcription_queue | self.transcription_queue
+
+        # save the transcription queue as json to a file
+        try:
+            with open(self.TRANSCRIPTION_QUEUE_FILE_PATH, 'w') as f:
+                json.dump(transcription_queue, f, indent=4)
+                return True
+
+        except Exception as e:
+            logger.error('Could not save transcription queue to file: {}'.format(e))
+            return False
 
     def _generate_transcription_unique_id(self, name=None):
         if name:
@@ -4684,6 +4934,9 @@ class ToolkitOps:
                 self.transcription_queue_thread.start()
 
                 # delete this file from the queue
+                # (but we will write the changed queue to the transcription queue file
+                #  only after the transcription of this file is done - this way, if the process crashes,
+                #  on restart, the app will start the queue with this file)
                 del self.transcription_queue[next_queue_id]
 
             return True
@@ -4695,30 +4948,36 @@ class ToolkitOps:
 
     def transcribe_from_queue(self, queue_id):
 
-        # check if there's a UI object available
-        if not self.is_UI_obj_available():
-            return False
+        # define queue attributes
+        queue_attr = {}
 
         # get file info from queue
-        name, audio_file_path, task, language, model, device, initial_prompt, \
-            time_intervals, excluded_time_intervals, transcription_file_path, info \
-                = self.get_queue_file_info(queue_id)
+        queue_attr['name'], \
+        queue_attr['audio_file_path'], \
+        queue_attr['task'], \
+        queue_attr['language'], \
+        queue_attr['model'], \
+        queue_attr['device'], \
+        queue_attr['initial_prompt'], \
+        queue_attr['time_intervals'], \
+        queue_attr['excluded_time_intervals'], \
+        queue_attr['transcription_file_path'],\
+        info \
+            = self.get_queue_file_info(queue_id)
 
-        logger.info("Starting to transcribe {}".format(name))
+        logger.info("Starting to transcribe {}".format(queue_attr['name']))
 
-        # make the name of the file that is currently being processed public
-        self.transcription_queue_current_name = name
+        # keep track of the name of the item that is currently being transcribed
+        self.transcription_queue_current_name = queue_attr['name']
+
+        # keep track of the item that is currently being transcribed
+        self.transcription_queue_current_item = {queue_id: queue_attr}
 
         import traceback
 
-        # try the transcription
+        # transcribe the file via whisper
         try:
-            self.whisper_transcribe(audio_file_path=audio_file_path, task=task, name=name,
-                                    queue_id=queue_id, language=language, model=model, initial_prompt=initial_prompt,
-                                    device=device,
-                                    time_intervals=time_intervals,
-                                    excluded_time_intervals=excluded_time_intervals,
-                                    transcription_file_path=transcription_file_path)
+            self.whisper_transcribe(queue_id=queue_id, **queue_attr)
 
         # in case the transcription process crashes
         except Exception:
@@ -4730,6 +4989,10 @@ class ToolkitOps:
         # reset the transcription thread and name:
         self.transcription_queue_current_name = None
         self.transcription_queue_thread = None
+        self.transcription_queue_current_item = {}
+
+        # re-write the transcription queue to file if the file was transcribed
+        self.save_transcription_queue()
 
         # then ping the queue again
         self.ping_transcription_queue()
@@ -4921,10 +5184,6 @@ class ToolkitOps:
     def whisper_transcribe(self, name=None, audio_file_path=None, task=None,
                            target_dir=None, queue_id=None, **other_whisper_options):
 
-        # check if there's a UI object available
-        if not self.is_UI_obj_available():
-            return False
-
         # don't continue unless we have a queue_id
         if audio_file_path is None or not audio_file_path:
             return False
@@ -4994,7 +5253,10 @@ class ToolkitOps:
 
         # let the user know the transcription process has started
         notification_msg = "Transcribing {}.\nThis may take a while.".format(name)
-        self.toolkit_UI_obj.notify_via_os("Starting Transcription", notification_msg, notification_msg)
+        if self.is_UI_obj_available():
+            self.toolkit_UI_obj.notify_via_os("Starting Transcription", notification_msg, notification_msg)
+        else:
+            logger.info(notification_msg)
 
         start_time = time.time()
 
@@ -5034,14 +5296,19 @@ class ToolkitOps:
 
         existing_transcription = False
 
+        # ignore the transcription file path if it's empty
+        if 'transcription_file_path' in other_whisper_options \
+            and other_whisper_options['transcription_file_path'] is None:
+
+            del other_whisper_options['transcription_file_path']
+
         # load the transcription data from the file if a path was passed
-        if 'transcription_file_path' in other_whisper_options:
+        elif 'transcription_file_path' in other_whisper_options:
 
             if other_whisper_options['transcription_file_path'].strip() != '':
 
                 transcription_file_path = other_whisper_options['transcription_file_path']
 
-                # open the transcription file
                 # load the transcription data from the file
                 transcription_data = self.get_transcription_file_data(transcription_file_path)
 
@@ -5053,8 +5320,6 @@ class ToolkitOps:
                 self.update_transcription_log(unique_id=queue_id, **{'status': 're-transcribing'})
 
             del other_whisper_options['transcription_file_path']
-
-
 
         # get the next id based on the largest id from transcription_data segments
         if type(transcription_data) == dict and 'segments' in transcription_data:
@@ -5102,7 +5367,11 @@ class ToolkitOps:
         # let the user know that the speech was processed
         notification_msg = "Finished transcription for {} in {} seconds".format(name,
                                                                                 round(time.time() - start_time))
-        self.toolkit_UI_obj.notify_via_os("Finished Transcription", notification_msg, notification_msg)
+
+        if self.is_UI_obj_available():
+            self.toolkit_UI_obj.notify_via_os("Finished Transcription", notification_msg, notification_msg)
+        else:
+            logger.info(notification_msg)
 
         # update the status of the item in the transcription log
         self.update_transcription_log(unique_id=queue_id, **{'status': 'saving files'})
@@ -5172,6 +5441,9 @@ class ToolkitOps:
         transcription_data['task'] = task
         transcription_data['model'] = self.whisper_model_name
 
+        # add the transcription unique id
+        transcription_data['transcription_id'] = queue_id
+
         # save the transcription file with all the added file paths
         transcription_json_file_path = self.save_transcription_file(file_name=file_name, target_dir=target_dir,
                                                                     transcription_data=transcription_data)
@@ -5183,10 +5455,11 @@ class ToolkitOps:
                                       txt_file_path=transcription_data['txt_file_path'],
                                       json_file_path=transcription_json_file_path)
 
-        # why not open the transcription in a transcription window?
-        self.toolkit_UI_obj.open_transcription_window(title=name,
-                                                      transcription_file_path=transcription_json_file_path,
-                                                      srt_file_path=srt_file_path)
+        # why not open the transcription in a transcription window if the UI is available?
+        if self.is_UI_obj_available():
+            self.toolkit_UI_obj.open_transcription_window(title=name,
+                                                          transcription_file_path=transcription_json_file_path,
+                                                          srt_file_path=srt_file_path)
 
         return True
 
@@ -5675,7 +5948,6 @@ class ToolkitOps:
 
         # if there's no toolkit_UI_obj in the object or one hasn't been passed, abort
         if toolkit_UI_obj is None and self.toolkit_UI_obj is None:
-            logger.info('No GUI available. Aborting.')
             return False
         # if there was a toolkit_UI_obj passed, update the one in the object
         elif toolkit_UI_obj is not None:
@@ -5696,6 +5968,9 @@ class ToolkitOps:
 
             # get the framerate of the current timeline
             timeline_fps = resolve_data['currentTimelineFPS']
+
+            if timeline_fps is None:
+                return False
 
             # get the start timecode of the current timeline
             timeline_start_tc = resolve_data['currentTimeline']['startTC']
@@ -5842,10 +6117,10 @@ class ToolkitOps:
 
         global resolve_error
 
-        # first check if resolve API exists on machine
-
         # do this continuously
         while True:
+
+            polling_start_time = time.time()
 
             # try to poll resolve
             try:
@@ -5943,32 +6218,52 @@ class ToolkitOps:
 
                 # let the user know that there's an error, and throttle the polling_interval
 
-                # after 20+ tries, assume the user is no longer paying attention and reduce the frequency of tries
-                if resolve_error > 20:
+                # after 15+ errors, deduce that Resolve will not be started this session, so stop polling
+                if resolve_error > 15:
+                        logger.warning("Resolve not reachable after 15 tries. "
+                                     "Disabling Resolve API polling until tool restart.")
 
-                    # only show this error one more time
-                    if resolve_error == 21:
-                        logger.warning('Resolve is still not reachable. '
-                                            'Muting errors. Now retrying every 30 seconds. ')
+                        polling_interval = None
 
-                    # and increase the polling interval to 30 seconds
-                    polling_interval = 30000
-
-                # if the error has been triggered more than 10 times, say this
+                # after 10+ tries, assume the user is no longer paying attention and reduce the frequency of tries
                 elif resolve_error > 10:
 
+                    # only show this error one more time
                     if resolve_error == 11:
-                        logger.warning('Resolve is still not reachable. Now retrying every 5 seconds.')
+                        logger.warning('Resolve is still not reachable. '
+                                       'Now retrying every 15 seconds only a few more times.')
+
+                    # and increase the polling interval to 30 seconds
+                    polling_interval = 15000
+
+                # if the error has been triggered more than 5 times, do this
+                elif resolve_error > 5:
+
+                    if resolve_error == 11:
+                        logger.warning('Resolve is still not reachable. Now retrying every 5 seconds or so.')
 
                     # increase the polling interval to 5 seconds
                     polling_interval = 5000
 
                 else:
                     if resolve_error == 1:
-                        logger.warning('Resolve is not reachable.')
+                        logger.warning('Resolve is not reachable. Retrying every few seconds.')
 
                     # increase the polling interval to 1 second
                     polling_interval = 1000
+
+                # calculate the time that has passed since the polling started
+                polling_time = time.time() - polling_start_time
+
+                # if the polling time takes longer than 1 second, throttle the polling interval
+                if polling_time > 1:
+                    polling_interval = polling_interval + polling_time
+
+
+                #logger.debug('Polling time: {} seconds'.format(round(time.time() - polling_start_time), 2))
+
+            if polling_interval is None:
+                return False
 
             # take a short break before continuing the loop
             time.sleep(polling_interval/1000)
@@ -6123,11 +6418,16 @@ resolve = None
 
 
 class StoryToolkitAI:
-    def __init__(self):
+    def __init__(self, server=False):
         # import version.py - this holds the version stored locally
         import version
 
-        global standalone
+        # check if standalone exists in globals
+        if 'standalone' in globals():
+            global standalone
+        else:
+            global standalone
+            standalone = False
 
         # keep the version in memory
         self.__version__ = version.__version__
@@ -6154,8 +6454,17 @@ class StoryToolkitAI:
         # create a project settings variable
         self.project_settings = {}
 
-        logger.info(Style.BOLD+Style.UNDERLINE+"Running StoryToolkitAI version {} {}"
-                    .format(self.__version__, '(standalone)' if standalone else ''))
+        # define the api variables
+        self.api_possible = False
+        self.api_user = None
+        self.api_token = None
+        self.api_host = None
+        self.api = None
+
+        logger.info(Style.BOLD+Style.UNDERLINE+"Running StoryToolkitAI{} version {} {}"
+                    .format(' SERVER' if server else '',
+                            self.__version__,
+                            '(standalone)' if standalone else ''))
 
     def user_data_dir_exists(self, create_if_not=True):
         '''
@@ -6274,9 +6583,9 @@ class StoryToolkitAI:
 
         # if the requested setting doesn't exist in the config
         # but a default was passed
-        elif default_if_none is not None and default_if_none != '':
+        elif default_if_none is not None:
 
-            logger.info('Config setting {} saved as {} '.format(setting_name, default_if_none))
+            logger.info('Config setting {} saved as "{}" '.format(setting_name, default_if_none))
 
             # save the default to the config
             self.save_config(setting_name=setting_name, setting_value=default_if_none)
@@ -6573,6 +6882,14 @@ class StoryToolkitAI:
                 # add it to the environment variables
                 os.environ['FFMPEG_BINARY'] = ffmpeg_path_custom
 
+            # otherwise try to find the binary next to the app
+            else:
+
+                # and if it exists, define the environment variable for ffmpeg for this session
+                if os.path.exists('ffmpeg'):
+                    logger.debug('Found ffmpeg in current working directory.')
+                    os.environ['FFMPEG_BINARY'] = 'ffmpeg'
+
             # and check if it's working
 
             logger.debug('Looking for ffmpeg in env variable.')
@@ -6582,13 +6899,13 @@ class StoryToolkitAI:
 
             # if the variable is empty, try to find ffmpeg in the PATH
             if ffmpeg_binary is None or ffmpeg_binary == '':
-                logger.warning('FFMPEG_BINARY env variable is empty. Looking for ffmpeg in PATH.')
+                logger.debug('FFMPEG_BINARY env variable is empty. Looking for ffmpeg in PATH.')
                 import shutil
                 ffmpeg_binary = ffmpeg_binary if ffmpeg_binary else shutil.which('ffmpeg')
 
             # if ffmpeg is still not found in the path either, try to brute force it
             if ffmpeg_binary is None:
-                logger.warning('FFMPEG_BINARY environment variable not set. Trying to use "ffmpeg".')
+                logger.debug('FFMPEG_BINARY environment variable not set. Trying to use "ffmpeg".')
                 ffmpeg_binary = 'ffmpeg'
 
             cmd = [
@@ -6604,6 +6921,9 @@ class StoryToolkitAI:
             if exit_code == 1:
                 logger.info('FFMPEG found at {}'.format(ffmpeg_binary))
 
+            else:
+                logger.error('FFMPEG not found on this machine, some features will not work')
+
             # if it does, just return true
             return True
 
@@ -6617,6 +6937,115 @@ class StoryToolkitAI:
 
             # if the ffmpeg binary wasn't found, we presume that ffmpeg is not installed on the machine
             return False
+
+    def check_API_credentials(self):
+        '''
+        Checks if the API credentials are set in the app settings
+        :return:
+        '''
+
+        # get the API token from the app settings
+        api_token = self.get_app_setting(setting_name='api_token', default_if_none=False)
+
+        # get the API username from the app settings
+        api_user = self.get_app_setting(setting_name='api_user', default_if_none=False)
+
+        # get the API host from the app settings
+        api_host = self.get_app_setting(setting_name='api_host', default_if_none=False)
+
+        # if the API token and username are not False or empty
+        if api_token and api_user and api_token is not None and api_user is not None:
+            logger.info('Found API username and token in config')
+            self.api_user = api_user
+            self.api_token = api_token
+            self.api_host = api_host
+            self.api_possible = True
+
+        else:
+            logger.debug('No API username and token found in config, so API connection not possible')
+            self.api_user = None
+            self.api_token = None
+            self.api_host = None
+            self.api_possible = False
+            return None
+
+    def connect_API(self):
+        '''
+        Connects to the API
+        :return:
+        '''
+
+        # if the API credentials are not set, return False
+        if not self.api_possible:
+            logger.error('API credentials not set, so API connection not possible')
+            return False
+
+        # if the API credentials are set, try to connect to the API
+        try:
+
+            logger.info('Trying to connect to the API')
+
+            import socket
+            import ssl
+
+            # get the host and ip from self.api_host
+            host = self.api_host.split(':')[0]
+            port = int(self.api_host.split(':')[1])
+
+            # connect to API using sockets, ssl and user and token
+            self.api = socket.create_connection((host, port))
+
+            # wrap the socket in an SSL context
+            #self.api = ssl.wrap_socket(self.api, ssl_version=ssl.PROTOCOL_TLSv1_2)
+
+            # send the username and token to the API
+            self.api.send(bytes('login:{}:{}'.format(self.api_user, self.api_token), 'utf-8'))
+
+            # get the response from the API
+            response = self.api.recv(1024).decode('utf-8')
+
+            # if the response is not 'ok', return False
+            if response != 'ok':
+                logger.error('API connection failed: {}'.format(response))
+                return False
+
+            logger.info('API authenticated')
+            self.api_connected = True
+
+            while True:
+                # ping the server every 2 seconds
+                time.sleep(2)
+
+                # send the ping command
+                self.send_API_command(command='ping')
+
+            return True
+
+        # if the connection fails, return False
+        except Exception as e:
+            logger.error('Unable to connect to the API: {}'.format(e))
+            self.api_connected = False
+            return False
+
+    def send_API_command(self, command):
+
+        if self.api is None:
+            logger.error('API not connected, so no command can be sent')
+            return False
+
+        try:
+            self.api.send(bytes(command, 'utf-8'))
+            logger.debug('Sending command to API: {}'.format(command))
+
+            response = self.api.recv(1024).decode('utf-8')
+
+            logger.debug('Received response from API: {}'.format(response))
+            return response
+
+        except Exception as e:
+            logger.error('Unable to send command to API: {}'.format(e))
+            return False
+
 
 
 if __name__ == '__main__':
@@ -6646,6 +7075,10 @@ if __name__ == '__main__':
     update_available = None
     if update_exists:
         update_available = online_version
+
+    # connect to the API
+    # stAI.check_API_credentials()
+    # stAI.connect_API()
 
     # initialize operations object
     toolkit_ops_obj = ToolkitOps(stAI=stAI)

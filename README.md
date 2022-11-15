@@ -5,9 +5,9 @@
 **StoryToolkitAI is a film editing tool that can help editors work more efficiently by automatically transcribing audio
 and allowing them to search transcripts semantically with the help of AI.**
 
-The tool works on locally independent of any editing software, but it's also integrated with Davinci Resolve Studio 18 
-via API. It is using OpenAI Whisper for speech-to-text, sentence transformers for semantic search and a few other AI 
-technologies to get stuff done.
+The tool works locally, independent of any editing software, but it's also functions as a Davinci Resolve Studio 18 
+integration via API. It is using OpenAI Whisper for speech-to-text, sentence transformers for semantic search and a few 
+other AI technologies to get stuff done.
 
 <img alt="StoryToolkitAI Demo GIF" src="https://videoapi-muybridge.vimeocdn.com/animated-thumbnails/image/9eb88ee1-4902-4e17-82dc-77411d959eab.gif?ClientID=vimeo-core-prod&Date=1665676352&Signature=52a72df29b216dd2f8cce8ee7360ea38a24b5b6e" width="700">
 https://vimeo.com/759962195/dee07a067a
@@ -16,16 +16,12 @@ https://vimeo.com/759962195/dee07a067a
 - [x] **Free Automatic Transcriptions in many languages** on your local machine directly from Resolve or local files
 - [x] **Free Automatic Translation** to English on your local machine
 - [x] **Advanced Search** - allows you to search one or many transcripts semantically using AI
-- [x] **Transcript Timeline Navigation** - click or UP/DOWN on transcript moves the playhead in Resolve
-- [x] **Mark** Resolve timelines using the phrases you select (see keyboard shortcuts below)
-- [x] **Import subtitles** from tool directly into Resolve
-- [x] **Transcript editing** - edit your transcripts directly in the tool
-- [x] **Convert existing SRT files** to transcripts (non-standalone version only until next release)
-- [x] Export of transcripts to multiple formats, including SRT
+- [x] **Mark and Navigate Resolve Timelines via Transcript**, plus other handy Resolve-only features
+- [x] **Import subtitles after transcription** from the tool directly into Resolve
+- [x] **Convert existing SRT files to transcripts** and use them in the tool (non-standalone version only until next release)
+- [x] Export of transcripts to multiple formats, including SRT and TXT
 - [x] Batch transcriptions using transcription queuing
-- [x] Option to re-transcribe only parts of the timeline/audio file or even exclude certain parts
-- [x] Copy Markers between Resolve Timelines and Timeline Source Clip
-- [x] Render Resolve Markers to Stills or Clips
+- [x] Partial re-transcriptions of timelines/videos/audio files
 
 ### Work in progress
 - [ ] **Transcript Segment Groups** to select and add phrases to groups that can be recalled later 
@@ -33,17 +29,19 @@ https://vimeo.com/759962195/dee07a067a
 - [ ] **Integration with other AI / ML tools**
 - [X] Plus more flashy features as clickbait to unrealistically raise expectations and destroy competition
 
-For more details regarding features, go [here](github.com/octimot/StoryToolkitAI).
+Our plan is to incorporate more AI technologies that make editors' work easier and more efficient, something similar
+to having an AI Assistant Editor which knows what is where in your footage and can even classify footage by meaning,
+emotions, visual content etc. Automated transcriptions are simply a means to an end.
+
+For more details regarding features, go [here](https://github.com/octimot/StoryToolkitAI#features-info).
 
 _The app is in this stage raw and not polished at all, but we use it daily in our editing room. It's for free
 not only out of sheer generosity, but also because we'd like to change how people approach editing by using AI._
 
-Ideally, it should evolve by incorporating other machine learning models such as CLIP and GPT-3 to assist editors in
-their work.
-
 ### Is it really completely free?
 Yes, the tool runs locally like butter and there's no need for any additional account to transcribe, translate to
-English or do stuff with it in Resolve. 
+English, or use any of its features. We may develop features that depend on external services, but the current features
+will always be free and will never be capped.
 
 Of course, we won't say no to envelopes with foreign currency banknotes or cases with contraband CRT editing screens.
 
@@ -83,8 +81,9 @@ editing faster than that, please stop, you're embarrassing the rest of us.
 ---
 
 # Contributions
-This tool is written by Octavian Mot, your friendly filmmaker who hates to code and is trying to keep it together as
-[half of mots](https://mots.us).
+This tool is coded by Octavian Mot, your friendly filmmaker who hates to code and tries to keep it together as
+[half of mots](https://mots.us). Our team uses it daily in our editing room which allows us to update it with
+features that we need and think will be useful to others.
 
 Feel free to get in touch with compliments, criticism, and even weird ideas for new features.
 
@@ -173,6 +172,11 @@ _Note: when selecting "transcribe+translate" as "task", the tool will add both a
 the queue, as if you selected them individually. The translation will not use the previous transcription process results
 at all, so this means that the process will take 2x the processing time._
 
+For details regarding the models and their performance, please check 
+[this section from the OpenAI Whisper repo](https://github.com/openai/whisper#available-models-and-languages).
+Also, keep in mind that if you're transcribing on a CUDA device, you need minimum 5GB of VRAM for the medium model, and
+minimum 10GB for the large model.
+
 Starting with version 0.16.16, we added a setting called **Initial Prompt**. This is useful if you want the
 transcription algorithm to adopt a certain style (for eg. separating speaker sentences, or using caps after 
 punctuation), or even prime it to use certain names (for eg. "Helena" instead of "Elena"), or avoid rookie mistakes 
@@ -191,10 +195,19 @@ you would enter this in the Time Intervals field:
 30.00 - 40.00
 ```
 
+#### Resolve "transcription_WAV" Preset
+
 If you're transcribing timelines directly from Resolve and prefer to save them in wav format, instead of mov,
 go to the Resolve Render Page, select the Audio Only preset, make sure that the "Export Video" in the Video tab is
 disabled, then, in the "Audio" tab, select the "Wave" format and "Linear PCM" as codec. Then save this preset as
 "transcription_WAV", and the next time you transcribe, you should see Resolve rendering wav files.
+
+As a matter of fact, starting with version 0.17.4, you can use any preset you want, as long as it renders audio too 
+(Linear PCM preferred). For eg., if you want to render out an H264 proxy and include Data Burn-In with timecode info, 
+just create that preset in Resolve and then modify the value of the 'transcription_render_preset' setting in the 
+StoryToolkitAI config.json file in your user data folder (in the future, this will be editable from the GUI). Just keep 
+in mind that before going through the transcription process, the tool will re-interpret the audio internally as Linear 
+PCM, so if you're using a CPU-intense codec, the process might take longer.
 
 ### Re-transcribing Transcripts
 
@@ -408,6 +421,11 @@ can only be fixed by Blackmagic within Resolve itself (fingers crossed for an up
 Some users are experiencing weirdness with the interface on Intel Macs. This is due to a bug in Tcl/Tk - a package
 required to create the interface, which needs to be re-installed together with Python and everything else on the 
 machine. Details here and a possible fix 
+
+### RuntimeError: CUDA out of memory
+If you get this message while transcribing on the GPU, it means that your GPU doesn't have enough memory to run the
+model you have selected. The solution is to either use a smaller model, or to transcribe on the CPU.
+
 [here](https://github.com/octimot/StoryToolkitAI/issues/6#issuecomment-1283519594).
 
 ### Please report any other issues

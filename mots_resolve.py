@@ -87,6 +87,58 @@ class MotsResolve:
                 self.api_module_loaded = True
 
             except ImportError:
+
+                # first try to find out if Davinci Resolve is installed at its default location
+
+                # since the DaVinciResolveScript will use the path to the DaVinci Resolve application,
+                # add that to the RESOLVE_SCRIPT_LIB environment variable
+                import os
+
+                # this is the default location for the DaVinci Resolve on Windows
+                if platform.system() == 'Windows':
+                   default_resolve_dir = 'C:\\Program Files\\Blackmagic Design\\DaVinci Resolve\\'
+                   executable = 'Resolve.exe'
+
+                # this is the default location for the DaVinci Resolve on Mac
+                elif platform.system() == 'Darwin':
+                    default_resolve_dir = '/Applications/DaVinci Resolve/'
+                    executable = 'DaVinci Resolve.app'
+
+                # this is the default location for the DaVinci Resolve on Linux
+                elif platform.system() == 'Linux':
+                    default_resolve_dir = '/opt/resolve/'
+
+                    # @todo find out the executable name for Davinci Resolve on Linux
+                    executable = '/bin/resolve'
+
+                else:
+                    # check if the default path has it...
+                    self.logger.error("Unable to determine default DaVinci Resolve path for this system "
+                                      "(not Windows, Mac or Linux).")
+                    self.api_module_available = False
+                    return None
+
+                # check if the resolve app is installed at the default location
+                if not os.path.exists(os.path.join(default_resolve_dir, executable)):
+                    self.logger.warning("DaVinci Resolve not installed at the default location: {}"
+                                      .format(default_resolve_dir))
+
+                    self.logger.warning("Resolve API connection disabled")
+
+                    self.api_module_available = False
+                    return None
+
+                    #@todo find a way to get the path to the DaVinci Resolve application
+                    # then add that to the RESOLVE_SCRIPT_LIB environment variable
+                    # (see DaVinciResolveScript.py, because the paths might differ
+                    # from the default location depending on system)
+                    #os.environ['RESOLVE_SCRIPT_LIB'] = default_resolve_dir
+
+                else:
+                    self.logger.debug("Found DaVinci Resolve at the default location: {}".format(default_resolve_dir))
+
+
+
                 if sys.platform.startswith("darwin"):
                     expectedPath = "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules/"
                 elif sys.platform.startswith("win") or sys.platform.startswith("cygwin"):
@@ -112,15 +164,17 @@ class MotsResolve:
 
                     # No fallbacks ... report error:
                     self.logger.error(
-                        "Unable to find module DaVinciResolveScript - please ensure that the module DaVinciResolveScript is discoverable by python")
+                        "Unable to find module DaVinciResolveScript.py")
                     self.logger.error(
                         "For a default DaVinci Resolve installation, the module is expected to be located in: " + expectedPath)
+                    self.logger.error(
+                        "Resolve API connection disabled")
 
                     self.api_module_available = False
 
                     return None
 
-            self.logger.debug('Resolve module found and loaded')
+            self.logger.info('Resolve API module found and loaded')
 
         # return the API module
         return self.bmd.scriptapp("Resolve")
