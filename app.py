@@ -223,6 +223,7 @@ class toolkit_UI:
             helpmenu.add_command(label="Go to project page", command=self.open_project_page)
             helpmenu.add_command(label="Features info", command=self.open_features_info)
             helpmenu.add_command(label="Report an issue", command=self.open_issue)
+            helpmenu.add_command(label="Made by mots", command=self.open_mots)
             self.main_menubar.add_cascade(label="Help", menu=helpmenu)
 
             self.toolkit_UI_obj.root.config(menu=self.main_menubar)
@@ -258,6 +259,10 @@ class toolkit_UI:
 
         def about_dialog(self):
             self.open_project_page()
+
+        def open_mots(self):
+            webbrowser.open_new("https://mots.us")
+            return
 
     class TranscriptEdit:
         '''
@@ -311,6 +316,12 @@ class toolkit_UI:
             # the segment_id is not the segment_index mentioned above!
             self.transcript_segments_ids = {}
 
+            # save other data from the transcription file for each window here
+            self.transcription_data = {}
+
+            # save transcription groups here
+            self.transcript_groups = {}
+
             # all the selected transcript segments of each window
             # the selected segments dict will use the text element line number as an index, for eg:
             # self.selected_segments[window_id][line] = transcript_segment
@@ -345,6 +356,41 @@ class toolkit_UI:
 
             # make the UI link (or unlink) the transcript to the timeline
             if link_result and link_result is not None:
+
+                # get the window id of the transcription file
+                # this is stored in the self.transcription_file_paths dict, where the key is the window id
+                # and the value is the transcription file path
+                window_id = None
+                for key, value in self.transcription_file_paths.items():
+                    if value == transcription_file_path:
+                        window_id = key
+                        break
+
+                # check if the data in the transcription file is valid
+                if window_id is not None and window_id in self.transcript_segments:
+                    transcription_data = self.transcription_data[window_id]
+
+                    # if the fps in the transcription data is different than the current timeline fps
+                    # if current_timeline_fps is not None \
+                    #        and (('timeline_fps' in transcription_data  \
+                    #            and transcription_data['timeline_fps'] != current_timeline_fps) \
+                    #            or 'timeline_fps' not in transcription_data):
+
+                    #        # ask the user wether to update the fps in the transcription file
+                    #        update_fps = messagebox.askyesno(
+                    #            title="Update Transcription framerate",
+                    #            message="The framerate in the transcription file "
+                    #                    "is different than the current timeline framerate. \n\n"
+                    #                    "Do you want to update transcription file to match "
+                    #                    "the current timeline framerate?")
+
+                    #        if update_fps:
+                    #            transcription_data['timeline_fps'] = current_timeline_fps
+
+                    #            print(current_timeline_fps)
+                    #            #self.toolkit_ops_obj.save_transcription_file(transcription_file_path, transcription_data)
+
+
 
                 # if the reply is true, it means that the transcript is linked
                 # therefore the button needs to read the opposite action
@@ -567,7 +613,7 @@ class toolkit_UI:
 
             # for now, simply pass to select text lines if it matches one of these keys
             if event.keysym in ['Up', 'Down', 'v', 'V', 'A', 'i', 'o', 'm', 'M', 'C', 'q', 's', 'L',
-                                'g', 'BackSpace', 't',
+                                'g', 'G', 'BackSpace', 't', 'a',
                                 'apostrophe', 'semicolon', 'colon', 'quotedbl']:
                 self.segment_actions(event, **attributes)
 
@@ -583,7 +629,8 @@ class toolkit_UI:
             # for now simply pass the event to the segment actions
             self.segment_actions(event, mouse=True, **attributes)
 
-        def segment_actions(self, event=None, text_element=None, window_id=None, special_key=None, mouse=False):
+        def segment_actions(self, event=None, text_element=None, window_id=None,
+                            special_key=None, mouse=False, status_label=None):
             '''
             Handles the key and mouse presses in relation with transcript segments (lines)
             :return:
@@ -664,6 +711,20 @@ class toolkit_UI:
                 # clear selection
                 self.clear_selection(window_id, text_element)
 
+            # CMD+A key events
+            if event.keysym == 'a' and special_key == 'cmd':
+
+                # get the number of segments in the transcript
+                num_segments = len(self.transcript_segments[window_id])
+
+                # create a list containing all the segment numbers
+                segment_list = list(range(1, num_segments+1))
+
+                # select all segments by passing all the line numbers
+                self.segment_to_selection(window_id, text_element, segment_list)
+
+                return 'break'
+
             # Shift+A key events
             if event.keysym == 'A':
 
@@ -686,7 +747,8 @@ class toolkit_UI:
                     self.segment_to_selection(window_id, text_element, n)
                     n = n+1
 
-            # Shift+C key event (copy segment to clipboard)
+
+            # Shift+C key event (copy segments with timecodes to clipboard)
             if event.keysym == 'C':
 
                 # is control also pressed?
@@ -845,9 +907,13 @@ class toolkit_UI:
             if event.keysym == 's':
                 self.sync_with_playhead_update(window_id=window_id)
 
-            # g key event (group selected)
-            if event.keysym == 'g':
-                self.group_selected(window_id=window_id)
+            # g key event (group selected - add to existing group)
+            # if event.keysym == 'g':
+            #    self.group_selected(window_id=window_id, add=True)
+
+            # SHIFT+G creates groups the selected segments into a new group (or overwrites existing)
+            # if event.keysym == 'G':
+            #     self.group_selected(window_id=window_id)
 
             # colon key event (align current line start to playhead)
             if event.keysym == 'colon':
@@ -899,12 +965,13 @@ class toolkit_UI:
                                                 time_intervals=time_intervals)
 
             # BackSpace key event (delete selected)
-            #if event.keysym == 'BackSpace':
-            #    self.delete_line(window_id=window_id, text_element=text_element, line_no=line)
+            if event.keysym == 'BackSpace':
+                self.delete_line(window_id=window_id, text_element=text_element,
+                                 line_no=line, status_label=status_label)
 
-        def delete_line(self, window_id, text_element, line_no):
+        def delete_line(self, window_id, text_element, line_no, status_label):
             '''
-            Deletes a specific line of text from the transcript
+            Deletes a specific line of text from the transcript and saves the file
             :param window_id:
             :param text_element:
             :param line_index:
@@ -920,23 +987,33 @@ class toolkit_UI:
             if messagebox.askyesno(title='Delete line',
                                      message='Are you sure you want to delete this line?'):
 
-                print(line_no)
-                print(text_element.get('{}.0'.format(line_no), '{}.0'.format(int(line_no)+1)))
+                # get the line
+                tkinter_line_index = '{}.0'.format(line_no), '{}.0'.format(int(line_no)+1).split(' ')
+
+                # enable editing on the text element
+                text_element.config(state=NORMAL)
 
                 # delete the line - doesn't work!
                 # remove the line from the text widget
-                text_element.delete(line_no)
+                text_element.delete(tkinter_line_index[0], tkinter_line_index[1])
 
+                # disable editing on the text element
+                text_element.config(state=DISABLED)
+
+                # calculate the segment index
                 segment_index = int(line_no)-1
 
                 # remove the line from the text list
-                #self.transcript_segments[window_id].pop(segment_index)
+                self.transcript_segments[window_id].pop(segment_index)
 
                 # mark the transcript as modified
-                #self.set_transcript_modified(window_id=window_id, modified=True)
+                self.set_transcript_modified(window_id=window_id, modified=True)
 
                 # save the transcript
-                #self.save_transcript(window_id=window_id, text=False, skip_verification=True)
+                save_status = self.save_transcript(window_id=window_id, text=False, skip_verification=True)
+
+                # let the user know what happened via the status label
+                self.update_status_label_after_save(status_label=status_label, save_status=save_status)
 
                 return True
 
@@ -1083,10 +1160,29 @@ class toolkit_UI:
             if timecodes:
                 timeline_start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(0)
 
-                # @todo try to get the start timecode and fps from the transcription file
+                if type(timeline_start_tc) is Timecode:
+                    timeline_fps = timeline_start_tc.framerate
+
+                # try to get the start timecode, fps and timeline name from the transcription data dict
+                if not timeline_start_tc and window_id in self.transcription_data:
+
+                    logger.debug('Timeline timecode not available, trying transcription data instead')
+
+                    timeline_start_tc = self.transcription_data[window_id]['timeline_start_tc'] \
+                                        if 'timeline_start_tc' in self.transcription_data[window_id] else None
+
+                    timeline_fps = self.transcription_data[window_id]['timeline_fps'] \
+                                        if 'timeline_fps' in self.transcription_data[window_id] else None
+
+                    # convert the timeline_start_tc to a Timecode object but only if the fps is also known
+                    if timeline_start_tc is not None and timeline_fps is not None:
+                        timeline_start_tc = Timecode(timeline_fps, timeline_start_tc)
+                    else:
+                        timeline_start_tc = None
+                        logger.debug('Timeline timecode not available in transcription data either')
 
                 # if no timecode was received it probably means Resolve is disconnected so disable timecodes
-                if not timeline_start_tc:
+                if not timeline_start_tc or timeline_start_tc is None:
                     timecodes = False
 
             # if we have some selected segments, use their start and end times
@@ -1168,7 +1264,7 @@ class toolkit_UI:
                             # init the segment start timecode object
                             # but only if the start seconds are larger than 0
                             if float(selected_segment['start']) > 0:
-                                segment_start_timecode = Timecode(timeline_start_tc.framerate,
+                                segment_start_timecode = Timecode(timeline_fps,
                                                                   start_seconds=selected_segment['start'])
 
                                 # factor in the timeline start tc and use it for this chunk
@@ -1251,7 +1347,7 @@ class toolkit_UI:
                     # init the segment start timecode object
                     # but only if the start seconds are larger than 0
                     if start_sec > 0:
-                        segment_start_timecode = Timecode(timeline_start_tc.framerate, start_seconds=start_sec)
+                        segment_start_timecode = Timecode(timeline_fps, start_seconds=start_sec)
 
                         # factor in the timeline start tc and use it for this chunk
                         start_tc = str(timeline_start_tc + segment_start_timecode)
@@ -1445,6 +1541,8 @@ class toolkit_UI:
             This either adds or removes a segment to a selection,
             depending if it's already in the selection or not
 
+            If line is a list, it will add all the lines in the list to the selection and remove the rest
+
             :param window_id:
             :param text_element:
             :param line:
@@ -1465,30 +1563,59 @@ class toolkit_UI:
             if window_id not in self.selected_segments:
                 self.selected_segments[window_id] = {}
 
-            # convert the line number to segment_index
-            segment_index = line-1
+            # if a list of lines was passed, add all the lines to the selection
+            if type(line) is list:
 
-            # if the segment is not in the transcript segments dict
-            if line in self.selected_segments[window_id]:
-                # remove it
-                del self.selected_segments[window_id][line]
+                # first clear the selection
+                self.clear_selection(window_id=window_id, text_element=text_element)
 
-                # remove the tag on the text in the text element
-                text_element.tag_remove("l_selected", "{}.0".format(line), "{}.end+1c".format(line))
+                # select all the lines in the list
+                for line_num in line:
 
-            # otherwise add it
+                    # convert the line number to segment_index
+                    segment_index = line_num - 1
+
+                    self.selected_segments[window_id][line_num] = self.transcript_segments[window_id][segment_index]
+
+                    # tag the text on the text element
+                    text_element.tag_add("l_selected", "{}.0".format(line_num), "{}.end+1c".format(line_num))
+
+                    # raise the tag so we can see it above other tags
+                    text_element.tag_raise("l_selected")
+
+                    # color the tag accordingly
+                    text_element.tag_config('l_selected', foreground='blue',
+                                            background=self.toolkit_UI_obj.resolve_theme_colors['superblack'])
+
+                return True
+
+            # if a single line was passed, add or remove it from the selection
             else:
-                self.selected_segments[window_id][line] = self.transcript_segments[window_id][segment_index]
 
-                # tag the text on the text element
-                text_element.tag_add("l_selected", "{}.0".format(line), "{}.end+1c".format(line))
+                # convert the line number to segment_index
+                segment_index = line-1
 
-                # raise the tag so we can see it above other tags
-                text_element.tag_raise("l_selected")
+                # if the segment is not in the transcript segments dict
+                if line in self.selected_segments[window_id]:
+                    # remove it
+                    del self.selected_segments[window_id][line]
 
-                # color the tag accordingly
-                text_element.tag_config('l_selected', foreground='blue',
-                                        background=self.toolkit_UI_obj.resolve_theme_colors['superblack'])
+                    # remove the tag on the text in the text element
+                    text_element.tag_remove("l_selected", "{}.0".format(line), "{}.end+1c".format(line))
+
+                # otherwise add it
+                else:
+                    self.selected_segments[window_id][line] = self.transcript_segments[window_id][segment_index]
+
+                    # tag the text on the text element
+                    text_element.tag_add("l_selected", "{}.0".format(line), "{}.end+1c".format(line))
+
+                    # raise the tag so we can see it above other tags
+                    text_element.tag_raise("l_selected")
+
+                    # color the tag accordingly
+                    text_element.tag_config('l_selected', foreground='blue',
+                                            background=self.toolkit_UI_obj.resolve_theme_colors['superblack'])
 
             return True
 
@@ -1546,27 +1673,157 @@ class toolkit_UI:
             # if all fails return None
             return None
 
-        def group_selected(self, window_id):
+        def group_selected(self, window_id: str, group_name: str = None, add: bool = False) -> bool:
             '''
             This adds the selected segments to a group based on their start and end times
             :param window_id:
+            :param group_name: If this is passed, we're just adding the selected segments to the group
+            :param add: If this is True, we're adding the selected segments to the group, if it's False,
+                        we're only keeping the selected segments in the group
             :return:
             '''
+
+            #group_name = 'another test group'
+            #group_notes = 'some test notes'
+
+            group_notes = ''
+
+            # if we have some selected segments, group them
+            if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0:
+
+                # if no group name is available, ask the user for one
+                if group_name is None:
+                    # ask the user for a group name
+                    group_name = simpledialog.askstring('Group name', 'Group name:')
+
+                    # if the user didn't enter anything or canceled, abort
+                    if not group_name:
+                        return False
+
+                # get the path of the window transcription file based on the window id
+                if window_id in self.transcription_file_paths:
+                    transcription_file_path = self.transcription_file_paths[window_id]
+                else:
+                    return False
+
+                # get the existing groups
+                if window_id in self.transcript_groups:
+                    transcript_groups = self.transcript_groups[window_id]
+
+                else:
+                    transcript_groups = {}
+
+                # the segments we pass for grouping need to be in a list format
+                segments_for_group = list(self.selected_segments[window_id].values())
+
+                # if this is an add operation and
+                # if the group name was passed and it exists in the groups of this transcription,
+                # add the selected segments to that group instead of creating a new one
+                # (so keep the old segments in the group too)
+                if add is True and group_name is not None and group_name in transcript_groups \
+                        and len(transcript_groups[group_name]) > 0 \
+                        and 'time_intervals' in transcript_groups[group_name]\
+                        and len(transcript_groups[group_name]['time_intervals']) > 0:
+
+                    # but we first need to get the existing segments in the group
+                    # by going through the time intervals of the group and getting the corresponding segments
+                    existing_group_segments = \
+                        self.toolkit_ops_obj.time_intervals_to_transcript_segments(
+                                transcript_groups[group_name]['time_intervals'],
+                                self.transcript_segments[window_id]
+                        )
+
+                    if existing_group_segments is not None:
+                        # then we add the new segments to the existing ones
+                        # don't worry if there are duplicates, the save function will take care of that
+                        segments_for_group += existing_group_segments
+
+                    logger.debug('Adding segments to group: {}'.format(group_name))
+
+                # but if this is not an add operation, yet the group exists in the groups of this transcription
+                # make sure the user understands that we're overwriting the existing group
+                elif add is False and group_name is not None and group_name in transcript_groups:
+
+                    # ask the user if they're sure they want to overwrite the existing group
+                    overwrite = messagebox.askyesno('Group already exists',
+                                                    'Do you to overwrite the existing {} group?'
+                                                    .format(group_name))
+
+                    logger.debug('Overwriting group: {}'.format(group_name))
+
+                    # if the user didn't confirm, abort
+                    if not overwrite:
+                        return False
+
+                else:
+                    logger.debug('Creating new group: {}'.format(group_name))
+
+
+                # group the segments
+                time_intervals = self
+
+                # save the segments to the transcription file
+                transcript_groups = self.toolkit_ops_obj.t_groups_obj\
+                                        .save_segments_as_group_in_transcription_file(
+                                            transcription_file_path=transcription_file_path,
+                                            segments=segments_for_group,
+                                            group_name=group_name,
+                                            group_notes=group_notes,
+                                            existing_transcript_groups=transcript_groups,
+                                            overwrite_existing=True
+                )
+
+                # if a dict of groups was returned, update the groups dict for this window
+                if type(transcript_groups) is dict:
+                    self.transcript_groups[window_id] = transcript_groups
+
+                # update the list of groups in the transcript groups window
+                # self.update_transcript_groups_window(window_id=window_id)
+
+                # update the current group selection so we know that the active selection is now a group
+                # self.selected_transcript_group[window_id] = group_id
+
+                return True
+
+        def delete_group(self, window_id: str, group_id: str, no_confirmation: bool = False) -> bool:
 
             # WORK IN PROGRESS
 
             return
 
-            # if we have some selected segments, group them
-            if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0:
+            # get the path of the window transcription file based on the window id
+            if window_id in self.transcription_file_paths:
+                transcription_file_path = self.transcription_file_paths[window_id]
+            else:
+                return False
 
-                # take all the segments and add them to the group
-                for selected_segment in self.selected_segments[window_id]:
+            # get the existing groups
+            if window_id in self.transcript_groups:
+                transcript_groups = self.transcript_groups[window_id]
 
-                    # @todo add segment id to group
-                    print(self.selected_segments[window_id][selected_segment])
+            else:
+                transcript_groups = {}
+                return True
 
-                    # save group contents to transcription json file
+            # if the group id exists in the groups of this transcription
+            if group_id in transcript_groups:
+
+                group_name = transcript_groups[group_id]['name']
+
+                # ask the user if they're sure they want to delete the group
+                if not no_confirmation:
+                    delete = messagebox.askyesno('Delete group',
+                                                 'Do you to delete the {} group?'
+                                                 .format(group_name))
+
+                    # if the user didn't confirm, abort
+                    if not delete:
+                        return False
+
+
+                logger.debug('WORK IN PROGRESS Deleting group: {}'.format(group_name))
+
+
 
         def on_press_add_segment(self, event, window_id=None, text=None):
             '''
@@ -1919,13 +2176,15 @@ class toolkit_UI:
             save_status = self.save_transcript(window_id=window_id, text=text)
 
             # let the user know what happened via the status label
-            if save_status is True:
+            self.update_status_label_after_save(status_label=status_label, save_status=save_status)
 
+        def update_status_label_after_save(self, save_status, status_label):
+
+            if save_status is True:
                 # show the user that the transcript was saved
                 if status_label is not None:
                     status_label.config(text='Saved.',
                                         foreground=self.toolkit_UI_obj.resolve_theme_colors['normal'])
-
 
             # in case anything went wrong while saving,
             # let the user know about it
@@ -1954,7 +2213,7 @@ class toolkit_UI:
             '''
 
             if window_id is None or text is None:
-                print('No window id or text provided.')
+                logger.debug('No window id or text provided.')
                 return False
 
             # make sure that we know the path to this transcription file
@@ -2582,7 +2841,6 @@ class toolkit_UI:
                                                                                      **self.form_paddings)
 
             # try to get the languages from tokenizer
-            # @todo is there a better way to do this using whisper functions?
             from whisper import tokenizer
             available_languages = tokenizer.LANGUAGES.values()
 
@@ -2647,7 +2905,7 @@ class toolkit_UI:
                                                                             sticky='nw',
                                                                           #**self.input_grid_settings,
                                                                           **self.form_paddings)
-            #prompt_var = StringVar(ts_form_frame)
+            # prompt_var = StringVar(ts_form_frame)
             prompt_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
             prompt_input.grid(row=7, column=2, **self.input_grid_settings, **self.form_paddings)
             prompt_input.insert(END, " - How are you?\n - I'm fine, thank you.")
@@ -2657,7 +2915,7 @@ class toolkit_UI:
                                                                             sticky='nw',
                                                                           #**self.input_grid_settings,
                                                                           **self.form_paddings)
-            #prompt_var = StringVar(ts_form_frame)
+
             time_intervals_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
             time_intervals_input.grid(row=8, column=2, **self.input_grid_settings, **self.form_paddings)
             time_intervals_input.insert(END, str(time_intervals) if time_intervals is not None else '')
@@ -2667,7 +2925,7 @@ class toolkit_UI:
                                                                             sticky='nw',
                                                                           #**self.input_grid_settings,
                                                                           **self.form_paddings)
-            #prompt_var = StringVar(ts_form_frame)
+
             excluded_time_intervals_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
             excluded_time_intervals_input.grid(row=9, column=2, **self.input_grid_settings, **self.form_paddings)
             excluded_time_intervals_input.insert(END,
@@ -2677,7 +2935,7 @@ class toolkit_UI:
             # START BUTTON
 
             # add all the settings entered by the use into a nice dictionary
-            transcription_config = dict(name=name_input.get(), language='English', beam_size=5, best_of=5)
+            # transcription_config = dict(name=name_input.get(), language='English', beam_size=5, best_of=5)
 
             Label(ts_form_frame, text="", **self.label_settings).grid(row=10, column=1,
                                                                       **self.input_grid_settings, **self.paddings)
@@ -2998,13 +3256,24 @@ class toolkit_UI:
             else:
                 title = os.path.splitext(os.path.basename(transcription_file_path))[0]
 
-        # what happens when the window is closed
-        close_transcription_window_action = lambda t_window_id=t_window_id: \
-            self.destroy_transcription_window(t_window_id)
+        # ask user if they want to add timeline info to the transcription file (if they were not recorded)
+        # (but only if ask_for_timeline_info is True in the app settings)
+        # if self.stAI.get_app_setting(setting_name='ask_for_timeline_info', default_if_none=False) is True:
+        #
+        #    # if the transcription file does not containe the timeline fps
+        #    if 'timeline_fps' not in transcription_json:
+        #         # ask the user if they want to add timeline info to the transcription file
+        #         if timeline_fps := simpledialog.askstring(title='Add fps to transcription data?',
+        #                                   prompt="The transcription file does not contain timeline fps info.\n"
+        #                                          "If you want to add it, please enter the fps value here.\n"
+        #                                   ):
+        #             print(timeline_fps)
+
 
         # create a window for the transcript if one doesn't already exist
         if self._create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title, resizable=True,
-                                       close_action=close_transcription_window_action
+                                       close_action=lambda t_window_id=t_window_id: \
+                                            self.destroy_transcription_window(t_window_id)
                                        ):
 
             # add the path to the transcription_file_paths dict in case we need it later
@@ -3012,6 +3281,12 @@ class toolkit_UI:
 
             # initialize the transcript_segments_ids for this window
             self.t_edit_obj.transcript_segments_ids[t_window_id] = {}
+
+            # add the transcript groups to the transcript_groups dict
+            if 'transcript_groups' in transcription_json:
+                self.t_edit_obj.transcript_groups[t_window_id] = transcription_json['transcript_groups']
+            else:
+                self.t_edit_obj.transcript_groups[t_window_id] = {}
 
             # create a header frame to hold stuff above the transcript text
             header_frame = tk.Frame(self.windows[t_window_id])
@@ -3024,6 +3299,10 @@ class toolkit_UI:
 
             # does the json file actually contain transcript segments generated by whisper?
             if 'segments' in transcription_json:
+
+                # add everything except the segments and the text to the self.t_edit_obj.transcription_data dict
+                self.t_edit_obj.transcription_data[t_window_id] = \
+                    {k: v for k, v in transcription_json.items() if k != 'segments' and k != 'text'}
 
                 # set up the text element where we'll add the actual transcript
                 text = Text(text_form_frame, name='transcript_text',
@@ -3131,7 +3410,7 @@ class toolkit_UI:
                 # text.bind("<Shift-Button-1>", lambda e:
                 #         self.t_edit_obj.select_text_lines(event=e, text_element=text, window_id=t_window_id))
 
-                select_options = {'window_id': t_window_id, 'text_element': text}
+                select_options = {'window_id': t_window_id, 'text_element': text, 'status_label': status_label}
 
                 # bind all key presses to transcription window actions
                 self.windows[t_window_id].bind("<KeyPress>",
@@ -4008,6 +4287,9 @@ class ToolkitOps:
         # initialize the toolkit search engine
         self.t_search_obj = self.ToolkitSearch(toolkit_ops_obj=self)
 
+        # initialize the TranscriptGroups object
+        self.t_groups_obj = self.TranscriptGroups(toolkit_ops_obj=self)
+
         # transcription queue thread - this will be useful when trying to figure out
         # if there's any transcription thread active or not
         self.transcription_queue_thread = None
@@ -4437,6 +4719,396 @@ class ToolkitOps:
 
             return search_results, top_k
 
+    class TranscriptGroups:
+        '''
+        This class contains functions for working with transcript groups.
+        '''
+
+        def __init__(self, toolkit_ops_obj):
+
+            # define the toolkit operations object
+            self.toolkit_ops_obj = toolkit_ops_obj
+
+            # and the stAI object
+            self.stAI = toolkit_ops_obj.stAI
+
+        def get_all_transcript_groups(self, transcription_file_path: str) -> dict or None:
+            '''
+            This function returns a list of transcript groups for a given transcription file.
+
+            :param: transcription_file_path: the path to the transcription file
+            :return: a dict of transcript groups or None if the transcription file doesn't exist
+            '''
+
+            # load the transcription file
+            # get the contents of the transcription file
+            transcription_file_data = \
+                self.toolkit_ops_obj.get_transcription_file_data(
+                    transcription_file_path=transcription_file_path)
+
+            # if the transcription file data was cannot be loaded, return None
+            if transcription_file_data is False:
+                return None
+
+            # check if the transcription has any transcript groups
+            # and return accordingly
+            if 'transcript_groups' not in transcription_file_data:
+                return {}
+            else:
+                logger.debug('Transcript groups found in transcription {}'.format(transcription_file_path))
+                return transcription_file_data['transcript_groups']
+
+        def get_transcript_group(self, transcription_file_path: str, transcript_group_id: str) -> dict or None:
+            '''
+            Get a transcript group by its name from a given transcription file.
+
+            The groups are stored in a list in the transcription file.
+
+            :param transcription_file_path:
+            :param transcript_group_id:
+            :return: a list of transcript groups or None if the transcription file doesn't exist
+            '''
+
+            # get the transcript groups
+            transcript_groups = self.get_all_transcript_groups(transcription_file_path=transcription_file_path)
+
+            # if the previous call returned None it's likely that the transcription file cannot be loaded
+            if transcript_groups is None:
+                return None
+
+            # loop through the transcript groups
+            # the groups are stored in a list, and each group is a dict, with the group name as the key
+            for transcript_group in transcript_groups:
+
+                # if the transcript group name matches the one we're looking for, return it
+                if transcript_group_id in transcript_group:
+                    return transcript_group[transcript_group_id]
+
+            # if we get here, the transcript group was not found
+            return {}
+
+        def save_transcript_groups(self, transcription_file_path: str, transcript_groups: dict,
+                                   group_id: str=None) -> dict or bool or None:
+            '''
+            This function adds transcript groups to a transcription file.
+
+            It will overwrite any existing transcript groups in the transcription file.
+
+            :param transcription_file_path:
+            :param transcript_groups:
+            :param group_id: If this is passed, we will only save the transcript group with this group id
+            :return: The group dict if the groups were saved successfully, False otherwise
+                    or None if there were other problems transcription file
+            '''
+
+            # first, get the transcription file data
+            transcription_file_data = \
+                self.toolkit_ops_obj.get_transcription_file_data(
+                    transcription_file_path=transcription_file_path)
+
+            # if the transcription file data was cannot be loaded, return None
+            if transcription_file_data is None:
+                return None
+
+            # if no group id was passed, overwrite all transcript groups
+            if group_id is None:
+
+                # overwrite the transcript groups with the passed transcript_groups
+                transcription_file_data['transcript_groups'] = transcript_groups
+
+            # otherwise, only focus on the passed group id
+            else:
+
+                # but make sure that it was passed correctly in the transcript_groups dict
+                if group_id not in transcript_groups:
+                    logger.error('The transcript group id {} was not found in the transcript_groups dict.'
+                                 .format(group_id))
+                    return False
+
+                # if the transcript groups key doesn't exist, create it
+                if 'transcript_groups' not in transcription_file_data:
+                    transcription_file_data['transcript_groups'] = {}
+
+                # if the group with the group_id exists, remove it
+                if group_id in transcription_file_data['transcript_groups']:
+                    del transcription_file_data['transcript_groups'][group_id]
+
+                # now add the transcript group to the transcript groups
+                transcription_file_data['transcript_groups'][group_id] = transcript_groups[group_id]
+
+            # save the transcription file data
+            saved = self.toolkit_ops_obj.save_transcription_file(
+                transcription_file_path=transcription_file_path,
+                transcription_data=transcription_file_data,
+                backup='backup')
+
+            if not saved:
+                return False
+
+            # return the saved transcript groups
+            return transcription_file_data['transcript_groups']
+
+        def prepare_transcript_group(self, group_name: str, time_intervals: list,
+                                     group_id: str = None, group_notes: str = '',
+                                     existing_transcript_groups: list = None,
+                                     overwrite_existing: bool = False) -> dict:
+            '''
+            This function prepares a transcript group dict.
+
+            Each group is a dict with the following keys: name, notes, time_intervals
+
+            The purpose is to be able to group together segments of a transcription, although the start and end times
+            of the groups are not necessarily always the same as the start and end times of the segments.
+
+            :param group_name:
+            :param time_intervals:
+            :param group_id:
+            :param group_notes:
+            :param existing_transcript_groups: if a transcript group is being updated, pass its contents here
+            :param overwrite_existing: if the same group_id is found in the existing transcript groups, overwrite it
+            :return: the transcript group dict or None if something went wrong
+            '''
+
+            # if the group id is not provided, use the group name
+            if group_id is None:
+                # generate a group id
+                group_id = str(group_name)
+
+            # if we're not overwriting an existing group, see if the group id already exists in existing groups
+            if not overwrite_existing \
+                    and existing_transcript_groups is not None \
+                    and type(existing_transcript_groups) is list \
+                    and len(existing_transcript_groups) > 0:
+
+                # keep coming up with group id suffixes until we find one that doesn't exist
+                group_name_suffix = 1
+                while True:
+
+                    # first try the group name as is
+                    if group_name_suffix != 1:
+
+                        # but after the first iteration, add a suffix (should start at 2)
+                        group_id = group_name + '_' + str(group_name_suffix)
+
+                    # if the group id doesn't exist in the existing groups, break out of the loop
+                    if group_id not in existing_transcript_groups:
+                        break
+
+                    # if the group id already exists, increment the suffix and try again
+                    group_name_suffix += 1
+
+            # return the prepared transcript group
+            return {
+                group_id: {
+                    'name': group_name,
+                    'notes': group_notes,
+                    'time_intervals': time_intervals
+                }
+            }
+
+        def segments_to_groups(self, segments: list, group_name: str, group_id: str = None,
+                               group_notes: str = '', existing_transcript_groups: list = None,
+                               overwrite_existing: bool = False) -> dict or None:
+            '''
+            This function converts a list of transcript segments to a transcript group
+
+            :param segments: a list of transcript segments
+            :param group_name: the name of the transcript group
+            :param group_id: the id of the transcript group
+            :param group_notes: the notes of the transcript group
+            :param existing_transcript_groups: if a transcript group is being updated, pass its contents here
+            :param overwrite_existing: if the same group_id is found in the existing transcript groups, overwrite it
+            :return: the transcript group dict or None if something went wrong
+            '''
+
+            # first, get the time intervals from the segments
+            group_time_intervals = []
+
+            # if the segments are empty or not a list, return None
+            if segments is None or type(segments) is not list:
+                return None
+
+            # get a proper list of time intervals based on the segments
+            group_time_intervals = self.toolkit_ops_obj.transcript_segments_to_time_intervals(segments=segments)
+
+            if group_time_intervals is None:
+                return None
+
+            # if the time intervals are empty, return None
+            if len(group_time_intervals) == 0:
+                return None
+
+            # prepare the transcript group
+            transcript_group = \
+                self.prepare_transcript_group(
+                    group_name=group_name,
+                    time_intervals=group_time_intervals,
+                    group_id=group_id,
+                    group_notes=group_notes,
+                    existing_transcript_groups=existing_transcript_groups,
+                    overwrite_existing=overwrite_existing)
+
+            return transcript_group
+
+        def save_segments_as_group_in_transcription_file(self,
+                                                         transcription_file_path: str,
+                                                         segments: list,
+                                                         group_name: str,
+                                                         group_id: str = None,
+                                                         group_notes: str = '',
+                                                         existing_transcript_groups: list = None,
+                                                         overwrite_existing: bool = False) -> bool or None:
+            '''
+            This function saves a list of transcript segments as a group in a transcription file
+
+            The transcription file must already exist in order to save the transcript group.
+
+            :param transcription_file_path:
+            :param segments: a list of transcript segments
+            :param group_name: the name of the transcript group
+            :param group_id: the id of the transcript group
+            :param group_notes: the notes of the transcript group
+            :param existing_transcript_groups: if a transcript group is being updated, pass its contents here
+            :param overwrite_existing: if the same group_id is found in the existing transcript groups, overwrite it
+            '''
+
+            # first, prepare the transcript group
+            transcript_group = self.segments_to_groups(segments=segments, group_name=group_name, group_id=group_id,
+                                                       group_notes=group_notes,
+                                                       existing_transcript_groups=existing_transcript_groups,
+                                                       overwrite_existing=overwrite_existing)
+
+            if transcript_group is None or type(transcript_group) is not dict:
+                logger.debug('Could not prepare transcript group from segments for saving')
+                return None
+
+            # get the group id that may have been generated while creating the transcript group
+            group_id = list(transcript_group.keys())[0]
+
+            # finally, save the transcript group
+            saved = self.save_transcript_groups(transcription_file_path=transcription_file_path,
+                                                transcript_groups=transcript_group, group_id=group_id)
+
+            if not saved:
+                logger.debug('Could not save to transcription file {} the following transcript group: {}'.
+                    format(transcription_file_path, transcript_group))
+
+            logger.debug('Saved transcript groups {} to transcription file {}'
+                         .format(list(transcript_group.keys()), transcription_file_path))
+            return saved
+
+    def time_intervals_to_transcript_segments(self, time_intervals: list, segments: list) -> list or None:
+        '''
+        This function converts a list of time intervals to a list of transcript segments
+
+        :param time_intervals: a list of time intervals
+        :param segments: a dict of transcript segments
+        :return: a list of transcript segments
+        '''
+
+        # if the time intervals or segments are empty or not a list/dict, return None
+        if time_intervals is None or type(time_intervals) is not list \
+                or segments is None or type(segments) is not list:
+            return None
+
+        # if the time intervals are empty, return None
+        if len(time_intervals) == 0:
+            return []
+
+        # take all time intervals and check if they overlap with any of the segments
+        # if they do, add the segment to the list of segments to return
+        segments_to_return = []
+
+        # first sort the time intervals by start time
+        time_intervals = sorted(time_intervals, key=lambda x: x['start'])
+
+        # then sort the segments by start time
+        segments = sorted(segments, key=lambda x: x['start'])
+
+        # now take all the time intervals and check if they overlap with any of the segments
+        for current_time_interval in time_intervals:
+
+            # test this time interval against all segments
+            for current_segment in segments:
+
+                # if the current time interval overlaps with the current segment, add it to the list of segments
+                if current_segment['start'] >= current_time_interval['start'] \
+                        and current_segment['end'] <= current_time_interval['end']:
+
+                    segments_to_return.append(current_segment)
+
+                # otherwise, if the current segment is after the current time interval, break
+                # this only works if the segments and time intervals have been sorted
+                elif current_segment['start'] > current_time_interval['end']:
+                    break
+
+        return segments_to_return
+
+
+
+
+    def transcript_segments_to_time_intervals(self, segments: list) -> list or None:
+        '''
+        This function takes a list of transcript segments, groups them together if they don't have
+        any gaps between them.
+        :param segments:
+        :return: the list of time intervals or None if something went wrong
+        '''
+
+        # if the segments are not empty or not a dict, return None
+        if segments is None or type(segments) is not list or len(segments) == 0:
+            logger.debug('Could not convert transcript segments to time intervals '
+                         'because the segments are empty or not a list')
+            return None
+
+        # these are the group time intervals that we'll return eventually
+        # this group will consist of multiple time intervals taken from transcript segments that
+        # are next to each other (end_time of previous segment matches the start_time of current segment)
+        time_intervals = [{}]
+
+        time_interval_num = 0
+
+        # remove duplicates from segments
+        # this is important because if there are duplicates, the time intervals might repeat
+        segments_unique = []
+        [segments_unique.append(x) for x in segments if x not in segments_unique]
+
+        # place the unique segments back into the original list
+        segments = segments_unique
+
+        # sort the segments by start time
+        segments = sorted(segments, key=lambda x: x['start'])
+
+        # loop through the segments
+        for current_segment in segments:
+
+            # print('current segment {}-{}: {}'
+            #       .format(current_segment['start'], current_segment['end'], current_segment['text']))
+
+            # if the current time interval doesn't have a start time, add it
+            # (i.e. this segment is the first in this time interval)
+            if 'start' not in time_intervals[time_interval_num]:
+                time_intervals[time_interval_num]['start'] = current_segment['start']
+
+            # if the end time of the current time_interval matches the start time of the current segment,
+            # it means that there's no gap between the current time_interval and the current segment,
+            # so add the current segment to the current time interval, by simply updating the end time
+            # this extends the time interval to include the current segment too
+            if 'end' not in time_intervals[time_interval_num] or \
+                    time_intervals[time_interval_num]['end'] == current_segment['start']:
+
+                time_intervals[time_interval_num]['end'] = current_segment['end']
+
+            # otherwise, it means that the current segment is not next to the current time interval,
+            # so start a new time interval containing the current segment
+            else:
+                time_interval_num += 1
+                time_intervals.append({
+                    'start': current_segment['start'],
+                    'end': current_segment['end']
+                })
+
+        return time_intervals
 
     def whisper_device_select(self, device):
         '''
@@ -4495,7 +5167,7 @@ class ToolkitOps:
         target_dir = ''
 
         # if retranscribe is True, we're going to use an existing transcription item
-        if retranscribe is not False:
+        if retranscribe:
 
             # hope that the retranscribe attribute is the transcription file path too
             if os.path.isfile(str(retranscribe)):
@@ -4862,32 +5534,37 @@ class ToolkitOps:
         '''
 
         # if the file exists, read it
-        if os.path.exists(self.TRANSCRIPTION_QUEUE_FILE_PATH):
-            with open(self.TRANSCRIPTION_QUEUE_FILE_PATH, 'r') as f:
-                transcription_queue = json.load(f)
+        try:
+            if os.path.exists(self.TRANSCRIPTION_QUEUE_FILE_PATH):
+                with open(self.TRANSCRIPTION_QUEUE_FILE_PATH, 'r') as f:
+                    transcription_queue = json.load(f)
 
-            resume = False
+                resume = False
 
-            if transcription_queue and len(transcription_queue) > 0:
+                if transcription_queue and len(transcription_queue) > 0:
 
-                # add each element to the transcription queue
-                for unique_id in transcription_queue:
+                    # add each element to the transcription queue
+                    for unique_id in transcription_queue:
 
-                    # clean up the attributes
-                    transcription_queue_attributes = self.transcription_queue_attr(transcription_queue[unique_id])
+                        # clean up the attributes
+                        transcription_queue_attributes = self.transcription_queue_attr(transcription_queue[unique_id])
 
-                    # add item to the transcription queue
-                    # but do not save the queue to the file again (since we're reading everything from the file) -
-                    #  - this is also to prevent deleting the items that are currently being transcribed, but are
-                    #    no longer in the app memory queue (self.transcription_queue)
-                    self.add_to_transcription_queue(unique_id=unique_id, save_queue=False,
-                                                    **transcription_queue_attributes)
+                        # add item to the transcription queue
+                        # but do not save the queue to the file again (since we're reading everything from the file) -
+                        #  - this is also to prevent deleting the items that are currently being transcribed, but are
+                        #    no longer in the app memory queue (self.transcription_queue)
+                        self.add_to_transcription_queue(unique_id=unique_id, save_queue=False,
+                                                        **transcription_queue_attributes)
 
-                    resume = True
+                        resume = True
 
-            return resume
+                return resume
 
-        else:
+            else:
+                return False
+
+        except Exception as e:
+            logger.error('Error reading transcription queue from file: {}'.format(e))
             return False
 
     def save_transcription_queue(self):
@@ -5463,7 +6140,34 @@ class ToolkitOps:
         # add the transcription unique id
         transcription_data['transcription_id'] = queue_id
 
-        # save the transcription file with all the added file paths
+        # if the transcription data doesn't contain the fps, the timeline name or the start_tc,
+        # try to get them from a render.json file
+        # these files are saved by the render() function in mots_resolve.py
+        if 'timeline_fps' not in transcription_data or transcription_data['timeline_fps'] == '' \
+            or 'timeline_start_tc' not in transcription_data or transcription_data['timeline_start_tc'] == '' \
+            or 'timeline_name' not in transcription_data or transcription_data['timeline_name'] == '':
+
+            # the render.json file path should be next to the audio file
+            # and will have the same name as the audio file, but with .json at the end
+            render_json_file_path = os.path.join(os.path.dirname(audio_file_path), file_name+'.json')
+
+            # if the render.json file exists, try to get the data from it
+            if os.path.exists(render_json_file_path):
+                with open(render_json_file_path, 'r') as render_json_file:
+                    render_data = json.load(render_json_file)
+                    if 'timeline_fps' not in transcription_data:
+                        transcription_data['timeline_fps'] = render_data['fps']
+                    if 'timeline_start_tc' not in transcription_data:
+                        transcription_data['timeline_start_tc'] = render_data['timeline_start_tc']
+                    if 'timeline_name' not in transcription_data:
+                        transcription_data['timeline_name'] = render_data['timeline_name']
+
+                logger.debug('Getting timeline data from render json file: {}'.format(render_json_file_path))
+
+            else:
+                logger.debug('No render json file found at {}'.format(render_json_file_path))
+
+        # save the transcription file with all the added data
         transcription_json_file_path = self.save_transcription_file(file_name=file_name, target_dir=target_dir,
                                                                     transcription_data=transcription_data)
 
@@ -5483,15 +6187,18 @@ class ToolkitOps:
         return True
 
     def save_transcription_file(self, transcription_file_path=None, transcription_data=None,
-                                file_name=None, target_dir=None, backup=None):
+                                file_name=None, target_dir=None, backup=None) -> str or bool:
         '''
         Saves the transcription file either to the transcription_file_path
         or to the "target_dir/name.transcription.json" path
 
         :param transcription_file_path:
         :param transcription_data:
-        :param name:
+        :param file_name: This is usually the audio file name
         :param target_dir:
+        :param backup: If True, the existing transcription file will be backed up to a .backups folder
+                        in the same directory as the transcription file. The backup string will be used as a suffix
+                        to the backup file name
         :return: False or transcription_file_path
         '''
 
@@ -5547,7 +6254,7 @@ class ToolkitOps:
 
         # make sure the transcription exists
         if not os.path.exists(transcription_file_path):
-            logger.warning("Transcription file {} doesn't exist.".format(transcription_file_path))
+            logger.warning("Transcription file {} not found".format(transcription_file_path))
             return False
 
         # get the contents of the transcription file

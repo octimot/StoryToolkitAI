@@ -352,7 +352,9 @@ timeline.
 
     V               - add active segment to selection
 
-    Shift+V         - deselect all
+    Shift+V         - deselect all active segments
+
+    CMD/CTRL+A      - select all transcript segments - since version 0.17.4.5
 
     Shift+A         - create selection between the previously active and the currently active segment
                       also works to create a selection for the last played segments in Resolve (if sync is active):
@@ -364,6 +366,8 @@ timeline.
 
     CMD/CTRL+Shift+C- copy transcript of selection with timecodes at the beginning of each transcript line
                       (or transcript seconds, if Resolve is not available) - since version 0.17.4.4
+
+    Backspace       - delete active segment (will ask for confirmation) - since version 0.17.4.5
 
     m               - add duration markers for the active segment/selection
                       in case there are gaps between the text segments, 

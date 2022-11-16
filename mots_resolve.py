@@ -786,6 +786,7 @@ class MotsResolve:
 
                         render_jobs_markers[render_job_id] = {'project_name': project.GetName(),
                                                               'timeline_name': currentTimeline.GetName(),
+                                                              'timeline_start_tc': currentTimeline.GetStartTimecode(),
                                                               'render_name': renderSettings["CustomName"],
                                                               'marker_name': marker_data["name"],
                                                               'in_offset': marker,
@@ -992,6 +993,7 @@ class MotsResolve:
             render_data = {}
             render_data[render_job_id] = {'project_name': project.GetName(),
                                           'timeline_name': currentTimeline.GetName(),
+                                          'timeline_start_tc': currentTimeline.GetStartTimecode(),
                                           'render_name': renderSettings["CustomName"],
                                           'in_offset': 0,
                                           'duration': int(renderSettings["MarkOut"]) - int(renderSettings["MarkIn"]),
@@ -1055,10 +1057,10 @@ class MotsResolve:
                     if render_data and len(render_data) > 0:
                         # print(render_jobs_markers[rendered_clip['JobId']])
 
-                        # write the marker info in the file
+                        # write the render info in the file
                         with open(os.path.join(rendered_clip['TargetDir'], rendered_clip['OutputFilename'] + '.json'),
                                   'w') as outfile:
-                            json.dump(render_data[rendered_clip['JobId']], outfile)
+                            json.dump(render_data[rendered_clip['JobId']], outfile, indent=4)
 
             # convert rendered TIFFs to JPEG
             if stills:
