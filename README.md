@@ -26,7 +26,9 @@ https://vimeo.com/759962195/dee07a067a
 ### Work in progress
 - [ ] **Transcript Segment Groups** to select and add phrases to groups that can be recalled later 
 - [ ] **Speaker Recognition**
+- [ ] **Advanced Search on Markers** - for Resolve (and possibly other NLE) markers
 - [ ] **Integration with other AI / ML tools**
+- [ ] **Integration with other NLEs / standalone players**
 - [X] Plus more flashy features as clickbait to unrealistically raise expectations and destroy competition
 
 Our plan is to incorporate more AI technologies that make editors' work easier and more efficient, something similar
