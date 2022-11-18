@@ -8620,8 +8620,8 @@ if __name__ == '__main__':
         update_available = online_version
 
     # connect to the API
-    stAI.check_API_credentials()
-    stAI.connect_API()
+    # stAI.check_API_credentials()
+    # stAI.connect_API()
 
     # initialize operations object
     toolkit_ops_obj = ToolkitOps(stAI=stAI)
