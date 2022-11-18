@@ -210,6 +210,22 @@ class toolkit_UI:
             # change the link in the about dialogue
             self.toolkit_UI_obj.root.createcommand('tkAboutDialog', self.about_dialog)
 
+            # see https://tkdocs.com/tutorial/menus.html#platformmenus
+            #menubar = Menu(self.toolkit_UI_obj.root)
+            #appmenu = Menu(menubar, name='apple')
+            #menubar.add_cascade(menu=appmenu)
+            #appmenu.add_command(label='About My Application')
+            #appmenu.add_separator()
+
+            #system_menu = tk.Menu(self.main_menubar, name='apple')
+            #system_menu.add_command(command=lambda: self.w.call('tk::mac::standardAboutPanel'))
+            #system_menu.add_command(command=lambda: self.updater.checkForUpdates())
+
+            #system_menu.entryconfigure(0, label="About")
+            #system_menu.entryconfigure(1, label="Check for Updates...")
+            #self.main_menubar.add_cascade(menu=system_menu)
+
+
             filemenu = Menu(self.main_menubar, tearoff=0)
             filemenu.add_command(label="Configuration directory", command=self.open_userdata_dir)
             # filemenu.add_command(label="New", command=donothing)
@@ -319,8 +335,12 @@ class toolkit_UI:
             # save other data from the transcription file for each window here
             self.transcription_data = {}
 
-            # save transcription groups here
+            # save transcription groups of each transcription window here
             self.transcript_groups = {}
+
+            # save the selected groups of each transcription window here
+            # (multiple selections allowed)
+            self.selected_groups = {}
 
             # all the selected transcript segments of each window
             # the selected segments dict will use the text element line number as an index, for eg:
@@ -896,7 +916,7 @@ class toolkit_UI:
             # q key event (close transcription window)
             if event.keysym == 'q':
                 # close transcription window
-                self.toolkit_UI_obj.destroy_window_(self.toolkit_UI_obj.windows, window_id=window_id)
+                self.toolkit_UI_obj.destroy_transcription_window(window_id)
 
             # Shift+L key event (link current timeline to this transcription)
             if event.keysym == 'L':
@@ -907,13 +927,30 @@ class toolkit_UI:
             if event.keysym == 's':
                 self.sync_with_playhead_update(window_id=window_id)
 
-            # g key event (group selected - add to existing group)
-            # if event.keysym == 'g':
-            #    self.group_selected(window_id=window_id, add=True)
+            # CMD+G key event (group selected - adds new group or updates segments of existing group)
+            if event.keysym == 'g' and special_key == 'cmd':
 
-            # SHIFT+G creates groups the selected segments into a new group (or overwrites existing)
-            # if event.keysym == 'G':
-            #     self.group_selected(window_id=window_id)
+                # if a group is selected, just update it
+                if window_id in self.selected_groups and len(self.selected_groups[window_id])==1:
+
+                    # use the selected group id
+                    group_id = self.selected_groups[window_id][0]
+
+                    # update group
+                    self.toolkit_UI_obj.on_group_update_press(t_window_id=window_id,
+                                                               t_group_window_id=window_id+'_transcript_groups',
+                                                               group_id=group_id)
+
+
+                # otherwise create a new group
+                else:
+                    if self.group_selected(window_id=window_id):
+                        logger.info('Group added')
+
+            # SHIFT+G opens group window
+            if event.keysym == 'G':
+                 #self.group_selected(window_id=window_id)
+                self.toolkit_UI_obj.open_transcript_groups_window(transcription_window_id=window_id)
 
             # colon key event (align current line start to playhead)
             if event.keysym == 'colon':
@@ -1533,10 +1570,13 @@ class toolkit_UI:
 
             self.selected_segments[window_id].clear()
 
+            if text_element is None:
+                text_element = self.get_transcription_window_text_element(window_id=window_id)
+
             if text_element is not None:
                 text_element.tag_delete("l_selected")
 
-        def segment_to_selection(self, window_id=None, text_element=None, line=None):
+        def segment_to_selection(self, window_id=None, text_element=None, line: int or list = None):
             '''
             This either adds or removes a segment to a selection,
             depending if it's already in the selection or not
@@ -1545,7 +1585,8 @@ class toolkit_UI:
 
             :param window_id:
             :param text_element:
-            :param line:
+            :param line: Either the line no. or a list of line numbers
+                        (if a list is passed, it will only add and not remove)
             :return:
             '''
 
@@ -1716,11 +1757,14 @@ class toolkit_UI:
                 # the segments we pass for grouping need to be in a list format
                 segments_for_group = list(self.selected_segments[window_id].values())
 
+                # lowercase all dictionary keys for non-case sensitive comparison
+                transcript_groups_lower = {k.lower(): v for k, v in transcript_groups.items()}
+
                 # if this is an add operation and
                 # if the group name was passed and it exists in the groups of this transcription,
                 # add the selected segments to that group instead of creating a new one
                 # (so keep the old segments in the group too)
-                if add is True and group_name is not None and group_name in transcript_groups \
+                if add is True and group_name is not None and group_name.lower() in transcript_groups_lower \
                         and len(transcript_groups[group_name]) > 0 \
                         and 'time_intervals' in transcript_groups[group_name]\
                         and len(transcript_groups[group_name]['time_intervals']) > 0:
@@ -1742,28 +1786,24 @@ class toolkit_UI:
 
                 # but if this is not an add operation, yet the group exists in the groups of this transcription
                 # make sure the user understands that we're overwriting the existing group
-                elif add is False and group_name is not None and group_name in transcript_groups:
+                # BTW to simplify things we're now using the lower case version of the group name as a group_id
+                elif add is False and group_name is not None and group_name.strip().lower() in transcript_groups_lower:
 
                     # ask the user if they're sure they want to overwrite the existing group
-                    overwrite = messagebox.askyesno('Group already exists',
-                                                    'Do you to overwrite the existing {} group?'
-                                                    .format(group_name))
-
-                    logger.debug('Overwriting group: {}'.format(group_name))
+                    overwrite = messagebox.askyesno(message='Group already exists\nDo you want to overwrite it?\n\n'
+                                                            'This will also empty the group notes.')
 
                     # if the user didn't confirm, abort
                     if not overwrite:
                         return False
 
+                    logger.debug('Overwriting group: {}'.format(group_name))
+
                 else:
                     logger.debug('Creating new group: {}'.format(group_name))
 
-
-                # group the segments
-                time_intervals = self
-
                 # save the segments to the transcription file
-                transcript_groups = self.toolkit_ops_obj.t_groups_obj\
+                save_return = self.toolkit_ops_obj.t_groups_obj\
                                         .save_segments_as_group_in_transcription_file(
                                             transcription_file_path=transcription_file_path,
                                             segments=segments_for_group,
@@ -1773,37 +1813,55 @@ class toolkit_UI:
                                             overwrite_existing=True
                 )
 
-                # if a dict of groups was returned, update the groups dict for this window
-                if type(transcript_groups) is dict:
-                    self.transcript_groups[window_id] = transcript_groups
+                if type(save_return) is dict:
+
+                    # initialize the empty group if it doesn't exist
+                    if window_id not in self.transcript_groups:
+                        self.transcript_groups[window_id] = {}
+
+                    # if the returned value is a dictionary, it means that the window groups have been updated
+                    # so we need to update the groups of this window
+                    self.transcript_groups[window_id] = save_return
+
+                else:
+                    logger.debug('Something may have went wrong while saving the group to the transcription file')
+                    return False
 
                 # update the list of groups in the transcript groups window
-                # self.update_transcript_groups_window(window_id=window_id)
-
-                # update the current group selection so we know that the active selection is now a group
-                # self.selected_transcript_group[window_id] = group_id
+                self.toolkit_UI_obj.update_transcript_groups_window(t_window_id=window_id)
 
                 return True
 
-        def delete_group(self, window_id: str, group_id: str, no_confirmation: bool = False) -> bool:
+        def delete_group(self, t_window_id: str, group_id: str, no_confirmation: bool = False, **kwargs) -> bool:
+            '''
+            This deletes a group from the transcription file
+            and updates the transcription groups window (optional, only if t_group_window_id, groups_listbox are passed)
 
-            # WORK IN PROGRESS
-
-            return
+            :param t_window_id: The transcription window id
+            :param group_id:
+            :param no_confirmation: If this is True, we're not asking the user for confirmation
+            :return:
+            '''
 
             # get the path of the window transcription file based on the window id
-            if window_id in self.transcription_file_paths:
-                transcription_file_path = self.transcription_file_paths[window_id]
+            if t_window_id in self.transcription_file_paths:
+                transcription_file_path = self.transcription_file_paths[t_window_id]
             else:
+                logger.debug('Could not find transcription file path for window id: {}'.format(t_window_id))
                 return False
 
             # get the existing groups
-            if window_id in self.transcript_groups:
-                transcript_groups = self.transcript_groups[window_id]
+            if t_window_id in self.transcript_groups:
+                transcript_groups = self.transcript_groups[t_window_id]
 
             else:
                 transcript_groups = {}
                 return True
+
+            # check the group id
+            if group_id is None or group_id.strip() == '':
+                logger.debug('No group id was passed')
+                return False
 
             # if the group id exists in the groups of this transcription
             if group_id in transcript_groups:
@@ -1812,16 +1870,46 @@ class toolkit_UI:
 
                 # ask the user if they're sure they want to delete the group
                 if not no_confirmation:
-                    delete = messagebox.askyesno('Delete group',
-                                                 'Do you to delete the {} group?'
-                                                 .format(group_name))
+                    delete = messagebox.askyesno(message=
+                                                 'Are you sure you want to delete '
+                                                 'the group "{}"?'.format(group_name))
 
                     # if the user didn't confirm, abort
                     if not delete:
                         return False
 
+                # remove the group from the groups dictionary
+                del transcript_groups[group_id]
 
-                logger.debug('WORK IN PROGRESS Deleting group: {}'.format(group_name))
+                # save the groups to the transcription file
+                save_return = self.toolkit_ops_obj.t_groups_obj\
+                    .save_transcript_groups(transcription_file_path=transcription_file_path,
+                                            transcript_groups=transcript_groups)
+
+                # if the returned value is a dictionary, it means that the window groups have been updated
+                if type(save_return) is dict:
+
+                    # update the window with the returned transcript groups
+                    self.transcript_groups[t_window_id] = save_return
+
+                    # if the selected group is no longer in the groups of this window
+                    # make sure it's also not selected anymore
+                    if t_window_id in self.selected_groups \
+                        and group_id in self.selected_groups[t_window_id]:
+
+                            # remove the group from the selected groups
+                            self.selected_groups[t_window_id].remove(group_id)
+
+                    # update the transcript groups window, if the right arguments were passed:
+                    # the kwargs should contain the transcript groups window id and the groups listbox
+                    if 't_group_window_id' in kwargs and 'groups_listbox' in kwargs:
+                        self.toolkit_UI_obj.update_transcript_groups_window(t_window_id=t_window_id, **kwargs)
+
+                    return True
+
+                else:
+                    logger.debug('Something may have went wrong while saving the groups to the transcription file')
+                    return False
 
 
 
@@ -2429,6 +2517,9 @@ class toolkit_UI:
         self.input_grid_settings = {'sticky': 'w'}
         self.entry_settings = {'width': 30}
         self.entry_settings_half = {'width': 20}
+
+        # scrollbars
+        self.scrollbar_settings = {'width': 10}
 
         # the font size ratio
         if sys.platform == "darwin":
@@ -3106,6 +3197,11 @@ class toolkit_UI:
         if window_id+'_search' in self.windows:
             self.destroy_window_(self.windows, window_id=window_id + '_search')
 
+        # also destroy the associated groups window (if it exists)
+        # - in the future, if were to have multiple search windows, we will need to do it differently
+        if window_id+'_transcript_groups' in self.windows:
+            self.destroy_transcript_groups_window(window_id=window_id + '_transcript_groups')
+
         # remove the transcription segments from the transcription_segments dict
         if window_id in self.t_edit_obj.transcript_segments:
             del self.t_edit_obj.transcript_segments[window_id]
@@ -3284,7 +3380,18 @@ class toolkit_UI:
 
             # add the transcript groups to the transcript_groups dict
             if 'transcript_groups' in transcription_json:
+
                 self.t_edit_obj.transcript_groups[t_window_id] = transcription_json['transcript_groups']
+
+                # if the transcript groups are not empty
+                if transcription_json['transcript_groups']:
+
+                    # open the transcript groups window
+                    if self.stAI.get_app_setting(setting_name='open_transcript_groups_window_on_open',
+                                                 default_if_none=False) is True:
+                        self.open_transcript_groups_window(transcription_window_id=t_window_id,
+                                                           transcription_name=title)
+
             else:
                 self.t_edit_obj.transcript_groups[t_window_id] = {}
 
@@ -3309,6 +3416,14 @@ class toolkit_UI:
                             font=(self.transcript_font), width=45, height=30, padx=5, pady=5, wrap=tk.WORD,
                                                     background=self.resolve_theme_colors['black'],
                                                     foreground=self.resolve_theme_colors['normal'])
+
+                # add a scrollbar to the text element
+                scrollbar = Scrollbar(text_form_frame, orient="vertical", **self.scrollbar_settings)
+                scrollbar.config(command=text.yview)
+                scrollbar.pack(side=tk.RIGHT, fill='y', pady=5)
+
+                # configure the text element to use the scrollbar
+                text.config(yscrollcommand=scrollbar.set)
 
                 # we'll need to count segments soon
                 segment_count = 0
@@ -3791,7 +3906,7 @@ class toolkit_UI:
             log_frame = tk.Frame(log_canvas)
 
             # create a scrollbar to use with the canvas
-            scrollbar = Scrollbar(self.windows['t_log'], command=log_canvas.yview)
+            scrollbar = Scrollbar(self.windows['t_log'], command=log_canvas.yview, **self.scrollbar_settings)
 
             # attach the scrollbar to the log_canvas
             log_canvas.config(yscrollcommand=scrollbar.set)
@@ -3852,8 +3967,8 @@ class toolkit_UI:
     def open_transcription_log_window(self):
 
         # create a window for the transcription log if one doesn't already exist
-        if (self._create_or_open_window(parent_element=self.root,
-                                        window_id='t_log', title='Transcription Log', resizable=True)):
+        if self._create_or_open_window(parent_element=self.root,
+                                        window_id='t_log', title='Transcription Log', resizable=True):
             # and then call the update function to fill the window up
             self.update_transcription_log_window()
 
@@ -4017,6 +4132,686 @@ class toolkit_UI:
                               )
 
             return True
+
+    def _get_group_id_from_listbox(self, groups_listbox: tk.Listbox) -> str:
+        '''
+        Returns the group id of the selected group in the groups listbox
+
+        :param groups_listbox:
+        :return:
+        '''
+
+        return groups_listbox.get(tk.ANCHOR).strip().lower()
+
+    def _get_selected_group_id(self, t_window_id: str = None, groups_listbox: tk.Listbox = None) \
+            -> str or bool or None:
+        '''
+        Returns the group id of the selected group either from the selected groups dict or from in the group listbox
+        :param t_window_id: the id of the transcription window (optional, if groups_listbox is not None)
+        :param groups_listbox: the listbox with the groups (optional, if t_window_id is not None)
+        :return: group id
+        '''
+
+        # this gets the currently selected group id
+        # one thing to note is that in the listbox, we are using the group name
+        # so this means that we are basically using the group name as a group id (after lowercasing it)
+        # this is fine for now, but if things become more complex
+        # we need to develop a mapping between the currently selected list item and the group id
+        if t_window_id is not None:
+
+            if t_window_id not in self.t_edit_obj.selected_groups:
+                logger.error('No group is selected in transcription window {}'.format(t_window_id))
+                return None
+
+            if self.t_edit_obj.selected_groups[t_window_id] is None\
+                    or len(self.t_edit_obj.selected_groups[t_window_id]) == 0:
+                return None
+
+            # get the selected group id from the selected groups dict
+            group_id = self.t_edit_obj.selected_groups[t_window_id][0]
+
+        elif groups_listbox is not None:
+            # get the selected group id from the listbox
+            group_id = self._get_group_id_from_listbox(groups_listbox)
+
+        else:
+            logger.error('No transcription window id or groups listbox was provided. Aborting.')
+            return False
+
+        print('group_id', group_id.strip().lower())
+
+        return group_id.strip().lower()
+
+    def on_group_update_press(self, t_window_id: str, t_group_window_id: str, group_id: str = None,
+                       groups_listbox: tk.Listbox = None):
+        '''
+        Do stuff and update the group data in the transcription file,
+        but only with the update_only_data (everything else will be left untouched in the group dict)
+        :param t_window_id:
+        :param t_group_window_id:
+        :param group_id:
+        :param groups_listbox:
+        :param update_only_data: The only data to update in the group (everything else is taken
+                                    from the group window dict)
+        :return:
+        '''
+
+        # get the fields from the group window
+        # (we're only need the group notes, and we'll update the time intervals based on the selected segments later)
+        form_update_data = self._get_form_data(t_group_window_id, inputs=['group_notes'])
+
+        # set the update data correctly
+        # (we're using group_notes as an input name, but need notes for the dict)
+        update_data = {'notes': form_update_data['group_notes'].strip()}
+
+        # if group_id is None, get it from the listbox
+        if group_id is None and groups_listbox is not None:
+
+            # this gets the currently selected group id based on the selected group name
+            group_id = self._get_selected_group_id(t_window_id=t_window_id)
+
+            if group_id is None or not group_id:
+                logger.debug('No group is selected in transcription window {}'.format(t_window_id))
+                return False
+
+        elif group_id is None and groups_listbox is None:
+            logger.debug('No group id or group listbox was not provided')
+            return False
+
+        # get the current group data from the group window dict
+        if t_window_id in self.t_edit_obj.transcript_groups \
+            and group_id in self.t_edit_obj.transcript_groups[t_window_id]:
+
+            # get the current group data
+            group_data = self.t_edit_obj.transcript_groups[t_window_id][group_id]
+
+            # update the current group data with the update_only_data
+            group_data.update(update_data)
+
+            # get the selected segments for the group
+            segments_for_group = list(self.t_edit_obj.selected_segments[t_window_id].values())
+
+            # get the transcription file path from the window transcription paths dict
+            if t_window_id in self.t_edit_obj.transcription_file_paths:
+
+                transcription_file_path = self.t_edit_obj.transcription_file_paths[t_window_id]
+
+                # save the group data to the transcription file
+                # save_return = self.toolkit_ops_obj.t_groups_obj\
+                #                .save_transcript_groups(transcription_file_path=transcription_file_path,
+                #                                         transcript_groups=group_update_data,
+                #                                         group_id=group_id)
+
+                # save the segments to the transcription file
+                save_return = self.toolkit_ops_obj.t_groups_obj\
+                                        .save_segments_as_group_in_transcription_file(
+                                            transcription_file_path=transcription_file_path,
+                                            segments=segments_for_group,
+                                            group_name=group_data['name'],
+                                            group_notes=group_data['notes'],
+                                            existing_transcript_groups=self.t_edit_obj.transcript_groups[t_window_id],
+                                            overwrite_existing=True)
+
+
+                if not save_return:
+                    logger.error('Could not save group {} data to transcription file {}'
+                                 .format(group_id, transcription_file_path))
+                    return False
+
+                else:
+                    logger.debug('Group {} data updated in transcription file {}'
+                                 .format(group_id, transcription_file_path))
+
+                    # replace the group data in the window dict with the updated data
+                    self.t_edit_obj.transcript_groups[t_window_id] = save_return
+
+                    logger.info('Group updated')
+
+                return save_return
+
+            else:
+                logger.error('No transcription file path was found for the current window id')
+
+        return False
+
+
+
+    def on_group_delete_press(self, t_window_id: str, t_group_window_id: str, group_id: str = None,
+                       groups_listbox: tk.Listbox = None):
+        '''
+        Do stuff when the delete group button is pressed:
+        this will delete the group from the transcription data
+        and update the transcription groups window with the remaining groups
+
+        :param t_window_id:
+        :param t_group_window_id:
+        :param group_id:
+        :param groups_listbox:
+        :return:
+        '''
+
+        # if group_id is None, get it from the listbox
+        if group_id is None and groups_listbox is not None:
+
+            group_id = self._get_selected_group_id(t_window_id=t_window_id)
+
+        else:
+            logger.debug('No group id or group listbox was provided')
+            return False
+
+        # delete the group from the transcription data
+        # (by passing the transcription window id and the group id we're also updating the group window)
+        self.t_edit_obj.delete_group(t_window_id, group_id,
+                                     t_group_window_id=t_group_window_id, groups_listbox=groups_listbox)
+
+    def on_group_press(self, e, t_window_id: str, t_group_window_id: str, group_id: str = None,
+                       groups_listbox: tk.Listbox = None):
+        '''
+        Do stuff when the user presses a group somewhere
+        :param t_window_id:
+        :param t_group_window_id:
+        :param group_id: The group id (optional, if group_listbox is not None)
+        :param groups_listbox: The tk element that contains the groups (optional, if group_id is not None)
+        :return:
+        '''
+
+        # if group_id is None, get it from the listbox
+        if group_id is None and groups_listbox is not None:
+
+            group_id = self._get_group_id_from_listbox(groups_listbox=groups_listbox)
+
+        else:
+            logger.debug('No group id or group listbox was provided')
+            return False
+
+        # if the group id matches the group id in the selected group
+        # it means that we are clicking on a group that was already selected
+        # so, deselect the group and all the segments from the window
+        if t_window_id in self.t_edit_obj.selected_groups \
+                and group_id in self.t_edit_obj.selected_groups[t_window_id]:
+
+            # empty the selected groups
+            self.t_edit_obj.selected_groups[t_window_id] = []
+
+            # clear the selected segments
+            self.t_edit_obj.clear_selection(t_window_id)
+
+            # clear the selection in the listbox
+            groups_listbox.selection_clear(0, tk.END)
+
+            # update the group window
+            self.update_transcript_group_form(t_window_id, t_group_window_id, group_id=None)
+
+            # hide the group_details_frame
+            self._hide_group_details_frame(t_group_window_id)
+
+        # otherwise it means that we want to select a group
+        else:
+
+            # create the selected groups for the transcription window if it doesn't exist
+            if t_window_id not in self.t_edit_obj.selected_groups:
+                self.t_edit_obj.selected_groups[t_window_id] = []
+
+            # empty the selected groups (deactivate when multiple groups can be selected)
+            self.t_edit_obj.selected_groups[t_window_id] = []
+
+            # add the group to the currently selected groups
+            self.t_edit_obj.selected_groups[t_window_id].append(group_id)
+
+            # select the segments in the transcription window
+            self.select_group_segments(t_window_id, group_id)
+
+            # update the group window
+            self.update_transcript_group_form(t_window_id, t_group_window_id, group_id)
+
+            # show the group_details_frame
+            self._show_group_details_frame(t_group_window_id)
+
+        return True
+
+    def select_group_segments(self, t_window_id: str, group_id: str, text_element: tk.Text = None):
+        '''
+        Select the segments in the transcription window according to the time_intervals in the group data
+        :param t_window_id:
+        :param group_id:
+        :param text_element: The text element to select the segments in (optional)
+        :return:
+        '''
+
+        # get the transcription group data
+        # if it exists in the dict
+        if t_window_id in self.t_edit_obj.transcript_groups \
+                and group_id in self.t_edit_obj.transcript_groups[t_window_id]:
+
+            group_data = self.t_edit_obj.transcript_groups[t_window_id][group_id]
+
+            # get the time intervals
+            if 'time_intervals' in group_data:
+                time_intervals = group_data['time_intervals']
+
+                # get the transcript segments
+                if t_window_id in self.t_edit_obj.transcript_segments:
+                    transcript_segments = self.t_edit_obj.transcript_segments[t_window_id]
+
+                    # convert the time intervals to segments
+                    group_segments = \
+                        self.toolkit_ops_obj.time_intervals_to_transcript_segments(time_intervals, transcript_segments)
+
+                    # if no text element was provided, get it from the transcription window
+                    if text_element is None:
+                        text_element = self.t_edit_obj.get_transcription_window_text_element(t_window_id)
+
+                        # now clear the selection
+                        self.t_edit_obj.clear_selection(t_window_id)
+
+                        group_lines = []
+
+                        # go through the segments and get their line numbers
+                        for segment in group_segments:
+
+                            # get the line number
+                            group_lines.append(self.t_edit_obj.segment_id_to_line(t_window_id, segment['id']))
+
+                        # and select the segments
+                        self.t_edit_obj.segment_to_selection(t_window_id, text_element=text_element, line=group_lines)
+
+                        return True
+
+        # if the above fails, just return False
+        return False
+
+    def update_transcript_group_form(self, t_window_id: str, t_group_window_id: str, group_id: str or None):
+        '''
+        This updates the transcript group form with the data stored in the transcript_groups dict
+        :param t_window_id: the id of the transcription window (needed to get the groups data)
+        :param t_group_window_id: the id of the group window
+        :param group_id: the id of the group to pull data from
+        :return:
+        '''
+
+        # initialize the group data that dict that will be pass to the populate function
+        update_group_data = {'group_notes': ''}
+
+        # get the transcription group data
+        # if it exists in the dict
+        if group_id is not None and \
+                t_window_id in self.t_edit_obj.transcript_groups \
+                and group_id in self.t_edit_obj.transcript_groups[t_window_id]:
+
+            # get the group data
+            group_data = self.t_edit_obj.transcript_groups[t_window_id][group_id]
+
+            # use the group data to populate the group form (just the notes here)
+            update_group_data = {'group_notes': group_data['notes']}
+
+        # populate the transcription group form
+        self._populate_form_data(window_id=t_group_window_id, form_data=update_group_data)
+
+    def _get_form_data(self, window_id: str, inputs: list = None) -> dict or bool:
+        '''
+        This gets the data from the form fields
+        :param window_id:
+        :param fields: The fields to get the data from (optional)
+        :return: A dict with the data from the form fields
+        '''
+
+        # keep track of the elements that we have found
+        found_inputs = []
+
+        # keep track of the data that we have found
+        form_data = {}
+
+        for key in inputs:
+            form_data[key] = None
+
+        # the window needs to be registered in the windows dict
+        if window_id not in self.windows:
+            logger.error('The window id provided was not found in the windows dict')
+            return False
+
+        # search through all the elements in the window until we find the elements that we need
+        # but since we are expecting the forms to be inside a frame, we'll only look at the second level
+        for child in self.windows[window_id].winfo_children():
+
+            # go another level deeper, since we are expecting the forms to be inside a frame
+            if len(child.winfo_children()) > 0:
+
+                for child2 in child.winfo_children():
+
+                    # if the child2 name is in the form_input_names dict
+                    if child2.winfo_name() in inputs:
+
+                        # add the input to the found inputs list
+                        found_inputs.append(child2.winfo_name())
+
+                        # get the tkinter value of the element depending on the type
+                        if child2.winfo_class() == 'Entry':
+
+                            # get the value of the entry
+                            form_data[child2.winfo_name()] = child2.get()
+
+                        elif child2.winfo_class() == 'Text':
+
+                            # get the whole value of the text input
+                            form_data[child2.winfo_name()] = child2.get(0.0, tk.END)
+
+                        else:
+                            # this is to let us know that we need to create a procedure for this input type
+                            logger.error('The tkinter input type {} for {} is not supported'
+                                         .format(child2.winfo_class(), child2.winfo_name()))
+
+        # if we didn't find all the inputs, log it
+        if len(found_inputs) != len(form_data):
+            logger.debug('Not all requested form inputs were not found in the window')
+
+        return form_data
+
+
+    def _populate_form_data(self, window_id, form_data):
+        '''
+        This populates the form data in the form with the data provided
+
+        It will automatically search for the elements in the window and if the elements are found, it will populate them
+
+        form_data needs to be a dict with the element names as keys and the values used to populate the elements
+
+        :param window_id:
+        :param form_data:
+        :return:
+        '''
+
+        # initialize empty inputs until we find them
+        form_input_names = {}
+
+        # keep track of the elements that we have found
+        all_inputs = list(form_data.keys())
+        found_inputs = []
+
+        for key in form_data:
+            form_input_names[key] = None
+
+        # the window needs to be registered in the windows dict
+        if window_id not in self.windows:
+            logger.error('The window id provided was not found in the windows dict')
+            return False
+
+        # search through all the elements in the window until we find the elements that we need
+        # but since we are expecting the forms to be inside a frame, we'll only look at the second level
+        for child in self.windows[window_id].winfo_children():
+
+            # go another level deeper, since we are expecting the forms to be inside a frame
+            if len(child.winfo_children()) > 0:
+
+                for child2 in child.winfo_children():
+
+                    # if the child2 name is in the form_input_names dict
+                    if child2.winfo_name() in form_input_names:
+                        form_input_names[key] = child2
+
+                        # add the input to the found inputs list
+                        found_inputs.append(child2.winfo_name())
+
+                        # update the input based on the tkinter input type
+                        if child2.winfo_class() == 'Entry':
+
+                            # clear the input
+                            child2.delete(0, tk.END)
+
+                            # then populate it with the data
+                            form_input_names[key].insert(0.0, form_data[key])
+
+                        elif child2.winfo_class() == 'Text':
+
+                            # clear the text input
+                            form_input_names[key].delete(0.0, tk.END)
+
+                            # then populate it with the data
+                            form_input_names[key].insert(0.0, form_data[key])
+
+                        else:
+                            # this is to let us know that we need to create a procedure for this input type
+                            logger.error('The tkinter input type {} for {} is not supported'
+                                         .format(child2.winfo_class(), child2.winfo_name()))
+
+        # if we didn't find all the inputs
+        if len(found_inputs) != len(all_inputs):
+
+            # get the inputs that we didn't find
+            missing_inputs = list(set(all_inputs) - set(found_inputs))
+
+            # log the missing inputs
+            # this is to let us know that maybe we need to name the inputs in the form so they're found
+            # this could also happen if, for instance, the input is not in the window frame
+            logger.error('The following inputs were not found while updating window {}: {}'
+                         .format(window_id, missing_inputs))
+
+
+    def update_transcript_groups_window(self, t_window_id: str, t_group_window_id: str = None,
+                                        groups_listbox: tk.Listbox = None):
+
+        # if the group window id is not provided, assume this:
+        if t_group_window_id is None:
+            t_group_window_id = t_window_id+'_transcript_groups'
+
+        # we'll definitely need the groups notes input
+        group_details_frame = None
+
+        # we need a valid groups window id to continue
+        if t_group_window_id not in self.windows:
+            return False
+
+        # search through all the elements in the window until we find some elements that we might need
+        for child in self.windows[t_group_window_id].winfo_children():
+
+            # go another level deeper, since we are expecting the forms to be inside a frame
+            if len(child.winfo_children()) > 0:
+
+                for child2 in child.winfo_children():
+
+                    # if no groups listbox was provided remember but we found one, remember it
+                    if child2.winfo_name() == 'groups_listbox' \
+                            and groups_listbox is None and t_group_window_id in self.windows:
+                        groups_listbox = child2
+
+                        # if we found the group notes input, break out from this loop
+                        break
+
+            if child.winfo_name() == 'group_details_frame':
+                group_details_frame = child
+
+        # if we haven't found the groups notes input or groups listbox, return False
+        if group_details_frame is None or groups_listbox is None:
+            return False
+
+        # clear the listbox
+        groups_listbox.delete(0, tk.END)
+
+        # get the groups data
+        if t_window_id in self.t_edit_obj.transcript_groups:
+            groups_data = self.t_edit_obj.transcript_groups[t_window_id]
+
+            # create a list with all the group names from the group data
+            # the group names are inside the group data dict
+            # and sort them alphabetically
+            group_names = sorted([group_data['name'] for group_id, group_data in groups_data.items()])
+
+            # then add the transcript groups to the listbox
+            for group_name in group_names:
+                groups_listbox.insert(END, group_name)
+
+        # clear all the group form inputs
+        # but only if no group or more than a group is selected
+        if t_window_id not in self.t_edit_obj.selected_groups\
+                or len(self.t_edit_obj.selected_groups[t_window_id]) != 1:
+
+            update_group_data = {'group_notes': ''}
+
+            # populate the transcription group form
+            self._populate_form_data(window_id=t_group_window_id, form_data=update_group_data)
+
+            self._hide_group_details_frame(t_group_window_id, group_details_frame)
+
+        elif t_window_id in self.t_edit_obj.selected_groups\
+                and len(self.t_edit_obj.selected_groups[t_window_id]) == 1:
+
+            self._show_group_details_frame(t_group_window_id, group_details_frame)
+
+        return True
+
+    def _get_group_details_frame(self, t_group_window_id: str):
+
+        # we need a valid groups window id to continue
+        if t_group_window_id not in self.windows:
+            return False
+
+        # search through all the elements in the window until we find some elements that we might need
+        for child in self.windows[t_group_window_id].winfo_children():
+
+            if child.winfo_name() == 'group_details_frame':
+                return child
+
+    def _show_group_details_frame(self, t_group_window_id: str, group_details_frame: tk.Frame = None):
+
+        if group_details_frame is None:
+            group_details_frame = self._get_group_details_frame(t_group_window_id)
+
+        # or show the group notes label and text input
+        group_details_frame.pack(side=tk.BOTTOM, expand=True, fill=tk.X, **self.paddings, anchor=tk.S)
+
+    def _hide_group_details_frame(self, t_group_window_id: str, group_details_frame: tk.Frame = None):
+
+        if group_details_frame is None:
+            group_details_frame = self._get_group_details_frame(t_group_window_id)
+
+        # now hide the group notes label and text input
+        group_details_frame.pack_forget()
+
+    def destroy_transcript_groups_window(self, window_id: str = None):
+
+        # call the default destroy window function
+        self.destroy_window_(parent_element=self.windows, window_id=window_id)
+
+    def open_transcript_groups_window(self, transcription_window_id, transcription_name=None):
+
+        # the transcript groups window id
+        transcript_groups_window_id = '{}_transcript_groups'.format(transcription_window_id)
+
+        # the transcript groups window title
+        if transcription_name:
+            transcript_groups_window_title = 'Groups - {}'.format(transcription_name)
+        else:
+            transcript_groups_window_title = 'Groups'
+
+        # create a window for the transcript groups if one doesn't already exist
+        if self._create_or_open_window(parent_element=self.windows[transcription_window_id],
+                                       window_id=transcript_groups_window_id,
+                                       title=transcript_groups_window_title, resizable=True,
+                                       close_action=
+                                            lambda: self.destroy_transcript_groups_window(transcript_groups_window_id)
+                                       ):
+
+            # the current transcript groups window object
+            current_transcript_groups_window = self.windows[transcript_groups_window_id]
+
+            # use the transcript groups stored in the transcription window
+            if transcription_window_id in self.t_edit_obj.transcript_groups:
+
+                transcript_groups = self.t_edit_obj.transcript_groups[transcription_window_id]
+
+            # if they don't exist, create an empty dict
+            else:
+                self.t_edit_obj.transcript_groups[transcription_window_id] = {}
+                transcript_groups = {}
+
+            elements_width = 30
+
+            # add the frame to hold the transcript groups
+            transcript_groups_frame = tk.Frame(self.windows[transcript_groups_window_id])
+            transcript_groups_frame.pack(expand=True, fill=tk.BOTH, **self.paddings)
+
+            # add a listbox that holds all the transcript groups
+            groups_listbox = Listbox(transcript_groups_frame, name="groups_listbox",
+                                     width=elements_width, height=10, selectmode='single', exportselection=False)
+            groups_listbox.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
+
+            # add a scrollbar to the listbox
+            scrollbar = Scrollbar(transcript_groups_frame, orient="vertical", **self.scrollbar_settings)
+            scrollbar.config(command=groups_listbox.yview)
+            scrollbar.pack(side=tk.RIGHT, fill='y')
+
+            # configure the listbox to use the scrollbar
+            groups_listbox.config(yscrollcommand=scrollbar.set)
+
+            # add a frame to hold the transcript group details under the listbox
+            transcript_group_details_frame = tk.Frame(current_transcript_groups_window, name='group_details_frame')
+
+            # do not pack the frame yet, it will be packed when a group is selected (in the update function)
+            # transcript_group_details_frame.pack(side=tk.BOTTOM, expand=True, fill=tk.X, **self.paddings, anchor=tk.S)
+
+            # inside the transcript group details frame, add the inputs
+            # for the transcript group name, notes and some buttons
+
+            # the transcript group notes text box
+            Label(transcript_group_details_frame, text="Group Notes:", anchor='nw')\
+                .pack(side=tk.TOP, expand=True, fill=tk.X)
+            transcript_group_notes = tk.StringVar()
+            transcript_group_notes_input = Text(transcript_group_details_frame, name='group_notes',
+                                                width=elements_width, height=5, wrap=tk.WORD)
+            transcript_group_notes_input.pack(side=tk.TOP, expand=True, fill=tk.X, anchor='nw')
+
+            # update the transcript group notes variable when the text box is changed
+            #transcript_group_notes_input.bind('<KeyRelease>', lambda e: transcript
+
+            # add a frame to hold the buttons
+            transcript_group_buttons_frame = tk.Frame(transcript_group_details_frame)
+            transcript_group_buttons_frame.pack(side=tk.TOP, expand=True, fill=tk.X)
+
+            # the transcript group update button
+            transcript_group_update = tk.Button(transcript_group_buttons_frame, text='Save',
+                                                command=lambda
+
+                                                 transcription_window_id=transcription_window_id,
+                                                 transcript_groups_window_id=transcript_groups_window_id,
+                                                 group_notes=transcript_group_notes_input.get(0.0, tk.END),
+                                                 groups_listbox=groups_listbox:
+                                                    self.on_group_update_press(
+                                                        transcription_window_id,
+                                                        transcript_groups_window_id,
+                                                        groups_listbox=groups_listbox
+                                                  ))
+            transcript_group_update.pack(side=tk.LEFT)
+
+
+            # the transcript group delete button
+            transcript_group_delete = tk.Button(transcript_group_buttons_frame, text="Delete",
+                                               command=lambda
+                                                   transcription_window_id=transcription_window_id,
+                                                   transcript_groups_window_id=transcript_groups_window_id,
+                                                   groups_listbox=groups_listbox:
+                                                    self.on_group_delete_press(transcription_window_id,
+                                                                               transcript_groups_window_id,
+                                                                               groups_listbox=groups_listbox))
+            transcript_group_delete.pack(side=tk.RIGHT)
+
+            # when a user selects a transcript group from the listbox, update the transcript group details
+            groups_listbox.bind('<<ListboxSelect>>',
+                                lambda e,
+                                       transcription_window_id=transcription_window_id,
+                                       transcript_groups_window_id=transcript_groups_window_id,
+                                       groups_listbox=groups_listbox:
+                                    self.on_group_press(e, t_window_id=transcription_window_id,
+                                                             t_group_window_id=transcript_groups_window_id,
+                                                             groups_listbox=groups_listbox))
+
+            # place the transcript groups window on top of the transcription window
+            self.windows[transcript_groups_window_id].attributes('-topmost', 'true')
+            self.windows[transcript_groups_window_id].attributes('-topmost', 'false')
+            self.windows[transcript_groups_window_id].lift()
+
+            # and then call the update function to fill the groups listbox up
+            self.update_transcript_groups_window(t_window_id=transcription_window_id,
+                                                 t_group_window_id=transcript_groups_window_id,
+                                                 groups_listbox=groups_listbox)
 
     def button_advanced_search(self, search_window_id, search_term, results_text_element=None,
                                transcription_file_paths=None):
@@ -4790,7 +5585,7 @@ class ToolkitOps:
         def save_transcript_groups(self, transcription_file_path: str, transcript_groups: dict,
                                    group_id: str=None) -> dict or bool or None:
             '''
-            This function adds transcript groups to a transcription file.
+            This function saves transcript groups to a transcription file.
 
             It will overwrite any existing transcript groups in the transcription file.
 
@@ -4818,6 +5613,9 @@ class ToolkitOps:
 
             # otherwise, only focus on the passed group id
             else:
+
+                # one final strip and lower to make sure that the group_id is in the right format
+                group_id = group_id.strip().lower()
 
                 # but make sure that it was passed correctly in the transcript_groups dict
                 if group_id not in transcript_groups:
@@ -4869,10 +5667,17 @@ class ToolkitOps:
             :return: the transcript group dict or None if something went wrong
             '''
 
+            # trim the group name and group notes
+            group_name = group_name.strip()
+            group_notes = group_notes.strip()
+
             # if the group id is not provided, use the group name
             if group_id is None:
+
                 # generate a group id
-                group_id = str(group_name)
+                group_id = str(group_name).lower()
+
+            group_id = group_id.lower()
 
             # if we're not overwriting an existing group, see if the group id already exists in existing groups
             if not overwrite_existing \
@@ -4888,10 +5693,11 @@ class ToolkitOps:
                     if group_name_suffix != 1:
 
                         # but after the first iteration, add a suffix (should start at 2)
-                        group_id = group_name + '_' + str(group_name_suffix)
+                        group_id = group_name.lower() + '_' + str(group_name_suffix)
 
                     # if the group id doesn't exist in the existing groups, break out of the loop
-                    if group_id not in existing_transcript_groups:
+                    # (convert all to lowercase for comparison to avoid any sort of case sensitivity issues)
+                    if str(group_id).lower() not in list(map(str.lower, existing_transcript_groups)):
                         break
 
                     # if the group id already exists, increment the suffix and try again
@@ -4957,7 +5763,7 @@ class ToolkitOps:
                                                          group_id: str = None,
                                                          group_notes: str = '',
                                                          existing_transcript_groups: list = None,
-                                                         overwrite_existing: bool = False) -> bool or None:
+                                                         overwrite_existing: bool = False) -> str or None:
             '''
             This function saves a list of transcript segments as a group in a transcription file
 
@@ -4970,6 +5776,7 @@ class ToolkitOps:
             :param group_notes: the notes of the transcript group
             :param existing_transcript_groups: if a transcript group is being updated, pass its contents here
             :param overwrite_existing: if the same group_id is found in the existing transcript groups, overwrite it
+            :return: the transcript group id or None if something went wrong
             '''
 
             # first, prepare the transcript group
@@ -4992,6 +5799,9 @@ class ToolkitOps:
             if not saved:
                 logger.debug('Could not save to transcription file {} the following transcript group: {}'.
                     format(transcription_file_path, transcript_group))
+
+            #elif :
+            #    saved = group_id
 
             logger.debug('Saved transcript groups {} to transcription file {}'
                          .format(list(transcript_group.keys()), transcription_file_path))
@@ -6260,6 +7070,11 @@ class ToolkitOps:
         # get the contents of the transcription file
         with codecs.open(transcription_file_path, 'r', 'utf-8-sig') as json_file:
             transcription_json = json.load(json_file)
+
+        # make sure that it's a transcription file
+        if 'segments' not in transcription_json:
+            logger.warning("The file {} is not a valid transcription file (segments missing)".format(transcription_file_path))
+            return False
 
         return transcription_json
 
@@ -7742,9 +8557,10 @@ class StoryToolkitAI:
             while True:
                 # ping the server every 2 seconds
                 time.sleep(2)
-
-                # send the ping command
                 self.send_API_command(command='ping')
+
+            # send the ping command
+            #self.send_API_command(command='transcribe:file_path')
 
             return True
 
@@ -7804,8 +8620,8 @@ if __name__ == '__main__':
         update_available = online_version
 
     # connect to the API
-    # stAI.check_API_credentials()
-    # stAI.connect_API()
+    stAI.check_API_credentials()
+    stAI.connect_API()
 
     # initialize operations object
     toolkit_ops_obj = ToolkitOps(stAI=stAI)

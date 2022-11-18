@@ -17,6 +17,7 @@ https://vimeo.com/759962195/dee07a067a
 - [x] **Free Automatic Translation** to English on your local machine
 - [x] **Advanced Search** - allows you to search one or many transcripts semantically using AI
 - [x] **Mark and Navigate Resolve Timelines via Transcript**, plus other handy Resolve-only features
+- [X] **Transcript Segment Groups** allows the grouping of transcription segments into groups similar to marking in NLEs
 - [x] **Import subtitles after transcription** from the tool directly into Resolve
 - [x] **Convert existing SRT files to transcripts** and use them in the tool (non-standalone version only until next release)
 - [x] Export of transcripts to multiple formats, including SRT and TXT
@@ -24,7 +25,6 @@ https://vimeo.com/759962195/dee07a067a
 - [x] Partial re-transcriptions of timelines/videos/audio files
 
 ### Work in progress
-- [ ] **Transcript Segment Groups** to select and add phrases to groups that can be recalled later 
 - [ ] **Speaker Recognition**
 - [ ] **Advanced Search on Markers** - for Resolve (and possibly other NLE) markers
 - [ ] **Integration with other AI / ML tools**
@@ -39,6 +39,9 @@ For more details regarding features, go [here](https://github.com/octimot/StoryT
 
 _The app is in this stage raw and not polished at all, but we use it daily in our editing room. It's for free
 not only out of sheer generosity, but also because we'd like to change how people approach editing by using AI._
+
+_Some of the above features are only available in the non-standalone version of the tool, but they will be available
+in the standalone version in the next release._
 
 ### Is it really completely free?
 Yes, the tool runs locally like butter and there's no need for any additional account to transcribe, translate to
@@ -274,12 +277,31 @@ machine, the search should work almost in real time._
 _About search speed: the search is pretty fast, but it will depend on the size of the transcript (or transcripts)
 you're searching. Using a lot of transcripts will make the search slower, so a smaller transform model is recommended
 (more on that later). On a Mac M1, using the all-MiniLM-L6-v2 model, searching through an hour of audio 
-(cca. 700 phrases) takes around 2 seconds, while searching through 40+ hours of audio (cca. 34k phrases) takes around 2 minutes._
+(cca. 700 phrases) takes around 2 seconds, while searching through 40+ hours of audio (cca. 34k phrases) takes around 
+2 minutes._
 
 ### Transcript Word Search
 Once a transcript is loaded, a basic search function will let you find words in the transcript and show you their 
 position. Once you find what you're looking for, simply clicking the phrase will move the Resolve playhead to the
 respective timecode.
+
+### Transcript Groups
+
+Starting with v0.17.5, you can group transcript segments together so that you can easily select them later if you need
+to. To add segments to groups, select them with V (or CMD/CTRL+Click, or other selection shortcuts) and then press 
+CMD/CTR+G. To see the group list for each transcript, click CMD/CTRL+G while in the transcription window. From there,
+you can also add group notes for each group. For eg. if you group certain segments on a certain topic, you can add
+your notes on that particular topic in the group notes field. You can also use the groups to select all the segments
+of a certain character and so on.
+
+_Note: the groups are based on time intervals, so if you change the start or end times of segments, they might drift
+outside of certain groups that they're in. Simply click on the group, select the segments and press CMD/CTR+G again to
+re-add them to the group_
+
+In the future, we will add the ability to perform an advanced search on one on more groups.
+
+Also, we will most likely have a few features which will auto-group segments together (for eg. character recognition,
+topic classification, Resolve / NLE markers to group segments, etc.)
 
 ### Direct Translations to English
 The tool also supports direct translation to English by clicking the "Translate Timeline to English" button. However,
@@ -334,7 +356,7 @@ machine.
 This will render to H.264 the entire duration of the markers of a certain color from your currently opened Resolve
 timeline.
 
-## Transcription Window Shortcuts:
+## Transcription Window Shortcuts
 
     Mouse Click     - move active segment on clicked text and move playhead to start of active segment
 
@@ -390,6 +412,10 @@ timeline.
     Escape          - when editing transcripts, this will defocus and save the transcript
     
     t               - re-transcribe current transcription or selected segments
+
+    CMD/CTRL+G      - group selected segments (or update an existing group, if a group is selected)
+
+    Shift+G         - open groups window
 
 
 Other shortcuts etc.
