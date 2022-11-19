@@ -5,7 +5,7 @@
 **StoryToolkitAI is a film editing tool that can help editors work more efficiently by automatically transcribing audio
 and allowing them to search transcripts semantically with the help of AI.**
 
-The tool works locally, independent of any editing software, but it's also functions as a Davinci Resolve Studio 18 
+The tool works locally, independent of any editing software, but it also functions as a Davinci Resolve Studio 18 
 integration via API. It is using OpenAI Whisper for speech-to-text, sentence transformers for semantic search and a few 
 other AI technologies to get stuff done.
 
@@ -120,8 +120,8 @@ Nevertheless, for detailed installation instructions
 
 # How to transcribe:
 
-The following process assumes that you have Davinci Resolve Studio installed. However, the tool also works without
-Resolve on the machine.
+The following process assumes that you have Davinci Resolve Studio installed. However, **the tool also works without
+Resolve on the machine**.
 
 #### 1. Open Resolve and StoryToolkitAI
 Open a project in Resolve and then StoryToolkitAI
@@ -202,21 +202,21 @@ you would enter this in the Time Intervals field:
 
 #### Resolve "transcription_WAV" Preset
 
-If you're transcribing timelines directly from Resolve and prefer to save them in wav format, instead of mov,
+If you're transcribing timelines directly from Resolve and prefer to save them in WAV instead of MOV,
 go to the Resolve Render Page, select the Audio Only preset, make sure that the "Export Video" in the Video tab is
 disabled, then, in the "Audio" tab, select the "Wave" format and "Linear PCM" as codec. Then save this preset as
 "transcription_WAV", and the next time you transcribe, you should see Resolve rendering wav files.
 
-As a matter of fact, you can use any preset you want, as long as it renders audio too (Linear PCM preferred). F
-or eg., if you want to render out an H264 proxy and include Data Burn-In with timecode info, 
+As a matter of fact, you can use any preset you want, as long as it renders audio too (Linear PCM preferred). For eg., 
+if you want to render out an H264 proxy and include Data Burn-In with timecode info, 
 just create that preset in Resolve and then modify the value of the 'transcription_render_preset' setting in the 
 StoryToolkitAI config.json file in your user data folder (in the future, this will be editable from the GUI). Just keep 
 in mind that before going through the transcription process, the tool will re-interpret the audio internally as Linear 
 PCM (and you might need ffmpeg on your machine for that), so if you're using a CPU-intense codec, the process might 
 take longer.
 
-Another important thing to note is that your **audio channels are best left as Mono on your timeline**, since the 
-algorithm may ignore one channel or the other, and therefore only get a partial transcription.
+Another important thing to note is that your **audio channels are best left as Mono on your timeline and/or renders**, 
+since the algorithm may ignore one channel or the other, and therefore only give you a partial transcription.
 
 ### Re-transcribing Transcripts
 
