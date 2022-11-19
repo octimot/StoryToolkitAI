@@ -207,12 +207,16 @@ go to the Resolve Render Page, select the Audio Only preset, make sure that the 
 disabled, then, in the "Audio" tab, select the "Wave" format and "Linear PCM" as codec. Then save this preset as
 "transcription_WAV", and the next time you transcribe, you should see Resolve rendering wav files.
 
-As a matter of fact, starting with version 0.17.4, you can use any preset you want, as long as it renders audio too 
-(Linear PCM preferred). For eg., if you want to render out an H264 proxy and include Data Burn-In with timecode info, 
+As a matter of fact, you can use any preset you want, as long as it renders audio too (Linear PCM preferred). F
+or eg., if you want to render out an H264 proxy and include Data Burn-In with timecode info, 
 just create that preset in Resolve and then modify the value of the 'transcription_render_preset' setting in the 
 StoryToolkitAI config.json file in your user data folder (in the future, this will be editable from the GUI). Just keep 
 in mind that before going through the transcription process, the tool will re-interpret the audio internally as Linear 
-PCM, so if you're using a CPU-intense codec, the process might take longer.
+PCM (and you might need ffmpeg on your machine for that), so if you're using a CPU-intense codec, the process might 
+take longer.
+
+Another important thing to note is that your **audio channels are best left as Mono on your timeline**, since the 
+algorithm may ignore one channel or the other, and therefore only get a partial transcription.
 
 ### Re-transcribing Transcripts
 
@@ -378,7 +382,7 @@ timeline.
 
     Shift+V         - deselect all active segments
 
-    CMD/CTRL+A      - select all transcript segments - since version 0.17.4.5
+    CMD/CTRL+A      - select all transcript segments
 
     Shift+A         - create selection between the previously active and the currently active segment
                       also works to create a selection for the last played segments in Resolve (if sync is active):
@@ -389,9 +393,9 @@ timeline.
                       (if Resolve is available)
 
     CMD/CTRL+Shift+C- copy transcript of selection with timecodes at the beginning of each transcript line
-                      (or transcript seconds, if Resolve is not available) - since version 0.17.4.4
+                      (or transcript seconds, if Resolve is not available)
 
-    Backspace       - delete active segment (will ask for confirmation) - since version 0.17.4.5
+    Backspace       - delete active segment (will ask for confirmation)
 
     m               - add duration markers for the active segment/selection
                       in case there are gaps between the text segments, 

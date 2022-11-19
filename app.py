@@ -5238,7 +5238,9 @@ class ToolkitOps:
 
                     logger.debug('Adding {} to the search corpus.'.format(transcription_file_path))
 
-                    if 'segments' in transcription_file_data and type(transcription_file_data['segments']) is list:
+                    if type(transcription_file_data) is dict \
+                        and 'segments' in transcription_file_data \
+                        and type(transcription_file_data['segments']) is list:
 
                         # group the segment texts into phrases using punctuation as dividers
                         # instead of how they're currently segmented
@@ -5298,6 +5300,10 @@ class ToolkitOps:
 
                                     # then empty the current phrase
                                     current_phrase = ''
+
+                    elif type(transcription_file_data) is not dict:
+                        logger.warning('Transcription file {} is not in the right format. Skipping.'
+                                       .format(transcription_file_path))
 
                 # add the corpus to the search corpus dict, so we don't have to re-create it every time we search
                 # we're going to use the search window id as the key
