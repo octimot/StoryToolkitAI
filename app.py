@@ -19,6 +19,7 @@ from threading import Thread
 
 import torch
 import whisper
+from whisper import tokenizer as whisper_tokenizer
 
 import librosa
 import soundfile
@@ -199,6 +200,8 @@ class toolkit_UI:
             self.toolkit_ops_obj = toolkit_UI_obj.toolkit_ops_obj
             self.stAI = toolkit_UI_obj.stAI
 
+            self.app_items_obj = toolkit_UI_obj.app_items_obj
+
             # this is the main menubar (it's been declared in the main UI class to clear it before init)
             self.main_menubar = Menu(self.toolkit_UI_obj.root)
 
@@ -207,23 +210,8 @@ class toolkit_UI:
 
         def load_menubar(self):
 
-            # change the link in the about dialogue
-            self.toolkit_UI_obj.root.createcommand('tkAboutDialog', self.about_dialog)
-
-            # see https://tkdocs.com/tutorial/menus.html#platformmenus
-            #menubar = Menu(self.toolkit_UI_obj.root)
-            #appmenu = Menu(menubar, name='apple')
-            #menubar.add_cascade(menu=appmenu)
-            #appmenu.add_command(label='About My Application')
-            #appmenu.add_separator()
-
-            #system_menu = tk.Menu(self.main_menubar, name='apple')
-            #system_menu.add_command(command=lambda: self.w.call('tk::mac::standardAboutPanel'))
-            #system_menu.add_command(command=lambda: self.updater.checkForUpdates())
-
-            #system_menu.entryconfigure(0, label="About")
-            #system_menu.entryconfigure(1, label="Check for Updates...")
-            #self.main_menubar.add_cascade(menu=system_menu)
+            # get the current focus
+            # print("focus is:", self.root.focus_get())
 
 
             filemenu = Menu(self.main_menubar, tearoff=0)
@@ -236,7 +224,41 @@ class toolkit_UI:
             self.main_menubar.add_cascade(label="File", menu=filemenu)
 
             helpmenu = Menu(self.main_menubar, tearoff=0)
-            helpmenu.add_command(label="Go to project page", command=self.open_project_page)
+
+            # if this is not on MacOS, add the about button in the menu
+            if platform.system() != 'Darwin':
+
+                #helpmenu.add_separator()
+                filemenu.add_command(label="Preferences...", command=self.app_items_obj.open_preferences_window)
+
+                helpmenu.add_command(label="About", command=self.about_dialog)
+                helpmenu.add_separator()
+
+            # otherwise show stuff in MacOS specific menu places
+            else:
+
+                # change the link in the about dialogue
+                self.toolkit_UI_obj.root.createcommand('tkAboutDialog', self.app_items_obj.open_about_window)
+                self.toolkit_UI_obj.root.createcommand('tk::mac::ShowPreferences', self.app_items_obj.open_preferences_window)
+                #self.toolkit_UI_obj.root.createcommand('tkPreferencesDialog', self.app_items_obj.open_about_window)
+
+                # see https://tkdocs.com/tutorial/menus.html#platformmenus
+                #menubar = Menu(self.toolkit_UI_obj.root)
+                #appmenu = Menu(menubar, name='apple')
+                #menubar.add_cascade(menu=appmenu)
+                #appmenu.add_command(label='About My Application')
+                #appmenu.add_separator()
+
+                system_menu = tk.Menu(self.main_menubar, name='apple')
+                #system_menu.add_command(command=lambda: self.w.call('tk::mac::standardAboutPanel'))
+                #system_menu.add_command(command=lambda: self.updater.checkForUpdates())
+
+                #system_menu.entryconfigure(0, label="About")
+                system_menu.entryconfigure(1, label="Check for Updates...")
+                #self.main_menubar.add_cascade(menu=system_menu)
+
+                helpmenu.add_command(label="Go to project page", command=self.open_project_page)
+
             helpmenu.add_command(label="Features info", command=self.open_features_info)
             helpmenu.add_command(label="Report an issue", command=self.open_issue)
             helpmenu.add_command(label="Made by mots", command=self.open_mots)
@@ -274,7 +296,7 @@ class toolkit_UI:
             return
 
         def about_dialog(self):
-            self.open_project_page()
+            self.app_items_obj.open_about_window()
 
         def open_mots(self):
             webbrowser.open_new("https://mots.us")
@@ -285,16 +307,16 @@ class toolkit_UI:
         All the functions available in the transcript window should be part of this class
         '''
 
-        def __init__(self, stAI=None, toolkit_UI_obj=None, toolkit_ops_obj=None):
-
-            # keep a reference to the StoryToolkitAI object here
-            self.stAI = stAI
+        def __init__(self, toolkit_UI_obj=None):
 
             # keep a reference to the toolkit_UI object here
             self.toolkit_UI_obj = toolkit_UI_obj
 
+            # keep a reference to the StoryToolkitAI object here
+            self.stAI = toolkit_UI_obj.stAI
+
             # keep a reference to the toolkit_ops_obj object here
-            self.toolkit_ops_obj = toolkit_ops_obj
+            self.toolkit_ops_obj = toolkit_UI_obj.toolkit_ops_obj
 
             self.root = toolkit_UI_obj.root
 
@@ -2436,6 +2458,315 @@ class toolkit_UI:
             # returning false means that no changes were made
             return False
 
+    class AppItemsUI:
+
+        def __init__(self, toolkit_UI_obj):
+
+            if toolkit_UI_obj is None:
+                logger.error('No toolkit_UI_obj provided for AppItemsUI.')
+                raise Exception('No toolkit_UI_obj provided.')
+
+            # declare the UI, ops and app objects for easier access
+            self.toolkit_UI_obj = toolkit_UI_obj
+            self.toolkit_ops_obj = toolkit_UI_obj.toolkit_ops_obj
+            self.stAI = toolkit_UI_obj.stAI
+            self.UI_menus = toolkit_UI_obj.UImenus
+
+            # the root window inherited from the toolkit_UI_obj
+            self.root = toolkit_UI_obj.root
+
+            return
+
+        def open_preferences_window(self):
+
+            # create a window for the transcription settings if one doesn't already exist
+            if pref_window := self.toolkit_UI_obj.create_or_open_window(parent_element=self.root, window_id='preferences',
+                                           title='Preferences', resizable=True, return_window=True):
+
+                form_grid_and_paddings = {**self.toolkit_UI_obj.input_grid_settings,
+                                          **self.toolkit_UI_obj.form_paddings}
+
+                label_settings = self.toolkit_UI_obj.label_settings
+                del label_settings['width']
+
+                entry_settings = self.toolkit_UI_obj.entry_settings
+                entry_settings_quarter = self.toolkit_UI_obj.entry_settings_quarter
+
+                # the settings for the heading labels
+                h1_font = {'font': self.toolkit_UI_obj.default_font_h1, 'justify': 'center',
+                           'pady': self.toolkit_UI_obj.form_paddings['pady']}
+
+                pref_form_frame = tk.Frame(pref_window)
+                pref_form_frame.pack()
+
+                # these are the app settings that can be changed
+
+                # take all the customizable app settings and create a variable for each one
+                default_marker_color_var \
+                    = tk.StringVar(pref_form_frame,
+                                   value=self.stAI.get_app_setting('default_marker_color', default_if_none='Blue'))
+
+                console_font_size_var \
+                    = tk.IntVar(pref_form_frame,
+                                   value=self.stAI.get_app_setting('console_font_size', default_if_none=13))
+
+                show_welcome_var \
+                    = tk.BooleanVar(pref_form_frame,
+                                    value=self.stAI.get_app_setting('show_welcome', default_if_none=True))
+
+                disable_resolve_api_var \
+                    = tk.BooleanVar(pref_form_frame,
+                                    value=self.stAI.get_app_setting('disable_resolve_api', default_if_none=False))
+
+                open_transcript_groups_window_on_open_var \
+                    = tk.BooleanVar(pref_form_frame,
+                                    value=self.stAI.get_app_setting('show_welcome', default_if_none=True))
+
+                close_transcripts_on_timeline_change_var \
+                    = tk.BooleanVar(pref_form_frame,
+                                    value=self.stAI.get_app_setting('close_transcripts_on_timeline_change',
+                                                                    default_if_none=True))
+
+                whisper_model_name_var\
+                    = tk.StringVar(pref_form_frame,
+                                   value=self.stAI.get_app_setting('whisper_model_name', default_if_none='medium'))
+
+                whisper_device_var\
+                    = tk.StringVar(pref_form_frame,
+                                  value=self.stAI.get_app_setting('whisper_device', default_if_none='auto'))
+
+                transcription_default_language_var\
+                    = tk.StringVar(pref_form_frame,
+                                   value=self.stAI.get_app_setting('transcription_default_language',
+                                                                   default_if_none=''))
+
+                transcription_render_preset_var\
+                    = tk.StringVar(pref_form_frame,
+                                      value=self.stAI.get_app_setting('transcription_render_preset',
+                                                                      default_if_none='transcription_WAV'))
+
+                transcript_font_size_var\
+                    = tk.IntVar(pref_form_frame,
+                                      value=self.stAI.get_app_setting('transcript_font_size', default_if_none=15))
+
+                transcripts_always_on_top_var\
+                    = tk.BooleanVar(pref_form_frame,
+                                    value=self.stAI.get_app_setting('transcripts_always_on_top', default_if_none=False))
+
+                #ffmpeg_path_var\
+                #    = tk.StringVar(pref_form_frame,
+                #                    value=self.stAI.get_app_setting('ffmpeg_path', default_if_none=''))
+
+                # now create the form for all of the above settings
+                # general settings
+                tk.Label(pref_form_frame, text='General Settings', **h1_font).grid(row=0, column=0, columnspan=2, **form_grid_and_paddings)
+
+                tk.Label(pref_form_frame, text='Default Marker Color', **label_settings).grid(row=1, column=0, **form_grid_and_paddings)
+
+                # the default marker color
+                # the dropdown for the default marker color
+                default_marker_color_input = tk.OptionMenu(pref_form_frame,
+                                                           default_marker_color_var,
+                                                           *self.toolkit_UI_obj.resolve_marker_colors)
+                default_marker_color_input.grid(row=1, column=1, **form_grid_and_paddings)
+
+                # the font size for the console
+                tk.Label(pref_form_frame, text='Console Font Size', **label_settings).grid(row=2, column=0, **form_grid_and_paddings)
+                console_font_size_input = tk.Entry(pref_form_frame, textvariable=console_font_size_var, **entry_settings_quarter)
+                console_font_size_input.grid(row=2, column=1, **form_grid_and_paddings)
+
+                # show the welcome window on startup
+                tk.Label(pref_form_frame, text='Show Welcome Window', **label_settings).grid(row=3, column=0, **form_grid_and_paddings)
+                show_welcome_input = tk.Checkbutton(pref_form_frame, variable=show_welcome_var)
+                show_welcome_input.grid(row=3, column=1, **form_grid_and_paddings)
+
+                # Integrations
+                tk.Label(pref_form_frame, text='Integrations', **h1_font).grid(row=4, column=0, columnspan=2, **form_grid_and_paddings)
+
+                # disable the resolve API
+                tk.Label(pref_form_frame, text='Disable Resolve API', **label_settings).grid(row=5, column=0, **form_grid_and_paddings)
+                disable_resolve_api_input = tk.Checkbutton(pref_form_frame, variable=disable_resolve_api_var)
+                disable_resolve_api_input.grid(row=5, column=1, **form_grid_and_paddings)
+
+                # auto open the transcript groups window on timeline open
+                tk.Label(pref_form_frame, text='Open Linked Transcripts', **label_settings).grid(row=6, column=0, **form_grid_and_paddings)
+                open_transcript_groups_window_on_open_input = tk.Checkbutton(pref_form_frame, variable=open_transcript_groups_window_on_open_var)
+                open_transcript_groups_window_on_open_input.grid(row=6, column=1, **form_grid_and_paddings)
+
+                # close transcripts on timeline change
+                tk.Label(pref_form_frame, text='Close Transcripts on Timeline Change', **label_settings).grid(row=7, column=0, **form_grid_and_paddings)
+                close_transcripts_on_timeline_change_input = tk.Checkbutton(pref_form_frame, variable=close_transcripts_on_timeline_change_var)
+                close_transcripts_on_timeline_change_input.grid(row=7, column=1, **form_grid_and_paddings)
+
+
+                # transcriptions
+                tk.Label(pref_form_frame, text='Transcriptions', **h1_font).grid(row=8, column=0, columnspan=2, **form_grid_and_paddings)
+
+                # the whisper model name
+                tk.Label(pref_form_frame, text='Whisper Model', **label_settings).grid(row=9, column=0, **form_grid_and_paddings)
+                whisper_model_name_input = tk.OptionMenu(pref_form_frame, whisper_model_name_var, *whisper.available_models())
+                whisper_model_name_input.grid(row=9, column=1, **form_grid_and_paddings)
+
+                # the whisper device
+                tk.Label(pref_form_frame, text='Whisper Device', **label_settings).grid(row=10, column=0, **form_grid_and_paddings)
+                whisper_device_input = tk.OptionMenu(pref_form_frame, whisper_device_var,
+                                                     *self.toolkit_ops_obj.get_torch_available_devices())
+                whisper_device_input.grid(row=10, column=1, **form_grid_and_paddings)
+
+                # the default language for transcriptions
+                # first get the list of languages, but also add an empty string to the list
+                available_languages = [''] + self.toolkit_ops_obj.get_whisper_available_languages()
+
+                tk.Label(pref_form_frame, text='Default Language', **label_settings).grid(row=11, column=0, **form_grid_and_paddings)
+                transcription_default_language_input = tk.OptionMenu(pref_form_frame, transcription_default_language_var,
+                                                                     *available_languages)
+                transcription_default_language_input.grid(row=11, column=1, **form_grid_and_paddings)
+
+                # the render preset for transcriptions
+                tk.Label(pref_form_frame, text='Render Preset', **label_settings).grid(row=12, column=0, **form_grid_and_paddings)
+                transcription_render_preset_input = tk.Entry(pref_form_frame, textvariable=transcription_render_preset_var, **entry_settings)
+                transcription_render_preset_input.grid(row=12, column=1, **form_grid_and_paddings)
+
+                # the transcript font size
+                tk.Label(pref_form_frame, text='Transcript Font Size', **label_settings).grid(row=13, column=0, **form_grid_and_paddings)
+                transcript_font_size_input = tk.Entry(pref_form_frame, textvariable=transcript_font_size_var, **entry_settings_quarter)
+                transcript_font_size_input.grid(row=13, column=1, **form_grid_and_paddings)
+
+                # transcripts always on top
+                tk.Label(pref_form_frame, text='Transcript Always On Top', **label_settings).grid(row=14, column=0, **form_grid_and_paddings)
+                transcripts_always_on_top_input = tk.Checkbutton(pref_form_frame, variable=transcripts_always_on_top_var)
+                transcripts_always_on_top_input.grid(row=14, column=1, **form_grid_and_paddings)
+
+                # ffmpeg path
+                #tk.Label(pref_form_frame, text='FFmpeg Path', **label_settings).grid(row=14, column=0, **form_grid_and_paddings)
+                #ffmpeg_path_input = tk.Entry(pref_form_frame, textvariable=ffmpeg_path_var, **entry_settings)
+                #ffmpeg_path_input.grid(row=14, column=1, **form_grid_and_paddings)
+
+                # SAVE BUTTON
+
+                # keep track of all the input variables above
+                input_variables = {
+                    'default_marker_color': default_marker_color_var,
+                     'console_font_size': console_font_size_var,
+                     'show_welcome': show_welcome_var,
+                     'disable_resolve_api': disable_resolve_api_var,
+                     'open_transcript_groups_window_on_open': open_transcript_groups_window_on_open_var,
+                     'close_transcripts_on_timeline_change': close_transcripts_on_timeline_change_var,
+                     'whisper_model_name': whisper_model_name_var,
+                     'whisper_device': whisper_device_var,
+                     'transcription_default_language': transcription_default_language_var,
+                     'transcription_render_preset': transcription_render_preset_var,
+                     'transcript_font_size': transcript_font_size_var,
+                     'transcripts_always_on_top': transcripts_always_on_top_var,
+                     # 'ffmpeg_path': ffmpeg_path_var
+                }
+
+
+                Label(pref_form_frame, text="", **label_settings).grid(row=20, column=0, **form_grid_and_paddings)
+                start_button = tk.Button(pref_form_frame, text='Save')
+                start_button.grid(row=20, column=1, **form_grid_and_paddings)
+                start_button.config(command=lambda: self.save_preferences(input_variables))
+
+        def save_preferences(self, input_variables: dict) -> bool:
+            '''
+            Save the preferences stored in the input_variables to the app config file
+            :param input_variables:
+            :return:
+            '''
+
+            # save all the variables to the config file
+            for key, value in input_variables.items():
+                self.stAI.config[key] = value.get()
+
+            # save the config file
+            if self.stAI.save_config():
+
+                # close the window
+                self.toolkit_UI_obj.destroy_window_(self.toolkit_UI_obj.windows, 'preferences')
+
+                # let the user know it worked
+                self.toolkit_UI_obj.notify_via_messagebox(type='info', title='Preferences Saved',
+                                                          message='Preferences saved successfully.\n\n'
+                                                                  'Please restart StoryToolkitAI for the new settings '
+                                                                  'to take full effect.',
+                                                          message_log='Preferences saved, need restart for full effect')
+
+                return True
+
+            else:
+                self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Error',
+                                                          message='Preferences could not be saved.\n'
+                                                                  'Check log for details.',
+                                                          message_log='Preferences could not be saved')
+
+                return False
+
+        def open_about_window(self):
+
+            # open the about window
+
+            # create a window for the transcription log if one doesn't already exist
+            if about_window := self.toolkit_UI_obj.create_or_open_window(parent_element=self.root,
+                                                    window_id='about', title='About StoryToolkitAI', resizable=False,
+                                                                          return_window=True):
+
+                # the text justify
+                justify = {'justify': tk.LEFT}
+
+                # create a frame for the about window
+                about_frame = Frame(about_window)
+                about_frame.pack(**self.toolkit_UI_obj.paddings)
+
+                # add the app name text
+                app_name = 'StoryToolkitAI version '+self.stAI.version
+
+                # create the app name heading
+                app_name_label = Label(about_frame, text=app_name, font=self.toolkit_UI_obj.default_font_h1, **justify)
+                app_name_label.grid(column=1, row=1, sticky='w')
+
+                # the made by frame
+                made_by_frame = Frame(about_frame)
+                made_by_frame.grid(column=1, row=2, sticky='w')
+
+                # create the made by label
+                made_by_label = Label(made_by_frame, text='made by', font=self.toolkit_UI_obj.default_font, **justify)
+                made_by_label.pack(side=tk.LEFT)
+
+                # create the mots link label
+                mots_label = Label(made_by_frame, text='mots', font=self.toolkit_UI_obj.default_font_link, **justify)
+                mots_label.pack(side=tk.LEFT)
+
+                # make the made by text clickable
+                mots_label.bind('<Button-1>', self.UI_menus.open_mots)
+
+                # the project page frame
+                project_page_frame = Frame(about_frame)
+                project_page_frame.grid(column=1, row=3, sticky='w', pady=self.toolkit_UI_obj.paddings['pady'])
+
+                # add the project page label
+                project_page_label = Label(project_page_frame, text='Project page:',
+                                           font=self.toolkit_UI_obj.default_font, **justify)
+                project_page_label.pack(side=tk.LEFT)
+
+                # create the project page link label
+                project_page_link_label = Label(project_page_frame, text='github.com/octimot/StoryToolkitAI',
+                                                font=self.toolkit_UI_obj.default_font_link, **justify)
+                project_page_link_label.pack(side=tk.LEFT)
+
+                # make the project page text clickable
+                project_page_link_label.bind('<Button-1>', self.UI_menus.open_project_page)
+
+                # add license info
+                license_info_label = Label(about_frame, text='For third party software and license information\n'
+                                                             'see the project page.',
+                                           font=self.toolkit_UI_obj.default_font, **justify)
+                license_info_label.grid(column=1, row=4, sticky='w')
+
+                return True
+
+            return
+
+
     def __init__(self, toolkit_ops_obj=None, stAI=None, **other_options):
 
         # make a reference to toolkit ops obj
@@ -2446,6 +2777,9 @@ class toolkit_UI:
 
         # initialize tkinter as the main GUI
         self.root = tk.Tk()
+
+        # initialize app items object
+        self.app_items_obj = self.AppItemsUI(toolkit_UI_obj=self)
 
         # load menu object
         self.UI_menus = self.UImenus(toolkit_UI_obj=self)
@@ -2459,7 +2793,7 @@ class toolkit_UI:
         self.root.config(width=1, height=1)
 
         # initialize transcript edit object
-        self.t_edit_obj = self.TranscriptEdit(stAI=self.stAI, toolkit_UI_obj=self, toolkit_ops_obj=self.toolkit_ops_obj)
+        self.t_edit_obj = self.TranscriptEdit(toolkit_UI_obj=self)
 
         # show the update available message if any
         if 'update_available' in other_options and other_options['update_available'] is not None:
@@ -2505,6 +2839,10 @@ class toolkit_UI:
                                        type='error'
                                        )
 
+        # show welcome message, if it wasn't muted via configs
+        # if self.stAI.get_app_setting('show_welcome', default_if_none=True):
+        #    self.open_welcome_window()
+
         # keep all the window references here to find them easy by window_id
         self.windows = {}
 
@@ -2513,10 +2851,11 @@ class toolkit_UI:
         self.form_paddings = {'padx': 10, 'pady': 5}
         self.button_size = {'width': 150, 'height': 50}
         self.list_paddings = {'padx': 3, 'pady': 3}
-        self.label_settings = {'anchor': 'e', 'width': 15}
+        self.label_settings = {'anchor': 'e', 'width': 20}
         self.input_grid_settings = {'sticky': 'w'}
         self.entry_settings = {'width': 30}
         self.entry_settings_half = {'width': 20}
+        self.entry_settings_quarter = {'width': 8}
 
         # scrollbars
         self.scrollbar_settings = {'width': 10}
@@ -2559,6 +2898,22 @@ class toolkit_UI:
         # set the platform independent fixed font (for console)
         self.console_font = font.nametofont(name='TkFixedFont')
         self.console_font.configure(size=int(console_font_size * font_size_ratio))
+
+        # set the default font size
+        default_font_size = 13
+        default_font_size_after_ratio = int(default_font_size * font_size_ratio)
+
+        # set the platform independent default font
+        self.default_font = font.nametofont(name='TkDefaultFont')
+        self.default_font.configure(size=default_font_size_after_ratio)
+
+        # set the platform independent default link font
+        self.default_font_link = tk.font.Font(font=self.default_font)
+        self.default_font_link.configure(size=default_font_size_after_ratio, underline=True)
+
+        # set the platform independent default font for headings
+        self.default_font_h1 = font.nametofont(name='TkHeadingFont')
+        self.default_font_h1.configure(size=int(default_font_size_after_ratio+3))
 
         # define the pixel size for buttons
         pixel = tk.PhotoImage(width=1, height=1)
@@ -2612,8 +2967,23 @@ class toolkit_UI:
     class main_window:
         pass
 
-    def _create_or_open_window(self, parent_element=None, window_id=None, title=None, resizable=False,
-                               close_action=None, open_multiple=False):
+    def create_or_open_window(self, parent_element: tk.Toplevel = None, window_id: str = None,
+                               title: str = None, resizable: bool = False,
+                               close_action=None,
+                               open_multiple: bool = False, return_window: bool = False) \
+            -> tk.Toplevel or str or bool:
+        '''
+        This function creates a new window or opens an existing one based on the window_id.
+        :param parent_element:
+        :param window_id:
+        :param title:
+        :param resizable:
+        :param close_action: The function to call when the window is being closed
+        :param open_multiple: Allows to open multiple windows of the same type
+                             (but adds the timestamp to the window_id for differentiations)
+        :param return_window: If false, it just returns the window_id. If true, it returns the window object.
+        :return: The window_id, the window object if return_window is True, or False if the window already exists
+        '''
 
         # if the window is already opened somewhere, do this
         # (but only if open_multiple is False)
@@ -2660,7 +3030,11 @@ class toolkit_UI:
             # what happens when the user closes this window
             self.windows[window_id].protocol("WM_DELETE_WINDOW", close_action)
 
-            return window_id
+            # return the window_id or the window object
+            if return_window:
+                return self.windows[window_id]
+            else:
+                return window_id
 
     def hide_main_window_frame(self, frame_name):
         '''
@@ -2885,7 +3259,7 @@ class toolkit_UI:
             self.destroy_transcription_settings_window(ts_window_id, unique_id)
 
         # create a window for the transcription settings if one doesn't already exist
-        if self._create_or_open_window(parent_element=self.root, window_id=ts_window_id, title=title,
+        if self.create_or_open_window(parent_element=self.root, window_id=ts_window_id, title=title,
                                        resizable=True, close_action=close_action):
 
             self.toolkit_ops_obj.update_transcription_log(unique_id=unique_id, **{'status': 'waiting user'})
@@ -2932,11 +3306,7 @@ class toolkit_UI:
                                                                                      **self.form_paddings)
 
             # try to get the languages from tokenizer
-            from whisper import tokenizer
-            available_languages = tokenizer.LANGUAGES.values()
-
-            if not available_languages or available_languages is None:
-                available_languages = []
+            available_languages = self.toolkit_ops_obj.get_whisper_available_languages()
 
             default_language = self.stAI.get_app_setting('transcription_default_language', default_if_none='')
 
@@ -2977,12 +3347,7 @@ class toolkit_UI:
                                                                             **self.input_grid_settings,
                                                                             **self.form_paddings)
 
-            # prepare a list of available devices
-            available_devices = ['auto', 'cpu']
-
-            # and add cuda to the available devices, if it is available
-            if torch.cuda.is_available():
-                available_devices.append('CUDA')
+            available_devices = self.toolkit_ops_obj.get_torch_available_devices()
 
             # the default selected value will be the whisper_device app setting
             device_selected = self.stAI.get_app_setting('whisper_device', default_if_none='auto')
@@ -3367,7 +3732,7 @@ class toolkit_UI:
 
 
         # create a window for the transcript if one doesn't already exist
-        if self._create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title, resizable=True,
+        if self.create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title, resizable=True,
                                        close_action=lambda t_window_id=t_window_id: \
                                             self.destroy_transcription_window(t_window_id)
                                        ):
@@ -3967,7 +4332,7 @@ class toolkit_UI:
     def open_transcription_log_window(self):
 
         # create a window for the transcription log if one doesn't already exist
-        if self._create_or_open_window(parent_element=self.root,
+        if self.create_or_open_window(parent_element=self.root,
                                         window_id='t_log', title='Transcription Log', resizable=True):
             # and then call the update function to fill the window up
             self.update_transcription_log_window()
@@ -4076,7 +4441,7 @@ class toolkit_UI:
             open_multiple = True
 
         # create a window for the advanced search if one doesn't already exist
-        if (search_window_id := self._create_or_open_window(parent_element=search_window_parent,
+        if (search_window_id := self.create_or_open_window(parent_element=search_window_parent,
                                         window_id=search_window_id, title=search_window_title, resizable=True,
                                         open_multiple=open_multiple)):
 
@@ -4703,7 +5068,7 @@ class toolkit_UI:
             transcript_groups_window_title = 'Groups'
 
         # create a window for the transcript groups if one doesn't already exist
-        if self._create_or_open_window(parent_element=self.windows[transcription_window_id],
+        if self.create_or_open_window(parent_element=self.windows[transcription_window_id],
                                        window_id=transcript_groups_window_id,
                                        title=transcript_groups_window_title, resizable=True,
                                        close_action=
@@ -5926,6 +6291,26 @@ class ToolkitOps:
 
         return time_intervals
 
+    def get_whisper_available_languages(self) -> list or None:
+
+        available_languages = whisper_tokenizer.LANGUAGES.values()
+
+        if not available_languages or available_languages is None:
+            available_languages = []
+
+        return sorted(available_languages)
+
+    def get_torch_available_devices(self) -> list or None:
+
+        # prepare a list of available devices
+        available_devices = ['auto', 'cpu']
+
+        # and add cuda to the available devices, if it is available
+        if torch.cuda.is_available():
+            available_devices.append('CUDA')
+
+        return available_devices
+
     def whisper_device_select(self, device):
         '''
         A standardized way of selecting the right whisper device
@@ -6742,7 +7127,13 @@ class ToolkitOps:
                 model_downloaded_before = False
 
             logger.info('Loading Whisper {} model.'.format(self.whisper_model_name))
-            self.whisper_model = whisper.load_model(self.whisper_model_name)
+            try:
+                self.whisper_model = whisper.load_model(self.whisper_model_name)
+            except Exception as e:
+                logger.error('Error loading Whisper {} model: {}'.format(self.whisper_model_name, e))
+
+                # update the status of the item in the transcription log
+                self.update_transcription_log(unique_id=queue_id, **{'status': 'failed'})
 
             # once the model has been loaded, we can note that in the app settings
             # this is a wat to keep track if the model has been downloaded or not
@@ -6766,7 +7157,9 @@ class ToolkitOps:
         # let the user know the transcription process has started
         notification_msg = "Transcribing {}.\nThis may take a while.".format(name)
         if self.is_UI_obj_available():
-            self.toolkit_UI_obj.notify_via_os("Starting Transcription", notification_msg, notification_msg)
+            self.toolkit_UI_obj.notify_via_os("Starting Transcription",
+                                              notification_msg,
+                                              debug_message="Transcribing {}. This may take a while.".format(name))
         else:
             logger.info(notification_msg)
 
@@ -6781,6 +7174,7 @@ class ToolkitOps:
             del other_whisper_options['initial_prompt']
 
         # load audio file as array using librosa
+        # this should work for most audio formats (so ffmpeg might not be needed at all)
         audio_array, sr = librosa.load(audio_file_path, sr=16_000)
 
         # if time_intervals was passed, only transcribe those time intervals from the audio file
@@ -6841,11 +7235,17 @@ class ToolkitOps:
 
         # transcribe the audio segments
         # (or just one audio segment with the whole audio if no time intervals were passed)
-        result = self.whisper_transcribe_segments(audio_segments=audio_segments,
-                                                  task=task,
-                                                  next_segment_id=next_segment_id,
-                                                  other_whisper_options=other_whisper_options
-                                                  )
+        try:
+            result = self.whisper_transcribe_segments(audio_segments=audio_segments,
+                                                      task=task,
+                                                      next_segment_id=next_segment_id,
+                                                      other_whisper_options=other_whisper_options
+                                                      )
+        except Exception as e:
+            logger.error('Error transcribing audio using Whisper: {}'.format(e))
+
+            # update the status of the item in the transcription log
+            self.update_transcription_log(unique_id=queue_id, **{'status': 'failed'})
 
         # update the transcription data with the new segments
         # but first remove all the segments between the time intervals that were passed
@@ -7978,7 +8378,7 @@ class StoryToolkitAI:
             standalone = False
 
         # keep the version in memory
-        self.__version__ = version.__version__
+        self.__version__ = self.version = version.__version__
 
         # this is where all the user files should be stored
         # if it's not absolute, make sure it's relative to the app.py script location
@@ -7993,7 +8393,7 @@ class StoryToolkitAI:
         self.config_file_path = os.path.join(self.user_data_path, APP_CONFIG_FILE_NAME)
 
         # create a config variable
-        self.config = {}
+        self.config = None
 
         # the projects directory is always inside the user_data_path
         # this is where we will store all the stuff related to specific projects
@@ -8120,8 +8520,11 @@ class StoryToolkitAI:
             logger.error('No setting was passed.')
             return False
 
-        # get the app config
-        self.config = self.get_config()
+        # if the config doesn't exist, create it
+        # this means that the configurations are only loaded once per session
+        # or when the user changes them during the session
+        if self.config is None:
+            self.config = self.get_config()
 
         # look for the requested setting
         if setting_name in self.config:
@@ -8153,15 +8556,20 @@ class StoryToolkitAI:
         :return:
         '''
 
-        if setting_name is None or not setting_name or setting_name == '' or setting_value is None:
-            logger.error('No setting that we could save to the config file was passed.')
+        # if a setting name and value was passed
+        if setting_name is not None and setting_value is not None:
+
+            # get existing configuration
+            self.config = self.get_config()
+
+            logger.info('Updated config file {} with {} data.'
+                           .format(os.path.abspath(self.config_file_path), setting_name))
+            self.config[setting_name] = setting_value
+
+        # if the config is empty something might be wrong
+        if self.config is None:
+            logger.error('Config file needs to be loaded before saving')
             return False
-
-        # get existing configuration
-        self.config = self.get_config()
-
-        # save or overwrite the passed setting the config json
-        self.config[setting_name] = setting_value
 
         # before writing the configuration to the config file
         # check if the user data directory exists (and create it if not)
@@ -8171,8 +8579,7 @@ class StoryToolkitAI:
         with open(self.config_file_path, 'w') as outfile:
             json.dump(self.config, outfile, indent=3)
 
-        logger.info('Updated config file {} with {} data.'
-                       .format(os.path.abspath(self.config_file_path), setting_name))
+            logger.info('Config file {} saved.'.format(os.path.abspath(self.config_file_path)))
 
         # and return the config back to the user
         return self.config
@@ -8185,6 +8592,7 @@ class StoryToolkitAI:
 
         # read the config file if it exists
         if os.path.exists(self.config_file_path):
+            logger.debug('Loading config file {}.'.format(self.config_file_path))
 
             # read the app config
             with open(self.config_file_path, 'r') as json_file:
@@ -8195,6 +8603,7 @@ class StoryToolkitAI:
 
         # if the config file doesn't exist, return an empty dict
         else:
+            logger.debug('No config file found at {}.'.format(self.config_file_path))
             return {}
 
     def _project_settings_path(self, project_name=None):
@@ -8423,15 +8832,23 @@ class StoryToolkitAI:
             ffmpeg_path_custom = self.get_app_setting(setting_name='ffmpeg_path')
 
             # if the ffmpeg path is not empty
-            if ffmpeg_path_custom is not None:
+            if ffmpeg_path_custom is not None and ffmpeg_path_custom != '':
 
-                logger.debug('Found custom ffmpeg path in the app settings: {}'.format(ffmpeg_path_custom))
+                logger.debug('Found ffmpeg path in app config: {}'.format(ffmpeg_path_custom))
 
-                # add it to the environment variables
-                os.environ['FFMPEG_BINARY'] = ffmpeg_path_custom
+                if os.path.isfile(ffmpeg_path_custom):
+
+                    # add it to the environment variables
+                    os.environ['FFMPEG_BINARY'] = ffmpeg_path_custom
+
+                else:
+                    logger.warning('The ffmpeg path {} found in app config is not valid.'
+                                   .format(ffmpeg_path_custom))
+
+                    ffmpeg_path_custom = None
 
             # otherwise try to find the binary next to the app
-            else:
+            if ffmpeg_path_custom is None:
 
                 # and if it exists, define the environment variable for ffmpeg for this session
                 if os.path.exists('ffmpeg'):
@@ -8617,9 +9034,6 @@ if __name__ == '__main__':
     # depending on standalone is True or False
     [update_exists, online_version] = stAI.check_update(release=standalone)
 
-    # check if ffmpeg is installed
-    ffmpeg_status = stAI.check_ffmpeg()
-
     # if an update exists, let the user know about it
     update_available = None
     if update_exists:
@@ -8634,8 +9048,7 @@ if __name__ == '__main__':
 
     # initialize GUI
     app_UI = toolkit_UI(toolkit_ops_obj=toolkit_ops_obj, stAI=stAI,
-                        update_available=update_available,
-                        ffmpeg_status=ffmpeg_status)
+                        update_available=update_available)
 
     # connect app UI to operations object
     toolkit_ops_obj.toolkit_UI_obj = app_UI
