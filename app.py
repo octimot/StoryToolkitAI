@@ -2904,7 +2904,7 @@ class toolkit_UI:
         default_font_size_after_ratio = int(default_font_size * font_size_ratio)
 
         # set the platform independent default font
-        self.default_font = font.nametofont(name='TkDefaultFont')
+        self.default_font = tk.font.Font(font=font.nametofont(name='TkDefaultFont'))
         self.default_font.configure(size=default_font_size_after_ratio)
 
         # set the platform independent default link font
