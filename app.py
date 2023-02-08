@@ -386,11 +386,31 @@ class toolkit_UI:
             self.sync_with_playhead = {}
 
 
-        def link_to_timeline_button(self, button=None, transcription_file_path=None,
-                                    link=None, timeline_name=None):
+        def link_to_timeline_button(self, button: tk.Button = None, transcription_file_path: str =None,
+                                    link=None, timeline_name: str =None, window_id: str = None):
 
-            if transcription_file_path is None:
+
+            if transcription_file_path is None and window_id is None:
+                logger.debug('No transcription file path or window id provided')
                 return None
+
+            # if no transcription file path was provided, try to get it from the window id
+            if transcription_file_path is None and window_id is not None \
+                and window_id in self.transcription_file_paths:
+                transcription_file_path = self.transcription_file_paths[window_id]
+
+            # if no window id was passed, get it from the transcription file path
+            if window_id is None and transcription_file_path is not None:
+                # this is stored in the self.transcription_file_paths dict, where the key is the window id
+                # and the value is the transcription file path
+                for key, value in self.transcription_file_paths.items():
+                    if value == transcription_file_path:
+                        window_id = key
+                        break
+
+            # if no button was passed, try to get it from the window
+            if button is None or button is not tk.Button:
+                button = self.toolkit_UI_obj.windows[window_id].nametowidget('footer_frame.link_button')
 
             link_result = self.toolkit_ops_obj.link_transcription_to_timeline(
                 transcription_file_path=transcription_file_path,
@@ -399,40 +419,9 @@ class toolkit_UI:
             # make the UI link (or unlink) the transcript to the timeline
             if link_result and link_result is not None:
 
-                # get the window id of the transcription file
-                # this is stored in the self.transcription_file_paths dict, where the key is the window id
-                # and the value is the transcription file path
-                window_id = None
-                for key, value in self.transcription_file_paths.items():
-                    if value == transcription_file_path:
-                        window_id = key
-                        break
-
                 # check if the data in the transcription file is valid
                 if window_id is not None and window_id in self.transcript_segments:
                     transcription_data = self.transcription_data[window_id]
-
-                    # if the fps in the transcription data is different than the current timeline fps
-                    # if current_timeline_fps is not None \
-                    #        and (('timeline_fps' in transcription_data  \
-                    #            and transcription_data['timeline_fps'] != current_timeline_fps) \
-                    #            or 'timeline_fps' not in transcription_data):
-
-                    #        # ask the user wether to update the fps in the transcription file
-                    #        update_fps = messagebox.askyesno(
-                    #            title="Update Transcription framerate",
-                    #            message="The framerate in the transcription file "
-                    #                    "is different than the current timeline framerate. \n\n"
-                    #                    "Do you want to update transcription file to match "
-                    #                    "the current timeline framerate?")
-
-                    #        if update_fps:
-                    #            transcription_data['timeline_fps'] = current_timeline_fps
-
-                    #            print(current_timeline_fps)
-                    #            #self.toolkit_ops_obj.save_transcription_file(transcription_file_path, transcription_data)
-
-
 
                 # if the reply is true, it means that the transcript is linked
                 # therefore the button needs to read the opposite action
@@ -450,10 +439,13 @@ class toolkit_UI:
 
         def sync_with_playhead_button(self, button=None, window_id=None, sync=None):
 
-            if button is None or window_id is None:
+            if window_id is None:
                 return False
 
             self.sync_with_playhead_update(window_id, sync)
+
+            # update the transcript window GUI
+            self.toolkit_UI_obj.update_transcription_window(window_id)
 
             return sync
 
@@ -715,7 +707,6 @@ class toolkit_UI:
                 # go_to_time start time of the first selected segment
                 self.go_to_selected_time(window_id=window_id, position='start')
 
-
             # on mouse presses
             if mouse:
 
@@ -943,11 +934,13 @@ class toolkit_UI:
             # Shift+L key event (link current timeline to this transcription)
             if event.keysym == 'L':
                 # link transcription to file
-                self.toolkit_ops_obj.link_transcription_to_timeline(self.transcription_file_paths[window_id])
+                #self.toolkit_ops_obj.link_transcription_to_timeline(self.transcription_file_paths[window_id])
+                self.link_to_timeline_button(window_id=window_id)
 
             # s key event (sync transcript cursor with playhead)
             if event.keysym == 's':
-                self.sync_with_playhead_update(window_id=window_id)
+                #self.sync_with_playhead_update(window_id=window_id)
+                self.sync_with_playhead_button(window_id=window_id)
 
             # CMD+G key event (group selected - adds new group or updates segments of existing group)
             if event.keysym == 'g' and special_key == 'cmd':
@@ -1009,19 +1002,19 @@ class toolkit_UI:
                 if not retranscribe:
                     return False
 
-                # close the transcription window
-                # @todo (temporary solution until we work on a better way to update transcription windows
-                self.toolkit_UI_obj.destroy_window_(self.toolkit_UI_obj.windows, window_id=window_id)
-
-                # remove the selection references too
-                self.clear_selection(window_id=window_id)
-
                 # and start the transcription config process
                 self.toolkit_ops_obj\
                     .prepare_transcription_file(toolkit_UI_obj=self.toolkit_UI_obj,
                                                 task='transcribe',
                                                 retranscribe=self.transcription_file_paths[window_id],
                                                 time_intervals=time_intervals)
+
+                # close the transcription window
+                # @todo (temporary solution until we work on a better way to update transcription windows
+                self.toolkit_UI_obj.destroy_window_(self.toolkit_UI_obj.windows, window_id=window_id)
+
+                # remove the selection references too
+                # self.clear_selection(window_id=window_id)
 
             # BackSpace key event (delete selected)
             if event.keysym == 'BackSpace':
@@ -1456,7 +1449,6 @@ class toolkit_UI:
                     if end_sec is None or self.selected_segments[window_id][segment_index]['end'] > end_sec:
                         end_sec = self.selected_segments[window_id][segment_index]['end']
 
-
             # otherwise use the active segment start and end times
             else:
 
@@ -1474,7 +1466,6 @@ class toolkit_UI:
                 start_sec = self.transcript_segments[window_id][segment_index]['start']
                 end_sec = self.transcript_segments[window_id][segment_index]['end']
 
-
             # decide where to go depending on which position requested
             if position == 'end':
                 seconds = end_sec
@@ -1483,6 +1474,9 @@ class toolkit_UI:
 
             # move playhead to seconds
             self.toolkit_ops_obj.go_to_time(seconds=seconds)
+
+            # update the transcription window
+            self.toolkit_UI_obj.update_transcription_window(window_id=window_id)
 
         def get_active_segment(self, window_id=None, initial_value=0):
             '''
@@ -2478,6 +2472,10 @@ class toolkit_UI:
             return
 
         def open_preferences_window(self):
+            '''
+            Opens the preferences window.
+            :return:
+            '''
 
             # create a window for the transcription settings if one doesn't already exist
             if pref_window := self.toolkit_UI_obj.create_or_open_window(parent_element=self.root, window_id='preferences',
@@ -2702,6 +2700,10 @@ class toolkit_UI:
                 return False
 
         def open_about_window(self):
+            '''
+            Open the about window
+            :return:
+            '''
 
             # open the about window
 
@@ -2967,7 +2969,7 @@ class toolkit_UI:
     class main_window:
         pass
 
-    def create_or_open_window(self, parent_element: tk.Toplevel = None, window_id: str = None,
+    def create_or_open_window(self, parent_element: tk.Toplevel or tk = None, window_id: str = None,
                                title: str = None, resizable: bool = False,
                                close_action=None,
                                open_multiple: bool = False, return_window: bool = False) \
@@ -2987,6 +2989,8 @@ class toolkit_UI:
 
         # if the window is already opened somewhere, do this
         # (but only if open_multiple is False)
+        # if this function throws an error make sure that, if the window was previously opened and closed,
+        # it the window_id reference was removed from the self.windows dictionary in the destroy/close function!
         if window_id in self.windows and not open_multiple:
 
             # bring the window to the top
@@ -3735,7 +3739,7 @@ class toolkit_UI:
         if self.create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title, resizable=True,
                                        close_action=lambda t_window_id=t_window_id: \
                                             self.destroy_transcription_window(t_window_id)
-                                       ):
+                                      ):
 
             # add the path to the transcription_file_paths dict in case we need it later
             self.t_edit_obj.transcription_file_paths[t_window_id] = transcription_file_path
@@ -3761,12 +3765,12 @@ class toolkit_UI:
                 self.t_edit_obj.transcript_groups[t_window_id] = {}
 
             # create a header frame to hold stuff above the transcript text
-            header_frame = tk.Frame(self.windows[t_window_id])
+            header_frame = tk.Frame(self.windows[t_window_id], name='header_frame')
             header_frame.place(anchor='nw', relwidth=1)
 
             # THE MAIN TEXT ELEMENT
             # create a frame for the text element
-            text_form_frame = tk.Frame(self.windows[t_window_id])
+            text_form_frame = tk.Frame(self.windows[t_window_id], name='text_form_frame')
             text_form_frame.pack(pady=50, expand=True, fill='both')
 
             # does the json file actually contain transcript segments generated by whisper?
@@ -3843,21 +3847,6 @@ class toolkit_UI:
                         segment_start_time = t_segment['start']
                         end_start_time = t_segment['start']
 
-                        # this works if we're aiming to move away from line based start_end times
-                        #tag_id = 'segment-' + str(segment_count)
-                        #text.tag_add(tag_id, new_segment_start, new_segment_end)
-                        #text.tag_config(tag_id)
-                        #text.tag_bind(tag_id, "<Button-1>", lambda e,
-                        #                                           segment_start_time=segment_start_time:
-                        #                            toolkit_ops_obj.go_to_time(segment_start_time))
-
-                        # bind CMD/CTRL+click events to the text:
-                        # on click, select text
-                        # text.tag_bind(tag_id, "<"+self.ctrl_cmd_bind+"-Button-1>", lambda e, line_id=line_id,t_window_id=t_window_id:
-                        #    self.t_edit_obj.select_text_lines(event=e, text_element=text,
-                        #                                      window_id=t_window_id, line_id=line_id)
-                        #              )
-
                         # for now, just add 2 new lines after each segment:
                         text.insert(END, '\n')
 
@@ -3878,11 +3867,12 @@ class toolkit_UI:
                 text.pack(anchor='w', expand=True, fill='both')
 
                 # create a footer frame that holds stuff on the bottom of the transcript window
-                footer_frame = tk.Frame(self.windows[t_window_id])
+                footer_frame = tk.Frame(self.windows[t_window_id], name='footer_frame')
                 footer_frame.place(relwidth=1, anchor='sw', rely=1)
 
                 # add a status label to print out current transcription status
-                status_label = Label(footer_frame, text="", anchor='w', foreground=self.resolve_theme_colors['normal'])
+                status_label = Label(footer_frame, name='status_label',
+                                     text="", anchor='w', foreground=self.resolve_theme_colors['normal'])
                 status_label.pack(side=tk.LEFT, **self.paddings)
 
 
@@ -3930,17 +3920,6 @@ class toolkit_UI:
                                                                     status_label=status_label)
                           )
 
-                # bind the FocusOut of the text so that we save the new text when done
-                # text.bind("<FocusOut>", lambda e: self.t_edit_obj.save_transcript(window_id=t_window_id, text=text))
-
-                #self.windows[t_window_id].bind("<Shift-Up>", lambda e: self.t_edit_obj.select_text_lines(e, special_key='Shift', **select_options))
-                #self.windows[t_window_id].bind("<Shift-Down>", lambda e: self.t_edit_obj.select_text_lines(e, special_key='Shift', **select_options))
-                # self.windows[t_window_id].bind("<" + self.ctrl_cmd_bind + "-Up>", lambda e: self.t_edit_obj.select_text_lines(e, special_key=self.ctrl_cmd_bind, **select_options))
-                # self.windows[t_window_id].bind("<" + self.ctrl_cmd_bind + "-Down>", lambda e: self.t_edit_obj.select_text_lines(e, special_key=self.ctrl_cmd_bind, **select_options))
-
-
-                # b_test = tk.Button(footer_frame, text='Search', command=lambda: search(),
-                #                font=20, bg='white').grid(row=1, column=3, sticky='w', **self.paddings)
 
                 # THE SEARCH FIELD
                 # first the label
@@ -3951,7 +3930,7 @@ class toolkit_UI:
                 search_str = tk.StringVar()
 
                 # the search input
-                search_input = Entry(header_frame, textvariable=search_str)
+                search_input = Entry(header_frame, textvariable=search_str, name='search_input')
 
                 # and a callback for when the search_str is changed
                 search_str.trace("w", lambda name, index, mode, search_str=search_str, text=text,
@@ -3971,7 +3950,8 @@ class toolkit_UI:
 
                 # ADVANCED SEARCH
                 # this button will open a new window with advanced search options
-                advanced_search_button = tk.Button(header_frame, text='Advanced Search', command=lambda:
+                advanced_search_button = tk.Button(header_frame, text='Advanced Search', name='advanced_search_button',
+                                                   command=lambda:
                                             self.open_advanced_search_window(transcription_window_id=t_window_id,
                                                                              transcription_file_path=\
                                                                                 transcription_file_path))
@@ -3980,7 +3960,7 @@ class toolkit_UI:
 
 
                 # KEEP ON TOP BUTTON
-                on_top_button = tk.Button(header_frame, text="Keep on top", takefocus=False)
+                on_top_button = tk.Button(header_frame, name='on_top_button', text="Keep on top", takefocus=False)
                 # add the command function here
                 on_top_button.config(command=lambda on_top_button=on_top_button, t_window_id=t_window_id:
                                             self.window_on_top_button(button=on_top_button, window_id=t_window_id)
@@ -3998,6 +3978,7 @@ class toolkit_UI:
                 # IMPORT SRT BUTTON
                 if srt_file_path:
                     import_srt_button = tk.Button(footer_frame,
+                                                  name='import_srt_button',
                                                   text="Import SRT into Bin",
                                                   takefocus=False,
                                                   command=lambda:
@@ -4008,7 +3989,7 @@ class toolkit_UI:
 
                 # SYNC BUTTON
 
-                sync_button = tk.Button(header_frame, takefocus=False)
+                sync_button = tk.Button(header_frame, name='sync_button', takefocus=False)
                 sync_button.config(command=lambda sync_button=sync_button, window_id=t_window_id:
                                                 self.t_edit_obj.sync_with_playhead_button(
                                                     button=sync_button,
@@ -4022,7 +4003,7 @@ class toolkit_UI:
                 global current_project
 
                 # prepare an empty link button for now, and only show it when/if resolve starts
-                link_button = tk.Button(footer_frame)
+                link_button = tk.Button(footer_frame, name='link_button')
                 link_button.config(command=lambda link_button=link_button,
                                                   transcription_file_path=transcription_file_path:
                                             self.t_edit_obj.link_to_timeline_button(
@@ -4030,48 +4011,9 @@ class toolkit_UI:
                                                 transcription_file_path=transcription_file_path)
                                                                )
 
-                # RE-TRANSCRIBE BUTTON
-
-                # only show this button if we have the original audio file path
-                # if 'audio_file_path' in transcription_json:
-                #
-                #     audio_file_path = transcription_json['audio_file_path']
-                #
-                #     print(audio_file_path)
-                #     print(os.path.join(os.path.dirname(transcription_file_path), audio_file_path))
-                #
-                #
-                #     # but that file is usually stored next to the transcription file
-                #     # so check if the audio file is in the same directory as the transcription file
-                #     if os.path.exists(os.path.join(os.path.dirname(transcription_file_path), audio_file_path)) :
-                #
-                #         transcribe_button = tk.Button(footer_frame, text="Re-Transcribe",)
-                #         transcribe_button.config(command=lambda audio_file_path=audio_file_path,title=title:
-                #                                         self.open_transcription_settings_window(
-                #                                             audio_file_path=audio_file_path,
-                #                                             name=title
-                #                                         )
-                #                        )
-                #         transcribe_button.pack(side=tk.LEFT, **self.paddings, anchor='e')
-
-                # MARK IN BUTTON
-                # mark_in_button = Button(footer_frame, text='Mark In')
-                # mark_in_button.pack(side=tk.LEFT, **self.paddings)
-                # mark_in_button.config(command= lambda text=text, t_window_id=t_window_id:
-                #                  self.toolkit_ops_obj.mark_in(window_id=t_window_id))
-
-                # MARK OUT BUTTON
-                # mark_out_button = Button(footer_frame, text='Mark Out')
-                # mark_out_button.pack(side=tk.LEFT, **self.paddings)
-                # mark_out_button.config(command= lambda text=text, t_window_id=t_window_id:
-                #                  self.toolkit_ops_obj.mark_out(window_id=t_window_id))
-
-                # prepare a label to use to send errors to the user
-                # error_label = Label(footer_frame, text="", anchor='w').grid(row=2, column=1, sticky='w', **self.paddings)
-
-                # start the transcription window self-updating process
+                # start update the transcription window with some stuff
                 # here we send the update transcription window function a few items that need to be updated
-                self.windows[t_window_id].after(500, lambda link_button=link_button,
+                self.windows[t_window_id].after(100, lambda link_button=link_button,
                                                             t_window_id=t_window_id,
                                                             transcription_file_path=transcription_file_path:
                     self.update_transcription_window(window_id=t_window_id,
@@ -4107,10 +4049,13 @@ class toolkit_UI:
                 # select the line in the text widget
                 self.t_edit_obj.segment_to_selection(window_id=t_window_id, line=selection_line_no)
 
-    def update_transcription_window(self, window_id, **update_attr):
+    def update_transcription_window(self, window_id, update_all: bool = True, **update_attr):
         '''
-        Auto-updates a transcription window and then calls itself again after a few seconds.
+        Auto-updates a transcription window GUI
+
         :param window_id:
+        :param update_all: If this is True, try to update all the GUI elements of the window
+                            by using their hard-coded, even if they were not passed in the update_attr dict.
         :param update_attr:
         :return:
         '''
@@ -4122,14 +4067,50 @@ class toolkit_UI:
         global current_tc
         global current_timeline_fps
 
+        # if the update_all attribute is True
+        # try to get the following GUI elements from the window, if they were not passed in the update_attr dict
+        # so we update them later in the function
+        if update_all:
+
+            # if the transcription file path was not sent
+            if 'transcription_file_path' not in update_attr \
+                    and window_id in self.t_edit_obj.transcription_file_paths:
+                # try to get it from the window
+                update_attr['transcription_file_path'] = self.t_edit_obj.transcription_file_paths[window_id]
+
+            # if the link button was not passed or is not tkinter button
+            if 'link_button' not in update_attr or type(update_attr['link_button']) is not tk.Button:
+                # so get the link button from the window by using the hard-coded name
+                update_attr['link_button'] \
+                    = self.windows[window_id].nametowidget('footer_frame.link_button')
+
+            # if the sync button was not passed or is not tkinter button
+            if 'sync_button' not in update_attr or type(update_attr['link_button']) is not tk.Button:
+                # so get the link button from the window by using the hard-coded name
+                update_attr['sync_button'] \
+                    = self.windows[window_id].nametowidget('header_frame.sync_button')
+
+            # if the text item was not passed or is not tkinter text
+            if 'text' not in update_attr or type(update_attr['text']) is not tk.Text:
+                # so get the link button from the window by using the hard-coded name
+                update_attr['text'] \
+                    = self.windows[window_id].nametowidget('text_form_frame.transcript_text')
+
         # only check if resolve is connected
         if resolve and current_timeline is not None:
 
-            # is there a link between the transcription and the resolve timeline?
-            link, _ = self.toolkit_ops_obj.get_transcription_to_timeline_link(
-                transcription_file_path=update_attr['transcription_file_path'],
-                timeline_name=current_timeline['name'],
-                project_name=current_project)
+            # if we still don't have a transcription file path by now,
+            # assume there is no link between the window and the
+            # although that might be very weird, so warn the user
+            if 'transcription_file_path' not in update_attr:
+                logger.warning('No transcription file path found for window {}'.format(window_id))
+                link = False
+            else:
+                # is there a link between the transcription and the resolve timeline?
+                link, _ = self.toolkit_ops_obj.get_transcription_to_timeline_link(
+                    transcription_file_path=update_attr['transcription_file_path'],
+                    timeline_name=current_timeline['name'],
+                    project_name=current_project)
 
             # update the link button text if it was passed in the call
             if 'link_button' in update_attr:
@@ -4176,59 +4157,95 @@ class toolkit_UI:
             if self.t_edit_obj.sync_with_playhead[window_id] \
                 and self.t_edit_obj.current_window_tc[window_id] != current_tc:
 
-                # initialize the timecode object for the current_tc
-                current_tc_obj = Timecode(current_timeline_fps, current_tc)
-
-                # initialize the timecode object for the timeline start_tc
-                timeline_start_tc_obj = Timecode(current_timeline_fps, current_timeline['startTC'])
-
-                # subtract the two timecodes to get the corresponding transcript seconds
-                if current_tc_obj > timeline_start_tc_obj:
-                    transcript_tc = current_tc_obj - timeline_start_tc_obj
-
-                    # so we can now convert the current tc into seconds
-                    transcript_sec = transcript_tc.float
-
-                # but if the current_tc_obj is at 0 or less
-                else:
-                    transcript_sec = 0
-
-                # remove the current_time segment first
-                update_attr['text'].tag_delete('current_time')
-
-                # find out on which text segment we are now
-                num = 0
-                line = 1
-                while num < max_lines:
-
-                    # if the transcript timecode in seconds is between the start and the end of this line
-                    if float(self.t_edit_obj.transcript_segments[window_id][num]['start']) <= transcript_sec \
-                            < float(self.t_edit_obj.transcript_segments[window_id][num]['end'])-0.01:
-                        line = num + 1
-
-                        # set the line as the active segment on the timeline
-                        self.t_edit_obj.set_active_segment(window_id, update_attr['text'], line)
-
-                    num = num + 1
-
-                update_attr['text'].tag_config('current_time', foreground=self.resolve_theme_colors['white'])
-
-                # highlight current line on transcript
-                # update_attr['text'].tag_add('current_time')
-
-                # now remember that we did the update for the current timecode
-                self.t_edit_obj.current_window_tc[window_id] = current_tc
-
+                update_attr = self.sync_current_tc_to_transcript(window_id=window_id, **update_attr)
 
         # hide some stuff if resolve isn't connected
         else:
+            # @TODO: check why this doesn't happen when resolve is closed - why do the buttons still stay in the window?
+
             update_attr['link_button'].grid_forget()
             update_attr['sync_button'].grid_forget()
 
-        # update again after 500ms
-        # @todo remove the auto-update and place the call where is needed to prevent constant redrawing of stuff
-        self.windows[window_id].after(500, lambda window_id=window_id, update_attr=update_attr:
-                self.update_transcription_window(window_id, **update_attr))
+    def sync_current_tc_to_transcript(self, window_id, **update_attr):
+
+        # if no text was passed, get it from the window
+        if 'text' not in update_attr or type(update_attr['text']) is not tk.Text:
+
+            # so get the link button from the window by using the hard-coded name
+            update_attr['text'] \
+                = self.windows[window_id].nametowidget('text_form_frame.transcript_text')
+
+        # how many segments / lines does the transcript on this window contain?
+        max_lines = len(self.t_edit_obj.transcript_segments[window_id])
+
+        # initialize the timecode object for the current_tc
+        current_tc_obj = Timecode(current_timeline_fps, current_tc)
+
+        # initialize the timecode object for the timeline start_tc
+        timeline_start_tc_obj = Timecode(current_timeline_fps, current_timeline['startTC'])
+
+        # subtract the two timecodes to get the corresponding transcript seconds
+        if current_tc_obj > timeline_start_tc_obj:
+            transcript_tc = current_tc_obj - timeline_start_tc_obj
+
+            # so we can now convert the current tc into seconds
+            transcript_sec = transcript_tc.float
+
+        # but if the current_tc_obj is at 0 or less
+        else:
+            transcript_sec = 0
+
+        # remove the current_time segment first
+        update_attr['text'].tag_delete('current_time')
+
+        # find out on which text segment we are now
+        num = 0
+        line = 1
+        while num < max_lines:
+
+            # if the transcript timecode in seconds is between the start and the end of this line
+            if float(self.t_edit_obj.transcript_segments[window_id][num]['start']) <= transcript_sec \
+                    < float(self.t_edit_obj.transcript_segments[window_id][num]['end']) - 0.01:
+                line = num + 1
+
+                # set the line as the active segment on the timeline
+                self.t_edit_obj.set_active_segment(window_id, update_attr['text'], line)
+
+            num = num + 1
+
+        update_attr['text'].tag_config('current_time', foreground=self.resolve_theme_colors['white'])
+
+        # highlight current line on transcript
+        # update_attr['text'].tag_add('current_time')
+
+        # now remember that we did the update for the current timecode
+        self.t_edit_obj.current_window_tc[window_id] = current_tc
+
+        return update_attr
+
+    def sync_all_transcription_windows(self):
+
+        # loop through all the open windows
+        for window_id in self.windows:
+
+            # check if it needs to be synced with the playhead
+            if window_id in self.t_edit_obj.sync_with_playhead \
+            and self.t_edit_obj.sync_with_playhead[window_id]:
+
+                # and if it does, sync it
+                self.sync_current_tc_to_transcript(window_id)
+
+    def update_all_transcription_windows(self):
+
+        # loop through all the open windows
+        for window_id in self.windows:
+
+            # if the window is a transcription window
+            if window_id in self.t_edit_obj.transcript_segments:
+
+                # update the window
+                self.update_transcription_window(window_id)
+
 
     def close_inactive_transcription_windows(self, timeline_transcription_file_paths=None):
         '''
@@ -4251,7 +4268,7 @@ class toolkit_UI:
                     not in timeline_transcription_file_paths:
 
                 # close the window
-                self.destroy_window_(self.windows, transcription_window)
+                self.destroy_transcription_window(transcription_window)
 
     def update_transcription_log_window(self):
 
@@ -4358,8 +4375,8 @@ class toolkit_UI:
         elif transcription_file_path is None and transcription_window_id is not None:
             transcription_file_path = self.t_edit_obj.transcription_file_paths[transcription_window_id]
 
-
-        # if we still don't have a transcription file path (or paths), ask the user to manually select thetranscription files
+        # if we still don't have a transcription file path (or paths),
+        # ask the user to manually select the transcription files
         if transcription_file_path is None and not transcription_file_paths:
             # use the global initial_target_dir
             # global initial_target_dir
@@ -7645,6 +7662,42 @@ class ToolkitOps:
 
             return transcription_data
 
+    def format_timestamp(self, seconds: float, always_include_hours: bool = False, decimal_marker: str = '.'):
+        assert seconds >= 0, "non-negative timestamp expected"
+        milliseconds = round(seconds * 1000.0)
+
+        hours = milliseconds // 3_600_000
+        milliseconds -= hours * 3_600_000
+
+        minutes = milliseconds // 60_000
+        milliseconds -= minutes * 60_000
+
+        seconds = milliseconds // 1_000
+        milliseconds -= seconds * 1_000
+
+        hours_marker = f"{hours:02d}:" if always_include_hours or hours > 0 else ""
+        return f"{hours_marker}{minutes:02d}:{seconds:02d}{decimal_marker}{milliseconds:03d}"
+
+    def write_srt(self, transcript_segments: dict, srt_file_path: str):
+        """
+        Write the transcript segments to a file in SRT format.
+        """
+
+        with open(srt_file_path, "w", encoding="utf-8") as srt_file:
+
+            i = 1
+            for segment in transcript_segments:
+                # write srt lines
+                print(
+                    f"{i}\n"
+                    f"{self.format_timestamp(segment['start'], always_include_hours=True, decimal_marker=',')} --> "
+                    f"{self.format_timestamp(segment['end'], always_include_hours=True, decimal_marker=',')}\n"
+                    f"{segment['text'].strip().replace('-->', '->')}\n",
+                    file=srt_file,
+                    flush=True,
+                )
+                i += 1
+
     def save_srt_from_transcription(self, srt_file_path=None, transcription_segments=None,
                                     file_name=None, target_dir=None, transcription_data=None):
         '''
@@ -7686,9 +7739,7 @@ class ToolkitOps:
                 return False
 
             if transcription_segments:
-                with open(srt_file_path, "w", encoding="utf-8") as srt:
-                    whisper.utils.write_srt(transcription_segments, file=srt)
-
+                self.write_srt(transcription_segments, srt_file_path)
                 return srt_file_path
 
         return False
@@ -8007,21 +8058,32 @@ class ToolkitOps:
         # when resolve connects / re-connects
         if event_name == 'resolve_changed':
 
-            # update the main window
             if self.is_UI_obj_available():
+
+                # update the main window
                 self.toolkit_UI_obj.update_main_window()
+
+                # sync all the synced transcription windows
+                self.toolkit_UI_obj.update_all_transcription_windows()
 
         # when the timeline has changed
         elif event_name == 'timeline_changed':
 
             global current_timeline
 
-            if current_timeline is not None:
+            if current_timeline is not None and current_timeline != '' \
+                    and type(current_timeline) == dict and 'name' in current_timeline:
+
                 # get the transcription_paths linked with this timeline
                 timeline_transcription_file_paths = self.get_timeline_transcriptions(
                     timeline_name=current_timeline['name'],
                     project_name=current_project
                 )
+
+                # close all the transcript windows that aren't linked with this timeline
+                if self.stAI.get_app_setting('close_transcripts_on_timeline_change'):
+                    if self.toolkit_UI_obj is not None:
+                        self.toolkit_UI_obj.close_inactive_transcription_windows(timeline_transcription_file_paths)
 
                 # and open a transcript window for each of them
                 if timeline_transcription_file_paths \
@@ -8030,10 +8092,14 @@ class ToolkitOps:
                     for transcription_file_path in timeline_transcription_file_paths:
                         self.toolkit_UI_obj.open_transcription_window(transcription_file_path=transcription_file_path)
 
-                # and close all the transcript windows that aren't linked with this timeline
-                if self.stAI.get_app_setting('close_transcripts_on_timeline_change'):
-                    if self.toolkit_UI_obj is not None:
-                        self.toolkit_UI_obj.close_inactive_transcription_windows(timeline_transcription_file_paths)
+        # when the playhead has moved
+        elif event_name == 'tc_changed':
+            #@todo update all synced transcript windows with the new timecode
+            if self.toolkit_UI_obj is not None:
+
+                # sync all the synced transcription windows
+                self.toolkit_UI_obj.sync_all_transcription_windows()
+
 
 
     def poll_resolve_thread(self):
@@ -8076,7 +8142,7 @@ class ToolkitOps:
                 # first, check if the API module is available on this machine
                 if not self.resolve_api.api_module_available:
                     logger.debug('Resolve API module not available on this machine. '
-                                 'Aborting Resolve API polling until restart.')
+                                 'Aborting Resolve API polling until StoryToolkitAI restart.')
                     return None
 
                 resolve_data = self.resolve_api.get_resolve_data(silent=True)
@@ -8084,50 +8150,77 @@ class ToolkitOps:
                 #print(resolve)
                 #print(resolve_data['resolve'])
 
+                # for all the global variables related with resolve data,
+                #  check if the data has changed and if so, update the global variable
+                #  but if the polled data does not contain the key, also set the global variable to ''
+                #  also, if the global variable is not '' and the polled data doesn't contain the key,
+                #  set the global variable to ''
+                # also, make sure you trigger the on_resolve event if the data has changed
+
+
                 if type(resolve) != type(resolve_data['resolve']):
                     # update the global resolve variable with the resolve object
                     resolve = resolve_data['resolve']
                     self.on_resolve('resolve_changed')
 
-                if current_project != resolve_data['currentProject']:
-                    current_project = resolve_data['currentProject']
+                # if current_project has been previously set (is not '')
+                # check to see if it's different than the currently polled data
+                if (current_project != '' and 'currentProject' not in resolve_data) \
+                or current_project != resolve_data['currentProject']:
+
+                    current_project = resolve_data['currentProject'] if 'currentProject' in resolve_data else ''
                     self.on_resolve('project_changed')
                     # logger.info('Current Project: {}'.format(current_project))
 
-                if current_timeline != resolve_data['currentTimeline']:
+                # if current_timeline has been previously set (is not '')
+                # check to see if it's different than the currently polled data
+                if (current_timeline != '' and 'currentTimeline' not in resolve_data) \
+                   or current_timeline != resolve_data['currentTimeline']:
+
+                    # if the resolve data is empty, set the current timeline to ''
+                    # and trigger the timeline_changed event
+                    if 'currentTimeline' not in resolve_data:
+                        current_timeline = ''
+                        self.on_resolve('timeline_changed')
 
                     # if the names or the types differ, then the timeline has changed
-                    # otherwise timeline_change will be triggered on any setting change
-                    if type(current_timeline) != type(resolve_data['currentTimeline']) \
-                       or 'name' in current_timeline and not 'name' in resolve_data['currentTimeline'] \
-                        or not 'name' in current_timeline and 'name' in resolve_data['currentTimeline'] \
-                        or current_timeline['name'] != resolve_data['currentTimeline']['name']:
+                    # otherwise timeline_change will be triggered on any setting change (markers etc)
+                    elif 'currentTimeline' in resolve_data \
+                        and (type(current_timeline) != type(resolve_data['currentTimeline']) \
+                      or ('name' in current_timeline and not 'name' in resolve_data['currentTimeline']) \
+                      or ('name' not in current_timeline and 'name' in resolve_data['currentTimeline']) \
+                      or (current_timeline['name'] != resolve_data['currentTimeline']['name'])):
 
                         # update the current timeline
-                        current_timeline = resolve_data['currentTimeline']
+                        current_timeline = resolve_data['currentTimeline'] if 'currentTimeline' in resolve_data else ''
 
                         self.on_resolve('timeline_changed')
 
                     else:
                         # nevertheless update the current timeline
-                        current_timeline = resolve_data['currentTimeline']
+                        current_timeline = resolve_data['currentTimeline'] if 'currentTimeline' in resolve_data else ''
 
                     # self.on_resolve_timeline_changed()
                     # logger.info("Current Timeline: {}".format(current_timeline))
 
                 #  updates the currentBin
-                if current_bin != resolve_data['currentBin']:
-                    current_bin = resolve_data['currentBin']
+                if (current_bin != '' and 'currentBin' not in resolve_data) \
+                or current_bin != resolve_data['currentBin']:
+
+                    current_bin = resolve_data['currentBin'] if 'currentBin' in resolve_data else ''
+
                     self.on_resolve('bin_changed')
                     # logger.info("Current Bin: {}".format(current_bin))
 
                 # update current playhead timecode
-                if current_tc != resolve_data['currentTC']:
+                if (current_tc != '00:00:00:00' and 'currentTC' not in resolve_data) \
+                or current_tc != resolve_data['currentTC']:
                     current_tc = resolve_data['currentTC']
                     self.on_resolve('tc_changed')
 
                 # update current playhead timecode
-                if current_timeline_fps != resolve_data['currentTimelineFPS']:
+                if (current_timeline_fps != '' and 'currentTC' not in resolve_data) \
+                or current_timeline_fps != resolve_data['currentTimelineFPS']:
                     current_timeline_fps = resolve_data['currentTimelineFPS']
                     self.on_resolve('fps_changed')
 
@@ -8356,6 +8449,7 @@ class ToolkitOps:
         return False
 
 
+# @todo change these to None when empty
 current_project = ''
 current_timeline = ''
 current_tc = '00:00:00:00'

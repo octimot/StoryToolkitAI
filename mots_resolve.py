@@ -18,7 +18,7 @@ import logging
 # this logger will not be used within MotsResolve class if a logger is passed on init
 log_resolve = logging.getLogger('MotsResolve')
 
-# add formater to show the levelname and message in the log
+# add formatter to show the levelname and message in the log
 log_resolve.setLevel(logging.INFO if '--debug' not in sys.argv else logging.DEBUG)
 formatter = logging.Formatter("%(levelname)s: %(message)s (%(filename)s:%(lineno)d)")
 # add the formatter to the handler
@@ -103,7 +103,7 @@ class MotsResolve:
                    default_resolve_dir = 'C:\\Program Files\\Blackmagic Design\\DaVinci Resolve\\'
                    executable = 'Resolve.exe'
 
-                # this is the default location for the DaVinci Resolve on Mac
+                # this is the default location for DaVinci Resolve on Mac
                 elif platform.system() == 'Darwin':
                     default_resolve_dir = '/Applications/DaVinci Resolve/'
                     executable = 'DaVinci Resolve.app'

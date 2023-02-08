@@ -91,7 +91,7 @@ using the following command!)
 _Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
 If you followed the previous steps, your terminal prompt should now have `(venv)` before everything else._
 
-    pip install git+https://github.com/openai/whisper.git 
+    pip install -U openai-whisper 
 
 For more info regarding Whisper installation, please check https://github.com/openai/whisper 
 
@@ -189,7 +189,7 @@ using the following command!)
 #### 8. Install OpenAI Whisper
 Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. If you followed the previous steps, your terminal prompt should now have (venv) before everything else.
 
-    pip install git+https://github.com/openai/whisper.git 
+    pip install -U openai-whisper
 
 For more info regarding Whisper installation, please check https://github.com/openai/whisper
 
