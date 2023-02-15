@@ -7,7 +7,8 @@ and allowing them to search transcripts semantically with the help of AI.**
 
 The tool works locally, independent of any editing software, but it also functions as a Davinci Resolve Studio 18 
 integration via API. It is using OpenAI Whisper for speech-to-text, sentence transformers for semantic search and a few 
-other AI technologies to get stuff done.
+other AI technologies to get stuff done. Because this tool uses the Integration API for Davinci Resolve, it does not work with the free version
+of Resolve, and requires Davinci Resolve Studio.
 
 <img alt="StoryToolkitAI Demo GIF" src="https://videoapi-muybridge.vimeocdn.com/animated-thumbnails/image/9eb88ee1-4902-4e17-82dc-77411d959eab.gif?ClientID=vimeo-core-prod&Date=1665676352&Signature=52a72df29b216dd2f8cce8ee7360ea38a24b5b6e" width="700">
 https://vimeo.com/759962195/dee07a067a
