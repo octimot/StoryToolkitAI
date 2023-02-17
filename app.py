@@ -3203,7 +3203,7 @@ class toolkit_UI:
         # THE ADVANCED SEARCH BUTTON
         self.main_window.button9 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings,
                                              **self.button_size,
-                                             text="Advanced\nTranscript Search", command=lambda:
+                                             text="Advanced\n Search", command=lambda:
                                                             self.open_advanced_search_window())
         # add the shift+click binding to the button
         self.main_window.button9.bind('<Shift-Button-1>',
@@ -3953,7 +3953,7 @@ class toolkit_UI:
                 advanced_search_button = tk.Button(header_frame, text='Advanced Search', name='advanced_search_button',
                                                    command=lambda:
                                             self.open_advanced_search_window(transcription_window_id=t_window_id,
-                                                                             transcription_file_path=\
+                                                                             search_file_path=\
                                                                                 transcription_file_path))
 
                 advanced_search_button.pack(side=tk.LEFT, **self.paddings)
@@ -4356,30 +4356,29 @@ class toolkit_UI:
 
             return True
 
-    def open_advanced_search_window(self, transcription_window_id=None, transcription_file_path=None,
+    def open_advanced_search_window(self, transcription_window_id=None, search_file_path=None,
                                     select_dir=False):
 
         if self.toolkit_ops_obj is None:
             logger.error('Cannot open advanced search window. A toolkit operations object is needed to continue.')
             return False
 
-        # declare the empty list of transcription file paths
-        transcription_file_paths = []
+        # declare the empty list of search file paths
+        search_file_paths = []
 
-        # check if a transcription file path was passed and if it exists
-        if transcription_file_path is not None and not os.path.exists(transcription_file_path):
-            logger.error('The transcription file {} cannot be found.'.format(transcription_file_path))
+        # check if a searchable file path was passed and if it exists
+        if search_file_path is not None and not os.path.exists(search_file_path):
+            logger.error('The file {} cannot be found.'.format(search_file_path))
             return False
 
         # if a transcription window id was passed, get the transcription file path from it
-        elif transcription_file_path is None and transcription_window_id is not None:
-            transcription_file_path = self.t_edit_obj.transcription_file_paths[transcription_window_id]
+        # and use it as the search file path
+        elif search_file_path is None and transcription_window_id is not None:
+            search_file_path = self.t_edit_obj.transcription_file_paths[transcription_window_id]
 
-        # if we still don't have a transcription file path (or paths),
-        # ask the user to manually select the transcription files
-        if transcription_file_path is None and not transcription_file_paths:
-            # use the global initial_target_dir
-            # global initial_target_dir
+        # if we still don't have a searchable file path (or paths),
+        # ask the user to manually select the files
+        if search_file_path is None and not search_file_paths:
 
             # if resolve is connected, check the last target dir
             global resolve
@@ -4394,49 +4393,53 @@ class toolkit_UI:
 
             # if select_dir is true, allow the user to select a directory
             if select_dir:
-                # ask the user to select a directory with transcription files
-                transcription_file_dirs = filedialog.askdirectory(initialdir=initial_dir,
-                                                                   title='Select a directory with transcriptions')
-
-                # now go through all the .transcription.json files in the directory and add them to the list
-                if transcription_file_dirs:
-                    for root, dirs, files in os.walk(transcription_file_dirs):
-                        for file in files:
-                            if file.endswith('.transcription.json'):
-                                transcription_file_paths.append(os.path.join(root, file))
+                # ask the user to select a directory with searchable files
+                selected_file_path = filedialog.askdirectory(initialdir=initial_dir,
+                                                                   title='Select a directory to search')
 
             else:
-                # ask the user to select the transcription files to use in the search corpus
-                transcription_file_paths \
+                # ask the user to select the searchable files to use in the search corpus
+                selected_file_path \
                     = filedialog.askopenfilenames(initialdir=initial_dir,
-                                                            title='Select transcription files to use in the search',
-                                                            filetypes=[('Transcription files', '*.json')])
+                                                            title='Select files to use in the search',
+                                                            filetypes=[('Transcription files', '*.json'),
+                                                                       ('Text files', '*.txt'),
+                                                                       ('Pickle files', '*.pkl')])
 
             # if resolve is connected, save the last target dir
-            if resolve and transcription_file_paths \
-                and type(transcription_file_paths) is list and os.path.exists(transcription_file_paths[0]):
+            if resolve and search_file_paths \
+                and type(search_file_paths) is list and os.path.exists(search_file_paths[0]):
 
                 self.stAI.save_project_setting(project_name=current_project,
                                                setting_key='last_target_dir',
-                                               setting_value=os.path.dirname(transcription_file_paths[0]))
+                                               setting_value=os.path.dirname(search_file_paths[0]))
 
+            # process the selected paths and return only the files that are valid
+            # this works for both a single file path and a directory (depending what the user selected above)
+            search_file_paths = self.toolkit_ops_obj.t_search_obj.process_file_paths(selected_file_path)
 
-            if not transcription_file_paths:
-                logger.info('No transcription files were selected. Aborting.')
+            if not search_file_paths:
+                logger.info('No files were selected for search. Aborting.')
                 return False
 
+        # if the call included a search file path just add it to the list
+        elif search_file_path is not None and os.path.exists(search_file_path):
+            search_file_paths = [search_file_path]
+
+        # if the call included a transcription window
         # init the search window id, the title and the parent element
-        # depending if we have a transcription window id or not
-        if transcription_window_id is not None and transcription_file_path is not None:
+        if transcription_window_id is not None and search_file_path is not None:
 
             # read transcription data from transcription file
-            transcription_data = self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path)
+            # this is only used for the title of the search window
+            # the loading of the search data is done later in the process
+            transcription_data = self.toolkit_ops_obj.get_transcription_file_data(search_file_path)
 
             # get the name of the transcription
             if transcription_data and type(transcription_data) is dict and 'name' in transcription_data:
                 title_name = transcription_data['name']
             else:
-                title_name = os.path.basename(transcription_file_path).split('.transcription.json')[0]
+                title_name = os.path.basename(search_file_path).split('.transcription.json')[0]
 
             search_window_id = transcription_window_id + '_search'
             search_window_title = 'Search - {}'.format(title_name)
@@ -4446,12 +4449,25 @@ class toolkit_UI:
             open_multiple = False
 
             # the transcription_file_paths has only one element
-            transcription_file_paths = [transcription_file_path]
+            search_file_paths = [search_file_path]
 
-        # if there is no transcription window id
+        # if there is no transcription window id or a search_file_path
         else:
-            search_window_id = 'adv_search'
-            search_window_title = 'Search'
+
+            # if the user selected a directory, use the directory name as the title
+            if select_dir and os.path.isdir(selected_file_path):
+                search_window_title_ext = ' - '+os.path.basename(selected_file_path)
+
+            elif search_file_paths and (type(search_file_paths) is list or type(search_file_paths) is tuple):
+
+                search_window_title_ext = ' - '+os.path.basename(search_file_paths[0])
+
+                # if there are multiple files, sho that there are others
+                if len(search_file_paths) > 1:
+                    search_window_title_ext += ' + others'
+
+            search_window_id = 'adv_search_'+str(time.time())
+            search_window_title = 'Search' + search_window_title_ext
             search_window_parent = self.root
 
             # this allows us to open multiple search windows at the same time
@@ -4460,7 +4476,10 @@ class toolkit_UI:
         # create a window for the advanced search if one doesn't already exist
         if (search_window_id := self.create_or_open_window(parent_element=search_window_parent,
                                         window_id=search_window_id, title=search_window_title, resizable=True,
-                                        open_multiple=open_multiple)):
+                                        open_multiple=open_multiple,
+                                       close_action=lambda t_window_id=search_window_id: \
+                                               self.destroy_advanced_search_window(search_window_id)
+                                                           )):
 
             # and then call the update function to fill the window up
             #self.update_advanced_search_window()
@@ -4501,6 +4520,8 @@ class toolkit_UI:
             results_text.pack(anchor='w', expand=True, fill='both')
 
             results_text.insert(tk.END, 'This feature is experimental.\n'
+                                        'The first time you search something in a search window will take a while '
+                                        'to embed the data.\n'
                                         'Check README for details:\n https://github.com/octimot/StoryToolkitAI/')
             results_text.config(state=DISABLED)
 
@@ -4509,9 +4530,10 @@ class toolkit_UI:
                                                                     search_window_id,
                                                                     search_str.get(),
                                                                     results_text,
-                                                                    transcription_file_paths
+                                                                    file_paths=search_file_paths
                                                                     )
                               )
+
 
             return True
 
@@ -5073,6 +5095,21 @@ class toolkit_UI:
         # call the default destroy window function
         self.destroy_window_(parent_element=self.windows, window_id=window_id)
 
+    def destroy_advanced_search_window(self, window_id: str = None):
+
+        logger.debug('Deleting caches of search window {}'.format(window_id))
+
+        # first remove the caches associated with the advanced search window
+        if window_id in self.toolkit_ops_obj.t_search_obj.search_corpuses:
+            del self.toolkit_ops_obj.t_search_obj.search_corpuses[window_id]
+
+        if window_id in self.toolkit_ops_obj.t_search_obj.search_embeddings:
+            del self.toolkit_ops_obj.t_search_obj.search_embeddings[window_id]
+
+        # call the default destroy window function
+        self.destroy_window_(parent_element=self.windows, window_id=window_id)
+
+
     def open_transcript_groups_window(self, transcription_window_id, transcription_name=None):
 
         # the transcript groups window id
@@ -5196,15 +5233,15 @@ class toolkit_UI:
                                                  groups_listbox=groups_listbox)
 
     def button_advanced_search(self, search_window_id, search_term, results_text_element=None,
-                               transcription_file_paths=None):
+                               file_paths=None):
 
-        if transcription_file_paths is None:
+        if file_paths is None:
             logger.error('Cannot search. No transcription file path was passed.')
             return False
 
         results_text_element.config(state=NORMAL)
 
-        # first clear the results text box
+        # first clear the results text box and let the user know we started the process
         results_text_element.delete('1.0', tk.END)
 
         logger.info('Searching for "{}"'.format(search_term))
@@ -5219,9 +5256,11 @@ class toolkit_UI:
         # perform the search
         search_results, max_results \
             = self.toolkit_ops_obj.t_search_obj.t_search(query=search_term,
-                                                       transcription_file_paths=transcription_file_paths,
-                                                       search_id=search_window_id,
-                                                       max_results=max_results
+                                                         file_paths=file_paths,
+                                                         search_id=search_window_id,
+                                                         max_results=max_results,
+                                                         start_search_time=start_search_time,
+                                                         results_text_element=results_text_element
                                                        )
 
         # how long did the search take?
@@ -5258,37 +5297,64 @@ class toolkit_UI:
                 results_text_element.tag_add('white', current_insert_position, tk.INSERT)
                 results_text_element.tag_config('white', foreground=self.resolve_theme_colors['supernormal'])
 
-                # add score and segment info to the result
+                # add score to the result
                 results_text_element.insert(tk.END, ' -- Score: {:.4f}\n'.format(result['score']))
-                results_text_element.insert(tk.END, ' -- Transcript: {}\n'
-                                            .format(os.path.basename(result['transcription_file_path'])))
-                results_text_element.insert(tk.END, ' -- Line {} (second {:.2f}) \n\n'
-                                            .format(result['segment_index'], result['transcript_time']))
 
-                # add a tag to the above text to make it clickable
-                tag_name = 'clickable_{}'.format(result['idx'])
-                results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
+                # if the type is a transcription
+                if result['type'] == 'transcription':
+                    # add the transcription file path and segment index to the result
+                    results_text_element.insert(tk.END, ' -- Transcript: {}\n'
+                                                .format(os.path.basename(result['transcription_file_path'])))
+                    results_text_element.insert(tk.END, ' -- Line {} (second {:.2f}) \n'
+                                                .format(result['segment_index'], result['transcript_time']))
 
-                # add the transcription file path and segment index to the tag
-                # so we can use it to open the transcription window with the transcription file and jump to the segment
-                results_text_element.tag_bind(tag_name, '<Button-1>',
-                                              lambda event, transcription_file_path=result['transcription_file_path'],
-                                                     line_no=result['line_no']:
-                                              self.open_transcription_window(
-                                                  transcription_file_path=transcription_file_path,
-                                                  select_line_no=line_no))
+                    # add a tag to the above text to make it clickable
+                    tag_name = 'clickable_{}'.format(result['idx'])
+                    results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
 
-                # bind mouse clicks press events on the results text box
-                # bind CMD/CTRL + mouse Clicks to text
-                results_text_element.tag_bind(tag_name, "<"+self.ctrl_cmd_bind+"-Button-1>",
-                                              lambda event, transcription_file_path=result['transcription_file_path'],
-                                                     line_no=result['line_no'],
-                                                     all_lines=result['all_lines']:
-                                              self.open_transcription_window(
-                                                  transcription_file_path=transcription_file_path,
-                                                  select_line_no=line_no,
-                                                  add_to_selection=all_lines)
-                                              )
+                    # add the transcription file path and segment index to the tag
+                    # so we can use it to open the transcription window with the transcription file and jump to the segment
+                    results_text_element.tag_bind(tag_name, '<Button-1>',
+                                                  lambda event, transcription_file_path=result['transcription_file_path'],
+                                                         line_no=result['line_no']:
+                                                  self.open_transcription_window(
+                                                      transcription_file_path=transcription_file_path,
+                                                      select_line_no=line_no))
+
+                    # bind mouse clicks press events on the results text box
+                    # bind CMD/CTRL + mouse Clicks to text
+                    results_text_element.tag_bind(tag_name, "<"+self.ctrl_cmd_bind+"-Button-1>",
+                                                  lambda event, transcription_file_path=result['transcription_file_path'],
+                                                         line_no=result['line_no'],
+                                                         all_lines=result['all_lines']:
+                                                  self.open_transcription_window(
+                                                      transcription_file_path=transcription_file_path,
+                                                      select_line_no=line_no,
+                                                      add_to_selection=all_lines)
+                                                  )
+
+                # if the type is a transcription
+                elif result['type'] == 'text':
+                    # add the transcription file path and segment index to the result
+                    results_text_element.insert(tk.END, ' -- File: {}\n'
+                                                .format(os.path.basename(result['file_path'])))
+
+                    # add a tag to the above text to make it clickable
+                    tag_name = 'clickable_{}'.format(result['idx'])
+                    results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
+
+                    # if the user clicks on the result
+                    # open the file in the default program (must work for Windows, Mac and Linux)
+                    results_text_element.tag_bind(tag_name, '<Button-1>',
+                                                    lambda event, file_path=result['file_path']:
+                                                    self.open_file_in_os(file_path=file_path))
+
+                else:
+                    # mention that the result source is unknown
+                    results_text_element.insert(tk.END, ' -- Source: Unknown\n')
+
+                # add a new line
+                results_text_element.insert(tk.END, '\n')
 
 
             # update the results text element
@@ -5298,6 +5364,29 @@ class toolkit_UI:
             results_text_element.config(state=DISABLED)
 
         return True
+
+    def open_file_in_os(self, file_path):
+        '''
+        Opens any file in the default program for the OS (works for Windows, Mac and Linux)
+        :param file_path:
+        :return:
+        '''
+
+        # if the file exists
+        if os.path.exists(file_path):
+            # open the file in the default program
+            if sys.platform == 'win32':
+                os.startfile(file_path)
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', file_path], close_fds=True)
+            else:
+                try:
+                    subprocess.Popen(['xdg-open', file_path])
+                except OSError:
+                    logger.error('Please open the file manually on your system: {}'.format(file_path))
+        else:
+            # otherwise, show an error
+            messagebox.showerror('Error', 'File not found: {}'.format(file_path))
 
     def ask_for_target_dir(self, title=None, target_dir=None):
 
@@ -5516,7 +5605,8 @@ class ToolkitOps:
 
         # init Resolve (if resolve API isn't disabled via config or parameter)
         if not self.stAI.get_app_setting('disable_resolve_api', default_if_none=False) \
-                and not disable_resolve_api:
+                and not disable_resolve_api\
+                and '--noresolve' not in sys.argv:
             self.resolve_api = MotsResolve(logger=logger)
 
             # start the resolve thread
@@ -5525,7 +5615,10 @@ class ToolkitOps:
 
         else:
             self.resolve_api = None
-            logger.debug('Resolve API disabled via config')
+            if '--noresolve' in sys.argv:
+                logger.debug('Resolve API disabled via --noresolve argument.')
+            else:
+                logger.debug('Resolve API disabled via config.')
 
         # resume the transcription queue if there's anything in it
         if self.resume_transcription_queue_from_file():
@@ -5549,56 +5642,270 @@ class ToolkitOps:
             # this also optimizes the search so that the corpus is only compiled once per search session
             self.search_corpuses = {}
 
-        def load_transcription_paths_to_search_dict(self, transcription_file_paths):
+            # keep all the embeddings in this cache to find them easy by search_id
+            # this also optimizes the search so that the embeddings are only compiled once per search session
+            self.search_embeddings = {}
+
+        def is_file_searchable(self, file_path):
             '''
-            Loads the transcription file paths to a dictionary that can be used for searching
-            :param transcription_file_paths: this can be a list of file paths or a single file path
+            This function will check if the file has the right extension to be searchable
+            :param file_path:
+            :return:
+            '''
+
+            # check if the file ends with one of the extensions we're looking for
+            return file_path.endswith(('.transcription.json', '.txt'))
+
+        def process_file_paths(self, search_paths=None):
+            '''
+            This function will process the file paths that were passed to the search function
+            :return:
+            '''
+
+            search_file_paths = []
+
+            if search_paths is None:
+                logger.debug('No search paths were passed to the search function')
+                return None
+
+            # if the search path contains only one file
+            # which ends with .pkl we'll return it directly
+            # to be used as a search corpus (search cache)
+            if search_paths is not None \
+                and ((type(search_paths) is str and os.path.isfile(search_paths)) \
+                or ((type(search_paths) is list or type(search_paths) is tuple)
+                    and len(search_paths) == 1 and os.path.isfile(search_paths[0]))) \
+                    and search_paths[0].endswith('.pkl'):
+                return search_paths[0]
+
+            # is this a search for a single file or a directory?
+            # if it's a single file, we'll just add it to the search_file_paths list
+            if search_paths is not None and type(search_paths) is str and os.path.isfile(search_paths) \
+                and self.is_file_searchable(search_paths):
+                search_file_paths = [search_paths]
+
+            # if it's a list of files, we'll just add it to the search_file_paths list
+            elif search_paths is not None and (type(search_paths) is list or type(search_paths) is tuple):
+
+                # but we only add the path if it's a file
+                for search_path in search_paths:
+                    if os.path.isfile(search_path) and self.is_file_searchable(search_path):
+                        search_file_paths.append(search_path)
+
+            # if it's a directory, we'll process all the files in the directory
+            elif search_paths is not None and type(search_paths) is str and os.path.isdir(search_paths):
+
+                for root, dirs, files in os.walk(search_paths):
+                    for file in files:
+                        if self.is_file_searchable(file):
+                            search_file_paths.append(os.path.join(root, file))
+
+            return search_file_paths
+
+        def load_file_paths_to_search_dict(self, file_paths):
+            '''
+            Loads the file paths to a dictionary that can be used for searching
+            :param file_paths: this can be a list of file paths or a single file path
             :return:
             '''
 
             # if no transcription file paths were provided
-            if transcription_file_paths is None or len(transcription_file_paths) == 0:
+            if file_paths is None or len(file_paths) == 0:
                 # throw an error if no transcription file was passed
-                logger.error('Cannot search. No transcription file path was passed.')
-
-            # otherwise use all the transcription files in the target dir
-            # else:
-            #
-            #    # get the list of transcription files in the target dir using os.walk
-            #    transcription_files = os.walk
+                logger.error('Cannot search. No file path was passed.')
 
             # if only one transcription file path is given, make it a list
-            if type(transcription_file_paths) is str:
-                transcription_file_paths = [transcription_file_paths]
+            if type(file_paths) is str:
+                file_paths = [file_paths]
 
             # define the transcriptions dict
-            search_transcriptions = {}
+            search_files = {}
 
             # take all the transcription file paths and load them into the search_transcriptions dictionary
-            for transcription_file_path in transcription_file_paths:
+            for s_file_path in file_paths:
 
                 # if a specific transcription file was passed, use that in the search
-                if transcription_file_path is not None:
+                if s_file_path is not None:
 
                     # don't include the file if it doesn't exist
-                    if not os.path.isfile(transcription_file_path):
-                        logger.error('Transcription file {} not found. Skipping.'.format(transcription_file_path))
+                    if not os.path.isfile(s_file_path):
+                        logger.error('File {} not found. Skipping.'.format(s_file_path))
                         continue
 
                     # now read the transcription file contents
-                    search_transcriptions[transcription_file_path] = \
+                    search_files[s_file_path] = \
                         self.toolkit_ops_obj.get_transcription_file_data(
-                            transcription_file_path=transcription_file_path)
+                            transcription_file_path=s_file_path)
 
-            return search_transcriptions
+            return search_files
 
-        def prepare_search_corpus(self, search_transcriptions, search_id):
+        def prepare_search_corpus(self, search_file_paths, search_id):
             '''
             Takes all the segments from the search_transcriptions and turns them into a search corpus
-            :param search_transcriptions:
+            :param search_files:
             :param search_id:
             :return:
             '''
+
+            # if no transcription file paths were provided
+            if search_file_paths is None or len(search_file_paths) == 0:
+                # throw an error if no transcription file was passed
+                logger.error('Cannot search. No file path was passed.')
+
+            # if only one transcription file path is given, make it a list
+            if type(search_file_paths) is str:
+                search_file_paths = [search_file_paths]
+
+            # re-organize the search corpus into a dictionary of phrases
+            # with the transcription file path as the key
+            # and the value being a list of phrases compiled from the transcription file text using
+            # the punctuation as dividers.
+            # this will make it easier to search for phrases in the transcription files
+            search_corpus_phrases = []
+
+            # use this to keep track of the transcription file path and the phrase index
+            search_corpus_assoc = {}
+
+            # and if the hasn't already been created, just create it
+            if search_id not in self.toolkit_ops_obj.t_search_obj.search_corpuses:
+
+                logger.debug('Reading search corpus from files.')
+
+                # take each file path and load the search data
+                for s_file_path in search_file_paths:
+
+                    # decide what to do based on the file extension
+
+                    # if it's transcription file
+                    if s_file_path.endswith('.transcription.json'):
+
+                        # first get the transcription file data
+                        transcription_file_data = self.toolkit_ops_obj.get_transcription_file_data(
+                                                        transcription_file_path=s_file_path)
+
+                        if type(transcription_file_data) is not dict\
+                                or 'segments' not in transcription_file_data:
+                            logger.warning('Transcription file {} is not in the right format. Skipping.'
+                                           .format(s_file_path))
+
+                        elif type(transcription_file_data) is dict \
+                                and 'segments' in transcription_file_data \
+                                and type(transcription_file_data['segments']) is list:
+
+                            transcription_file_path = s_file_path
+
+                            logger.debug('Adding {} to the search corpus.'.format(transcription_file_path))
+
+                            # group the segment texts into phrases using punctuation as dividers
+                            # instead of how they're currently segmented
+                            # once they are grouped, add them to the search corpus
+                            # plus add them to the search corpus association list so we know
+                            # from which transcription file and from which segment they came from originally
+
+                            # initialize the current phrase
+                            current_phrase = ''
+
+                            # loop through the segments of this transcription file
+                            for segment_index, segment in enumerate(transcription_file_data['segments']):
+
+                                # first remember the transcription file path and the segment index
+                                # if this is a new phrase (i.e. the current phrase is empty)
+                                if current_phrase == '':
+                                    # this is the segment index relative to the whole search corpus that
+                                    # contains all the transcription file segments (not just the current transcription file)
+                                    general_segment_index = len(search_corpus_phrases)
+
+                                    search_corpus_assoc[general_segment_index] = {'transcription_file_path':
+                                                                                      transcription_file_path,
+                                                                                  'segment': segment['text'],
+                                                                                  'segment_index':
+                                                                                      segment_index,
+                                                                                  'start':
+                                                                                      segment['start'],
+                                                                                  'all_lines':
+                                                                                      [int(segment_index) + 1],
+                                                                                  'type': 'transcription'
+                                                                                  }
+
+                                # otherwise, if this is not a new phrase
+                                else:
+                                    # just append the current segment index to the list of all lines
+                                    search_corpus_assoc[general_segment_index]['all_lines'].append(
+                                        int(segment_index) + 1)
+
+                                # add the segment text to the current phrase
+                                # but only if it's longer than 2 characters to avoid adding stuff that is most likely meaningless
+                                # like punctuation marks
+                                if 'text' in segment and type(segment['text']) is str:
+
+                                    # keep adding segments to the current phrase until we find a punctuation mark
+
+                                    # first get the segment text
+                                    segment_text = str(segment['text'])
+
+                                    # add the segment to the current phrase
+                                    current_phrase += segment_text.strip() + ' '
+
+                                    # if a punctuation mark exists in the last 5 characters of the segment text
+                                    # it means that the current phrase is complete
+                                    if re.search(r'[\.\?\!]{1}$', segment_text[-5:]):
+                                        # "close" the current phrase by adding it to the search corpus
+                                        search_corpus_phrases.append(current_phrase.strip())
+
+                                        # then empty the current phrase
+                                        current_phrase = ''
+
+                    elif s_file_path.endswith('.txt'):
+
+                        # if there is an exact file with the .transcription.json extension in the search file paths
+                        # skip this .txt file to avoid reading the same content twice
+                        # (we're making the assumption that that .txt file was saved with the transcription file)
+                        if s_file_path.replace('.txt', '.transcription.json') in search_file_paths:
+                            logger.debug('Skipping {}. Transcription file counterpart is included '
+                                         'in the current file list.'.format(s_file_path))
+                            continue
+
+                        # first read the file
+                        with open(s_file_path, 'r') as f:
+                            file_text = f.read()
+
+                        # split the text into phrases using punctuation or double new lines as dividers
+                        phrases = re.split(r'[\.\?\!]{1}\s+|[\.\?\!]{1}$|[\n]{2,}', file_text)
+
+                        # then add each phrase to the search corpus
+                        for phrase_index, phrase in enumerate(phrases):
+                            # but only if it's longer than 2 characters
+                            # to avoid adding stuff that is most likely meaningless
+                            # like punctuation marks
+                            if len(phrase) > 2:
+
+                                # add the phrase to the search corpus
+                                search_corpus_phrases.append(phrase.strip())
+
+                                # remember the text file path and the phrase number
+                                # this is the phrase index relative to the whole search corpus that
+                                # contains all the transcription file segments (not just the current transcription file)
+                                general_segment_index = len(search_corpus_phrases)
+
+                                # add the phrase to the search corpus association list
+                                search_corpus_assoc[general_segment_index] = {'file_path': s_file_path,
+                                                                              'text': phrase.strip(),
+                                                                              'phrase_index': phrase_index,
+                                                                              'type': 'text'
+                                                                             }
+
+
+
+                # add the corpus to the search corpus dict, so we don't have to re-create it every time we search
+                # for eg. we could use the search window id as the key
+                self.search_corpuses[search_id] = {'corpus': {}, 'assoc': {}}
+                self.search_corpuses[search_id]['corpus'] = search_corpus_phrases
+                self.search_corpuses[search_id]['assoc'] = search_corpus_assoc
+
+            return self.search_corpuses[search_id]['corpus'], self.search_corpuses[search_id]['assoc']
+
+
+        def prepare_search_corpus_from_transcriptions(self, search_transcriptions, search_id):
 
             # re-organize the search corpus into a dictionary of phrases
             # with the transcription file path as the key
@@ -5618,90 +5925,109 @@ class ToolkitOps:
                 # loop through all the transcription files in the search_transcriptions dictionary
                 for transcription_file_path, transcription_file_data in search_transcriptions.items():
 
-                    logger.debug('Adding {} to the search corpus.'.format(transcription_file_path))
+                    # if the file extension is transcription.json, do this
+                    if transcription_file_path.endswith('.transcription.json'):
 
-                    if type(transcription_file_data) is not dict:
-                        logger.warning('Transcription file {} is not in the right format. Skipping.'
-                                       .format(transcription_file_path))
+                        logger.debug('Adding {} to the search corpus.'.format(transcription_file_path))
 
-                    elif type(transcription_file_data) is dict \
-                        and 'segments' in transcription_file_data \
-                        and type(transcription_file_data['segments']) is list:
+                        if type(transcription_file_data) is not dict:
+                            logger.warning('Transcription file {} is not in the right format. Skipping.'
+                                           .format(transcription_file_path))
 
-                        # group the segment texts into phrases using punctuation as dividers
-                        # instead of how they're currently segmented
-                        # once they are grouped, add them to the search corpus
+                        elif type(transcription_file_data) is dict \
+                            and 'segments' in transcription_file_data \
+                            and type(transcription_file_data['segments']) is list:
+
+                            # group the segment texts into phrases using punctuation as dividers
+                            # instead of how they're currently segmented
+                            # once they are grouped, add them to the search corpus
+                            # plus add them to the search corpus association list so we know
+                            # from which transcription file and from which segment they came from originally
+
+                            # initialize the current phrase
+                            current_phrase = ''
+
+                            # loop through the segments of this transcription file
+                            for segment_index, segment in enumerate(transcription_file_data['segments']):
+
+                                # first remember the transcription file path and the segment index
+                                # if this is a new phrase (i.e. the current phrase is empty)
+                                if current_phrase == '':
+                                    # this is the segment index relative to the whole search corpus that
+                                    # contains all the transcription file segments (not just the current transcription file)
+                                    general_segment_index = len(search_corpus_phrases)
+
+                                    search_corpus_assoc[general_segment_index] = {'transcription_file_path':
+                                                                                      transcription_file_path,
+                                                                                  'segment': segment['text'],
+                                                                                  'segment_index':
+                                                                                      segment_index,
+                                                                                  'start':
+                                                                                      segment['start'],
+                                                                                  'all_lines':
+                                                                                      [int(segment_index)+1],
+                                                                                  }
+
+                                # otherwise, if this is not a new phrase
+                                else:
+                                    # just append the current segment index to the list of all lines
+                                    search_corpus_assoc[general_segment_index]['all_lines'].append(int(segment_index)+1)
+
+
+                                # add the segment text to the current phrase
+                                # but only if it's longer than 2 characters to avoid adding stuff that is most likely meaningless
+                                # like punctuation marks
+                                # also ignore the words that are in the ignore list
+                                if 'text' in segment and type(segment['text']) is str:
+
+                                    # keep adding segments to the current phrase until we find a punctuation mark
+
+                                    # first get the segment text
+                                    segment_text = str(segment['text'])
+
+                                    # add the segment to the current phrase
+                                    current_phrase += segment_text.strip() + ' '
+
+                                    # if a punctuation mark exists in the last 5 characters of the segment text
+                                    # it means that the current phrase is complete
+                                    if re.search(r'[\.\?\!]{1}$', segment_text[-5:]):
+                                        # "close" the current phrase by adding it to the search corpus
+                                        search_corpus_phrases.append(current_phrase.strip())
+
+                                        # then empty the current phrase
+                                        current_phrase = ''
+
+                    # if the file extension is .txt, do this
+                    elif transcription_file_path.endswith('.txt'):
+                        logger.debug('Adding {} to the search corpus.'.format(transcription_file_path))
+
+                        # split the file contents into phrases using punctuation as dividers
+                        # and add them to the search corpus
                         # plus add them to the search corpus association list so we know
                         # from which transcription file and from which segment they came from originally
 
-                        # initialize the current phrase
-                        current_phrase = ''
-
-                        # loop through the segments of this transcription file
-                        for segment_index, segment in enumerate(transcription_file_data['segments']):
-
-                            # first remember the transcription file path and the segment index
-                            # if this is a new phrase (i.e. the current phrase is empty)
-                            if current_phrase == '':
-                                # this is the segment index relative to the whole search corpus that
-                                # contains all the transcription file segments (not just the current transcription file)
-                                general_segment_index = len(search_corpus_phrases)
-
-                                search_corpus_assoc[general_segment_index] = {'transcription_file_path':
-                                                                                  transcription_file_path,
-                                                                              'segment': segment['text'],
-                                                                              'segment_index':
-                                                                                  segment_index,
-                                                                              'start':
-                                                                                  segment['start'],
-                                                                              'all_lines':
-                                                                                  [int(segment_index)+1],
-                                                                              }
-
-                            # otherwise, if this is not a new phrase
-                            else:
-                                # just append the current segment index to the list of all lines
-                                search_corpus_assoc[general_segment_index]['all_lines'].append(int(segment_index)+1)
+                        # first get the file contents
 
 
-                            # add the segment text to the current phrase
-                            # but only if it's longer than 2 characters to avoid adding stuff that is most likely meaningless
-                            # like punctuation marks
-                            # also ignore the words that are in the ignore list
-                            if 'text' in segment and type(segment['text']) is str:
 
-                                # keep adding segments to the current phrase until we find a punctuation mark
-
-                                # first get the segment text
-                                segment_text = str(segment['text'])
-
-                                # add the segment to the current phrase
-                                current_phrase += segment_text.strip() + ' '
-
-                                # if a punctuation mark exists in the last 5 characters of the segment text
-                                # it means that the current phrase is complete
-                                if re.search(r'[\.\?\!]{1}$', segment_text[-5:]):
-                                    # "close" the current phrase by adding it to the search corpus
-                                    search_corpus_phrases.append(current_phrase.strip())
-
-                                    # then empty the current phrase
-                                    current_phrase = ''
 
                 # add the corpus to the search corpus dict, so we don't have to re-create it every time we search
-                # we're going to use the search window id as the key
+                # for eg. we could use the search window id as the key
                 self.search_corpuses[search_id] = {'corpus': {}, 'assoc': {}}
                 self.search_corpuses[search_id]['corpus'] = search_corpus_phrases
                 self.search_corpuses[search_id]['assoc'] = search_corpus_assoc
 
             return self.search_corpuses[search_id]['corpus'], self.search_corpuses[search_id]['assoc']
 
-        def t_search(self, query, transcription_file_paths, search_id, max_results=10):
+        def t_search(self, query, file_paths, search_id, max_results=10, start_search_time=None,
+                     results_text_element: tk.Text=None):
             '''
-            Searches the transcription files for the query using the search type passed by the user
+            Searches the files for the query using the search type passed by the user
             :param query:
-            :param transcription_file_paths:
+            :param file_paths:
             :param search_id:
             :param max_results:
+            :param start_search_time: the time at which the search started for stats purposes
             :return:
             '''
 
@@ -5754,28 +6080,36 @@ class ToolkitOps:
                 query = query.split('|')
 
             # first load the transcription file paths to a dictionary that can be used for searching
-            search_transcriptions = self.load_transcription_paths_to_search_dict(transcription_file_paths)
+            #search_transcriptions = self.load_file_paths_to_search_dict(file_paths)
 
             # prepare the search corpus based on the passed transcriptions
+            #search_corpus, search_corpus_assoc \
+            #    = self.prepare_search_corpus_from_transcriptions(search_transcriptions=search_transcriptions, search_id=search_id)
+
             search_corpus, search_corpus_assoc \
-                = self.prepare_search_corpus(search_transcriptions=search_transcriptions, search_id=search_id)
+                = self.prepare_search_corpus(search_file_paths=file_paths, search_id=search_id)
 
             # now let's search the corpus based on the search type
             if search_type == 'semantic':
                 results, max_results = self.search_semantic(query=query,
                                                             search_corpus_phrases=search_corpus,
                                                             search_corpus_assoc=search_corpus_assoc,
-                                                            max_results=max_results)
+                                                            search_id=search_id,
+                                                            max_results=max_results,
+                                                            start_search_time=start_search_time)
 
-            elif search_type == 'similar':
-                results, max_results = self.search_similar(query=query,
-                                                            search_corpus_phrases=search_corpus,
-                                                            search_corpus_assoc=search_corpus_assoc,
-                                                            max_results=max_results)
+            #elif search_type == 'similar':
+            #    results, max_results = self.search_similar(query=query,
+            #                                                search_corpus_phrases=search_corpus,
+            #                                                search_corpus_assoc=search_corpus_assoc,
+            #                                                search_id=search_id,
+            #                                                max_results=max_results,
+            #                                                start_search_time=start_search_time)
             # return the results
             return results, max_results
 
-        def search_similar(self, query, search_corpus_phrases, search_corpus_assoc, max_results=10):
+        def search_similar(self, query, search_corpus_phrases, search_corpus_assoc, search_id=None, max_results=10,
+                           start_search_time=None):
 
             # WORK IN PROGRESS
 
@@ -5802,13 +6136,16 @@ class ToolkitOps:
 
             return search_results, top_k
 
-        def search_semantic(self, query, search_corpus_phrases, search_corpus_assoc, max_results=10):
+        def search_semantic(self, query, search_corpus_phrases, search_corpus_assoc, search_id=None, max_results=10,
+                            start_search_time=None):
             '''
             This function searches for a search term in a search corpus and returns the results.
-            :param search_term:
+            :param query:
             :param search_corpus_phrases:
             :param search_corpus_assoc:
+            :param search_id:
             :param max_results: the maximum number of results to return (default: 10, maximum = corpus len)
+            :param start_search_time: the time that the search started (default: None)
             :return:
             '''
 
@@ -5818,6 +6155,9 @@ class ToolkitOps:
                 return [], 0
 
             logger.debug('Performing semantic search on {} phrases.'.format(len(search_corpus_phrases)))
+
+            if start_search_time is not None:
+                logger.debug('Time: ' + str(time.time() - start_search_time))
 
             # load the sentence transformer model if it hasn't been loaded yet
             if self.toolkit_ops_obj.s_semantic_search_model is None:
@@ -5850,8 +6190,28 @@ class ToolkitOps:
             # define the model into this variable for easier access
             embedder = self.toolkit_ops_obj.s_semantic_search_model
 
-            # encode the search corpus
-            corpus_embeddings = embedder.encode(search_corpus_phrases, convert_to_tensor=True)
+            if start_search_time is not None:
+                logger.debug('Time: ' + str(time.time() - start_search_time))
+
+            # check if the search corpus embeddings are in the cache
+            if search_id is None or search_id not in self.search_embeddings:
+
+                # encode the search corpus
+                corpus_embeddings = embedder.encode(search_corpus_phrases, convert_to_tensor=True)
+
+                # save the embeddings in the cache
+                self.search_embeddings[search_id] = corpus_embeddings
+
+            else:
+                # load the embeddings from the cache
+                corpus_embeddings = self.search_embeddings[search_id]
+
+                logger.debug('Loaded search corpus embeddings from search embeddings cache.')
+
+            logger.debug('Encoded search corpus.')
+
+            if start_search_time is not None:
+                logger.debug('Time: ' + str(time.time() - start_search_time))
 
             # if the query is string, consider that the query consists of a single search term
             # otherwise, consider that the query is a list of search terms
@@ -5874,33 +6234,127 @@ class ToolkitOps:
 
                 query_embedding = embedder.encode(query, convert_to_tensor=True)
 
-                # we use cosine-similarity and torch.topk to find the highest 5 scores
+                logger.debug('Encoded the query.')
+
+                if start_search_time is not None:
+                    logger.debug('Time: ' + str(time.time() - start_search_time))
+
+                # we use cosine-similarity and torch.topk to find the highest top_k scores
                 cos_scores = util.cos_sim(query_embedding, corpus_embeddings)[0]
                 top_results = torch.topk(cos_scores, k=top_k, sorted=True)
 
+                logger.debug('Found results.')
+
+                if start_search_time is not None:
+                    logger.debug('Time: ' + str(time.time() - start_search_time))
+
+                # compile the search results
+                # but take the source file into consideration
                 for score, idx in zip(top_results[0], top_results[1]):
 
                     if str(search_corpus_phrases[idx]) != '':
-                        transcription_file_path = search_corpus_assoc[int(idx)]['transcription_file_path']
-                        segment_index = search_corpus_assoc[int(idx)]['segment_index']
-                        transcript_time = search_corpus_assoc[int(idx)]['start']
-                        line_no = int(segment_index) + 1
-                        all_lines = search_corpus_assoc[int(idx)]['all_lines']
 
-                        # compile the results into the search results dict
-                        search_results.append({
-                            'search_term': query,
-                            'transcription_file_path': transcription_file_path,
-                            'idx': int(idx),
-                            'segment_index': segment_index,
-                            'line_no': line_no,
-                            'all_lines': all_lines,
-                            'transcript_time': transcript_time,
-                            'score': score,
-                            'text': search_corpus_phrases[idx]
-                        })
+                        # sometimes the search corpus phrases are not in the search corpus assoc
+                        # which should not happen - it's most probably because of a text formatting issue
+                        # so we can't associate it with a source file, but we're still going to output it as a result
+                        if int(idx) not in search_corpus_assoc:
+
+                            logger.debug('Cannot find phrase with idx {} in search corpus assoc.'.format(int(idx)))
+
+                            # just add the phrase to the search results
+                            # but keep in mind that it's not associated with a source file!
+                            search_results.append({
+                                'search_term': query,
+                                'file_path': '',
+                                'idx': int(idx),
+                                'score': score,
+                                'text': search_corpus_phrases[idx],
+                                'type': 'Unknown'
+                            })
+
+                            continue
+
+                        # in case the source file was a transcription
+                        if search_corpus_assoc[int(idx)]['type'] == 'transcription':
+                            transcription_file_path = search_corpus_assoc[int(idx)]['transcription_file_path']
+                            segment_index = search_corpus_assoc[int(idx)]['segment_index']
+                            transcript_time = search_corpus_assoc[int(idx)]['start']
+                            line_no = int(segment_index) + 1
+                            all_lines = search_corpus_assoc[int(idx)]['all_lines']
+                            type = search_corpus_assoc[int(idx)]['type']
+
+                            # compile the results into the search results dict
+                            search_results.append({
+                                'search_term': query,
+                                'transcription_file_path': transcription_file_path,
+                                'idx': int(idx),
+                                'segment_index': segment_index,
+                                'line_no': line_no,
+                                'all_lines': all_lines,
+                                'transcript_time': transcript_time,
+                                'score': score,
+                                'text': search_corpus_phrases[idx],
+                                'type': type
+                            })
+
+                        else:
+                            # in case the source file was a text file
+                            file_path = search_corpus_assoc[int(idx)]['file_path']
+                            type = search_corpus_assoc[int(idx)]['type']
+
+                            # compile the results into the search results dict
+                            search_results.append({
+                                'search_term': query,
+                                'file_path': file_path,
+                                'idx': int(idx),
+                                'score': score,
+                                'text': search_corpus_phrases[idx],
+                                'type': type
+                            })
 
             return search_results, top_k
+
+
+        def save_search_embeddings(self, embeddings, embedding_type, source_associations, file_path=None):
+            '''
+            This function saves the search embeddings to a file for later use.
+            :return:
+            '''
+
+            # todo: WORK IN PROGRESS
+            # before continuing, we need to find a way to save the embedding type and the model name
+
+            # if the file path is not provided, use the default one
+            if file_path is None:
+                logger.error('No file path provided for saving the search embeddings.')
+                return False
+
+            try:
+                import pickle
+
+                # save the embeddings to a file
+                with open(file_path, 'wb') as f:
+                    pickle.dump(embeddings, f)
+
+                # remove the all the 'segment' and 'text' keys from the source associations
+                # because they are not needed
+                for key in source_associations:
+                    if 'segment' in source_associations[key]:
+                        del source_associations[key]['segment']
+
+                    if 'text' in source_associations[key]:
+                        del source_associations[key]['text']
+
+                # save the source associations to a json file
+                with open(file_path + '.json', 'w') as f:
+                    json.dump(source_associations, f)
+
+                return True
+
+            except Exception as e:
+                logger.error('Could not save search embeddings to file {}: \n {}'.format(file_path, e))
+                return False
+
 
     class TranscriptGroups:
         '''

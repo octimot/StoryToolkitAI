@@ -22,7 +22,7 @@ CPUs and GPUs. For both production and development we're currently using Python 
 _Note: Whisper worked fine on Python 3.10.2, but we ran into problems when trying to install some packages which we're
 planning to use for future developments._
 
-**The tool only works on Resolve Studio 18.**
+**The API integration only works on Resolve Studio 18 (not on the free version).**
 
 _Note: Unfortunately, only the Studio version of Resolve supports external scripting and Resolve versions earlier than
 18 do not support Python 3.6+_
@@ -105,8 +105,8 @@ If you are running the tool on a machine with an NVIDIA CUDA GPU, make sure you 
     pip cache purge
     pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
 
-_Note: If Resolve is not turned on or not available, the transcription and translation functions will work on normal wav 
-files too. Simply press the transcribe or translate buttons and follow the process._
+_Note: If Resolve Studio is not turned on or not available, the transcription and translation functions will work on 
+normal wav files too. Simply press the transcribe or translate buttons and follow the process._
 
 #### That's it!
 Inside the virtual environment, you should now be able to start the tool:
@@ -203,8 +203,8 @@ If you are running the tool on a machine with an NVIDIA CUDA GPU, make sure you 
     pip cache purge
     pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
 
-_Note: If Resolve is not turned on or not available, the transcription and translation functions will work on normal wav
-files too. Simply press the transcribe or translate buttons and follow the process._
+_Note: If Resolve Studio is not turned on or not available, the transcription and translation functions will work on 
+normal wav files too. Simply press the transcribe or translate buttons and follow the process._
 
 #### That's it!
 Inside the virtual environment, you should now be able to start the tool:

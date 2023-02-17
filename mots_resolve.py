@@ -76,6 +76,8 @@ class MotsResolve:
         # if the module wasn't loaded, try to load it
         if not self.api_module_loaded:
 
+            self.logger.debug("Trying to load DaVinciResolveScript module...")
+
             try:
                 # The PYTHONPATH needs to be set correctly for this import statement to work.
                 # An alternative is to import the DaVinciResolveScript
@@ -158,10 +160,6 @@ class MotsResolve:
                 try:
                     import imp
                     self.bmd = imp.load_source('DaVinciResolveScript', expectedPath + "DaVinciResolveScript.py")
-
-                    # if no exception was thrown so far, it's safe to assume that the module has been imported
-                    self.api_module_available = True
-                    self.api_module_loaded = True
 
                 except (ImportError, FileNotFoundError):
 
@@ -1175,8 +1173,6 @@ class MotsResolve:
         return False
 
 if __name__ == '__main__':
-    print("Hello")
 
-    # offset tc demo
-    #offset_start_tc_bin_item(6) #<-- calculated for AT85
+    print('Mots Resolve API needs to be called from another script.')
 

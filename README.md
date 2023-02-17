@@ -15,7 +15,7 @@ https://vimeo.com/759962195/dee07a067a
 ## Key Features
 - [x] **Free Automatic Transcriptions in many languages** on your local machine directly from Resolve or local files
 - [x] **Free Automatic Translation** to English on your local machine
-- [x] **Advanced Search** - allows you to search one or many transcripts semantically using AI
+- [x] **Advanced Search** - allows you to search one or many transcripts or text files semantically using AI
 - [x] **Mark and Navigate Resolve Timelines via Transcript**, plus other handy Resolve-only features
 - [X] **Transcript Segment Groups** allows the grouping of transcription segments into groups similar to marking in NLEs
 - [x] **Import subtitles after transcription** from the tool directly into Resolve
@@ -120,8 +120,8 @@ Nevertheless, for detailed installation instructions
 
 # How to transcribe:
 
-The following process assumes that you have Davinci Resolve Studio installed. However, **the tool also works without
-Resolve on the machine**.
+The following process assumes that you have Davinci Resolve Studio installed (not the free version of Resolve). 
+However, **the tool also works independently without Resolve on the machine**.
 
 #### 1. Open Resolve and StoryToolkitAI
 Open a project in Resolve and then StoryToolkitAI
@@ -248,11 +248,11 @@ the respective segment in the transcript and move the playhead to the respective
 CMD/CTRL+Click will select the segments in the transcript and allow you to mark them later in Resolve
 (see Adding Markers section above).
 
-There's also an Advanced Search button in the main window that will allow you to search in all the transcription
-files you select. If you press Shift while clicking the button it will prompt you with a folder selection instead,
+There's also an Advanced Search button in the main window that will allow you to search in all the transcription and
+text files you select. If you press Shift while clicking the button it will prompt you with a folder selection instead,
 so you can actually feed it multiple transcription from different directories.
 
-This is basically like having a search engine connected to Resolve on your machine.
+This is basically like having a search engine on your machine.
 
 You can also pass multiple search terms, using the | (pipe) character to separate them. For example, if you want to
 search for "about life events" or "about sports", you can enter `about life events | about sports` in the search field. 
@@ -261,8 +261,8 @@ The tool will then search for each term separately and return separate results f
 If you want to tell the tool how many results you want to see, just use `[max_results]` at the beginning of the search,
 for eg.: `[20] about life events | about sports`. This will return the top 20 results for each term.
 
-For now, the search relies on punctuation in the transcripts to separate phrases and feed them to the algorithm, but
-this will be improved in a future update by allowing AI to look deeper into your transcripts.
+For now, the search relies on punctuation in the transcripts/files to separate phrases and feed them to the algorithm, 
+but this will be improved in a future update by allowing AI to look deeper into the text.
 
 **The quality of your results will depend on the terms you use for search**. Just like on a web search engine, you should
 be kind of specific, but not too specific about what you're searching. For eg., if you want to search for phrases where
@@ -278,11 +278,10 @@ _Important Note: **The first time you use this feature**, it will take a bit lon
 tool needs to download the model file (around 500MB) to your local cache. But, after the model is saved on your
 machine, the search should work almost in real time._
 
-_About search speed: the search is pretty fast, but it will depend on the size of the transcript (or transcripts)
-you're searching. Using a lot of transcripts will make the search slower, so a smaller transform model is recommended
-(more on that later). On a Mac M1, using the all-MiniLM-L6-v2 model, searching through an hour of audio 
-(cca. 700 phrases) takes around 2 seconds, while searching through 40+ hours of audio (cca. 34k phrases) takes around 
-2 minutes._
+_About search speed: the search is pretty fast, but it will depend on the size of the files you're searching. 
+Using a lot of them will make the search slower, so a smaller transform model is recommended (more on that later). 
+The first time you open a window and search something, it will take a while to turn the data  into something that the 
+machine understands, but after the first search is completed, all other searches should work fast._
 
 ### Transcript Word Search
 Once a transcript is loaded, a basic search function will let you find words in the transcript and show you their 
@@ -318,7 +317,10 @@ If you click on "Open Transcript" and select an SRT file, the tool will automati
 file and open it in the transcription window. This is useful if you want to use transcripts made by other apps in the
 tool, for eg. to search through them, navigate and mark timelines in Resolve etc.
 
-## Davinci Resolve integrations
+## Davinci Resolve Studio integrations
+
+_Note: The Resolve API integration is not available on the Free version of Resolve, you need to have a working Studio 
+license installed on your machine to use this feature._
 
 ### Linking Transcriptions to Timelines
 In the transcription window, the "Link" button will attach the transcription to the currently opened timeline in
@@ -439,9 +441,14 @@ Other shortcuts etc.
 
 
 # Known issues
-### If the tool doesn't connect with Resolve:
+### Tool doesn't connect with Resolve:
 Make sure that, in Davinci Resolve Preferences -> General, "External Scripting using" is set to Local.
-Again, the tool only works with Resolve Studio and not the free version of Resolve (not that we know of).
+Again, the tool only works with Resolve Studio and *not the free version of Resolve* (not that we know of).
+
+### Windows Standalone version doesn't start or doesn't connect to Resolve
+If the tool just hangs when you start it up, or if it doesn't connect to Resolve, most likely there is a conflict
+with another Python installation on your machine. The best approach is to uninstall all other Python versions and
+try to run the tool again.
 
 ### Tool freezing during playback
 Currently, the tool gets stuck as it waits a reply from the Resolve API, while Resolve is playing back, but it gets
