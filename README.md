@@ -283,10 +283,10 @@ Using a lot of them will make the search slower, so a smaller transform model is
 The first time you open a window and search something, it will take a while to turn the data  into something that the 
 machine understands, but after the first search is completed, all other searches should work fast._
 
-### Transcript Word Search
-Once a transcript is loaded, a basic search function will let you find words in the transcript and show you their 
-position. Once you find what you're looking for, simply clicking the phrase will move the Resolve playhead to the
-respective timecode.
+### Transcript Word Find
+Once a transcript is loaded, a basic find function (CMD/CTRL+F) will let you find words in the transcript and show you 
+their position. Press "ENTER" to cycle between results. Once you find what you're looking for, simply clicking the 
+phrase will move the Resolve playhead to the respective timecode (if connected to Resolve API).
 
 ### Transcript Groups
 
@@ -423,6 +423,8 @@ timeline.
 
     Shift+G         - open groups window
 
+    CMD/CTRL+F      - open find window
+
 
 Other shortcuts etc.
 
@@ -430,7 +432,7 @@ Other shortcuts etc.
     "Transcribe/Translate Timeline"       from your drive instead of the current timeline
    
     Shift+Click on                      - allows you to select which folders to use 
-    "Advanced Transcript Search"          for the transcript search corpus
+    "Advanced  Search"                    for the advanced search corpus
 
     CMD/CTRL+Click on                   - selects all the lines containing the clicked
     search results                        result in the transcript window

@@ -513,7 +513,7 @@ class toolkit_UI:
         def search_text(self, search_str=None, text_element=None, window_id=None):
             '''
             Used to search for text inside tkinter text objects
-            This also tags the search results
+            This also tags the search results in the text element
             :return:
             '''
 
@@ -797,7 +797,8 @@ class toolkit_UI:
                     self.get_segments_or_selection(window_id, add_to_clipboard=True, split_by='index')
 
 
-            # m key event (add duration markers)
+            # m key event (quick add duration markers)
+            # and Shift+M key event (add duration markers with name input)
             if event.keysym == 'm' or event.keysym == 'M':
 
                 #print('Special Key:', special_key)
@@ -962,9 +963,12 @@ class toolkit_UI:
                     if self.group_selected(window_id=window_id):
                         logger.info('Group added')
 
+            # CMD+SHIFT+G key event (add markers to group)
+            # if event.keysym == 'G' and special_key == 'cmd':
+            #    print('convert markers to group')
+
             # SHIFT+G opens group window
-            if event.keysym == 'G':
-                 #self.group_selected(window_id=window_id)
+            elif event.keysym == 'G':
                 self.toolkit_UI_obj.open_transcript_groups_window(transcription_window_id=window_id)
 
             # colon key event (align current line start to playhead)
@@ -975,6 +979,7 @@ class toolkit_UI:
             if event.keysym == 'quotedbl':
                 self.align_line_to_playhead(window_id=window_id, line_index=line, position='end')
 
+            # 't' key event (re-transcribe selected segments)
             if event.keysym == 't':
 
                 # first get the selected (or active) text from the transcript
@@ -2769,6 +2774,8 @@ class toolkit_UI:
             return
 
 
+
+
     def __init__(self, toolkit_ops_obj=None, stAI=None, **other_options):
 
         # make a reference to toolkit ops obj
@@ -2847,6 +2854,27 @@ class toolkit_UI:
 
         # keep all the window references here to find them easy by window_id
         self.windows = {}
+
+        # use this to keep the text_windows
+        # this doesn't apply only to windows opened with the open_text_window method, but can be used for any window
+        # that has a text widget which needs to be accessed externally
+        # the format is {window_id: {text: str, text_widget: Text etc., find_window: str etc.}
+        self.text_windows = {}
+
+        # this is used to keep a reference to all the windows that have find functionality
+        # the format is {find_window_id: {parent_window_id: str, find_text: str, find_text_widget: Text etc.}}
+        self.find_windows = {}
+
+        # find results indexes stored here
+        # we're making it a dict so that we can store result indexes for each window individually
+        self.find_result_indexes = {}
+
+        # when searching for text, you may want the user to cycle through the results, so this keep track
+        # keeps track on which search result is the user currently on (in each transcript window)
+        self.find_result_pos = {}
+
+        # to keep track of what is being searched on each window
+        self.find_strings = {}
 
         # set some UI styling here
         self.paddings = {'padx': 10, 'pady': 10}
@@ -3211,6 +3239,18 @@ class toolkit_UI:
 
         self.main_window.button9.grid(row=3, column=1, **self.paddings)
 
+        # THE CONSOLE BUTTON
+        # self.main_window.button10 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings,
+        #                                        **self.button_size,
+        #                                        text="Console", command=lambda:
+        #                                                    self.open_text_window(title="Console", initial_text="hello",
+        #                                                                          can_find=True,
+        #                                                                          user_input=True,
+        #                                                                          user_input_prefix="> ")
+        #                                      )
+        #
+        #self.main_window.button10.grid(row=3, column=2, **self.paddings)
+
 
         # self.main_window.link2 = Label(self.main_window.footer_frame, text="made by mots", font=("Courier", 10), cursor="hand2", anchor='s')
         # self.main_window.link2.grid(row=1, column=1, columnspan=1, padx=10, pady=5, sticky='s')
@@ -3245,6 +3285,548 @@ class toolkit_UI:
         self.root.mainloop()
 
         return
+
+    def _text_window_entry(self, window_id, event, **args):
+        '''
+        This function is called when the user presses any key in the text window text field
+        :param window_id:
+        :return:
+        '''
+
+        # get the current number of lines in the text widget
+        lines = self.text_windows[window_id]['text_widget'].index('end-1c').split('.')[0]
+
+        # on which line is the cursor?
+        cursor_pos = self.text_windows[window_id]['text_widget'].index('insert').split('.')[0]
+
+        # if the cursor is not past the last line, only allow arrow keys
+        if int(cursor_pos) < int(lines):
+
+            # if the key is an arrow key, return 'normal'
+            if event.keysym in ['Up', 'Down', 'Left', 'Right']:
+                return 'normal'
+
+            # if the key is not an arrow key, move the cursor to the end of the last line
+            else:
+                # first move the cursor to the end of the last line
+                self.text_windows[window_id]['text_widget'].mark_set('insert', 'end-1c')
+
+                # also scroll to the end of the last line
+                self.text_windows[window_id]['text_widget'].see('end-1c')
+
+                # then return normal so that the key is processed as it should be
+                return 'normal'
+
+        else:
+
+            # if the key is Return, get the text and call the command
+            if event.keysym == 'Return':
+
+                # get the command entered by the user
+                command = self.text_windows[window_id]['text_widget'].get('end-1c linestart', 'end-1c lineend')
+
+                # remove the command prefix from the beginning of the command if it was given
+                if args.get('command_prefix', ''):
+                    command = command.replace(args.get('command_prefix', ''), '', 1)
+
+                # add two new lines
+                self.text_windows[window_id]['text_widget'].insert('end', '\n\n')
+
+                # also pass the command prefix if it was given
+                self._text_window_commands(command=command, window_id=window_id,
+                                           command_prefix=args.get('command_prefix', ''))
+
+                # scroll to the end of the last line
+                self.text_windows[window_id]['text_widget'].see('end-1c')
+
+                return 'break'
+
+            # do not allow backspace past the first character of the last line
+            elif event.keysym == 'BackSpace':
+
+                if self.text_windows[window_id]['text_widget'].index('insert') \
+                    == self.text_windows[window_id]['text_widget'].index('end-1c linestart'):
+                    return 'break'
+
+        return
+
+    def _text_window_commands(self, command, window_id=None, command_prefix='> '):
+        '''
+        This function calls commands from the text window.
+        :param command:
+        :return:
+        '''
+
+        response = None
+
+        if command == 'exit' or command == 'quit' or command == 'close':
+            self.destroy_text_window(window_id=window_id)
+
+        else:
+            response = 'Ignoring "{}". Command unknown.'.format(command)
+            logger.debug(response)
+
+        # output the reply to the text window, if a window_id is given
+        if window_id and response:
+            self._text_window_update(window_id=window_id, text=response, command_prefix=command_prefix)
+
+
+    def _text_window_update(self, window_id, text, **args):
+        '''
+        This function updates the text in the text window, but keeps the command line at the bottom if it exists
+        :param window_id:
+        :param text:
+        :param args:
+        :return:
+        '''
+
+        user_input_prefix = self.text_windows[window_id]['user_input_prefix'] \
+            if 'user_input_prefix' in self.text_windows[window_id] else None
+
+        user_input = self.text_windows[window_id]['user_input'] \
+            if 'user_input' in self.text_windows[window_id] else None
+
+        # if user input is enabled and user_input prefix exists, move the cursor to the beginning of the last line
+        linestart = ''
+        if user_input and user_input_prefix:
+            self.text_windows[window_id]['text_widget'].mark_set('insert', 'end-1c linestart')
+
+            # also use the linestart variable for the color change below
+            linestart = ' linestart'
+
+        # first get the current insert position
+        insert_pos = self.text_windows[window_id]['text_widget'].index('insert')
+
+        self.text_windows[window_id]['text_widget'].insert('insert', text + '\n\n')
+
+        # now change the color of the last entry to supernormal (almost white)
+        self.text_windows[window_id]['text_widget'].tag_add('reply', insert_pos, 'end-1c'+linestart)
+        self.text_windows[window_id]['text_widget'].tag_config('reply',
+                                                               foreground=self.resolve_theme_colors['supernormal'])
+
+        # if user input is enabled and a prefix is given, make sure we have it at the beginning of the last line
+        if user_input and user_input_prefix:
+
+            # only add it if it is not already there
+            if not self.text_windows[window_id]['text_widget'].get('end-1c linestart', 'end-1c lineend') \
+                    .startswith(user_input_prefix):
+                self.text_windows[window_id]['text_widget'].insert('end-1c linestart', user_input_prefix)
+
+        # and move the insert position right at the end
+        self.text_windows[window_id]['text_widget'].mark_set('insert', 'end-1c')
+
+        # also scroll to the end of the last line
+        self.text_windows[window_id]['text_widget'].see('end-1c')
+
+
+
+    def open_text_window(self, window_id=None, title: str = 'Console', initial_text: str = None,
+                         can_find: bool = False, user_input: bool = False, user_input_prefix: str = None):
+        '''
+        This window is to display any kind of text in a scrollable window.
+        But is also capable of receiving commands from the user (optional)
+
+        This can be used for displaying the license info, or the readme, but also for reading text files,
+        welcome messages, the actual stdout etc.
+
+        It will also contain a text input field for the user to enter commands (optional)
+        Plus, the option to have a child find window (optional)
+
+        :return:
+        '''
+
+        # if no window id is given, use the title without spaces plus the time hash
+        if not window_id:
+            window_id = title.replace(' ', '_').replace('.', '') + str(time.time()).replace('.', '')
+
+        # open the text window
+        if self.create_or_open_window(parent_element=self.root, window_id=window_id, title=title, resizable=True,
+                                      close_action= lambda window_id=window_id: self.destroy_text_window(window_id)
+                                      ):
+
+            # create an entry in the text_windows dict
+            self.text_windows[window_id] = {'text': initial_text}
+
+            # add the user input prefix to the text windows dict if it was given
+            if user_input:
+                self.text_windows[window_id]['user_input'] = user_input
+                self.text_windows[window_id]['user_input_prefix'] = user_input_prefix
+
+
+            # add the CTRL+F behavior to the text window
+            if can_find:
+
+                # if the user presses CTRL/CMD+F, open the find window
+                self.windows[window_id].bind('<'+self.ctrl_cmd_bind+'-f>',
+                                             lambda event:
+                                             self.open_find_replace_window(
+                                                 parent_window_id=window_id,
+                                                 title="Find in {}".format(title)
+                                             )
+                                             )
+
+            # THE MAIN TEXT ELEMENT
+            # create a frame for the text element
+            text_form_frame = tk.Frame(self.windows[window_id], name='text_form_frame')
+            text_form_frame.pack(expand=True, fill='both')
+
+            # create the text widget
+            # set up the text element where we'll add the actual transcript
+            text = Text(text_form_frame, name='window_text',
+                        font=(self.console_font), width=45, height=30, padx=5, pady=5, wrap=tk.WORD,
+                                                background=self.resolve_theme_colors['black'],
+                                                foreground=self.resolve_theme_colors['normal'])
+
+            # add a scrollbar to the text element
+            scrollbar = Scrollbar(text_form_frame, orient="vertical", **self.scrollbar_settings)
+            scrollbar.config(command=text.yview)
+            scrollbar.pack(side=tk.RIGHT, fill='y', pady=5)
+
+            # configure the text element to use the scrollbar
+            text.config(yscrollcommand=scrollbar.set)
+
+            # add the initial text to the text element
+            if initial_text:
+                text.insert(tk.END, initial_text+'\n\n')
+
+            # change the color of text to supernormal (almost white)
+            text.tag_add('reply', '1.0', 'end-1c')
+            text.tag_config('reply', foreground=self.resolve_theme_colors['supernormal'])
+
+            # set the top, in-between and bottom text spacing
+            text.config(spacing1=0, spacing2=0.2, spacing3=5)
+
+            # then show the text element
+            text.pack(anchor='w', expand=True, fill='both')
+
+            # if the user can enter text, enable the text field and process any input
+            if user_input:
+
+                # if a command prefix is given, add it to the text element
+                if user_input_prefix:
+                    text.insert(tk.END, user_input_prefix)
+
+                # any keypress in the text element will call the _text_window_entry function
+                text.bind('<KeyPress>',
+                          lambda event:
+                          self._text_window_entry(window_id=window_id, event=event, command_prefix=user_input_prefix))
+
+                # focus on the text element
+                text.focus_set()
+
+            # otherwise, disable the text field
+            else:
+                text.config(state=tk.DISABLED)
+
+            # add the text widget to the text_windows dict
+            self.text_windows[window_id]['text_widget'] = text
+
+            # add the window to the text_windows dict
+            self.text_windows[window_id]['window'] = self.windows[window_id]
+
+
+    def open_find_replace_window(self, window_id=None, title: str = 'Find and Replace',
+                                 parent_window_id: str = None, text_widget= None,
+                                 replace_field: bool = False, find_text: str = None, replace_text: str = None,
+                                 post_replace_action: str = None, post_replace_action_args: list = None
+                                 ):
+        '''
+        This window is used to find (and replace) text in a text widget of another window
+        '''
+
+        if not parent_window_id and not text_widget:
+            logger.error('Aborting. Unable to open find and replace window without a parent window.')
+            return False
+
+        # always use the parent in the window id if no window id is given
+        if not window_id:
+            window_id = 'find_' + parent_window_id.replace(' ', '_').replace('.', '')
+
+        # open the find and replace window
+        if self.create_or_open_window(parent_element=self.root, window_id=window_id, title=title,
+                                      close_action=lambda window_id=window_id:
+                                      self.destroy_find_replace_window(window_id, parent_window_id=parent_window_id)):
+
+            # add the window to the find_windows dict, and also include the parent window id
+            self.find_windows[window_id] = {'parent_window_id': parent_window_id}
+
+            # add the window to the text_windows dict, in case we need to reference it from the parent window
+            self.text_windows[parent_window_id]['find_window_id'] = window_id
+
+            # create a frame for the find input
+            find_frame = tk.Frame(self.windows[window_id], name='find_frame')
+            find_frame.pack(pady=5, padx=5, expand=True, fill='both')
+
+            # create a label for the find input
+            find_label = tk.Label(find_frame, text='Find:', name='find_label')
+            find_label.pack(side=tk.LEFT, padx=5)
+
+            # create the find input
+            find_str = tk.StringVar()
+            find_input = tk.Entry(find_frame, textvariable=find_str, name='find_input')
+            find_input.pack(side=tk.LEFT, padx=5, expand=True, fill='x')
+
+            parent_text_widget = self.text_windows[parent_window_id]['text_widget']
+
+            # if the user presses a key in the find input,
+            # call the _find_text_in_widget function
+            find_str.trace("w", lambda name, index, mode, find_str=find_str, parent_window_id=parent_window_id:
+                           self._find_text_in_widget(find_str, parent_window_id, text_widget=parent_text_widget))
+
+            # return key cycles through the results
+            find_input.bind('<Return>',
+                          lambda e, parent_text_widget=parent_text_widget, parent_window_id=parent_window_id:
+                            self._cycle_through_find_results(text_widget=parent_text_widget,
+                                                             window_id=parent_window_id))
+
+            # escape key closes the window
+            find_input.bind('<Escape>', lambda e, window_id=window_id: self.destroy_find_replace_window(window_id))
+
+            # focus on the find input
+            find_input.focus_set()
+
+            # if a find text is given, add it to the find input
+            if find_text:
+                find_input.insert(0, find_text)
+
+            # todo: add replace field when needed
+            if replace_field:
+                # create a frame for the replace input
+                replace_frame = tk.Frame(self.windows[window_id], name='replace_frame')
+                replace_frame.pack(expand=True, fill='both')
+
+                # create a label for the replace input
+                replace_label = tk.Label(replace_frame, text='Replace:', name='replace_label')
+                replace_label.pack(side=tk.LEFT, padx=5)
+
+                # create the replace input
+                replace_input = tk.Entry(replace_frame, name='replace_input')
+                replace_input.pack(side=tk.LEFT, padx=5, expand=True, fill='x')
+
+                # if a replace text is given, add it to the replace input
+                if replace_text:
+                    replace_input.insert(0, replace_text)
+
+
+                replace_button = tk.Button(replace_frame, text='Replace', name='replace_button',
+                                             command=lambda: self._replace_text_in_widget(window_id=window_id, text_widget=text_widget,
+                                                                                post_replace_action=post_replace_action,
+                                                                                post_replace_action_args=post_replace_action_args))
+                replace_button.pack(side=tk.LEFT, padx=5)
+
+
+            # create a footer frame that holds stuff on the bottom of the window
+            footer_frame = tk.Frame(self.windows[window_id], name='footer_frame')
+            footer_frame.pack(expand=True, fill='both')
+
+            # add a status label to the footer frame
+            status_label = Label(footer_frame, name='status_label',
+                                 text="", anchor='w', foreground=self.resolve_theme_colors['normal'])
+            status_label.pack(side=tk.LEFT, **self.paddings)
+
+            # add the status label to the find_windows dict so we can update it later
+            self.find_windows[window_id]['status_label'] = status_label
+
+
+
+
+
+    def _find_text_in_widget(self, search_str: str=None, window_id: str=None, text_widget: tk.Text=None):
+        '''
+        This function finds and highlights found matches in a text widget
+        
+        :param search_str: the string to search for
+        :param window_id: the id of the window that contains the text widget
+        :param text_widget: the text widget to search in
+        
+        :return:
+        '''
+
+        if search_str is None or text_widget is None or window_id is None:
+            logger.error('Aborting. Unable to find text in widget without a search string, text widget, and window id.')
+            return False
+
+        # remove tag 'found' from index 1 to END
+        text_widget.tag_remove('found', '1.0', END)
+
+        # remove tag 'current_result_tag' from index 1 to END
+        text_widget.tag_remove('current_result_tag', '1.0', END)
+
+        # reset the search result indexes and the result position
+        self.find_result_indexes[window_id] = []
+        self.find_result_pos[window_id] = 0
+
+        # get the search string as the user is typing
+        search_str = self.find_strings[window_id] = search_str.get()
+
+        if search_str:
+            idx = '1.0'
+
+            self.find_strings[window_id] = search_str
+
+            # do not search if the search string shorter than 3 characters
+            if len(search_str) > 2:
+
+                while 1:
+
+                    # searches for desired string from index 1
+                    idx = text_widget.search(search_str, idx, nocase=True, stopindex=END)
+
+                    # stop the loop when we run out of results (indexes)
+                    if not idx:
+                        break
+
+                    # store each index
+                    self.find_result_indexes[window_id].append(idx)
+
+                    # last index sum of current index and
+                    # length of text
+                    lastidx = '%s+%dc' % (idx, len(search_str))
+
+                    # add the found tag at idx
+                    text_widget.tag_add('found', idx, lastidx)
+                    idx = lastidx
+
+
+                #  take the viewer to the first occurrence
+                if self.find_result_indexes[window_id] and len(self.find_result_indexes[window_id]) > 0 \
+                        and self.find_result_indexes[window_id][0] != '':
+                    text_widget.see(self.find_result_indexes[window_id][0])
+
+                    # and visually tag the results
+                    self._tag_find_results(text_widget, self.find_result_indexes[window_id][0], window_id)
+
+                # mark located string with red
+                text_widget.tag_config('found', foreground=self.resolve_theme_colors['red'])
+
+                # update the status label in the find window
+                if 'find_window_id' in self.text_windows[window_id]:
+                    find_window_id = self.text_windows[window_id]['find_window_id']
+                    self.find_windows[find_window_id]['status_label']\
+                        .config(text=f'{len(self.find_result_indexes[window_id])} results found')
+
+            # update the status label in the find window
+            elif 'find_window_id' in self.text_windows[window_id]:
+                find_window_id = self.text_windows[window_id]['find_window_id']
+                self.find_windows[find_window_id]['status_label'] \
+                    .config(text='')
+
+
+
+    def _tag_find_results(self, text_widget: tk.Text=None, text_index: str=None, window_id: str=None):
+            '''
+            Another handy function that tags the search results directly on the transcript inside the transcript window
+            This is also used to show on which of the search results is the user right now according to search_result_pos
+            :param text_element:
+            :param text_index:
+            :param window_id:
+            :return:
+            '''
+            if text_widget is None:
+                return False
+
+            # remove previous position tags
+            text_widget.tag_delete('find_result_tag')
+
+            if not text_index or text_index == '' or text_index is None or window_id is None:
+                return False
+
+            # add tag to show the user on which result position we are now
+            # the tag starts at the text_index and ends according to the length of the search string
+            text_widget.tag_add('find_result_tag', text_index, text_index + '+'
+                                 + str(len(self.find_strings[window_id])) + 'c')
+
+            # the result tag has a white background and a red foreground
+            text_widget.tag_config('find_result_tag', background=self.resolve_theme_colors['white'],
+                                    foreground=self.resolve_theme_colors['red'])
+
+    def _cycle_through_find_results(self, text_widget: tk.Text=None, window_id: str=None):
+
+            if text_widget is not None or window_id is not None \
+                    or self.find_result_indexes[window_id] or self.find_result_indexes[window_id][0] != '':
+
+                # if we have no results, return
+                if window_id not in self.find_result_indexes \
+                        or not self.find_result_indexes[window_id]:
+                    return False
+
+                # get the current search result position
+                current_pos = self.find_result_pos[window_id]
+
+                # as long as we're not going over the number of results
+                if current_pos < len(self.find_result_indexes[window_id]) - 1:
+
+                    # add 1 to the current result position
+                    current_pos = self.find_result_pos[window_id] = current_pos + 1
+
+                    # this is the index of the current result position
+                    text_index = self.find_result_indexes[window_id][current_pos]
+
+                    # go to the next search result
+                    text_widget.see(text_index)
+
+                # otherwise go back to start
+                else:
+                    current_pos = self.find_result_pos[window_id] = 0
+
+                    # this is the index of the current result position
+                    text_index = self.find_result_indexes[window_id][current_pos]
+
+                    # go to the next search result
+                    text_widget.see(self.find_result_indexes[window_id][current_pos])
+
+                # visually tag the results
+                self._tag_find_results(text_widget, text_index, window_id)
+
+
+    def open_text_file(self, file_path: str=None, window_id: str=None, tag_text=None, **kwargs):
+        '''
+        This opens a text file in a new (or existing) text window
+        :param file_path:
+        :param window_id:
+        :return:
+        '''
+
+        # first check if the file exists
+        if file_path is None or not os.path.isfile(file_path):
+            logger.error('Aborting. Unable to open text file. File path is invalid.')
+            return False
+
+        # now load the file
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                file_content = f.read()
+        except Exception as e:
+            logger.error(f'Unable to open text file. Error: {e}')
+            return False
+
+        # now open the text window
+        self.open_text_window(initial_text=file_content, window_id=window_id, can_find=True, **kwargs)
+
+        # if we have a tag_text, tag the text in the window
+        if tag_text is not None and window_id in self.text_windows:
+
+            # get the text widget
+            text_widget = self.text_windows[window_id]['text_widget']
+
+            # remove existing tags
+            text_widget.tag_delete('find_result_tag')
+
+            tag_index = text_widget.search(tag_text, 1.0, nocase=True, stopindex=END)
+
+            # if we have a tag_index, tag the text
+            if tag_index != -1:
+
+                # tag the text
+                text_widget.tag_add('find_result_tag', f'{tag_index}', f'{tag_index} + {len(tag_text)}c')
+
+                # configure the tag
+                text_widget.tag_config('find_result_tag', foreground=self.resolve_theme_colors['red'])
+
+                # scroll to the tag
+                text_widget.see(f'{tag_index}')
+
+
 
     def open_transcription_settings_window(self, title="Transcription Settings",
                                            audio_file_path=None, name=None, task=None, unique_id=None,
@@ -3561,6 +4143,17 @@ class toolkit_UI:
 
     def destroy_transcription_window(self, window_id):
 
+        # close any associated find windows and remove the reference from the text windows
+        if window_id in self.text_windows:
+            if 'find_window_id' in self.text_windows[window_id]:
+                find_window_id = self.text_windows[window_id]['find_window_id']
+
+                # call the default destroy window function to destroy the find window
+                self.destroy_find_replace_window(window_id=find_window_id)
+
+            # completely remove the reference from the text windows
+            del self.text_windows[window_id]
+
         # destroy the associated search window (if it exists)
         # - in the future, if were to have multiple search windows, we will need to do it differently
         if window_id+'_search' in self.windows:
@@ -3578,6 +4171,57 @@ class toolkit_UI:
         # remove all the ids from the transcription_segments dict
         if window_id in self.t_edit_obj.transcript_segments_ids:
             del self.t_edit_obj.transcript_segments_ids[window_id]
+
+        # call the default destroy window function
+        self.destroy_window_(parent_element=self.windows, window_id=window_id)
+
+    def destroy_text_window(self, window_id):
+        '''
+        This function destroys a text window
+        :param window_id:
+        :return:
+        '''
+
+        # close any find windows
+        if 'find_window_id' in self.text_windows[window_id]:
+
+            find_window_id = self.text_windows[window_id]['find_window_id']
+
+            # call the default destroy window function to destroy the find window
+            self.destroy_find_replace_window(window_id=find_window_id)
+
+        # clear the text windows dict
+        if window_id in self.text_windows:
+            del self.text_windows[window_id]
+
+        # call the default destroy window function
+        self.destroy_window_(parent_element=self.windows, window_id=window_id)
+
+    def destroy_find_replace_window(self, window_id, parent_window_id=None):
+        '''
+        This function destroys a find text window
+        :param window_id:
+        :return:
+        '''
+
+        # if no parent window id is specified, try to find it
+        if parent_window_id is None:
+            if window_id in self.find_windows and 'parent_window_id' in self.find_windows[window_id]:
+                parent_window_id = self.find_windows[window_id]['parent_window_id']
+
+        # clear the find_window element in the text windows dict
+        if 'find_window_id' in self.text_windows[parent_window_id]:
+            del self.text_windows[parent_window_id]['find_window_id']
+
+            # clear any find results from main text window
+
+            if self.text_windows[parent_window_id]['text_widget'] is not None:
+                self.text_windows[parent_window_id]['text_widget'].tag_delete('find_result_tag')
+                self.text_windows[parent_window_id]['text_widget'].tag_delete('found')
+
+        # clear the find windows dict
+        if window_id in self.find_windows:
+            del self.find_windows[window_id]
 
         # call the default destroy window function
         self.destroy_window_(parent_element=self.windows, window_id=window_id)
@@ -3921,32 +4565,22 @@ class toolkit_UI:
                           )
 
 
-                # THE SEARCH FIELD
-                # first the label
-                Label(header_frame, text="Find:", anchor='w').pack(side=tk.LEFT, **self.paddings)
+                # FIND BUTTON
 
-                # then the search text entry
-                # first the string variable that "monitors" what's being typed in the input
-                search_str = tk.StringVar()
+                find_button = tk.Button(header_frame, text='Find', name='find_replace_button',
+                                        command=lambda:
+                                        self.open_find_replace_window(parent_window_id=t_window_id,
+                                                                      title="Find in {}".format(title)
+                                                                      ))
 
-                # the search input
-                search_input = Entry(header_frame, textvariable=search_str, name='search_input')
+                find_button.pack(side=tk.LEFT, **self.paddings)
 
-                # and a callback for when the search_str is changed
-                search_str.trace("w", lambda name, index, mode, search_str=search_str, text=text,
-                                             t_window_id=t_window_id:
-                self.t_edit_obj.search_text(search_str=search_str,
-                                            text_element=text, window_id=t_window_id))
+                # bind CMD/CTRL + f to open find and replace window
+                self.windows[t_window_id].bind("<"+self.ctrl_cmd_bind+"-f>", lambda e:
+                                            self.open_find_replace_window(parent_window_id=t_window_id,
+                                                                          title="Find in {}".format(title)
+                                                                          ))
 
-                search_input.pack(side=tk.LEFT, **self.paddings)
-
-                search_input.bind('<Return>', lambda e, text=text, t_window_id=t_window_id:
-                                self.t_edit_obj.cycle_through_results(text_element=text, window_id=t_window_id))
-
-                search_input.bind('<FocusIn>', lambda e, t_window_id=t_window_id:
-                                            self.t_edit_obj.set_typing_in_window(e, t_window_id, typing=True))
-                search_input.bind('<FocusOut>', lambda e, t_window_id=t_window_id:
-                                            self.t_edit_obj.set_typing_in_window(e, t_window_id, typing=False))
 
                 # ADVANCED SEARCH
                 # this button will open a new window with advanced search options
@@ -3957,6 +4591,14 @@ class toolkit_UI:
                                                                                 transcription_file_path))
 
                 advanced_search_button.pack(side=tk.LEFT, **self.paddings)
+
+
+                # GROUPS BUTTON
+                groups_button = tk.Button(header_frame, text='Groups', name='groups_button',
+                                            command=lambda:
+                    self.open_transcript_groups_window(transcription_window_id=t_window_id)
+                                            )
+                groups_button.pack(side=tk.LEFT, **self.paddings)
 
 
                 # KEEP ON TOP BUTTON
@@ -4022,6 +4664,9 @@ class toolkit_UI:
                                                      transcription_file_path=transcription_file_path,
                                                      text=text)
                                                 )
+
+                # add this window to the list of text windows
+                self.text_windows[t_window_id] = {'text_widget': text}
 
             # if no transcript was found in the json file, alert the user
             else:
@@ -4267,8 +4912,10 @@ class toolkit_UI:
                 or self.t_edit_obj.transcription_file_paths[transcription_window] \
                     not in timeline_transcription_file_paths:
 
-                # close the window
-                self.destroy_transcription_window(transcription_window)
+                # if the transcription window is open
+                if transcription_window in self.windows:
+                    # close the window
+                    self.destroy_transcription_window(transcription_window)
 
     def update_transcription_log_window(self):
 
@@ -4472,6 +5119,16 @@ class toolkit_UI:
 
             # this allows us to open multiple search windows at the same time
             open_multiple = True
+
+        # open a new console search window
+        # self.open_text_window(window_id=search_window_id+'_B',
+        #                      title=search_window_title+' Console',
+        #                      can_find=True,
+        #                      user_input=True,
+        #                      user_input_prefix='SEARCH > ')
+
+        # add text to the search window
+        # self._text_window_update(search_window_id+'_B', 'Searching in {} files...'.format(len(search_file_paths)))
 
         # create a window for the advanced search if one doesn't already exist
         if (search_window_id := self.create_or_open_window(parent_element=search_window_parent,
@@ -5272,6 +5929,9 @@ class toolkit_UI:
         # now add the search results to the search results window
         if len(search_results) > 0:
 
+            # add text to the search window
+            # self._text_window_update(search_window_id + '_B', 'Searched in files...')
+
             # reset the previous search_term
             result_search_term = ''
 
@@ -5343,11 +6003,24 @@ class toolkit_UI:
                     tag_name = 'clickable_{}'.format(result['idx'])
                     results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
 
+                    # hash the file path so we can use it as a window id
+                    file_path_hash = hashlib.md5(result['file_path'].encode('utf-8')).hexdigest()
+
+                    # get the file basename so we can use it as a window title
+                    file_basename = os.path.basename(result['file_path'])
+
                     # if the user clicks on the result
                     # open the file in the default program (must work for Windows, Mac and Linux)
                     results_text_element.tag_bind(tag_name, '<Button-1>',
-                                                    lambda event, file_path=result['file_path']:
-                                                    self.open_file_in_os(file_path=file_path))
+                                                    lambda event,
+                                                           file_path=result['file_path'],
+                                                           result_text=result['text'],
+                                                           file_path_hash=file_path_hash,
+                                                            file_basename=file_basename:
+                                                    self.open_text_file(file_path=file_path,
+                                                                        window_id="text_"+file_path_hash,
+                                                                        title=file_basename,
+                                                                        tag_text=result_text))
 
                 else:
                     # mention that the result source is unknown
@@ -8498,6 +9171,43 @@ class ToolkitOps:
             # move playhead in resolve
             self.resolve_api.set_resolve_tc(str(new_timeline_tc))
 
+    def save_markers_to_project_settings(self):
+        '''
+        Saves the markers of the current timeline to the project settings
+        :return:
+        '''
+
+        if current_project is not None and current_project != '' \
+                and current_timeline is not None and current_timeline != '' \
+                and type(current_timeline) == dict and 'name' in current_timeline \
+                and 'markers' in current_timeline:
+
+            project_name = current_project
+            timeline_name = current_timeline['name']
+            markers = current_timeline['markers']
+
+            #  get all the project settings
+            self.stAI.project_settings = self.stAI.get_project_settings(project_name=project_name)
+
+            # if there isn't a timeline dict in the project settings, create one
+            if 'timelines' not in self.stAI.project_settings:
+                self.stAI.project_settings['timelines'] = {}
+
+            # if there isn't a reference to this timeline in the timelines dict
+            # add one, including the markers list
+            if timeline_name not in self.stAI.project_settings['timelines']:
+                self.stAI.project_settings['timelines'][timeline_name] = {'markers': []}
+
+            # overwrite the transcription file settings of the timeline
+            # within the timelines project settings of this project
+            self.stAI.project_settings['timelines'][timeline_name]['markers'] \
+                = markers
+
+            # print(json.dumps(self.stAI.project_settings, indent=4))
+
+            self.stAI.save_project_settings(project_name=project_name,
+                                            project_settings=self.stAI.project_settings)
+
     def on_resolve(self, event_name):
         '''
         Process resolve events
@@ -8548,11 +9258,16 @@ class ToolkitOps:
 
         # when the playhead has moved
         elif event_name == 'tc_changed':
-            #@todo update all synced transcript windows with the new timecode
             if self.toolkit_UI_obj is not None:
 
                 # sync all the synced transcription windows
                 self.toolkit_UI_obj.sync_all_transcription_windows()
+
+        # when the timeline markers have changed
+        elif event_name == 'timeline_markers_changed':
+
+            # save the markers to the project settings
+            self.save_markers_to_project_settings()
 
 
 
@@ -8578,6 +9293,7 @@ class ToolkitOps:
 
         global current_project
         global current_timeline
+        global current_timeline_markers
         global current_tc
         global current_bin
         global current_timeline_fps
@@ -8601,7 +9317,8 @@ class ToolkitOps:
 
                 resolve_data = self.resolve_api.get_resolve_data(silent=True)
 
-                #print(resolve)
+                #print('resolve')
+                #print(resolve_data)
                 #print(resolve_data['resolve'])
 
                 # for all the global variables related with resolve data,
@@ -8650,9 +9367,43 @@ class ToolkitOps:
 
                         self.on_resolve('timeline_changed')
 
+                    # if the current timeline name is the same do this:
                     else:
-                        # nevertheless update the current timeline
+                        # also update the current timeline data, but don't trigger the timeline_changed event
                         current_timeline = resolve_data['currentTimeline'] if 'currentTimeline' in resolve_data else ''
+
+                # did the markers change
+                # (this only matters if the current timeline is not '')
+                if resolve_data is not None and type(resolve_data) is dict \
+                        and 'currentTimeline' in resolve_data \
+                        and type(resolve_data['currentTimeline']) is dict \
+                        and 'markers' in resolve_data['currentTimeline']:
+
+                    # first compare the types
+                    if type(current_timeline_markers) != type(resolve_data['currentTimeline']['markers']):
+                        # if the types are different, then the markers have changed
+                        self.on_resolve('timeline_markers_changed')
+
+                        current_timeline_markers = resolve_data['currentTimeline']['markers']
+
+                    # first do a key compare for speed
+                    elif set(current_timeline_markers.keys()) != set(
+                            resolve_data['currentTimeline']['markers'].keys()):
+                        # if the keys are different, then the markers have changed
+                        self.on_resolve('timeline_markers_changed')
+
+                        current_timeline_markers = resolve_data['currentTimeline']['markers']
+
+                    # then do a deeper compare if the keys are the same
+                    elif current_timeline_markers != resolve_data['currentTimeline']['markers']:
+                        # if the keys are the same, but the values are different, then the markers have changed
+                        self.on_resolve('timeline_markers_changed')
+
+                        current_timeline_markers = resolve_data['currentTimeline']['markers']
+
+                else:
+                    current_timeline_markers = None
+
 
                     # self.on_resolve_timeline_changed()
                     # logger.info("Current Timeline: {}".format(current_timeline))
@@ -8903,9 +9654,12 @@ class ToolkitOps:
         return False
 
 
+
+
 # @todo change these to None when empty
 current_project = ''
 current_timeline = ''
+current_timeline_markers = None
 current_tc = '00:00:00:00'
 current_timeline_fps = ''
 current_bin = ''
@@ -9212,7 +9966,7 @@ class StoryToolkitAI:
             with open(project_settings_path, 'w') as outfile:
                 json.dump(project_settings, outfile, indent=3)
 
-            logger.info('Updated project settings file {}.'
+            logger.debug('Updated project settings file {}.'
                            .format(os.path.abspath(project_settings_path)))
 
             # and return the config back to the user
