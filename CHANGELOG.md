@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.17.10] - 2023-02-19
+
+### Added
+
+- Ability to semantically search markers from project.json files using the "Advanced Search" button in the main window 
+
+### Changed
+
+- Advanced Search is now performed in a console-like window to improve functionality and to preserve search history
+- Advanced Search window now has a Find function (Ctrl/CMD+F) to search for text in the window
+
 ## [0.17.9] - 2023-02-18
 
 ### Added

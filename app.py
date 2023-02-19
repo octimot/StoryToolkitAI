@@ -3245,8 +3245,8 @@ class toolkit_UI:
         #                                        text="Console", command=lambda:
         #                                                    self.open_text_window(title="Console", initial_text="hello",
         #                                                                          can_find=True,
-        #                                                                          user_input=True,
-        #                                                                          user_input_prefix="> ")
+        #                                                                          user_prompt=True,
+        #                                                                          prompt_prefix="> ")
         #                                      )
         #
         #self.main_window.button10.grid(row=3, column=2, **self.paddings)
@@ -3286,7 +3286,7 @@ class toolkit_UI:
 
         return
 
-    def _text_window_entry(self, window_id, event, **args):
+    def _text_window_entry(self, window_id, event, **kwargs):
         '''
         This function is called when the user presses any key in the text window text field
         :param window_id:
@@ -3294,16 +3294,27 @@ class toolkit_UI:
         '''
 
         # get the current number of lines in the text widget
-        lines = self.text_windows[window_id]['text_widget'].index('end-1c').split('.')[0]
+        lines = self.text_windows[window_id]['text_widget'].index('end-1c')
 
         # on which line is the cursor?
-        cursor_pos = self.text_windows[window_id]['text_widget'].index('insert').split('.')[0]
+        cursor_pos = self.text_windows[window_id]['text_widget'].index('insert')
 
         # if the cursor is not past the last line, only allow arrow keys
-        if int(cursor_pos) < int(lines):
+        if int(cursor_pos.split('.')[0]) < int(lines.split('.')[0]):
+
+            # do not allow backspace
+            # but move the cursor to the end of the last line
+            if event.keysym == 'BackSpace':
+                # first move the cursor to the end of the last line
+                self.text_windows[window_id]['text_widget'].mark_set('insert', 'end-1c')
+
+                # also scroll to the end of the last line
+                self.text_windows[window_id]['text_widget'].see('end-1c')
+
+                return 'break'
 
             # if the key is an arrow key, return 'normal'
-            if event.keysym in ['Up', 'Down', 'Left', 'Right']:
+            elif event.keysym in ['Up', 'Down', 'Left', 'Right']:
                 return 'normal'
 
             # if the key is not an arrow key, move the cursor to the end of the last line
@@ -3319,59 +3330,81 @@ class toolkit_UI:
 
         else:
 
-            # if the key is Return, get the text and call the command
-            if event.keysym == 'Return':
+            # if the cursor is not past the prefix, move it to the end of the prefix
+            if int(cursor_pos.split('.')[1]) < len(self.text_windows[window_id]['prompt_prefix']):
 
-                # get the command entered by the user
-                command = self.text_windows[window_id]['text_widget'].get('end-1c linestart', 'end-1c lineend')
+                # first move the cursor to the end of the last line
+                self.text_windows[window_id]['text_widget'].mark_set('insert', 'end-1c')
 
-                # remove the command prefix from the beginning of the command if it was given
-                if args.get('command_prefix', ''):
-                    command = command.replace(args.get('command_prefix', ''), '', 1)
-
-                # add two new lines
-                self.text_windows[window_id]['text_widget'].insert('end', '\n\n')
-
-                # also pass the command prefix if it was given
-                self._text_window_commands(command=command, window_id=window_id,
-                                           command_prefix=args.get('command_prefix', ''))
-
-                # scroll to the end of the last line
+                # also scroll to the end of the last line
                 self.text_windows[window_id]['text_widget'].see('end-1c')
 
                 return 'break'
 
-            # do not allow backspace past the first character of the last line
+            # if the key is Return, get the text and call the command
+            if event.keysym == 'Return':
+
+                # get the command entered by the user
+                prompt = self.text_windows[window_id]['text_widget'].get('end-1c linestart', 'end-1c lineend')
+
+                # remove the command prefix from the beginning of the command if it was given
+                if kwargs.get('prompt_prefix', ''):
+                    prompt = prompt.replace(kwargs.get('prompt_prefix', ''), '', 1)
+
+                # add two new lines
+                self.text_windows[window_id]['text_widget'].insert('end', '\n\n')
+
+                # also pass the prompt prefix if it was given
+                self._text_window_prompts(prompt=prompt, window_id=window_id, **kwargs)
+
+                # scroll to the end of the last line
+                # but only if the window still exists
+                if window_id in self.text_windows:
+                    self.text_windows[window_id]['text_widget'].see('end-1c')
+
+                return 'break'
+
+            # do not allow backspace past the first character + length of the prompt prefix of the last line
             elif event.keysym == 'BackSpace':
 
+                last_line = (self.text_windows[window_id]['text_widget'].index('end-1c linestart')).split('.')[0]
+
+                # get the length of prompt_prefix
+                prompt_prefix_length = len(kwargs.get('prompt_prefix', ''))
+
                 if self.text_windows[window_id]['text_widget'].index('insert') \
-                    == self.text_windows[window_id]['text_widget'].index('end-1c linestart'):
+                    == str(last_line) + '.' + str(prompt_prefix_length):
                     return 'break'
 
         return
 
-    def _text_window_commands(self, command, window_id=None, command_prefix='> '):
+    def _text_window_prompts(self, prompt, window_id=None, **kwargs):
         '''
-        This function calls commands from the text window.
-        :param command:
+        This function calls prompts from the text window.
         :return:
         '''
 
         response = None
 
-        if command == 'exit' or command == 'quit' or command == 'close':
-            self.destroy_text_window(window_id=window_id)
+        if kwargs.get('prompt_callback', ''):
+            response = kwargs.get('prompt_callback', '')(prompt, **kwargs.get('prompt_callback_kwargs', {}))
 
+        # if no command execution function is given, resort to the default commands
         else:
-            response = 'Ignoring "{}". Command unknown.'.format(command)
-            logger.debug(response)
+
+            if prompt == 'exit' or prompt == 'quit' or prompt == 'close':
+                self.destroy_text_window(window_id=window_id)
+
+            else:
+                response = 'Ignoring "{}". Command unknown.'.format(prompt)
+                logger.debug(response)
 
         # output the reply to the text window, if a window_id is given
         if window_id and response:
-            self._text_window_update(window_id=window_id, text=response, command_prefix=command_prefix)
+            self._text_window_update(window_id=window_id, text=response, prompt_prefix=kwargs.get('prompt_prefix', ''))
 
 
-    def _text_window_update(self, window_id, text, **args):
+    def _text_window_update(self, window_id, text, **kwargs):
         '''
         This function updates the text in the text window, but keeps the command line at the bottom if it exists
         :param window_id:
@@ -3380,15 +3413,15 @@ class toolkit_UI:
         :return:
         '''
 
-        user_input_prefix = self.text_windows[window_id]['user_input_prefix'] \
-            if 'user_input_prefix' in self.text_windows[window_id] else None
+        prompt_prefix = self.text_windows[window_id]['prompt_prefix'] \
+            if 'prompt_prefix' in self.text_windows[window_id] else None
 
-        user_input = self.text_windows[window_id]['user_input'] \
-            if 'user_input' in self.text_windows[window_id] else None
+        user_prompt = self.text_windows[window_id]['user_prompt'] \
+            if 'user_prompt' in self.text_windows[window_id] else None
 
         # if user input is enabled and user_input prefix exists, move the cursor to the beginning of the last line
         linestart = ''
-        if user_input and user_input_prefix:
+        if user_prompt and prompt_prefix:
             self.text_windows[window_id]['text_widget'].mark_set('insert', 'end-1c linestart')
 
             # also use the linestart variable for the color change below
@@ -3405,12 +3438,12 @@ class toolkit_UI:
                                                                foreground=self.resolve_theme_colors['supernormal'])
 
         # if user input is enabled and a prefix is given, make sure we have it at the beginning of the last line
-        if user_input and user_input_prefix:
+        if user_prompt and prompt_prefix:
 
             # only add it if it is not already there
             if not self.text_windows[window_id]['text_widget'].get('end-1c linestart', 'end-1c lineend') \
-                    .startswith(user_input_prefix):
-                self.text_windows[window_id]['text_widget'].insert('end-1c linestart', user_input_prefix)
+                    .startswith(prompt_prefix):
+                self.text_windows[window_id]['text_widget'].insert('end-1c linestart', prompt_prefix)
 
         # and move the insert position right at the end
         self.text_windows[window_id]['text_widget'].mark_set('insert', 'end-1c')
@@ -3421,17 +3454,28 @@ class toolkit_UI:
 
 
     def open_text_window(self, window_id=None, title: str = 'Console', initial_text: str = None,
-                         can_find: bool = False, user_input: bool = False, user_input_prefix: str = None):
+                         can_find: bool = False, user_prompt: bool = False, prompt_prefix: str = None,
+                         prompt_callback: callable = None, prompt_callback_kwargs: dict = None,
+                         **kwargs):
         '''
         This window is to display any kind of text in a scrollable window.
         But is also capable of receiving commands from the user (optional)
 
-        This can be used for displaying the license info, or the readme, but also for reading text files,
+        This can be used for displaying the license info, or the readme, reading text files,
         welcome messages, the actual stdout etc.
 
-        It will also contain a text input field for the user to enter commands (optional)
+        It will also contain a text input field for the user to enter prompts (optional)
         Plus, the option to have a child find window (optional)
 
+        :param window_id: The id of the window. If not given, it will be generated from the title
+        :param title: The title of the window
+        :param initial_text: The initial text to display in the window
+        :param can_find: If True, a find window will be available on CTRL+F
+        :param user_prompt: If True, the user will be able to enter prompts in the window
+        :param prompt_prefix: What appears before the user prompt, so the user knows it is a prompt
+        :param prompt_callback: A function to call when the user enters a prompt
+        :param prompt_callback_kwargs: A dict of kwargs to pass to the prompt_callback function. We will always pass the
+                                        window_id, the prompt_prefix and the prompt as kwargs
         :return:
         '''
 
@@ -3439,19 +3483,20 @@ class toolkit_UI:
         if not window_id:
             window_id = title.replace(' ', '_').replace('.', '') + str(time.time()).replace('.', '')
 
+        close_action = kwargs.get('close_action', lambda window_id=window_id: self.destroy_text_window(window_id))
+
         # open the text window
         if self.create_or_open_window(parent_element=self.root, window_id=window_id, title=title, resizable=True,
-                                      close_action= lambda window_id=window_id: self.destroy_text_window(window_id)
+                                      close_action=close_action
                                       ):
 
             # create an entry in the text_windows dict
             self.text_windows[window_id] = {'text': initial_text}
 
-            # add the user input prefix to the text windows dict if it was given
-            if user_input:
-                self.text_windows[window_id]['user_input'] = user_input
-                self.text_windows[window_id]['user_input_prefix'] = user_input_prefix
-
+            # add the user prompt prefix to the text windows dict if it was given
+            if user_prompt:
+                self.text_windows[window_id]['user_prompt'] = user_prompt
+                self.text_windows[window_id]['prompt_prefix'] = prompt_prefix
 
             # add the CTRL+F behavior to the text window
             if can_find:
@@ -3500,16 +3545,20 @@ class toolkit_UI:
             text.pack(anchor='w', expand=True, fill='both')
 
             # if the user can enter text, enable the text field and process any input
-            if user_input:
+            if user_prompt:
 
                 # if a command prefix is given, add it to the text element
-                if user_input_prefix:
-                    text.insert(tk.END, user_input_prefix)
+                if prompt_prefix:
+                    text.insert(tk.END, prompt_prefix)
 
                 # any keypress in the text element will call the _text_window_entry function
                 text.bind('<KeyPress>',
                           lambda event:
-                          self._text_window_entry(window_id=window_id, event=event, command_prefix=user_input_prefix))
+                          self._text_window_entry(window_id=window_id, event=event,
+                                                  prompt_prefix=prompt_prefix,
+                                                  prompt_callback=prompt_callback,
+                                                  prompt_callback_kwargs=prompt_callback_kwargs,
+                                                  **kwargs))
 
                 # focus on the text element
                 text.focus_set()
@@ -5003,12 +5052,16 @@ class toolkit_UI:
 
             return True
 
+
     def open_advanced_search_window(self, transcription_window_id=None, search_file_path=None,
                                     select_dir=False):
 
-        if self.toolkit_ops_obj is None:
-            logger.error('Cannot open advanced search window. A toolkit operations object is needed to continue.')
+        if self.toolkit_ops_obj is None or self.toolkit_ops_obj.t_search_obj is None:
+            logger.error('Cannot open advanced search window. A ToolkitSearch object is needed to continue.')
             return False
+
+        # initialize a new search item
+        search_item = self.toolkit_ops_obj.SearchItem(toolkit_ops_obj=self.toolkit_ops_obj)
 
         # declare the empty list of search file paths
         search_file_paths = []
@@ -5063,7 +5116,7 @@ class toolkit_UI:
 
             # process the selected paths and return only the files that are valid
             # this works for both a single file path and a directory (depending what the user selected above)
-            search_file_paths = self.toolkit_ops_obj.t_search_obj.process_file_paths(selected_file_path)
+            search_file_paths = search_item.process_file_paths(selected_file_path)
 
             if not search_file_paths:
                 logger.info('No files were selected for search. Aborting.')
@@ -5120,79 +5173,228 @@ class toolkit_UI:
             # this allows us to open multiple search windows at the same time
             open_multiple = True
 
+        #search_kwargs = {'search_item': search_file_paths, 'search_id': search_window_id}
+
+        # prepare the search item
+        search_item.search_id = search_window_id
+        search_item.search_file_paths = search_file_paths
+
         # open a new console search window
-        # self.open_text_window(window_id=search_window_id+'_B',
-        #                      title=search_window_title+' Console',
-        #                      can_find=True,
-        #                      user_input=True,
-        #                      user_input_prefix='SEARCH > ')
+        self.open_text_window(window_id=search_window_id,
+                              title=search_window_title,
+                              can_find=True,
+                              user_prompt=True,
+                              close_action= lambda search_window_id=search_window_id:
+                                    self.destroy_advanced_search_window(search_window_id),
+                              prompt_prefix='SEARCH > ',
+                              prompt_callback=self.advanced_search,
+                              prompt_callback_kwargs={'search_item': search_item,
+                                                      'search_window_id': search_window_id})
 
         # add text to the search window
-        # self._text_window_update(search_window_id+'_B', 'Searching in {} files...'.format(len(search_file_paths)))
+        #self._text_window_update(search_window_id, 'Reading {} file{}.'
+        #                         .format(len(search_file_paths), 's' if len(search_file_paths) > 1 else ''))
 
-        # create a window for the advanced search if one doesn't already exist
-        if (search_window_id := self.create_or_open_window(parent_element=search_window_parent,
-                                        window_id=search_window_id, title=search_window_title, resizable=True,
-                                        open_multiple=open_multiple,
-                                       close_action=lambda t_window_id=search_window_id: \
-                                               self.destroy_advanced_search_window(search_window_id)
-                                                           )):
+        # now prepare the search corpus
+        # (everything happens within the search item, that's why we don't really need to return anything)
+        # if the search corpus was prepared successfully, update the search window
+        if search_item.prepare_search_corpus():
 
-            # and then call the update function to fill the window up
-            #self.update_advanced_search_window()
+            search_file_list = ''
 
-            current_search_window = self.windows[search_window_id]
+            # prepare a list with all the files
+            for search_file_path in search_item.search_file_paths:
+                search_file_list = search_file_list + os.path.basename(search_file_path)+'\n'
 
-            # create a header frame to hold the search inputs
-            header_frame = tk.Frame(current_search_window)
-            header_frame.place(anchor='nw', relwidth=1)
+            search_file_list = search_file_list.strip()
 
-            # create a frame for the results elements
-            results_form_frame = tk.Frame(current_search_window)
-            results_form_frame.pack(pady=50, expand=True, fill='both')
+            # add the list of files to the search window
+            self._text_window_update(search_window_id, 'Loaded {} files:'.format(len(search_item.search_file_paths)))
+            self._text_window_update(search_window_id, search_file_list)
 
-            # THE SEARCH FIELD
-            # first the label
-            Label(header_frame, text="Search:", anchor='w').pack(side=tk.LEFT, **self.paddings)
+            if len(search_item.search_corpus) < 1000:
+                self._text_window_update(search_window_id, 'Ready for search. Type [help] for help.')
+            else:
+                self._text_window_update(search_window_id, 'Large search corpus detected. '
+                                                           'The first search will take longer.\n\n'
+                                                           'Ready for search. Type [help] for help.')
 
-            # then the search text entry
-            # first the string variable that "monitors" what's being typed in the input
-            search_str = tk.StringVar()
-
-            # the search input
-            search_input = Entry(header_frame, width=60, textvariable=search_str)
-
-            search_input.pack(side=tk.LEFT, **self.paddings)
-
-            # THE SEARCH RESULTS text box
-            # (for now this looks like a console, maybe some improvements can be made later)
-            results_text = tk.Text(results_form_frame,
-                                   font=self.console_font, width=45, height=30, padx=5, pady=5, wrap=tk.WORD,
-                                    background=self.resolve_theme_colors['black'],
-                                    foreground=self.resolve_theme_colors['normal'])
+        else:
+            self._text_window_update(search_window_id, 'Search corpus could not be prepared.')
 
 
-            results_text.config(spacing1=0, spacing2=0.2, spacing3=5)
+    def advanced_search(self, prompt, search_item, search_window_id):
+        '''
+        This is the callback function for the advanced search window.
+        It calls the search function of the search item and passes the prompt as the search query.
+        Then it updates the search window with the results.
 
-            results_text.pack(anchor='w', expand=True, fill='both')
+        :param prompt:
+        :return:
+        '''
 
-            results_text.insert(tk.END, 'This feature is experimental.\n'
-                                        'The first time you search something in a search window will take a while '
-                                        'to embed the data.\n'
-                                        'Check README for details:\n https://github.com/octimot/StoryToolkitAI/')
-            results_text.config(state=DISABLED)
+        # is the user asking for help?
+        if prompt.lower() == '[help]':
 
-            # bind return to the search entry box
-            search_input.bind('<Return>', lambda e: self.button_advanced_search(
-                                                                    search_window_id,
-                                                                    search_str.get(),
-                                                                    results_text,
-                                                                    file_paths=search_file_paths
-                                                                    )
-                              )
+            help_reply = 'Simply enter a search term and press enter.\n' \
+                         'For eg.: about life events\n\n' \
+                         'If you want to restrict the number of results, just add [n] to the beginning of the query.\n' \
+                         'For eg.: [10] about life events\n\n' \
+                         'If you want to perform multiple searches in the same time, use the | character to split the search terms\n' \
+                         'For eg.: about life events | about family' \
+
+            # use this to make sure we have a new prompt prefix for the next search
+            self._text_window_update(search_window_id, help_reply)
+            return
+
+        # is the user trying to quit?
+        elif prompt.lower() == '[quit]':
+            self.destroy_advanced_search_window(search_window_id)
+            return
+
+        # remember when we started the search
+        start_search_time = time.time()
+
+        search_results, max_results = search_item.search(query=prompt)
+
+        # get the search window text element
+        results_text_element = self.text_windows[search_window_id]['text_widget']
+
+        # how long did the search take?
+        total_search_time = time.time() - start_search_time
+
+        # now add the search results to the search results window
+        if len(search_results) > 0:
+
+            # add text to the search window
+            # self._text_window_update(search_window_id + '_B', 'Searched in files...')
+
+            # reset the previous search_term
+            result_search_term = ''
+
+            for result in search_results:
+
+                # if we've changed the search term, add a new header
+                if result['search_term'] != result_search_term:
+                    result_search_term = result['search_term']
+
+                    # add the search term header
+                    results_text_element.insert(tk.END, 'Searching for: "' + result_search_term + '"\n')
+                    results_text_element.insert(tk.END, '--------------------------------------\n')
+                    results_text_element.insert(tk.END, 'Top {} closest phrases:\n\n'.format(max_results))
+
+                # remember the current insert position
+                current_insert_position = results_text_element.index(tk.INSERT)
+
+                # shorten the result text if it's longer than 200 characters, but don't cut off words
+                if len(result['text']) < 200:
+                    text_result = result['text']
+                else:
+                    text_result = result['text'][:200].rsplit(' ', 1)[0] + '...'
+
+                # add the result text
+                results_text_element.insert(tk.END, str(text_result).strip() + '\n')
+
+                # color it in blue
+                results_text_element.tag_add('white', current_insert_position, tk.INSERT)
+                results_text_element.tag_config('white', foreground=self.resolve_theme_colors['supernormal'])
+
+                # add score to the result
+                results_text_element.insert(tk.END, ' -- Score: {:.4f}\n'.format(result['score']))
+
+                # if the type is a transcription
+                if result['type'] == 'transcription':
+                    # add the transcription file path and segment index to the result
+                    results_text_element.insert(tk.END, ' -- Transcript: {}\n'
+                                                .format(os.path.basename(result['transcription_file_path'])))
+                    results_text_element.insert(tk.END, ' -- Line {} (second {:.2f}) \n'
+                                                .format(result['segment_index'], result['transcript_time']))
+
+                    # add a tag to the above text to make it clickable
+                    tag_name = 'clickable_{}'.format(result['idx'])
+                    results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
+
+                    # add the transcription file path and segment index to the tag
+                    # so we can use it to open the transcription window with the transcription file and jump to the segment
+                    results_text_element.tag_bind(tag_name, '<Button-1>',
+                                                  lambda event,
+                                                         transcription_file_path=result['transcription_file_path'],
+                                                         line_no=result['line_no']:
+                                                  self.open_transcription_window(
+                                                      transcription_file_path=transcription_file_path,
+                                                      select_line_no=line_no))
+
+                    # bind mouse clicks press events on the results text box
+                    # bind CMD/CTRL + mouse Clicks to text
+                    results_text_element.tag_bind(tag_name, "<" + self.ctrl_cmd_bind + "-Button-1>",
+                                                  lambda event,
+                                                         transcription_file_path=result['transcription_file_path'],
+                                                         line_no=result['line_no'],
+                                                         all_lines=result['all_lines']:
+                                                  self.open_transcription_window(
+                                                      transcription_file_path=transcription_file_path,
+                                                      select_line_no=line_no,
+                                                      add_to_selection=all_lines)
+                                                  )
+
+                # if the type is a transcription
+                elif result['type'] == 'text':
+                    # add the transcription file path and segment index to the result
+                    results_text_element.insert(tk.END, ' -- File: {}\n'
+                                                .format(os.path.basename(result['file_path'])))
+
+                    # add a tag to the above text to make it clickable
+                    tag_name = 'clickable_{}'.format(result['idx'])
+                    results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
+
+                    # hash the file path so we can use it as a window id
+                    file_path_hash = hashlib.md5(result['file_path'].encode('utf-8')).hexdigest()
+
+                    # get the file basename so we can use it as a window title
+                    file_basename = os.path.basename(result['file_path'])
+
+                    # if the user clicks on the result
+                    # open the file in the default program (must work for Windows, Mac and Linux)
+                    results_text_element.tag_bind(tag_name, '<Button-1>',
+                                                  lambda event,
+                                                         file_path=result['file_path'],
+                                                         result_text=result['text'],
+                                                         file_path_hash=file_path_hash,
+                                                         file_basename=file_basename:
+                                                  self.open_text_file(file_path=file_path,
+                                                                      window_id="text_" + file_path_hash,
+                                                                      title=file_basename,
+                                                                      tag_text=result_text))
+
+                # if the type is a marker
+                elif result['type'] == 'marker':
+
+                    # add the project name
+                    results_text_element.insert(tk.END, ' -- Project: {}\n'.format(result['project']))
+
+                    # add the timeline name
+                    results_text_element.insert(tk.END, ' -- Timeline: {}\n'.format(result['timeline']))
+
+                    # add the timeline name
+                    results_text_element.insert(tk.END, ' -- Frame: {}\n'.format(result['marker_index']))
+                    #results_text_element.insert(tk.END, ' -- Source: Timeline Marker\n')
 
 
-            return True
+                else:
+                    # mention that the result source is unknown
+                    results_text_element.insert(tk.END, ' -- Source: Unknown\n')
+
+                # add a new line
+                results_text_element.insert(tk.END, '\n')
+
+            # update the results text element
+            results_text_element.insert(tk.END, '--------------------------------------\n')
+            results_text_element.insert(tk.END, 'Search took {:.2f} seconds\n'.format(total_search_time))
+
+
+            # use this to make sure we have a new prompt prefix for the next search
+            self._text_window_update(search_window_id, 'Ready for new search.')
+
 
     def _get_group_id_from_listbox(self, groups_listbox: tk.Listbox) -> str:
         '''
@@ -5764,7 +5966,7 @@ class toolkit_UI:
             del self.toolkit_ops_obj.t_search_obj.search_embeddings[window_id]
 
         # call the default destroy window function
-        self.destroy_window_(parent_element=self.windows, window_id=window_id)
+        self.destroy_text_window(window_id=window_id)
 
 
     def open_transcript_groups_window(self, transcription_window_id, transcription_name=None):
@@ -5889,154 +6091,6 @@ class toolkit_UI:
                                                  t_group_window_id=transcript_groups_window_id,
                                                  groups_listbox=groups_listbox)
 
-    def button_advanced_search(self, search_window_id, search_term, results_text_element=None,
-                               file_paths=None):
-
-        if file_paths is None:
-            logger.error('Cannot search. No transcription file path was passed.')
-            return False
-
-        results_text_element.config(state=NORMAL)
-
-        # first clear the results text box and let the user know we started the process
-        results_text_element.delete('1.0', tk.END)
-
-        logger.info('Searching for "{}"'.format(search_term))
-
-        # remember when we started the search
-        start_search_time = time.time()
-
-        # define the default max_results
-        # this might be replaced by a user input later
-        max_results = 10
-
-        # perform the search
-        search_results, max_results \
-            = self.toolkit_ops_obj.t_search_obj.t_search(query=search_term,
-                                                         file_paths=file_paths,
-                                                         search_id=search_window_id,
-                                                         max_results=max_results,
-                                                         start_search_time=start_search_time,
-                                                         results_text_element=results_text_element
-                                                       )
-
-        # how long did the search take?
-        total_search_time = time.time() - start_search_time
-
-        # log the search time
-        logger.info('Search took {:.2f} seconds.'.format(total_search_time))
-
-        # now add the search results to the search results window
-        if len(search_results) > 0:
-
-            # add text to the search window
-            # self._text_window_update(search_window_id + '_B', 'Searched in files...')
-
-            # reset the previous search_term
-            result_search_term = ''
-
-            for result in search_results:
-
-                # if we've changed the search term, add a new header
-                if result['search_term'] != result_search_term:
-
-                    result_search_term = result['search_term']
-
-                    # add the search term header
-                    results_text_element.insert(tk.END, 'Searching for: "' + result_search_term + '"\n')
-                    results_text_element.insert(tk.END, '--------------------------------------\n')
-                    results_text_element.insert(tk.END, 'Top {} closest phrases:\n\n'.format(max_results))
-
-
-                # remember the current insert position
-                current_insert_position = results_text_element.index(tk.INSERT)
-
-                results_text_element.insert(tk.END, str(result['text']).strip() + '\n')
-
-                # color it in blue
-                results_text_element.tag_add('white', current_insert_position, tk.INSERT)
-                results_text_element.tag_config('white', foreground=self.resolve_theme_colors['supernormal'])
-
-                # add score to the result
-                results_text_element.insert(tk.END, ' -- Score: {:.4f}\n'.format(result['score']))
-
-                # if the type is a transcription
-                if result['type'] == 'transcription':
-                    # add the transcription file path and segment index to the result
-                    results_text_element.insert(tk.END, ' -- Transcript: {}\n'
-                                                .format(os.path.basename(result['transcription_file_path'])))
-                    results_text_element.insert(tk.END, ' -- Line {} (second {:.2f}) \n'
-                                                .format(result['segment_index'], result['transcript_time']))
-
-                    # add a tag to the above text to make it clickable
-                    tag_name = 'clickable_{}'.format(result['idx'])
-                    results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
-
-                    # add the transcription file path and segment index to the tag
-                    # so we can use it to open the transcription window with the transcription file and jump to the segment
-                    results_text_element.tag_bind(tag_name, '<Button-1>',
-                                                  lambda event, transcription_file_path=result['transcription_file_path'],
-                                                         line_no=result['line_no']:
-                                                  self.open_transcription_window(
-                                                      transcription_file_path=transcription_file_path,
-                                                      select_line_no=line_no))
-
-                    # bind mouse clicks press events on the results text box
-                    # bind CMD/CTRL + mouse Clicks to text
-                    results_text_element.tag_bind(tag_name, "<"+self.ctrl_cmd_bind+"-Button-1>",
-                                                  lambda event, transcription_file_path=result['transcription_file_path'],
-                                                         line_no=result['line_no'],
-                                                         all_lines=result['all_lines']:
-                                                  self.open_transcription_window(
-                                                      transcription_file_path=transcription_file_path,
-                                                      select_line_no=line_no,
-                                                      add_to_selection=all_lines)
-                                                  )
-
-                # if the type is a transcription
-                elif result['type'] == 'text':
-                    # add the transcription file path and segment index to the result
-                    results_text_element.insert(tk.END, ' -- File: {}\n'
-                                                .format(os.path.basename(result['file_path'])))
-
-                    # add a tag to the above text to make it clickable
-                    tag_name = 'clickable_{}'.format(result['idx'])
-                    results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
-
-                    # hash the file path so we can use it as a window id
-                    file_path_hash = hashlib.md5(result['file_path'].encode('utf-8')).hexdigest()
-
-                    # get the file basename so we can use it as a window title
-                    file_basename = os.path.basename(result['file_path'])
-
-                    # if the user clicks on the result
-                    # open the file in the default program (must work for Windows, Mac and Linux)
-                    results_text_element.tag_bind(tag_name, '<Button-1>',
-                                                    lambda event,
-                                                           file_path=result['file_path'],
-                                                           result_text=result['text'],
-                                                           file_path_hash=file_path_hash,
-                                                            file_basename=file_basename:
-                                                    self.open_text_file(file_path=file_path,
-                                                                        window_id="text_"+file_path_hash,
-                                                                        title=file_basename,
-                                                                        tag_text=result_text))
-
-                else:
-                    # mention that the result source is unknown
-                    results_text_element.insert(tk.END, ' -- Source: Unknown\n')
-
-                # add a new line
-                results_text_element.insert(tk.END, '\n')
-
-
-            # update the results text element
-            results_text_element.insert(tk.END, '--------------------------------------\n')
-            results_text_element.insert(tk.END, 'Search took {:.2f} seconds\n'.format(total_search_time))
-
-            results_text_element.config(state=DISABLED)
-
-        return True
 
     def open_file_in_os(self, file_path):
         '''
@@ -6302,6 +6356,9 @@ class ToolkitOps:
         # return
 
     class ToolkitSearch:
+        '''
+        This is the main class for the search engine
+        '''
 
         def __init__(self, toolkit_ops_obj):
 
@@ -6319,6 +6376,12 @@ class ToolkitOps:
             # this also optimizes the search so that the embeddings are only compiled once per search session
             self.search_embeddings = {}
 
+            # define the possible search types here
+            self.available_search_types = ['semantic']
+
+            # default search type
+            self.default_search_type = 'semantic'
+
         def is_file_searchable(self, file_path):
             '''
             This function will check if the file has the right extension to be searchable
@@ -6327,7 +6390,39 @@ class ToolkitOps:
             '''
 
             # check if the file ends with one of the extensions we're looking for
-            return file_path.endswith(('.transcription.json', '.txt'))
+            return file_path.endswith(('.transcription.json', '.txt', 'project.json'))
+
+    class SearchItem(ToolkitSearch):
+        '''
+        This is a class that represents a single search item.
+        It should be instantiated for each search and then used to pass queries
+        and results between UI and the search engine
+
+        '''
+
+        def __init__(self, **kwargs):
+
+            super().__init__(toolkit_ops_obj=kwargs.get('toolkit_ops_obj', None))
+
+            # get all the attributes that were passed at init
+            self.search_id = kwargs.get('search_id', None)
+            self.search_type = kwargs.get('search_type', None)
+
+            self.search_file_paths = kwargs.get('search_file_paths', None)
+
+            self.search_corpus = kwargs.get('search_corpus', None)
+            self.search_corpus_assoc = kwargs.get('search_corpus_assoc', None)
+            self.search_results = kwargs.get('search_results', None)
+
+            self.max_results = kwargs.get('max_results', 10)
+
+            self.start_search_time = kwargs.get('start_search_time', None)
+
+            self.query = kwargs.get('query', None)
+
+        def is_file_searchable (self, file_path):
+
+            return super().is_file_searchable(file_path)
 
         def process_file_paths(self, search_paths=None):
             '''
@@ -6412,13 +6507,16 @@ class ToolkitOps:
 
             return search_files
 
-        def prepare_search_corpus(self, search_file_paths, search_id):
+        def prepare_search_corpus(self):
             '''
             Takes all the segments from the search_transcriptions and turns them into a search corpus
             :param search_files:
             :param search_id:
             :return:
             '''
+
+            search_file_paths = self.search_file_paths
+            search_id = self.search_id
 
             # if no transcription file paths were provided
             if search_file_paths is None or len(search_file_paths) == 0:
@@ -6534,6 +6632,10 @@ class ToolkitOps:
                         # skip this .txt file to avoid reading the same content twice
                         # (we're making the assumption that that .txt file was saved with the transcription file)
                         if s_file_path.replace('.txt', '.transcription.json') in search_file_paths:
+
+                            # also remove it from the search file paths list
+                            search_file_paths.remove(s_file_path)
+
                             logger.debug('Skipping {}. Transcription file counterpart is included '
                                          'in the current file list.'.format(s_file_path))
                             continue
@@ -6557,7 +6659,6 @@ class ToolkitOps:
 
                                 # remember the text file path and the phrase number
                                 # this is the phrase index relative to the whole search corpus that
-                                # contains all the transcription file segments (not just the current transcription file)
                                 general_segment_index = len(search_corpus_phrases)
 
                                 # add the phrase to the search corpus association list
@@ -6567,6 +6668,72 @@ class ToolkitOps:
                                                                               'type': 'text'
                                                                              }
 
+                    # if it's a project file
+                    elif s_file_path.endswith('project.json'):
+
+                        # read it as a json file
+                        with open(s_file_path, 'r') as f:
+                            project_file_data = json.load(f)
+
+                        # first check if it contains the project name
+                        if 'name' not in project_file_data or 'timelines' not in project_file_data:
+
+                            logger.warning('Project file {} is not in the right format. Skipping.'
+                                .format(s_file_path))
+                            continue
+
+                        # take each timeline and add all its markers to the search corpus
+                        for timeline_name in project_file_data['timelines']:
+
+                            timeline = project_file_data['timelines'][timeline_name]
+
+                            # if the timeline has markers
+                            if 'markers' in timeline and type(timeline['markers']) is dict:
+
+                                # loop through the markers
+                                for marker in timeline['markers']:
+
+                                    # add the marker name to the search corpus
+                                    if 'name' in timeline['markers'][marker]:
+
+                                        marker_content = timeline['markers'][marker]['name']
+
+                                        # add the marker name to the search corpus
+                                        search_corpus_phrases.append(marker_content)
+
+                                        # remember the project file path and the marker name
+                                        # this is the marker index relative to the whole search corpus that
+                                        general_segment_index = len(search_corpus_phrases)
+
+                                        # add the marker to the search corpus association list
+                                        search_corpus_assoc[general_segment_index] = {'file_path': s_file_path,
+                                                                                        'text': marker_content,
+                                                                                        'timeline': timeline_name,
+                                                                                        'project': project_file_data['name'],
+                                                                                        'marker_index': marker,
+                                                                                        'type': 'marker'
+                                                                                        }
+
+                                    # add the marker note to the search corpus
+                                    if 'note' in timeline['markers'][marker]:
+
+                                        marker_content = timeline['markers'][marker]['note']
+
+                                        # add the marker name to the search corpus
+                                        search_corpus_phrases.append(marker_content)
+
+                                        # remember the project file path and the marker name
+                                        # this is the marker index relative to the whole search corpus that
+                                        general_segment_index = len(search_corpus_phrases)
+
+                                        # add the marker to the search corpus association list
+                                        search_corpus_assoc[general_segment_index] = {'file_path': s_file_path,
+                                                                                        'text': marker_content,
+                                                                                        'timeline': timeline_name,
+                                                                                        'project': project_file_data['name'],
+                                                                                        'marker_index': marker,
+                                                                                        'type': 'marker'
+                                                                                        }
 
 
                 # add the corpus to the search corpus dict, so we don't have to re-create it every time we search
@@ -6575,8 +6742,11 @@ class ToolkitOps:
                 self.search_corpuses[search_id]['corpus'] = search_corpus_phrases
                 self.search_corpuses[search_id]['assoc'] = search_corpus_assoc
 
-            return self.search_corpuses[search_id]['corpus'], self.search_corpuses[search_id]['assoc']
+                self.search_file_paths = search_file_paths
+                self.search_corpus = search_corpus_phrases
+                self.search_corpus_assoc = search_corpus_assoc
 
+            return self.search_corpuses[search_id]['corpus'], self.search_corpuses[search_id]['assoc']
 
         def prepare_search_corpus_from_transcriptions(self, search_transcriptions, search_id):
 
@@ -6692,25 +6862,23 @@ class ToolkitOps:
 
             return self.search_corpuses[search_id]['corpus'], self.search_corpuses[search_id]['assoc']
 
-        def t_search(self, query, file_paths, search_id, max_results=10, start_search_time=None,
-                     results_text_element: tk.Text=None):
+        def prepare_search_query(self, query, max_results:int = 10, search_type='semantic'):
             '''
-            Searches the files for the query using the search type passed by the user
+            This interprets the query and prepares it for searching.
+            With this, we can filter out and use certain arguments to perform the search
+
+            For eg:
+            [semantic] about AI - will search for the phrase "about AI" using semantic search
+            [semantic,10] about AI - will search semantically for the phrase "about AI" and return the top 10 results
+
             :param query:
-            :param file_paths:
-            :param search_id:
-            :param max_results:
-            :param start_search_time: the time at which the search started for stats purposes
+            :param max_results: the maximum number of results to return (can be overridden within the query)
+            :param search_type: the type of search to perform (can be overridden within the query)
             :return:
             '''
 
-            # define the possible search types here
-            search_types = ['semantic']
-
-            # the default search type is semantic
-            search_type = 'semantic'
-
             # the users can include a "[search_type]" in the query to specify the search type
+            # for eg. [semantic]
             # if they do, then use that search type instead of the default
             if re.search(r'\[(.+?)\]', query):
                 query_search_type = re.search(r'\[(.+?)\]', query).group(1)
@@ -6721,21 +6889,24 @@ class ToolkitOps:
 
                     # but that means that the user didn't specify a search type
                     # so use the default search type
-                    query_search_type = search_type
+                    query_search_type = self.default_search_type
 
                     just_max_results = True
 
                 # if the search type also contains a comma, then it means that the user also specified a max results
+                # for eg [semantic, 10] means that the user wants to use the semantic search type and return 10 results
                 # so extract that too
                 elif not query_search_type.isdigit() and re.search(r',', query_search_type):
                     query_search_type_list = query_search_type.split(',')
                     query_search_type = query_search_type_list[0]
                     query_max_results = str(query_search_type_list[1]).strip()
+
+                # otherwise it's just a [max_results] value
                 else:
                     query_max_results = str(max_results)
 
                 # if the search type is valid, use it
-                if query_search_type in search_types:
+                if query_search_type in self.available_search_types:
                     search_type = query_search_type
 
                 # if the max results is valid, use it
@@ -6752,32 +6923,34 @@ class ToolkitOps:
                 # split the query into multiple queries
                 query = query.split('|')
 
-            # first load the transcription file paths to a dictionary that can be used for searching
-            #search_transcriptions = self.load_file_paths_to_search_dict(file_paths)
+            self.query = query
+            self.search_type = search_type
+            self.max_results = max_results
 
-            # prepare the search corpus based on the passed transcriptions
-            #search_corpus, search_corpus_assoc \
-            #    = self.prepare_search_corpus_from_transcriptions(search_transcriptions=search_transcriptions, search_id=search_id)
+            return query, search_type, max_results
 
-            search_corpus, search_corpus_assoc \
-                = self.prepare_search_corpus(search_file_paths=file_paths, search_id=search_id)
+        def search(self, query: str):
+            '''
+            Searches the corpus for the query using the search type passed by the user
+
+            In the future, we should use this for any type of search (incl. for frames etc.)
+
+            :param query:
+            :return:
+            '''
+
+            self.query = query
+
+            # prepare the query
+            query, search_type, max_results = self.prepare_search_query(query=self.query)
 
             # now let's search the corpus based on the search type
             if search_type == 'semantic':
-                results, max_results = self.search_semantic(query=query,
-                                                            search_corpus_phrases=search_corpus,
-                                                            search_corpus_assoc=search_corpus_assoc,
-                                                            search_id=search_id,
-                                                            max_results=max_results,
-                                                            start_search_time=start_search_time)
+                results, max_results = self.search_semantic()
+            else:
+                logger.debug('Aborting. Invalid search type: {}'.format(search_type))
+                return None
 
-            #elif search_type == 'similar':
-            #    results, max_results = self.search_similar(query=query,
-            #                                                search_corpus_phrases=search_corpus,
-            #                                                search_corpus_assoc=search_corpus_assoc,
-            #                                                search_id=search_id,
-            #                                                max_results=max_results,
-            #                                                start_search_time=start_search_time)
             # return the results
             return results, max_results
 
@@ -6809,8 +6982,7 @@ class ToolkitOps:
 
             return search_results, top_k
 
-        def search_semantic(self, query, search_corpus_phrases, search_corpus_assoc, search_id=None, max_results=10,
-                            start_search_time=None):
+        def search_semantic(self):
             '''
             This function searches for a search term in a search corpus and returns the results.
             :param query:
@@ -6821,6 +6993,17 @@ class ToolkitOps:
             :param start_search_time: the time that the search started (default: None)
             :return:
             '''
+
+            query = self.query
+            search_corpus_phrases = self.search_corpus
+            search_corpus_assoc = self.search_corpus_assoc
+            search_id = self.search_id
+            max_results = self.max_results
+            start_search_time = self.start_search_time
+
+            if query is None or query == '':
+                logger.warning('Query empty.')
+                return [], 0
 
             # if the corpus is empty, abort
             if not search_corpus_phrases:
@@ -6970,6 +7153,19 @@ class ToolkitOps:
                                 'type': type
                             })
 
+                        elif search_corpus_assoc[int(idx)]['type'] == 'marker':
+                            search_results.append({
+                                'search_term': query,
+                                'file_path': search_corpus_assoc[int(idx)]['file_path'],
+                                'idx': int(idx),
+                                'score': score,
+                                'text': search_corpus_phrases[idx],
+                                'type': search_corpus_assoc[int(idx)]['type'],
+                                'marker_index': search_corpus_assoc[int(idx)]['marker_index'],
+                                'timeline': search_corpus_assoc[int(idx)]['timeline'],
+                                'project': search_corpus_assoc[int(idx)]['project']
+                            })
+
                         else:
                             # in case the source file was a text file
                             file_path = search_corpus_assoc[int(idx)]['file_path']
@@ -6985,8 +7181,10 @@ class ToolkitOps:
                                 'type': type
                             })
 
-            return search_results, top_k
+            self.search_results = search_results
+            self.top_k = top_k
 
+            return search_results, top_k
 
         def save_search_embeddings(self, embeddings, embedding_type, source_associations, file_path=None):
             '''
@@ -9652,7 +9850,6 @@ class ToolkitOps:
             self.resolve_api.render_markers(marker_color, render_target_dir, False, stills, render, render_preset)
 
         return False
-
 
 
 
