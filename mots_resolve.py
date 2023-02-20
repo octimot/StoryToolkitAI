@@ -661,13 +661,14 @@ class MotsResolve:
                              "Purple", "Fuchsia", "Rose", "Lavender", "Sky",
                              "Mint", "Lemon", "Sand", "Cocoa", "Cream"]
 
-    def render_markers(self, marker_color, target_dir, add_timestamp=False, stills=False, start_render=False, render_preset='h264_LQ3000', save_marker_data=False, marker_id=None):
+    def render_markers(self, marker_color, target_dir, add_timestamp=False, stills=False, start_render=False,
+                       render_preset='h264_LQ3000', save_marker_data=False, marker_id=None, starts_with=None):
         '''
             Adds the markers of a specific marker_color to the render queue
             and starts the render if start_render is True
 
             Parameters:
-                marker_color: str
+                marker_color: str or None
                     The colors of the markers
                 target_dir: str
                     Where to render
@@ -681,6 +682,8 @@ class MotsResolve:
                     Which render preset to be used. This is ignored if stills is True.
                 save_marker_data: bool,str
                     Saves some info about the marker next to the rendered file in a json format. This will not work if we start_render is False
+                starts_with: str
+                    Only render markers that start with this string (if this is passed marker_color can be None)
         '''
 
         resolve_objects = [resolve, project, mediaPool, projectManager, currentBin, currentTimeline] = self.initialize_resolve()
@@ -690,6 +693,10 @@ class MotsResolve:
 
         # initialize markers variable
         loaded_markers = {}
+
+        if marker_color is None and starts_with is None:
+            self.logger.debug("No marker color or starts_with string was passed. Exiting.")
+            return False
 
         # load the timeline markers
         if currentTimeline and currentTimeline is not None:
@@ -726,75 +733,88 @@ class MotsResolve:
 
             for marker in loaded_markers:
 
-                if loaded_markers[marker]['color'] == marker_color and (loaded_markers[marker]['duration'] > 1 or stills):
+                # assuming that we can't have both marker_color and starts_with set to None
+                # (due to above check), do the following checks
 
-                    # create marker data for easier access
-                    marker_data = loaded_markers[marker]
+                # if this is not passing the color filter, skip it (if the marker color was mentioned)
+                if marker_color is not None and loaded_markers[marker]['color'] != marker_color:
+                    continue
 
-                    # reset render settings for this marker
-                    renderSettings = {}
+                # if this is not passing the starts_with filter, skip it (if the starts_with string was mentioned)
+                if starts_with is not None and not loaded_markers[marker]['name'].startswith(starts_with):
+                    continue
 
-                    # get the correct timeline start frame
-                    startFrame = currentTimeline.GetStartFrame()
+                # if this is not a still and the duration is 1, skip it
+                if loaded_markers[marker]['duration'] == 1 and not stills:
+                    continue
 
-                    # set the render in and out points according to the marker
-                    renderSettings["MarkIn"] = startFrame + marker
-                    renderSettings["MarkOut"] = startFrame + marker + int(marker_data['duration']) - 1
+                # create marker data for easier access
+                marker_data = loaded_markers[marker]
 
-                    # only render the first frame if we're in stills mode
-                    if stills:
-                        renderSettings["MarkOut"] = startFrame + marker + 0
+                # reset render settings for this marker
+                renderSettings = {}
 
-                    # the render file name is givven by the marker name
-                    renderSettings["CustomName"] = marker_data["name"]
+                # get the correct timeline start frame
+                startFrame = currentTimeline.GetStartFrame()
 
-                    # prepare timestamp for name and saved marker data
-                    render_timestamp = str(time.time()).split('.')[0]
+                # set the render in and out points according to the marker
+                renderSettings["MarkIn"] = startFrame + marker
+                renderSettings["MarkOut"] = startFrame + marker + int(marker_data['duration']) - 1
 
-                    # add timestamp if required
-                    if add_timestamp:
-                        renderSettings["CustomName"] = renderSettings['CustomName']+" "+render_timestamp
+                # only render the first frame if we're in stills mode
+                if stills:
+                    renderSettings["MarkOut"] = startFrame + marker + 0
 
-                    # set the render dir
-                    renderSettings["TargetDir"] = target_dir
+                # the render file name is givven by the marker name
+                renderSettings["CustomName"] = marker_data["name"]
 
-                    project.SetRenderSettings(renderSettings)
+                # prepare timestamp for name and saved marker data
+                render_timestamp = str(time.time()).split('.')[0]
 
-                    # replace all slashes and backslashes with an empty space in the file name
-                    renderSettings["CustomName"] = str(renderSettings["CustomName"]).replace("\\", " ").replace("/", " ")
+                # add timestamp if required
+                if add_timestamp:
+                    renderSettings["CustomName"] = renderSettings['CustomName']+" "+render_timestamp
 
-                    self.logger.debug('Adding marker {} render job'.format(marker))
+                # set the render dir
+                renderSettings["TargetDir"] = target_dir
 
-                    # append the render job id to the new_render_jobs
-                    render_job_id = project.AddRenderJob()
+                project.SetRenderSettings(renderSettings)
 
-                    new_render_jobs.append(render_job_id)
+                # replace all slashes and backslashes with an empty space in the file name
+                renderSettings["CustomName"] = str(renderSettings["CustomName"]).replace("\\", " ").replace("/", " ")
 
-                    # remember the markers associated with the job
-                    # we are storing the in_offset and the duration in frames, just as it is in the marker data
-                    #  so we will need to convert that into seconds whenever we need to
-                    if save_marker_data:
+                self.logger.debug('Adding marker {} render job'.format(marker))
 
-                        # get the timeline FPS
-                        current_fps = currentTimeline.GetSetting('timelineFrameRate')
+                # append the render job id to the new_render_jobs
+                render_job_id = project.AddRenderJob()
 
-                        # round up for the non-dropframe 23.976fps - this is a hack, since resolve rounds up due to bug
-                        if int(current_fps) >= 23.97 and int(current_fps) <= 24:
-                            current_fps = "24"
+                new_render_jobs.append(render_job_id)
 
-                        render_jobs_markers[render_job_id] = {'project_name': project.GetName(),
-                                                              'timeline_name': currentTimeline.GetName(),
-                                                              'timeline_start_tc': currentTimeline.GetStartTimecode(),
-                                                              'render_name': renderSettings["CustomName"],
-                                                              'marker_name': marker_data["name"],
-                                                              'in_offset': marker,
-                                                              'duration': marker_data['duration'],
-                                                              'fps': current_fps,
-                                                              'render_timestamp': render_timestamp
-                                                              }
+                # remember the markers associated with the job
+                # we are storing the in_offset and the duration in frames, just as it is in the marker data
+                #  so we will need to convert that into seconds whenever we need to
+                if save_marker_data:
 
-                    self.logger.debug("Added render job {} from marker {}".format(render_job_id, marker))
-                    self.logger.debug("Render settings: {}".format(renderSettings))
+                    # get the timeline FPS
+                    current_fps = currentTimeline.GetSetting('timelineFrameRate')
+
+                    # round up for the non-dropframe 23.976fps - this is a hack, since resolve rounds up due to bug
+                    if int(current_fps) >= 23.97 and int(current_fps) <= 24:
+                        current_fps = "24"
+
+                    render_jobs_markers[render_job_id] = {'project_name': project.GetName(),
+                                                          'timeline_name': currentTimeline.GetName(),
+                                                          'timeline_start_tc': currentTimeline.GetStartTimecode(),
+                                                          'render_name': renderSettings["CustomName"],
+                                                          'marker_name': marker_data["name"],
+                                                          'in_offset': marker,
+                                                          'duration': marker_data['duration'],
+                                                          'fps': current_fps,
+                                                          'render_timestamp': render_timestamp
+                                                          }
+
+                self.logger.debug("Added render job {} from marker {}".format(render_job_id, marker))
+                self.logger.debug("Render settings: {}".format(renderSettings))
 
             # return false if no new render jobs exist
             if not new_render_jobs:

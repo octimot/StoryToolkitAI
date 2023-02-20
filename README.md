@@ -353,14 +353,14 @@ The clip's existing markers will be deleted before the new ones are copied!
 Same as the function above, but in this case, the markers of the clip are copied to the timeline.
 
 ### Render Markers to Stills
-This will render to TIFF and JPEG the first frame of the markers of a certain color. Works only on markers from the 
-opened timeline. The first time you use this function, it should also add a Still_TIFF render preset in Resolve. This
-is necessary to render the stills in TIFF format, which then should get converted to JPEG if you have FFMPEG on your 
-machine.
+This will render to TIFF and JPEG the first frame of the markers of a certain color or ones that start with a certain 
+string. Works only on markers from the opened timeline. The first time you use this function, it should also add a 
+Still_TIFF render preset in Resolve. This is necessary to render the stills in TIFF format, which then should get 
+converted to JPEG if you have FFMPEG on your machine.
 
 ### Render Markers to Clips
-This will render to H.264 the entire duration of the markers of a certain color from your currently opened Resolve
-timeline.
+This will render to H.264 the entire duration of the markers of a certain color or that start with a certain string 
+from your currently opened Resolve timeline.
 
 ## Transcription Window Shortcuts
 
@@ -390,6 +390,9 @@ timeline.
                       also works to create a selection for the last played segments in Resolve (if sync is active):
                       for eg.: 
                       press 'sync', click a phrase, press play in Resolve, stop, then press Shift+A in the tool
+                      
+                      but,if text is selected in the transcript, the selection will be created between the first and last
+                      segments of the selection.
 
     Shift+C         - copy transcript of active segment/selection with timecodes at the beginning of each block of text
                       (if Resolve is available)
@@ -404,6 +407,8 @@ timeline.
                       the tool will create a marker for each block of uninterrupted text
 
     Shift+M         - add duration markers as above, but with user prompt for the marker name
+
+    CMD/CTRL+M      - select all segments under markers filtered by color or name from the current Resolve timeline
 
     q               - close transcript window
 

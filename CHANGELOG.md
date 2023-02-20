@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.17.11] - 2023-02-20
+
+### Added
+
+- CMD/CTRL+M in the Transcription Window now select all segments under markers filtered by color or name from the current Resolve timeline
+- "Starts With" can be used to filter the markers to be rendered when using the "Render Markers to Stills" or "Render Markers to Clips" buttons
+- When adding timeline markers from Transcription Window both the marker name and the color can be entered
+- ESC key now closes the Transcription Settings window
+- SHIFT+A if text is selected in the Transcription Window will now select all segments under that text
+
+### Fixed
+
+- Tool knows which window is currently focused - to be used for future features
+
 ## [0.17.10] - 2023-02-19
 
 ### Added

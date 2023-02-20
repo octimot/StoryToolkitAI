@@ -210,10 +210,6 @@ class toolkit_UI:
 
         def load_menubar(self):
 
-            # get the current focus
-            # print("focus is:", self.root.focus_get())
-
-
             filemenu = Menu(self.main_menubar, tearoff=0)
             filemenu.add_command(label="Configuration directory", command=self.open_userdata_dir)
             # filemenu.add_command(label="New", command=donothing)
@@ -259,10 +255,10 @@ class toolkit_UI:
 
                 helpmenu.add_command(label="Go to project page", command=self.open_project_page)
 
+            self.main_menubar.add_cascade(label="Help", menu=helpmenu)
             helpmenu.add_command(label="Features info", command=self.open_features_info)
             helpmenu.add_command(label="Report an issue", command=self.open_issue)
             helpmenu.add_command(label="Made by mots", command=self.open_mots)
-            self.main_menubar.add_cascade(label="Help", menu=helpmenu)
 
             self.toolkit_UI_obj.root.config(menu=self.main_menubar)
 
@@ -673,6 +669,9 @@ class toolkit_UI:
             if text_element is None or window_id is None:
                 return False
 
+            global resolve
+            global current_timeline
+
             #if special_key is not None:
             #     print(special_key)
 
@@ -761,15 +760,29 @@ class toolkit_UI:
             # Shift+A key events
             if event.keysym == 'A':
 
-                # select all segments between the active_segment and the last_active_segment
+                # first, try to see if there is a text selection
+                selection = text_element.tag_ranges("sel")
 
-                # first, get the lowest index between the active and the last active segments
-                if self.active_segment[window_id] >= self.last_active_segment[window_id]:
+                # if there is a selection
+                if len(selection) > 0:
+
+                    # get the first and last segment numbers of the selection
+                    start_segment = int(str(selection[0]).split(".")[0])
+                    max_segment = int(str(selection[1]).split(".")[0])
+
+                    # clear the selection
+                    text_element.tag_delete("sel")
+
+                else:
+
+                    # select all segments between the active_segment and the last_active_segment
                     start_segment = self.last_active_segment[window_id]
                     max_segment = self.active_segment[window_id]
-                else:
-                    max_segment = self.last_active_segment[window_id]
-                    start_segment = self.active_segment[window_id]
+
+                # make sure that we're counting in the right direction
+                if start_segment > max_segment:
+                    start_segment, max_segment = max_segment, start_segment
+
 
                 # first clear the entire selection
                 self.clear_selection(window_id, text_element)
@@ -799,133 +812,220 @@ class toolkit_UI:
 
             # m key event (quick add duration markers)
             # and Shift+M key event (add duration markers with name input)
+            # CMD/CTRL+M key event (select all segments between markers)
             if event.keysym == 'm' or event.keysym == 'M':
 
-                #print('Special Key:', special_key)
-
-                # add segment based markers
-
-                global resolve
-                global current_timeline
-
                 # this only works if resolve is connected
-                if resolve and 'name' in current_timeline:
+                if self.toolkit_ops_obj.resolve_exists() and 'name' in current_timeline:
 
-                    # first get the selected (or active) text from the transcript
-                    # this should return a list of all the text chunks, the full text
-                    #   and the start and end times of the entire text
-                    text, full_text, start_sec, end_sec = \
-                        self.get_segments_or_selection(window_id, add_to_clipboard=False,
-                                                       split_by='index', timecodes=True)
+                    # select segments based on current timeline markers
+                    # (from Resolve to tool)
+                    if special_key == 'cmd':
 
-                    # now, take care of the marker name
-                    marker_name = False
+                        # first, see if there are any markers on the timeline
+                        if 'markers' not in current_timeline:
+                            return
 
-                    # if Shift+M was pressed, prompt the user for the marker name
-                    if event.keysym == 'M':
+                        # get the marker colors from all the markers in the current_timeline['markers'] dict
+                        marker_colors = [' '] + sorted(list(set([current_timeline['markers'][marker]['color']
+                                                                 for marker in current_timeline['markers']])))
 
-                        marker_name = simpledialog.askstring(
-                                        parent=self.toolkit_UI_obj.windows[window_id],
-                                        title="Markers Name",
-                                        prompt="Marker Name:")
+                        # create a list of widgets for the input dialogue
+                        input_widgets = [
+                            {'name': 'starts_with', 'label': 'Starts With:', 'type': 'entry', 'default_value': ''},
+                            {'name': 'color', 'label': 'Color:', 'type': 'option_menu', 'default_value': 'Blue',
+                             'options': marker_colors}
+                        ]
 
-                        # if the user pressed cancel, return
-                        if not marker_name:
-                            return False
+                        # then we call the ask_dialogue function
+                        user_input = self.toolkit_UI_obj.AskDialog(title='Markers to Selection',
+                                                                   input_widgets=input_widgets,
+                                                                   parent=self.toolkit_UI_obj.windows[window_id]
+                                                                     ).value()
 
-                    # if we still don't have a marker name
-                    if not marker_name or marker_name == '':
-                        # use a generic name which the user will most likely change afterwards
-                        marker_name = 'Transcript Marker'
+                        # if the user didn't cancel add the group
+                        if user_input != None:
 
-                    # calculate the start timecode of the timeline (simply use second 0 for the conversion)
-                    # we will use this to calculate the text_chunk durations
-                    timeline_start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(0)
+                            # get the user input
+                            starts_with = user_input['starts_with']
+                            color = user_input['color']
 
-                    # now take all the text chunks
-                    for text_chunk in text:
+                            selected_markers = {}
 
-                        # calculate the end timecodes for each text chunk
-                        end_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(text_chunk['end'])
+                            # go through the markers on the timeline
+                            for marker in current_timeline['markers']:
 
-                        # get the start_tc from the text_chunk but place it back into a Timecode object
-                        # using the timeline framerate
-                        start_tc = Timecode(timeline_start_tc.framerate, text_chunk['start_tc'])
+                                # if the marker starts with the text the user entered (if not empty)
+                                # and the marker color matches the color the user selected (if not empty)
+                                if (starts_with == ''
+                                    or current_timeline['markers'][marker]['name'].startswith(starts_with)) \
+                                        and (color == ' ' or current_timeline['markers'][marker]['color'] == color):
+                                    # add the marker to the marker_groups dictionary
+                                    selected_markers[marker] = current_timeline['markers'][marker]
 
-                        # and subtract the end timecode from the start_tc of the text_chunk
-                        # to get the marker duration (still timecode object for now)
-                        # the start_tc of the text_chunk should be already in the text list
-                        marker_duration_tc = end_tc-start_tc
+                            # if there are markers in the selection
+                            if len(selected_markers) > 0:
 
-                        # in Resolve, marker indexes are the number of frames from the beginning of the timeline
-                        # so in order to get the marker index, we need to subtract the timeline_start_tc from start_tc
+                                time_intervals = []
 
-                        # but only if the start_tc is larger than the timeline_start_tc so we don't get a
-                        # Timecode class error
-                        if start_tc > timeline_start_tc:
-                            start_tc_zero = start_tc-timeline_start_tc
-                            marker_index = start_tc_zero.frames
+                                # add them to the transcript group, based on their start time and duration
+                                # the start time (marker) and duration are in frames
+                                for marker in selected_markers:
 
-                        # if not consider that we are at frame 1
-                        else:
-                            marker_index = 1
+                                    # convert the frames to seconds
+                                    start_time = int(marker) / current_timeline_fps
+                                    duration = int(current_timeline['markers'][marker]['duration']) / current_timeline_fps
+                                    end_time = start_time + duration
 
-                        # check if there's another marker at the exact same index
-                        index_blocked = True
-                        while index_blocked:
+                                    # add the time interval to the list of time intervals
+                                    time_intervals.append({'start': start_time, 'end': end_time})
 
-                            if 'markers' in current_timeline and marker_index in current_timeline['markers']:
+                                # the transcript segments:
 
-                                # give up if the duration is under a frame:
-                                if marker_duration_tc.frames <= 1:
-                                    self.notify_via_messagebox(title='Cannot add marker',
-                                                               message='Not enough space to add marker on timeline.',
-                                                               type='warning'
-                                                               )
-                                    return False
+                                # convert the time intervals to segments
+                                segment_list = \
+                                    self.toolkit_ops_obj\
+                                        .time_intervals_to_transcript_segments(time_intervals=time_intervals,
+                                                                               segments=self.transcript_segments[window_id],
+                                                                               )
+                                # now select the segments
+                                self.segment_to_selection(window_id, text_element, segment_list)
 
-                                # notify the user that the index is blocked by another marker
-                                add_frame = messagebox.askyesno(title='Cannot add marker',
-                                                    message="Another marker exists at {}.\n\n"
-                                                            "Do you want to place the new marker one frame later?"
-                                                                .format(start_tc))
+                    # otherwise (if cmd wasn't pressed)
+                    # add segment based markers
+                    # (from tool to Resolve)
+                    else:
 
-                                # if the user wants to move this marker one frame to the right, be it
-                                if add_frame:
-                                    start_tc.frames = start_tc.frames+1
-                                    marker_index = marker_index+1
+                        # first get the selected (or active) text from the transcript
+                        # this should return a list of all the text chunks, the full text
+                        #   and the start and end times of the entire text
+                        text, full_text, start_sec, end_sec = \
+                            self.get_segments_or_selection(window_id, add_to_clipboard=False,
+                                                           split_by='index', timecodes=True)
 
-                                    # but this means that the duration should be one frame shorter
-                                    marker_duration_tc.frames = marker_duration_tc.frames-1
-                                else:
-                                    return False
+                        # now, take care of the marker name
+                        marker_name = False
 
+                        # if Shift+M was pressed, prompt the user for the marker name
+                        if event.keysym == 'M':
+
+                            # create a list of widgets for the input dialogue
+                            input_widgets = [
+                                {'name': 'name', 'label': 'Name:', 'type': 'entry', 'default_value': ''},
+                                {'name': 'color', 'label': 'Color:', 'type': 'option_menu',
+                                 'default_value': self.stAI.get_app_setting('default_marker_color', default_if_none='Blue'),
+                                 'options': self.toolkit_UI_obj.resolve_marker_colors.keys()}
+                            ]
+
+                            # then we call the ask_dialogue function
+                            user_input = self.toolkit_UI_obj.AskDialog(title='Add Markers from Selection',
+                                                                       input_widgets=input_widgets,
+                                                                       parent=self.toolkit_UI_obj.windows[window_id]
+                                                                         ).value()
+
+                            # if the user didn't cancel add the group
+                            if user_input == None:
+                                return False
+
+                            marker_name = user_input['name']
+                            marker_color = user_input['color']
+
+                            # if the user pressed cancel, return
+                            if not marker_name or marker_name == '':
+                                return False
+
+                        # if we still don't have a marker name
+                        if not marker_name or marker_name == '':
+                            # use a generic name which the user will most likely change afterwards
+                            marker_name = 'Transcript Marker'
+
+                        # calculate the start timecode of the timeline (simply use second 0 for the conversion)
+                        # we will use this to calculate the text_chunk durations
+                        timeline_start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(0)
+
+                        # now take all the text chunks
+                        for text_chunk in text:
+
+                            # calculate the end timecodes for each text chunk
+                            end_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(text_chunk['end'])
+
+                            # get the start_tc from the text_chunk but place it back into a Timecode object
+                            # using the timeline framerate
+                            start_tc = Timecode(timeline_start_tc.framerate, text_chunk['start_tc'])
+
+                            # and subtract the end timecode from the start_tc of the text_chunk
+                            # to get the marker duration (still timecode object for now)
+                            # the start_tc of the text_chunk should be already in the text list
+                            marker_duration_tc = end_tc-start_tc
+
+                            # in Resolve, marker indexes are the number of frames from the beginning of the timeline
+                            # so in order to get the marker index, we need to subtract the timeline_start_tc from start_tc
+
+                            # but only if the start_tc is larger than the timeline_start_tc so we don't get a
+                            # Timecode class error
+                            if start_tc > timeline_start_tc:
+                                start_tc_zero = start_tc-timeline_start_tc
+                                marker_index = start_tc_zero.frames
+
+                            # if not consider that we are at frame 1
                             else:
-                                index_blocked = False
+                                marker_index = 1
 
-                        marker_data = {}
-                        marker_data[marker_index] = {}
+                            # check if there's another marker at the exact same index
+                            index_blocked = True
+                            while index_blocked:
 
-                        # the name of the marker
-                        marker_data[marker_index]['name'] = marker_name
+                                if 'markers' in current_timeline and marker_index in current_timeline['markers']:
 
-                        # choose the marker color from Resolve
-                        marker_data[marker_index]['color'] = self.stAI.get_app_setting('default_marker_color',
-                                                                                         default_if_none='Blue')
+                                    # give up if the duration is under a frame:
+                                    if marker_duration_tc.frames <= 1:
+                                        self.notify_via_messagebox(title='Cannot add marker',
+                                                                   message='Not enough space to add marker on timeline.',
+                                                                   type='warning'
+                                                                   )
+                                        return False
 
-                        # add the text to the marker data
-                        marker_data[marker_index]['note'] = text_chunk['text']
+                                    # notify the user that the index is blocked by another marker
+                                    add_frame = messagebox.askyesno(title='Cannot add marker',
+                                                        message="Another marker exists at {}.\n\n"
+                                                                "Do you want to place the new marker one frame later?"
+                                                                    .format(start_tc))
 
-                        # the marker duration needs to be in frames
-                        marker_data[marker_index]['duration'] = marker_duration_tc.frames
+                                    # if the user wants to move this marker one frame to the right, be it
+                                    if add_frame:
+                                        start_tc.frames = start_tc.frames+1
+                                        marker_index = marker_index+1
 
-                        # no need for custom data
-                        marker_data[marker_index]['customData'] = ''
+                                        # but this means that the duration should be one frame shorter
+                                        marker_duration_tc.frames = marker_duration_tc.frames-1
+                                    else:
+                                        return False
 
-                        # pass the marker add request to resolve
-                        self.toolkit_ops_obj.resolve_api.add_timeline_markers(current_timeline['name'],
-                                                                              marker_data,
-                                                                              False)
+                                else:
+                                    index_blocked = False
+
+                            marker_data = {}
+                            marker_data[marker_index] = {}
+
+                            # the name of the marker
+                            marker_data[marker_index]['name'] = marker_name
+
+                            # choose the marker color from Resolve
+                            marker_data[marker_index]['color'] = marker_color
+
+                            # add the text to the marker data
+                            marker_data[marker_index]['note'] = text_chunk['text']
+
+                            # the marker duration needs to be in frames
+                            marker_data[marker_index]['duration'] = marker_duration_tc.frames
+
+                            # no need for custom data
+                            marker_data[marker_index]['customData'] = ''
+
+                            # pass the marker add request to resolve
+                            self.toolkit_ops_obj.resolve_api.add_timeline_markers(current_timeline['name'],
+                                                                                  marker_data,
+                                                                                  False)
 
             # q key event (close transcription window)
             if event.keysym == 'q':
@@ -963,9 +1063,6 @@ class toolkit_UI:
                     if self.group_selected(window_id=window_id):
                         logger.info('Group added')
 
-            # CMD+SHIFT+G key event (add markers to group)
-            # if event.keysym == 'G' and special_key == 'cmd':
-            #    print('convert markers to group')
 
             # SHIFT+G opens group window
             elif event.keysym == 'G':
@@ -1608,6 +1705,7 @@ class toolkit_UI:
             :param text_element:
             :param line: Either the line no. or a list of line numbers
                         (if a list is passed, it will only add and not remove)
+                        (if a list of segments is passed, it will get each segment's line number)
             :return:
             '''
 
@@ -1634,6 +1732,13 @@ class toolkit_UI:
                 # select all the lines in the list
                 for line_num in line:
 
+                    # if a list of segments was passed (if they are dicts)
+                    # we need to convert them to line numbers
+                    if type(line_num) is dict:
+
+                        # get the line number from the segment
+                        line_num = self.segment_id_to_line(window_id=window_id, segment_id=line_num['id'])
+
                     # convert the line number to segment_index
                     segment_index = line_num - 1
 
@@ -1648,6 +1753,8 @@ class toolkit_UI:
                     # color the tag accordingly
                     text_element.tag_config('l_selected', foreground='blue',
                                             background=self.toolkit_UI_obj.resolve_theme_colors['superblack'])
+
+
 
                 return True
 
@@ -2795,12 +2902,6 @@ class toolkit_UI:
 
         logger.debug('Running with TK {}'.format(self.root.call("info", "patchlevel")))
 
-        # set the main window title
-        self.root.title("StoryToolkitAI v{}".format(stAI.__version__))
-
-        # temporary width and height for the main window
-        self.root.config(width=1, height=1)
-
         # initialize transcript edit object
         self.t_edit_obj = self.TranscriptEdit(toolkit_UI_obj=self)
 
@@ -2876,6 +2977,9 @@ class toolkit_UI:
         # to keep track of what is being searched on each window
         self.find_strings = {}
 
+        # currently focused window
+        self.current_focused_window = None
+
         # set some UI styling here
         self.paddings = {'padx': 10, 'pady': 10}
         self.form_paddings = {'padx': 10, 'pady': 5}
@@ -2886,6 +2990,9 @@ class toolkit_UI:
         self.entry_settings = {'width': 30}
         self.entry_settings_half = {'width': 20}
         self.entry_settings_quarter = {'width': 8}
+
+        self.dialog_paddings = {'padx': 0, 'pady': 0}
+        self.dialog_entry_settings = {'width': 30}
 
         # scrollbars
         self.scrollbar_settings = {'width': 10}
@@ -3062,11 +3169,30 @@ class toolkit_UI:
             # what happens when the user closes this window
             self.windows[window_id].protocol("WM_DELETE_WINDOW", close_action)
 
+            # what happens when the user focuses on this window
+            self.windows[window_id].bind("<FocusIn>", lambda event: self._focused_window(window_id))
+
             # return the window_id or the window object
             if return_window:
                 return self.windows[window_id]
             else:
                 return window_id
+
+    def _focused_window(self, window_id):
+        '''
+        This function is called when a window is focused
+        :param window_id:
+        :return:
+        '''
+
+        # if the previous focus trigger was on the same window, ignore
+        if self.current_focused_window == window_id:
+            return
+
+        # change the focused window variable
+        self.current_focused_window = window_id
+
+        logger.debug("Window focused: " + window_id)
 
     def hide_main_window_frame(self, frame_name):
         '''
@@ -3076,12 +3202,12 @@ class toolkit_UI:
         '''
 
         # only attempt to remove the frame from the main window if it's known to be visible
-        if frame_name in self.main_window_visible_frames:
+        if frame_name in self.windows['main'].main_window_visible_frames:
             # first remove it from the view
-            self.main_window.__dict__[frame_name].pack_forget()
+            self.windows['main'].__dict__[frame_name].pack_forget()
 
             # then remove if from the visible frames list
-            self.main_window_visible_frames.remove(frame_name)
+            self.windows['main'].main_window_visible_frames.remove(frame_name)
 
             return True
 
@@ -3095,12 +3221,12 @@ class toolkit_UI:
         '''
 
         # only attempt to show the frame from the main window if it's known not to be visible
-        if frame_name not in self.main_window_visible_frames:
+        if frame_name not in self.windows['main'].main_window_visible_frames:
             # first show it
-            self.main_window.__dict__[frame_name].pack()
+            self.windows['main'].__dict__[frame_name].pack()
 
             # then add it to the visible frames list
-            self.main_window_visible_frames.append(frame_name)
+            self.windows['main'].main_window_visible_frames.append(frame_name)
 
             return True
 
@@ -3121,8 +3247,8 @@ class toolkit_UI:
             self.hide_main_window_frame('resolve_buttons_frame')
 
             # update the names of the transcribe buttons
-            self.main_window.button5.config(text='Transcribe\nAudio')
-            self.main_window.button6.config(text='Translate\nAudio to English')
+            self.windows['main'].button5.config(text='Transcribe\nAudio')
+            self.windows['main'].button6.config(text='Translate\nAudio to English')
 
             # if resolve is connected and the resolve buttons are not visible
         else:
@@ -3132,8 +3258,8 @@ class toolkit_UI:
                 self.hide_main_window_frame('other_buttons_frame')
 
             # update the names of the transcribe buttons
-            self.main_window.button5.config(text='Transcribe\nTimeline')
-            self.main_window.button6.config(text='Translate\nTimeline to English')
+            self.windows['main'].button5.config(text='Transcribe\nTimeline')
+            self.windows['main'].button6.config(text='Translate\nTimeline to English')
 
         # now show the other buttons too if they're not visible already
         self.show_main_window_frame('other_buttons_frame')
@@ -3147,8 +3273,17 @@ class toolkit_UI:
         :return:
         '''
 
+        # set the main window title
+        self.root.title("StoryToolkitAI v{}".format(stAI.__version__))
+
+        # temporary width and height for the main window
+        self.root.config(width=1, height=1)
+
+        # create a reference main window
+        self.windows['main'] = self.root
+
         # any frames stored here in the future will be considered visible
-        self.main_window_visible_frames = []
+        self.windows['main'].main_window_visible_frames = []
 
         # retrieve toolkit_ops object
         toolkit_ops_obj = self.toolkit_ops_obj
@@ -3157,13 +3292,13 @@ class toolkit_UI:
         # self.root.geometry("350x440")
 
         # create the frame that will hold the resolve buttons
-        self.main_window.resolve_buttons_frame = tk.Frame(self.root)
+        self.windows['main'].resolve_buttons_frame = tk.Frame(self.root)
 
         # create the frame that will hold the other buttons
-        self.main_window.other_buttons_frame = tk.Frame(self.root)
+        self.windows['main'].other_buttons_frame = tk.Frame(self.root)
 
         # add footer frame
-        self.main_window.footer_frame = tk.Frame(self.root)
+        self.windows['main'].footer_frame = tk.Frame(self.root)
 
         # draw buttons
 
@@ -3171,76 +3306,76 @@ class toolkit_UI:
         # label1.grid(row=0, column=1, sticky='w', padx=10, pady=10)
 
         # resolve buttons frame row 1
-        self.main_window.button1 = tk.Button(self.main_window.resolve_buttons_frame, **self.blank_img_button_settings,
+        self.windows['main'].button1 = tk.Button(self.windows['main'].resolve_buttons_frame, **self.blank_img_button_settings,
                                              **self.button_size,
                                              text="Copy Timeline\nMarkers to Same Clip",
                                              command=lambda: self.toolkit_ops_obj.execute_operation('copy_markers_timeline_to_clip', self))
-        self.main_window.button1.grid(row=1, column=1, **self.paddings)
+        self.windows['main'].button1.grid(row=1, column=1, **self.paddings)
 
-        self.main_window.button2 = tk.Button(self.main_window.resolve_buttons_frame, **self.blank_img_button_settings,
+        self.windows['main'].button2 = tk.Button(self.windows['main'].resolve_buttons_frame, **self.blank_img_button_settings,
                                              **self.button_size,
                                              text="Copy Clip Markers\nto Same Timeline",
                                              command=lambda: self.toolkit_ops_obj.execute_operation('copy_markers_clip_to_timeline', self))
-        self.main_window.button2.grid(row=1, column=2, **self.paddings)
+        self.windows['main'].button2.grid(row=1, column=2, **self.paddings)
 
         # resolve buttons frame row 2
-        self.main_window.button3 = tk.Button(self.main_window.resolve_buttons_frame, **self.blank_img_button_settings,
+        self.windows['main'].button3 = tk.Button(self.windows['main'].resolve_buttons_frame, **self.blank_img_button_settings,
                                              **self.button_size, text="Render Markers\nto Stills",
                                              command=lambda: self.toolkit_ops_obj.execute_operation('render_markers_to_stills', self))
-        self.main_window.button3.grid(row=2, column=1, **self.paddings)
+        self.windows['main'].button3.grid(row=2, column=1, **self.paddings)
 
-        self.main_window.button4 = tk.Button(self.main_window.resolve_buttons_frame, **self.blank_img_button_settings,
+        self.windows['main'].button4 = tk.Button(self.windows['main'].resolve_buttons_frame, **self.blank_img_button_settings,
                                              **self.button_size, text="Render Markers\nto Clips",
                                              command=lambda: self.toolkit_ops_obj.execute_operation('render_markers_to_clips', self))
-        self.main_window.button4.grid(row=2, column=2, **self.paddings)
+        self.windows['main'].button4.grid(row=2, column=2, **self.paddings)
 
         # Other Frame Row 1
-        self.main_window.button5 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings,
+        self.windows['main'].button5 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings,
                                              **self.button_size, text="Transcribe\nTimeline",
                                              command=lambda: self.toolkit_ops_obj.prepare_transcription_file(
                                                  toolkit_UI_obj=self))
         # add the shift+click binding to the button
-        self.main_window.button5.bind('<Shift-Button-1>',
+        self.windows['main'].button5.bind('<Shift-Button-1>',
                                       lambda event: toolkit_ops_obj.prepare_transcription_file(
                                                  toolkit_UI_obj=self, select_files=True))
-        self.main_window.button5.grid(row=1, column=1, **self.paddings)
+        self.windows['main'].button5.grid(row=1, column=1, **self.paddings)
 
-        self.main_window.button6 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings,
+        self.windows['main'].button6 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings,
                                              **self.button_size,
                                              text="Translate\nTimeline to English",
                                              command=lambda: self.toolkit_ops_obj.prepare_transcription_file(
                                                  toolkit_UI_obj=self, task='translate'))
         # add the shift+click binding to the button
-        self.main_window.button6.bind('<Shift-Button-1>',
+        self.windows['main'].button6.bind('<Shift-Button-1>',
                                       lambda event: toolkit_ops_obj.prepare_transcription_file(
                                                  toolkit_UI_obj=self, task='translate', select_files=True))
 
-        self.main_window.button6.grid(row=1, column=2, **self.paddings)
+        self.windows['main'].button6.grid(row=1, column=2, **self.paddings)
 
-        self.main_window.button7 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings,
+        self.windows['main'].button7 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings,
                                              **self.button_size,
                                              text="Open\nTranscript", command=lambda: self.open_transcript())
-        self.main_window.button7.grid(row=2, column=1, **self.paddings)
+        self.windows['main'].button7.grid(row=2, column=1, **self.paddings)
 
-        self.main_window.button8 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings,
+        self.windows['main'].button8 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings,
                                              **self.button_size,
                                              text="Open\nTranscription Log",
                                              command=lambda: self.open_transcription_log_window())
-        self.main_window.button8.grid(row=2, column=2, **self.paddings)
+        self.windows['main'].button8.grid(row=2, column=2, **self.paddings)
 
         # THE ADVANCED SEARCH BUTTON
-        self.main_window.button9 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings,
+        self.windows['main'].button9 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings,
                                              **self.button_size,
                                              text="Advanced\n Search", command=lambda:
                                                             self.open_advanced_search_window())
         # add the shift+click binding to the button
-        self.main_window.button9.bind('<Shift-Button-1>',
+        self.windows['main'].button9.bind('<Shift-Button-1>',
                                       lambda event: self.open_advanced_search_window(select_dir=True))
 
-        self.main_window.button9.grid(row=3, column=1, **self.paddings)
+        self.windows['main'].button9.grid(row=3, column=1, **self.paddings)
 
         # THE CONSOLE BUTTON
-        # self.main_window.button10 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings,
+        # self.windows['main'].button10 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings,
         #                                        **self.button_size,
         #                                        text="Console", command=lambda:
         #                                                    self.open_text_window(title="Console", initial_text="hello",
@@ -3249,26 +3384,26 @@ class toolkit_UI:
         #                                                                          prompt_prefix="> ")
         #                                      )
         #
-        #self.main_window.button10.grid(row=3, column=2, **self.paddings)
+        #self.windows['main'].button10.grid(row=3, column=2, **self.paddings)
 
 
-        # self.main_window.link2 = Label(self.main_window.footer_frame, text="made by mots", font=("Courier", 10), cursor="hand2", anchor='s')
-        # self.main_window.link2.grid(row=1, column=1, columnspan=1, padx=10, pady=5, sticky='s')
-        # self.main_window.link2.bind("<Button-1>", lambda e: webbrowser.open_new("https://mots.us"))
+        # self.windows['main'].link2 = Label(self.windows['main'].footer_frame, text="made by mots", font=("Courier", 10), cursor="hand2", anchor='s')
+        # self.windows['main'].link2.grid(row=1, column=1, columnspan=1, padx=10, pady=5, sticky='s')
+        # self.windows['main'].link2.bind("<Button-1>", lambda e: webbrowser.open_new("https://mots.us"))
 
-        # self.main_window.link2 = Label(self.main_window.footer_frame, text="StoryToolkitAI home", font=("Courier", 10), cursor="hand2", anchor='s')
-        # self.main_window.link2.grid(row=1, column=2, columnspan=1, padx=10, pady=5, sticky='s')
-        # self.main_window.link2.bind("<Button-1>", lambda e: webbrowser.open_new("https://github.com/octimot/StoryToolkitAI"))
+        # self.windows['main'].link2 = Label(self.windows['main'].footer_frame, text="StoryToolkitAI home", font=("Courier", 10), cursor="hand2", anchor='s')
+        # self.windows['main'].link2.grid(row=1, column=2, columnspan=1, padx=10, pady=5, sticky='s')
+        # self.windows['main'].link2.bind("<Button-1>", lambda e: webbrowser.open_new("https://github.com/octimot/StoryToolkitAI"))
 
         # Other Frame row 2 (disabled for now)
-        # self.main_window.button7 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Transcribe\nDuration Markers")
-        # self.main_window.button7.grid(row=4, column=1, **self.paddings)
-        # self.main_window.button8 = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Translate\nDuration Markers to English")
-        # self.main_window.button8.grid(row=4, column=1, **self.paddings)
+        # self.windows['main'].button7 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Transcribe\nDuration Markers")
+        # self.windows['main'].button7.grid(row=4, column=1, **self.paddings)
+        # self.windows['main'].button8 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Translate\nDuration Markers to English")
+        # self.windows['main'].button8.grid(row=4, column=1, **self.paddings)
 
-        # self.main_window.button_test = tk.Button(self.main_window.other_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Test",
+        # self.windows['main'].button_test = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Test",
         #                        command=lambda: self.open_transcription_window())
-        # self.main_window.button_test.grid(row=5, column=2, **self.paddings)
+        # self.windows['main'].button_test.grid(row=5, column=2, **self.paddings)
 
         # Make the window resizable false
         self.root.resizable(False, False)
@@ -3277,6 +3412,12 @@ class toolkit_UI:
         self.root.after(500, self.update_main_window())
 
         logger.info("Starting StoryToolkitAI GUI")
+
+        # when the window is focused or clicked on
+        self.windows['main'].bind("<FocusIn>", lambda event: self._focused_window('main'))
+        self.windows['main'].bind("<Button-1>", lambda event: self._focused_window('main'))
+        self.windows['main'].bind("<Button-2>", lambda event: self._focused_window('main'))
+        self.windows['main'].bind("<Button-3>", lambda event: self._focused_window('main'))
 
         # load menubar items
         self.UI_menus.load_menubar()
@@ -3876,6 +4017,216 @@ class toolkit_UI:
                 text_widget.see(f'{tag_index}')
 
 
+    class AskDialog(tk.Toplevel):
+        '''
+        This is a simple dialogue window that asks the user for input before continuing with the task
+        But it also halts the execution of the main window until the user closes the dialogue window
+        When the user closes the dialogue window, it will return the user input to the main window
+        '''
+
+        def __init__(self, parent, title, input_widgets, **kwargs):
+            tk.Toplevel.__init__(self, parent)
+
+            self.parent = parent
+            self.title(title)
+
+            # the transient function is used to make the window transient to the parent window
+            # which means that the window will appear on top of the parent window
+            # If the parent is not viewable, don't make the child transient, or else it
+            # would be opened withdrawn
+            if parent is not None and parent.winfo_viewable():
+                self.transient(parent)
+
+            # this is the dictionary that will hold the user input
+            self.return_value = {}
+            self.cancel_return = None
+
+            # add the widgets
+            self._add_widgets(input_widgets, **kwargs)
+
+            # no resizing after this
+            self.resizable(False, False)
+
+            # do not allow clicking on other windows, including the parent window
+            self.grab_set()
+
+            # center the window
+            self.center_window()
+
+            # if the user tries to defocus out of the window, do not allow it
+            # self.bind("<FocusOut>", lambda e: self.focus_set())
+
+            self.protocol("WM_DELETE_WINDOW", self.cancel)
+
+            # wait for the user to close the window
+            self.wait_window(self)
+
+        def _add_widgets(self, input_widgets, **kwargs):
+            '''
+            This adds the widgets to the window, depending what was passed to the class.
+            We work with pairs of label+entry widgets, each having a name which we will use in the return dictionary.
+            :param kwargs:
+            :return:
+            '''
+
+            have_input_widgets = False
+            row = 0
+
+            # create a frame for the input widgets
+            input_frame = tk.Frame(self)
+
+            # take all the entry widgets and add them to the window
+            for widget in input_widgets:
+
+                # get the widget name
+                widget_name = widget['name']
+
+                # get the widget label
+                widget_label = widget['label']
+
+                # get the widget default value
+                widget_default_value = widget['default_value']
+
+                # add the label
+                label = tk.Label(input_frame, text=widget_label)
+
+                input_widget = None
+                input_value = None
+
+                row = row + 1
+
+                # add the input widget, depending on the type
+                # entry widget
+                if widget['type'] == 'entry':
+                    input_value = StringVar(input_frame, widget_default_value)
+                    input_widget = tk.Entry(input_frame, textvariable=input_value)
+
+                # selection widget
+                elif widget['type'] == 'option_menu' and 'options' in widget:
+                    input_value = StringVar(input_frame, widget_default_value)
+                    input_widget = tk.OptionMenu(input_frame, input_value, *widget['options'])
+                    input_widget.config(takefocus=True)
+
+                # checkbox widget
+                elif widget['type'] == 'checkbutton':
+                    input_value = BooleanVar(input_frame, widget_default_value)
+                    input_widget = tk.Checkbutton(input_frame, variable=input_value)
+
+                # text widget
+                elif widget['type'] == 'text':
+                    input_value = StringVar(input_frame, widget_default_value)
+                    input_widget = tk.Text(input_frame, height=5, width=30)
+                    input_widget.insert(1.0, widget_default_value)
+
+                # listbox widget
+                elif widget['type'] == 'listbox':
+                    input_value = StringVar(input_frame, widget_default_value)
+                    input_widget = tk.Listbox(input_frame, height=5, width=30,
+                                              selectmode=widget['selectmode'] if 'selectmode' in widget else 'single')
+                    input_widget.insert(1.0, widget_default_value)
+
+                # spinbox widget
+                elif widget['type'] == 'spinbox':
+                    input_value = IntVar(input_frame, widget_default_value)
+                    input_widget = tk.Spinbox(input_frame, from_=widget['from'], to=widget['to'], textvariable=input_value)
+
+                # if we don't have a valid widget, skip
+                if input_widget is None:
+                    continue
+
+                # if we reached this point, we have a valid widget
+                have_input_widgets = True
+
+                # add the widget to the window
+                label.grid(row=row, column=0, sticky='e', padx=5, pady=5)
+                input_widget.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+
+                # add the widget to the user_input dictionary
+                self.return_value[widget_name] = input_value
+
+            # if we have no input widgets, return
+            if not have_input_widgets:
+                logger.error('No input widgets were added to the Ask Dialogue window. Aborting.')
+                return None
+
+            # pack the input frame
+            input_frame.pack(side=TOP, fill=BOTH, expand=True, padx=5, pady=5)
+
+            buttons_frame = tk.Frame(self)
+
+            # add the OK button
+            w = tk.Button(buttons_frame, text="OK", width=10, command=self.ok, takefocus=True)
+            w.pack(side=LEFT, padx=5, pady=5)
+            self.bind("<Return>", self.ok)
+
+            # if we have a cancel_action, add the Cancel button
+            if 'cancel_return' in kwargs:
+                w = tk.Button(buttons_frame, text="Cancel", width=10, command=self.cancel, takefocus=True)
+                w.pack(side=LEFT, padx=5, pady=5)
+
+                # add the cancel action
+                self.cancel_return = kwargs['cancel_return']
+
+                # enable the escape key to cancel the window
+                self.bind("<Escape>", self.cancel)
+
+            # pack the buttons frame
+            buttons_frame.pack(side=TOP, fill=BOTH, expand=True, padx=5, pady=5)
+
+        def center_window(self):
+
+            # get the window size
+            window_width = self.winfo_reqwidth()
+            window_height = self.winfo_reqheight()
+
+            # get the screen size
+            screen_width = self.parent.winfo_screenwidth()
+            screen_height = self.parent.winfo_screenheight()
+
+            # calculate the position of the window
+            x = (screen_width / 2) - (window_width / 2)
+            y = (screen_height / 2) - (window_height / 2)
+
+            # set the position of the window
+            self.geometry('+%d+%d' % (x, y))
+
+        def ok(self, event=None):
+            '''
+            This is the action that happens when the user clicks the OK button
+            :return:
+            '''
+
+            # take the user input and return it
+            self.return_value = {k: v.get() for k, v in self.return_value.items()}
+
+            # destroy the window
+            self.destroy()
+
+        def cancel(self, event=None):
+            '''
+            This is the action that happens when the user clicks the Cancel button
+            :return:
+            '''
+
+            self.return_value = None
+
+            # execute the cancel action if it's callable
+            if self.cancel_return is not None and callable(self.cancel_return):
+                self.cancel_return()
+
+            # if it's not callable, just return the cancel_return value
+            elif self.cancel_return is not None:
+                self.return_value = self.cancel_return
+
+            # if it's None, return None
+            else:
+                self.return_value = None
+
+            # destroy the window
+            self.destroy()
+
+        def value(self):
+            return self.return_value
 
     def open_transcription_settings_window(self, title="Transcription Settings",
                                            audio_file_path=None, name=None, task=None, unique_id=None,
@@ -3906,6 +4257,9 @@ class toolkit_UI:
 
             ts_form_frame = tk.Frame(self.windows[ts_window_id])
             ts_form_frame.pack()
+
+            # escape key closes the window
+            self.windows[ts_window_id].bind('<Escape>', lambda event: close_action())
 
             # File items start here
 
@@ -5440,8 +5794,6 @@ class toolkit_UI:
         else:
             logger.error('No transcription window id or groups listbox was provided. Aborting.')
             return False
-
-        print('group_id', group_id.strip().lower())
 
         return group_id.strip().lower()
 
@@ -9319,7 +9671,15 @@ class ToolkitOps:
         else:
             return False
 
-    def calculate_resolve_timecode_to_sec(self, timecode=None):
+    def calculate_resolve_timecode_to_sec(self, timecode=None, frames=None, framerate=None, start_tc=None):
+        '''
+        Calculates the seconds from a timecode or frames based on the current timeline's framerate
+
+        :param timecode:
+        :param frames:
+        :return:
+        '''
+
         global resolve
         if resolve:
 
@@ -9329,17 +9689,32 @@ class ToolkitOps:
             resolve_data = self.resolve_api.get_resolve_data()
 
             # get the framerate of the current timeline
-            timeline_fps = resolve_data['currentTimelineFPS']
+            if 'currentTimelineFPS' in resolve_data:
+                timeline_fps = resolve_data['currentTimelineFPS']
+            elif framerate is not None:
+                timeline_fps = framerate
+            else:
+                logger.debug('No timeline framerate found. Aborting.')
+                return None
 
             # get the start timecode of the current timeline
-            timeline_start_tc = resolve_data['currentTimeline']['startTC']
+            if 'currentTimeline' in resolve_data and 'startTC' in resolve_data['currentTimeline']:
+                timeline_start_tc = resolve_data['currentTimeline']['startTC']
+            elif start_tc is not None:
+                timeline_start_tc = start_tc
+            else:
+                timeline_start_tc = '00:00:00:00'
 
             # initialize the timecode object for the start tc
             timeline_start_tc = Timecode(timeline_fps, timeline_start_tc)
 
             # if no timecode was passed, get it from the variable
-            if timecode is None:
+            if timecode is None and frames is not None:
                 timecode = current_tc
+
+            # calculate the timecode from the passed frames
+            if frames is not None:
+                timecode = Timecode(framerate=timeline_fps, frames=frames)
 
             # if we still don't have a timecode, abort and return None
             if timecode is None:
@@ -9467,6 +9842,20 @@ class ToolkitOps:
             # save the markers to the project settings
             self.save_markers_to_project_settings()
 
+
+    def resolve_exists(self):
+        '''
+        Checks if Resolve API is available and connected
+        :return:
+        '''
+
+        global resolve
+
+        if resolve:
+            return True
+
+        else:
+            return False
 
 
     def poll_resolve_thread(self):
@@ -9731,9 +10120,9 @@ class ToolkitOps:
 
     def resolve_check_timeline(self, resolve_data, toolkit_UI_obj):
         '''
-        This checks if a timeline is available and returns bool
+        This checks if a timeline is available
         :param resolve:
-        :return:
+        :return: bool
         '''
 
         # trigger warning if there is no current timeline
@@ -9795,6 +10184,7 @@ class ToolkitOps:
         elif operation == 'render_markers_to_stills' or operation == 'render_markers_to_clips':
 
             # ask user for marker color
+            # or what the marker name starts with
 
             # but first make a list of all the available marker colors based on the timeline markers
             current_timeline_marker_colors = []
@@ -9802,28 +10192,46 @@ class ToolkitOps:
                     current_timeline and 'markers' in current_timeline:
 
                 # take each marker from timeline and get its color
-                for marker in current_timeline['markers']:
-
-                    # only append the marker to the list if it wasn't added already
-                    if current_timeline['markers'][marker]['color'] not in current_timeline_marker_colors:
-                        current_timeline_marker_colors.append(current_timeline['markers'][marker]['color'])
+                # but also add a an empty string to the list to allow the user to render all markers
+                current_timeline_marker_colors = [' '] + sorted(list(set([current_timeline['markers'][marker]['color']
+                                                                          for marker in current_timeline['markers']])))
 
             # if no markers exist, cancel operation and let the user know that there are no markers to render
             if current_timeline_marker_colors:
-                marker_color = simpledialog.askstring(title="Markers Color",
-                                                      prompt="What color markers should we render?\n\n"
-                                                             "These are the marker colors on the current timeline:\n"
-                                                             + ", ".join(current_timeline_marker_colors))
+                #marker_color = simpledialog.askstring(title="Markers Color",
+                #                                      prompt="What color markers should we render?\n\n"
+                #                                             "These are the marker colors on the current timeline:\n"
+                #                                             + ", ".join(current_timeline_marker_colors))
+
+
+                # create a list of widgets for the input dialogue
+                input_widgets = [
+                    {'name': 'starts_with', 'label': 'Starts With:', 'type': 'entry', 'default_value': ''},
+                    {'name': 'color', 'label': 'Color:', 'type': 'option_menu', 'default_value': 'Blue',
+                     'options': current_timeline_marker_colors}
+                ]
+
+                # then we call the ask_dialogue function
+                user_input = self.toolkit_UI_obj.AskDialog(title='Markers to Render',
+                                                           input_widgets=input_widgets,
+                                                           parent=self.toolkit_UI_obj.root
+                                                           ).value()
+
+                # if the user didn't cancel the operation
+                if user_input:
+                    starts_with = user_input['starts_with'] if user_input['starts_with'] else None
+                    marker_color = user_input['color'] if user_input['color'] != ' ' else None
+
             else:
                 no_markers_alert = 'The timeline doesn\'t contain any markers'
                 logger.warning(no_markers_alert)
                 return False
 
-            if not marker_color:
-                logger.debug("User canceled Resolve render operation by not selecting a marker color")
+            if not marker_color and not starts_with:
+                logger.debug("User canceled Resolve render operation by mentioning which markers.")
                 return False
 
-            if marker_color not in current_timeline_marker_colors:
+            if marker_color and marker_color not in current_timeline_marker_colors:
                 toolkit_UI_obj.notify_via_messagebox(title='Unavailable marker color',
                                                      message='The marker color you\'ve entered doesn\'t exist on the timeline.',
                                                      message_log="Aborting. User entered a marker color that doesn't exist on the timeline.",
@@ -9847,7 +10255,8 @@ class ToolkitOps:
                 render = False
                 render_preset = False
 
-            self.resolve_api.render_markers(marker_color, render_target_dir, False, stills, render, render_preset)
+            self.resolve_api.render_markers(marker_color, render_target_dir, False, stills, render, render_preset,
+                                            starts_with=starts_with)
 
         return False
 
