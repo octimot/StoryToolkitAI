@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
-## [0.17.12]
+## [0.17.12] - 2023-02-21
 
 ### Added
 
