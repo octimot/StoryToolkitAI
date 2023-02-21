@@ -4,6 +4,7 @@ import time
 import json
 import sys
 import subprocess
+from requests import get
 
 import hashlib
 import codecs
@@ -277,7 +278,6 @@ class toolkit_UI:
             # if we're on Linux, open the user data dir in the file manager
             elif platform.system() == 'Linux':
                 subprocess.call(['xdg-open', self.stAI.user_data_path])
-
 
         def open_project_page(self):
             webbrowser.open_new("http://storytoolkit.ai")
@@ -2597,7 +2597,8 @@ class toolkit_UI:
                                           **self.toolkit_UI_obj.form_paddings}
 
                 label_settings = self.toolkit_UI_obj.label_settings
-                del label_settings['width']
+                if 'width' in label_settings:
+                    del label_settings['width']
 
                 entry_settings = self.toolkit_UI_obj.entry_settings
                 entry_settings_quarter = self.toolkit_UI_obj.entry_settings_quarter
@@ -2662,6 +2663,10 @@ class toolkit_UI:
                 transcripts_always_on_top_var\
                     = tk.BooleanVar(pref_form_frame,
                                     value=self.stAI.get_app_setting('transcripts_always_on_top', default_if_none=False))
+
+                transcripts_skip_settings_var\
+                    = tk.BooleanVar(pref_form_frame,
+                                    value=self.stAI.get_app_setting('transcripts_skip_settings', default_if_none=False))
 
                 #ffmpeg_path_var\
                 #    = tk.StringVar(pref_form_frame,
@@ -2747,6 +2752,11 @@ class toolkit_UI:
                 transcripts_always_on_top_input = tk.Checkbutton(pref_form_frame, variable=transcripts_always_on_top_var)
                 transcripts_always_on_top_input.grid(row=14, column=1, **form_grid_and_paddings)
 
+                # transcripts always on top
+                tk.Label(pref_form_frame, text='Skip Transcription Settings', **label_settings).grid(row=15, column=0, **form_grid_and_paddings)
+                transcripts_skip_settings_input = tk.Checkbutton(pref_form_frame, variable=transcripts_skip_settings_var)
+                transcripts_skip_settings_input.grid(row=15, column=1, **form_grid_and_paddings)
+
                 # ffmpeg path
                 #tk.Label(pref_form_frame, text='FFmpeg Path', **label_settings).grid(row=14, column=0, **form_grid_and_paddings)
                 #ffmpeg_path_input = tk.Entry(pref_form_frame, textvariable=ffmpeg_path_var, **entry_settings)
@@ -2768,6 +2778,7 @@ class toolkit_UI:
                      'transcription_render_preset': transcription_render_preset_var,
                      'transcript_font_size': transcript_font_size_var,
                      'transcripts_always_on_top': transcripts_always_on_top_var,
+                     'transcripts_skip_settings': transcripts_skip_settings_var,
                      # 'ffmpeg_path': ffmpeg_path_var
                 }
 
@@ -2905,40 +2916,6 @@ class toolkit_UI:
         # initialize transcript edit object
         self.t_edit_obj = self.TranscriptEdit(toolkit_UI_obj=self)
 
-        # show the update available message if any
-        if 'update_available' in other_options and other_options['update_available'] is not None:
-
-            # the url to the releases page
-            release_url = 'https://github.com/octimot/StoryToolkitAI/releases/latest'
-
-            goto_projectpage = False
-
-            # if there is a new version available
-            # the user will see a different update message
-            # depending if they're using the standalone version or not
-            if standalone:
-                warn_message = 'A new standalone version of StoryToolkitAI is available.'
-
-                # add the question to the pop up message box
-                messagebox_message = warn_message+' \n\nDo you want to open the release page?\n'
-
-                # notify the user and ask whether to open the release website or not
-                goto_projectpage = messagebox.askyesno(title="Update available",
-                                                      message=messagebox_message)
-            else:
-                warn_message = 'A new version of StoryToolkitAI is available.\n\n' \
-                               'Use git pull to update.\n '
-
-                messagebox.showinfo(title="Update available",
-                                    message=warn_message)
-
-            # notify the user via console
-            logger.warning(warn_message)
-
-            # open the browser and go to the release_url
-            if goto_projectpage:
-                webbrowser.open(release_url)
-
         # alert the user if ffmpeg isn't installed
         if 'ffmpeg_status' in other_options and not other_options['ffmpeg_status']:
 
@@ -2977,6 +2954,13 @@ class toolkit_UI:
         # to keep track of what is being searched on each window
         self.find_strings = {}
 
+        # this holds a prompt history for the windows that support it
+        # the format is {window_id: [prompt1, prompt2, prompt3, etc.]}
+        self.window_prompts = {}
+
+        # this holds the index of the current prompt in the prompt history
+        self.window_prompts_index = {}
+
         # currently focused window
         self.current_focused_window = None
 
@@ -3001,7 +2985,7 @@ class toolkit_UI:
         if sys.platform == "darwin":
             font_size_ratio = 1.30
         else:
-            font_size_ratio = 1
+            font_size_ratio = 0.9
 
         # we're calculating the size based on the screen size
         screen_width, screen_height = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
@@ -3040,6 +3024,8 @@ class toolkit_UI:
         default_font_size = 13
         default_font_size_after_ratio = int(default_font_size * font_size_ratio)
 
+        self.default_font_size_after_ratio = default_font_size_after_ratio
+
         # set the platform independent default font
         self.default_font = tk.font.Font(font=font.nametofont(name='TkDefaultFont'))
         self.default_font.configure(size=default_font_size_after_ratio)
@@ -3051,6 +3037,14 @@ class toolkit_UI:
         # set the platform independent default font for headings
         self.default_font_h1 = font.nametofont(name='TkHeadingFont')
         self.default_font_h1.configure(size=int(default_font_size_after_ratio+3))
+
+        # set the platform independent default font for headings
+        self.default_font_h2 = font.nametofont(name='TkHeadingFont')
+        self.default_font_h2.configure(size=int(default_font_size_after_ratio+2))
+
+        # set the platform independent default font for headings
+        self.default_font_h3 = font.nametofont(name='TkHeadingFont')
+        self.default_font_h3.configure(size=int(default_font_size_after_ratio+1))
 
         # define the pixel size for buttons
         pixel = tk.PhotoImage(width=1, height=1)
@@ -3088,6 +3082,11 @@ class toolkit_UI:
             'red': '#E64B3D'
         }
 
+        # other colors
+        self.theme_colors = {
+            'blue': '#1E90FF',
+        }
+
         # CMD or CTRL?
         # use CMD for Mac
         if platform.system() == 'Darwin':
@@ -3100,6 +3099,121 @@ class toolkit_UI:
 
         # use this variable to remember if the user said it's ok that resolve is not available to continue a process
         self.no_resolve_ok = False
+
+        # show the update available message if any
+        if 'update_available' in other_options and other_options['update_available'] is not None:
+
+            # the url to the releases page
+            release_url = 'https://github.com/octimot/StoryToolkitAI/releases/latest'
+
+            goto_projectpage = False
+
+            update_window_id = 'update_available'
+
+            # if there is a new version available
+            # the user will see a different update message
+            # depending if they're using the standalone version or not
+            if standalone:
+                warn_message = 'A new standalone version of StoryToolkitAI is available.'
+
+                # add the question to the pop up message box
+                messagebox_message = warn_message + ' \n\nDo you want to open the release page?\n'
+
+                changelog_instructions = 'Open the [release page]({}) to download it.\n\n'.format(release_url)
+
+                # prepare some action buttons for the text window
+                action_buttons = [{'text': 'Open release page', 'command': lambda: webbrowser.open(release_url)},
+                                  {'text': 'Later', 'command': lambda: self.destroy_text_window(update_window_id),
+                                   'side': tk.LEFT, 'anchor': 'e'}]
+
+            # for the non-standalone version
+            else:
+                warn_message = 'A new version of StoryToolkitAI is available.\n\n' \
+                               'Use git pull to update.\n '
+
+                changelog_instructions = 'Maybe update now before getting back to work?\n' + \
+                                         'Quit the tool and use `git pull` to update.\n\n' \
+
+                # prepare some action buttons for the text window
+                action_buttons = [{'text': 'Quit to update', 'command': lambda: sys.exit()},
+                                  {'text': 'Later', 'command': lambda: self.destroy_text_window(update_window_id),
+                                   'side': tk.LEFT, 'anchor': 'e'}]
+
+            # read the CHANGELOG.md file from github
+            changelog_file = get('https://raw.githubusercontent.com/octimot/StoryToolkitAI/master/CHANGELOG.md')
+
+            # if the request was successful
+            if changelog_file.status_code == 200:
+
+                # get the changelog text
+                changelog_text = changelog_file.text
+                changelog_new_versions = '# A new update is waiting!\n' + \
+                                         changelog_instructions + \
+                                         '# What\'s new?\n'
+
+                # split the changelog into versions
+                # the changelog is in a markdown format
+                changelog_versions = dict()
+                for version_full in changelog_text.split('\n## '):
+
+                    # split the version into the version string and the text
+                    version_str, text = version_full.split('\n', 1)
+
+                    version_no_and_date = version_str.split('] - ')
+
+                    if len(version_no_and_date) == 2:
+                        version_no = version_no_and_date[0].strip('[')
+                        version_date = version_no_and_date[1].strip()
+
+                        # add the version to the dictionary
+                        changelog_versions[version_no] = {'date': version_date, 'text': text.strip()}
+
+                # get the current installed version
+                current_version = self.stAI.version
+
+                # show the changelog for all versions newer than the current installed version
+                for version_no, version_info in changelog_versions.items():
+
+                    version_date = version_info['date']
+                    text = version_info['text']
+
+                    # remove any double newlines from the text
+                    text = text.replace('\n\n', '\n')
+
+                    # if we reached the current version, stop
+                    if version_no == current_version:
+                        break
+
+                    changelog_new_versions += f'\n## {version_no}\n\n{text}\n'
+
+                # open the CHANGELOG.md file from github in a text window
+                update_window_id = self.open_text_window(title='New Update',
+                                                  window_id=update_window_id,
+                                                  initial_text=changelog_new_versions,
+                                                  action_buttons=action_buttons)
+
+                # format the text
+                self.text_window_format_md(update_window_id)
+
+            # if the changelog file is not available
+            # show a simple message popup
+            else:
+
+                if standalone:
+                    # notify the user and ask whether to open the release website or not
+                    goto_projectpage = messagebox.askyesno(title="Update available",
+                                                           message=messagebox_message)
+
+                else:
+                    messagebox.showinfo(title="Update available",
+                                        message=warn_message)
+
+            # notify the user via console
+            logger.warning(warn_message)
+
+            # open the browser and go to the release_url
+            if goto_projectpage:
+                webbrowser.open(release_url)
 
     class main_window:
         pass
@@ -3192,7 +3306,7 @@ class toolkit_UI:
         # change the focused window variable
         self.current_focused_window = window_id
 
-        logger.debug("Window focused: " + window_id)
+        # logger.debug("Window focused: " + window_id)
 
     def hide_main_window_frame(self, frame_name):
         '''
@@ -3440,6 +3554,71 @@ class toolkit_UI:
         # on which line is the cursor?
         cursor_pos = self.text_windows[window_id]['text_widget'].index('insert')
 
+        # up/down for prompt history
+        # the prompt history is saved in self.window_prompts[window_id]
+        # when searching through the prompt history, we use self.window_prompts_index[window_id]
+        # to keep track which prompt we are on
+        if event.keysym in ['Up', 'Down']:
+
+            # first move the cursor to the end of the last line
+            self.text_windows[window_id]['text_widget'].mark_set('insert', 'end-1c')
+
+            # also scroll to the end of the last line
+            self.text_windows[window_id]['text_widget'].see('end-1c')
+
+            # if the prompt history is empty, do nothing
+            if len(self.window_prompts[window_id]) == 0:
+                return 'break'
+
+            if window_id not in self.window_prompts_index:
+                self.window_prompts_index[window_id] = -1
+
+            # if the prompt history is not empty
+            else:
+                # if the key is up
+                if event.keysym == 'Down':
+                    # if the prompt history index is not at the end of the list
+                    if self.window_prompts_index[window_id] < len(self.window_prompts[window_id]) - 1:
+                        # increase the prompt history index
+                        self.window_prompts_index[window_id] += 1
+                    else:
+                        # if the prompt history index is at the end of the list
+                        # set the prompt history index to -1
+                        # this means that the prompt history index is not on any prompt
+                        self.window_prompts_index[window_id] = -1
+
+                # if the key is down
+                elif event.keysym == 'Up':
+                    # if the prompt history index is not at the beginning of the list
+                    if self.window_prompts_index[window_id] == -1:
+                        # set the prompt history index to the last index in the list
+                        self.window_prompts_index[window_id] = len(self.window_prompts[window_id]) - 1
+
+                    else:
+                        # decrease the prompt history index
+                        self.window_prompts_index[window_id] -= 1
+
+                # if the prompt history index is -1
+                if self.window_prompts_index[window_id] == -1:
+                    # set the prompt to an empty string
+                    prompt = ''
+
+                # if the prompt history index is not -1
+                else:
+                    # get the prompt from the prompt history
+                    prompt = self.window_prompts[window_id][self.window_prompts_index[window_id]]
+
+                # first, clear the last line
+                self.text_windows[window_id]['text_widget'].delete('end-1c linestart', 'end-1c lineend')
+
+                # set the prompt in the text widget
+                # but also add the prompt prefix if there is one
+                self.text_windows[window_id]['text_widget']\
+                    .insert('end-1c', self.text_windows[window_id]['prompt_prefix']+prompt)
+
+            return 'break'
+
+
         # if the cursor is not past the last line, only allow arrow keys
         if int(cursor_pos.split('.')[0]) < int(lines.split('.')[0]):
 
@@ -3454,8 +3633,8 @@ class toolkit_UI:
 
                 return 'break'
 
-            # if the key is an arrow key, return 'normal'
-            elif event.keysym in ['Up', 'Down', 'Left', 'Right']:
+            # if the key is an left-right arrow key, return 'normal'
+            elif event.keysym in ['Left', 'Right']:
                 return 'normal'
 
             # if the key is not an arrow key, move the cursor to the end of the last line
@@ -3527,6 +3706,15 @@ class toolkit_UI:
 
         response = None
 
+        # first, add the prompt to the prompt history
+        if window_id not in self.window_prompts:
+            self.window_prompts[window_id] = [prompt]
+        else:
+            self.window_prompts[window_id].append(prompt)
+
+        # reset the prompt history index
+        self.window_prompts_index[window_id] = -1
+
         if kwargs.get('prompt_callback', ''):
             response = kwargs.get('prompt_callback', '')(prompt, **kwargs.get('prompt_callback_kwargs', {}))
 
@@ -3597,7 +3785,7 @@ class toolkit_UI:
     def open_text_window(self, window_id=None, title: str = 'Console', initial_text: str = None,
                          can_find: bool = False, user_prompt: bool = False, prompt_prefix: str = None,
                          prompt_callback: callable = None, prompt_callback_kwargs: dict = None,
-                         **kwargs):
+                         action_buttons: list = None, **kwargs):
         '''
         This window is to display any kind of text in a scrollable window.
         But is also capable of receiving commands from the user (optional)
@@ -3617,6 +3805,8 @@ class toolkit_UI:
         :param prompt_callback: A function to call when the user enters a prompt
         :param prompt_callback_kwargs: A dict of kwargs to pass to the prompt_callback function. We will always pass the
                                         window_id, the prompt_prefix and the prompt as kwargs
+        :param action_buttons: A list of action buttons to add to the window. Each button is a dict with the following
+                                keys: text, command
         :return:
         '''
 
@@ -3630,6 +3820,18 @@ class toolkit_UI:
         if self.create_or_open_window(parent_element=self.root, window_id=window_id, title=title, resizable=True,
                                       close_action=close_action
                                       ):
+
+            # create menu bar
+            # window_menu = tk.Menu(self.windows[window_id])
+            # self.windows[window_id].config(menu=window_menu)
+
+            # create the file menu
+            # file_menu = tk.Menu(window_menu, tearoff=0)
+            # window_menu.add_cascade(label='File ', menu=file_menu)
+
+            # add the save as option
+            # file_menu.add_command(label='Save as...', command=lambda: self.save_text_window_as(window_id=window_id))
+
 
             # create an entry in the text_windows dict
             self.text_windows[window_id] = {'text': initial_text}
@@ -3708,11 +3910,166 @@ class toolkit_UI:
             else:
                 text.config(state=tk.DISABLED)
 
+            # if action buttons are given, add them to the window
+            if action_buttons:
+
+                # create a frame for the action buttons
+                action_buttons_frame = tk.Frame(self.windows[window_id], name='action_buttons_frame')
+                action_buttons_frame.pack(side=tk.BOTTOM, fill='x', pady=5)
+
+                # add the action buttons to the frame
+                for button in action_buttons:
+
+                    # create the button
+                    action_button = tk.Button(action_buttons_frame, text=button['text'],
+                                                command=button['command'])
+
+                    # add the button to the frame
+                    action_button.pack(side=button['side'] if 'side' in button else tk.LEFT,
+                                       anchor=button['anchor'] if 'anchor' in button else tk.W,
+                                       **self.paddings)
+
+
             # add the text widget to the text_windows dict
             self.text_windows[window_id]['text_widget'] = text
 
             # add the window to the text_windows dict
             self.text_windows[window_id]['window'] = self.windows[window_id]
+
+        return window_id
+
+    def text_window_format_md(self, window_id: str, text_widget: Text = None):
+        '''
+        This function will format markdown text in a text window.
+        It will add url links and do header formatting
+        :param window_id:
+        :param text_widget:
+        :return:
+        '''
+
+        # if no text widget is given, get it from the text_windows dict
+        if not text_widget:
+            text_widget = self.text_windows[window_id]['text_widget']
+
+        # get the text from the text widget
+        text = text_widget.get('1.0', tk.END)
+
+        # change the font to default_font
+        text_widget.config(font=(self.default_font))
+
+        # if the text is empty, return
+        if not text:
+            return
+
+        # get the initial text widget state
+        initial_state = text_widget.cget('state')
+
+        # make widget writeable
+        text_widget.config(state=tk.NORMAL)
+
+        # take each line of text and format it
+        lines = text.split('\n')
+
+        # clear the text widget
+        text_widget.delete('1.0', tk.END)
+
+        for line in lines:
+
+            md = False
+
+            # FORMAT HEADERS
+            if line.strip().startswith('#'):
+
+                # get the number of # signs
+                num_hashes = len(line.split(' ')[0])
+
+                # header type
+                header_type = 'h{}'.format(num_hashes)
+
+                # get the header text
+                header_text = line.split('# ')[1]
+
+                # get current insert position
+                start_index = text_widget.index(tk.INSERT)
+
+                # replace the line with the header text
+                text_widget.insert(tk.INSERT, header_text)
+
+                # add the header tag
+                text_widget.tag_add(header_type, start_index, tk.INSERT)
+
+                md = True
+
+
+            # FORMAT URLS
+            if re.search(r'\[.*\]\(.*\)', line):
+
+                # get the url and it's url text, the format is [url text](url)
+                # but remember that they are always together but they might be between other text
+                # also there might be more than one url in the line
+                # so we need to find all the urls and their text
+                urls = re.findall(r'\[.*\]\(.*\)', line)
+
+                for url_md in urls:
+
+                    # use regex to get the url text
+                    url_text = re.findall(r'\[(.*)\]', url_md)[0]
+                    url = re.findall(r'\((.*)\)', url_md)[0]
+
+                    # get the text before the url
+                    text_before_url = line.split(url_md)[0]
+
+                    # insert the text before the url
+                    text_widget.insert(tk.INSERT, text_before_url)
+
+                    # remove the text before the url from the line
+                    line = line.replace(text_before_url, '')
+
+                    # remove the url from the line
+                    line = line.replace(url_md, '')
+
+                    # get current insert position for the url_text
+                    start_index = text_widget.index(tk.INSERT)
+
+                    text_widget.insert(tk.INSERT, url_text)
+
+                    # add the url tag
+                    text_widget.tag_add('url', start_index, tk.INSERT)
+
+                    # on click, open the url in the default browser
+                    text_widget.tag_bind('url', '<Button-1>', lambda event, url=url: webbrowser.open(url))
+
+                # finally, insert the rest of the line
+                text_widget.insert(tk.INSERT, line)
+
+                md = True
+
+            if not md:
+                text_widget.insert(tk.INSERT, line)
+
+            # add a new line
+            text_widget.insert(tk.INSERT, '\n')
+
+        # turn the text widget back to its initial state
+        text_widget.config(state=initial_state)
+
+        # set the color of the text to supernormal (almost white)
+        text_widget.config(foreground=self.resolve_theme_colors['supernormal'])
+
+        # set the headers font
+        text_widget.tag_config('h1', font=(self.default_font_h1, int(self.default_font_size_after_ratio*1.5)), foreground=self.resolve_theme_colors['white'])
+        text_widget.tag_config('h2', font=(self.default_font_h2, int(self.default_font_size_after_ratio*1.25)), foreground=self.resolve_theme_colors['white'])
+        text_widget.tag_config('h3', font=(self.default_font_h3, int(self.default_font_size_after_ratio*1.1)), foreground=self.resolve_theme_colors['white'])
+
+        # change the color of the version number
+        text_widget.tag_config('version', foreground=self.resolve_theme_colors['white'])
+
+        # change the font of the code blocks into console font
+        text_widget.tag_config('code3', font=(self.console_font), foreground=self.resolve_theme_colors['normal'])
+
+
+        # change the color of the url
+        text_widget.tag_config('url', foreground=self.theme_colors['blue'])
 
 
     def open_find_replace_window(self, window_id=None, title: str = 'Find and Replace',
@@ -4231,7 +4588,7 @@ class toolkit_UI:
     def open_transcription_settings_window(self, title="Transcription Settings",
                                            audio_file_path=None, name=None, task=None, unique_id=None,
                                            transcription_file_path=False, time_intervals=None,
-                                           excluded_time_intervals=None):
+                                           excluded_time_intervals=None, **kwargs):
 
         if self.toolkit_ops_obj is None or audio_file_path is None or unique_id is None:
             logger.error('Aborting. Unable to open transcription settings window.')
@@ -4404,6 +4761,22 @@ class toolkit_UI:
                                             transcription_file_path=transcription_file_path_var.get()
                                             )
                                 )
+
+            # if skip settings was passed, just start the transcription
+            if kwargs.get('skip_settings', False):
+                self.start_transcription_button(ts_window_id,
+                                                audio_file_path=audio_file_path,
+                                                unique_id=unique_id,
+                                                language=language_var.get(),
+                                                task=task_var.get(),
+                                                name=name_var.get(),
+                                                model=model_var.get(),
+                                                device=device_var.get(),
+                                                initial_prompt=prompt_input.get(1.0, END),
+                                                time_intervals=time_intervals_input.get(1.0, END),
+                                                excluded_time_intervals=excluded_time_intervals_input.get(1.0, END),
+                                                transcription_file_path=transcription_file_path_var.get()
+                                                )
 
     def convert_text_to_time_intervals(self, text):
         time_intervals = []
@@ -5322,14 +5695,25 @@ class toolkit_UI:
 
     def update_transcription_log_window(self):
 
+        # don't do anything if the transcription log window doesn't exist
+        if 't_log' not in self.windows:
+            logger.debug('No transcription log window exists.')
+            return
+
+        # first destroy anything that the window might have held
+        list = self.windows['t_log'].winfo_children()
+        for l in list:
+            l.destroy()
+
+        # if there is no transcription log
+        if not self.toolkit_ops_obj.transcription_log:
+            # just add a label to the window
+            tk.Label(self.windows['t_log'], text='Transcription log empty.', **self.paddings).pack()
+
+
         # only do this if the transcription window exists
         # and if the log exists
-        if self.toolkit_ops_obj.transcription_log and 't_log' in self.windows:
-
-            # first destroy anything that the window might have held
-            list = self.windows['t_log'].winfo_children()
-            for l in list:
-                l.destroy()
+        elif self.toolkit_ops_obj.transcription_log:
 
             # create a canvas to hold all the log items in the window
             log_canvas = tk.Canvas(self.windows['t_log'], borderwidth=0)
@@ -5595,10 +5979,45 @@ class toolkit_UI:
                          'If you want to restrict the number of results, just add [n] to the beginning of the query.\n' \
                          'For eg.: [10] about life events\n\n' \
                          'If you want to perform multiple searches in the same time, use the | character to split the search terms\n' \
-                         'For eg.: about life events | about family' \
+                         'For eg.: about life events | about family\n\n' \
+                         'If you want to change the model, use [model:<model_name>]\n' \
+                         'For eg.: [model:distiluse-base-multilingual-cased-v1] about life events\n\n' \
+                         'See list of models here: https://www.sbert.net/docs/pretrained_models.html\n'
+
 
             # use this to make sure we have a new prompt prefix for the next search
             self._text_window_update(search_window_id, help_reply)
+            return
+
+        # if the user sent either [model] or [model:<model_name>] as the prompt
+        elif prompt.lower().startswith('[model') and prompt.lower().endswith(']'):
+
+            # if the model contains a colon, it means that the user wants to load a new model
+            if prompt.lower() != '[model]' and ':' in prompt.lower():
+
+                # if a model was passed (eg.: [model:en_core_web_sm]), load it
+                # using regex to extract the model name
+                model_name = re.search(r'\[model:(.*?)\]', prompt.lower()).group(1)
+
+                if model_name.strip() != '':
+
+                    # let the user know that we are loading the model
+                    self._text_window_update(search_window_id, 'Loading model {}...'.format(model_name))
+
+                    # load the model
+                    try:
+                        search_item.load_model(model_name=model_name)
+                    except:
+                        self._text_window_update(search_window_id, 'Could not load model {}.'.format(model_name))
+                        return
+
+            if search_item.model_name:
+                self._text_window_update(search_window_id, 'Using model {}'.format(search_item.model_name))
+            else:
+                self._text_window_update(search_window_id, 'No model loaded.\n'
+                                                           'Perform a search first to load the default model.\n'
+                                                           'Or load a model with the [model:<model_name>] command and it will be used '
+                                                           'for all the searches in this window.')
             return
 
         # is the user trying to quit?
@@ -6680,6 +7099,7 @@ class ToolkitOps:
                                         default_if_none='all-MiniLM-L6-v2')
 
         # for now define an empty model here which should be loaded the first time it's needed
+        # it's very likely that the model will not be loaded here, but in the SearchItem, for each search
         self.s_semantic_search_model = None
 
         # init Resolve (if resolve API isn't disabled via config or parameter)
@@ -6702,10 +7122,6 @@ class ToolkitOps:
         # resume the transcription queue if there's anything in it
         if self.resume_transcription_queue_from_file():
             logger.info('Resuming transcription queue from file')
-
-        # toolkit_UI_obj.create_transcription_settings_window()
-        # time.sleep(120)
-        # return
 
     class ToolkitSearch:
         '''
@@ -6765,6 +7181,10 @@ class ToolkitOps:
             self.search_corpus = kwargs.get('search_corpus', None)
             self.search_corpus_assoc = kwargs.get('search_corpus_assoc', None)
             self.search_results = kwargs.get('search_results', None)
+
+            # we're using self.toolkit_ops_obj.s_semantic_search_model_name as default for now
+            self.model_name = kwargs.get('model_name', self.toolkit_ops_obj.s_semantic_search_model_name)
+            self.search_model = None
 
             self.max_results = kwargs.get('max_results', 10)
 
@@ -6890,7 +7310,7 @@ class ToolkitOps:
             search_corpus_assoc = {}
 
             # and if the hasn't already been created, just create it
-            if search_id not in self.toolkit_ops_obj.t_search_obj.search_corpuses:
+            if not self.search_corpus:
 
                 logger.debug('Reading search corpus from files.')
 
@@ -6993,7 +7413,7 @@ class ToolkitOps:
                             continue
 
                         # first read the file
-                        with open(s_file_path, 'r') as f:
+                        with open(s_file_path, 'r', encoding='utf-8') as f:
                             file_text = f.read()
 
                         # split the text into phrases using punctuation or double new lines as dividers
@@ -7024,7 +7444,7 @@ class ToolkitOps:
                     elif s_file_path.endswith('project.json'):
 
                         # read it as a json file
-                        with open(s_file_path, 'r') as f:
+                        with open(s_file_path, 'r', encoding='utf-8') as f:
                             project_file_data = json.load(f)
 
                         # first check if it contains the project name
@@ -7281,6 +7701,63 @@ class ToolkitOps:
 
             return query, search_type, max_results
 
+        def load_model(self, model_name):
+            '''
+            Loads the model specified by the user, but also clears the search corpus embeddings
+            for the current search item
+            :param model_name:
+            :return:
+            '''
+
+            # if the model name is different from the current model name,
+            # clear the search corpus embeddings
+            if model_name != self.model_name:
+
+                # clear the search model
+                self.search_model = None
+
+                # clear the search corpus embeddings
+                if self.search_id is not None and  self.search_id in self.search_embeddings:
+                    del self.search_embeddings[self.search_id]
+
+                # assign the new model name
+                self.model_name = model_name
+
+            # load the sentence transformer model if it hasn't been loaded yet
+            if self.search_model is None:
+                logger.info(
+                    'Loading sentence transformer model {}.'.format(self.model_name))
+
+                # if the sentence transformer model was never downloaded, log that we're downloading it
+                model_downloaded_before = True
+                if self.stAI.get_app_setting(setting_name='s_semantic_search_model_downloaded_{}'
+                        .format(self.model_name), default_if_none=False) is False:
+                    logger.warning('The sentence transformer model {} may need to be downloaded and could take a while '
+                                   'depending on the Internet connection speed. '
+                                   .format(self.model_name)
+                                   )
+                    model_downloaded_before = False
+
+                self.search_model \
+                    = SentenceTransformer(self.model_name)
+
+                # once the model has been loaded, we can note that in the app settings
+                # this is a wat to keep track if the model has been downloaded or not
+                # but it's not 100% reliable and we may need to find a better way to do this in the future
+                if not model_downloaded_before:
+                    self.stAI.save_config(setting_name='s_semantic_search_model_downloaded_{}'
+                                          .format(self.model_name),
+                                          setting_value=True)
+
+                return self.search_model
+
+            # if the model name is the same as the current model name,
+            # then we don't need to load the model again
+            else:
+                return self.search_model
+
+            return None
+
         def search(self, query: str):
             '''
             Searches the corpus for the query using the search type passed by the user
@@ -7367,36 +7844,12 @@ class ToolkitOps:
             if start_search_time is not None:
                 logger.debug('Time: ' + str(time.time() - start_search_time))
 
-            # load the sentence transformer model if it hasn't been loaded yet
-            if self.toolkit_ops_obj.s_semantic_search_model is None:
-                logger.info(
-                    'Loading sentence transformer model {}.'.format(self.toolkit_ops_obj.s_semantic_search_model_name))
-
-                # if the sentence transformer model was never downloaded, log that we're downloading it
-                model_downloaded_before = True
-                if self.stAI.get_app_setting(setting_name='s_semantic_search_model_downloaded_{}'
-                        .format(self.toolkit_ops_obj.s_semantic_search_model_name),
-                                             default_if_none=False
-                                             ) is False:
-                    logger.warning('The sentence transformer model {} may need to be downloaded and could take a while '
-                                   'depending on the Internet connection speed. '
-                                   .format(self.toolkit_ops_obj.s_semantic_search_model_name)
-                                   )
-                    model_downloaded_before = False
-
-                self.toolkit_ops_obj.s_semantic_search_model \
-                    = SentenceTransformer(self.toolkit_ops_obj.s_semantic_search_model_name)
-
-                # once the model has been loaded, we can note that in the app settings
-                # this is a wat to keep track if the model has been downloaded or not
-                # but it's not 100% reliable and we may need to find a better way to do this in the future
-                if not model_downloaded_before:
-                    self.stAI.save_config(setting_name='s_semantic_search_model_downloaded_{}'
-                                          .format(self.toolkit_ops_obj.s_semantic_search_model_name),
-                                          setting_value=True)
-
             # define the model into this variable for easier access
-            embedder = self.toolkit_ops_obj.s_semantic_search_model
+            embedder = self.load_model(model_name=self.model_name)
+
+            if embedder is None:
+                logger.warning('Search model not loaded.')
+                return [], 0
 
             if start_search_time is not None:
                 logger.debug('Time: ' + str(time.time() - start_search_time))
@@ -7405,7 +7858,7 @@ class ToolkitOps:
             if search_id is None or search_id not in self.search_embeddings:
 
                 # encode the search corpus
-                corpus_embeddings = embedder.encode(search_corpus_phrases, convert_to_tensor=True)
+                corpus_embeddings = embedder.encode(search_corpus_phrases, convert_to_tensor=True, show_progress_bar=True)
 
                 # save the embeddings in the cache
                 self.search_embeddings[search_id] = corpus_embeddings
@@ -7440,7 +7893,7 @@ class ToolkitOps:
                 # remove whitespaces from the query
                 query = query.strip()
 
-                query_embedding = embedder.encode(query, convert_to_tensor=True)
+                query_embedding = embedder.encode(query, convert_to_tensor=True, show_progress_bar=True)
 
                 logger.debug('Encoded the query.')
 
@@ -7462,81 +7915,99 @@ class ToolkitOps:
 
                     if str(search_corpus_phrases[idx]) != '':
 
-                        # sometimes the search corpus phrases are not in the search corpus assoc
-                        # which should not happen - it's most probably because of a text formatting issue
-                        # so we can't associate it with a source file, but we're still going to output it as a result
-                        if int(idx) not in search_corpus_assoc:
-
-                            logger.debug('Cannot find phrase with idx {} in search corpus assoc.'.format(int(idx)))
-
-                            # just add the phrase to the search results
-                            # but keep in mind that it's not associated with a source file!
-                            search_results.append({
-                                'search_term': query,
-                                'file_path': '',
-                                'idx': int(idx),
-                                'score': score,
-                                'text': search_corpus_phrases[idx],
-                                'type': 'Unknown'
-                            })
-
-                            continue
-
-                        # in case the source file was a transcription
-                        if search_corpus_assoc[int(idx)]['type'] == 'transcription':
-                            transcription_file_path = search_corpus_assoc[int(idx)]['transcription_file_path']
-                            segment_index = search_corpus_assoc[int(idx)]['segment_index']
-                            transcript_time = search_corpus_assoc[int(idx)]['start']
-                            line_no = int(segment_index) + 1
-                            all_lines = search_corpus_assoc[int(idx)]['all_lines']
-                            type = search_corpus_assoc[int(idx)]['type']
-
-                            # compile the results into the search results dict
-                            search_results.append({
-                                'search_term': query,
-                                'transcription_file_path': transcription_file_path,
-                                'idx': int(idx),
-                                'segment_index': segment_index,
-                                'line_no': line_no,
-                                'all_lines': all_lines,
-                                'transcript_time': transcript_time,
-                                'score': score,
-                                'text': search_corpus_phrases[idx],
-                                'type': type
-                            })
-
-                        elif search_corpus_assoc[int(idx)]['type'] == 'marker':
-                            search_results.append({
-                                'search_term': query,
-                                'file_path': search_corpus_assoc[int(idx)]['file_path'],
-                                'idx': int(idx),
-                                'score': score,
-                                'text': search_corpus_phrases[idx],
-                                'type': search_corpus_assoc[int(idx)]['type'],
-                                'marker_index': search_corpus_assoc[int(idx)]['marker_index'],
-                                'timeline': search_corpus_assoc[int(idx)]['timeline'],
-                                'project': search_corpus_assoc[int(idx)]['project']
-                            })
-
-                        else:
-                            # in case the source file was a text file
-                            file_path = search_corpus_assoc[int(idx)]['file_path']
-                            type = search_corpus_assoc[int(idx)]['type']
-
-                            # compile the results into the search results dict
-                            search_results.append({
-                                'search_term': query,
-                                'file_path': file_path,
-                                'idx': int(idx),
-                                'score': score,
-                                'text': search_corpus_phrases[idx],
-                                'type': type
-                            })
+                        self.add_search_result(search_results=search_results,
+                                               query=query,
+                                               search_corpus_phrases=search_corpus_phrases,
+                                               search_corpus_assoc=search_corpus_assoc,
+                                               idx=idx,
+                                               score=score
+                                               )
 
             self.search_results = search_results
             self.top_k = top_k
 
             return search_results, top_k
+
+        def add_search_result(self, search_results, query, search_corpus_phrases, search_corpus_assoc, idx, score):
+            '''
+            This function adds a search result to the search results list.
+            :param search_results:
+            :param query:
+            :param search_corpus_assoc:
+            :param idx:
+            :param score:
+            :return:
+            '''
+
+            # sometimes the search corpus phrases are not in the search corpus assoc
+            # which should not happen - it's most probably because of a text formatting issue
+            # so we can't associate it with a source file, but we're still going to output it as a result
+            if int(idx) not in search_corpus_assoc:
+                logger.debug('Cannot find phrase with idx {} in search corpus assoc.'.format(int(idx)))
+
+                # just add the phrase to the search results
+                # but keep in mind that it's not associated with a source file!
+                search_results.append({
+                    'search_term': query,
+                    'file_path': '',
+                    'idx': int(idx),
+                    'score': score,
+                    'text': search_corpus_phrases[idx],
+                    'type': 'Unknown'
+                })
+
+            # in case the source file was a transcription
+            elif search_corpus_assoc[int(idx)]['type'] == 'transcription':
+                transcription_file_path = search_corpus_assoc[int(idx)]['transcription_file_path']
+                segment_index = search_corpus_assoc[int(idx)]['segment_index']
+                transcript_time = search_corpus_assoc[int(idx)]['start']
+                line_no = int(segment_index) + 1
+                all_lines = search_corpus_assoc[int(idx)]['all_lines']
+                type = search_corpus_assoc[int(idx)]['type']
+
+                # compile the results into the search results dict
+                search_results.append({
+                    'search_term': query,
+                    'transcription_file_path': transcription_file_path,
+                    'idx': int(idx),
+                    'segment_index': segment_index,
+                    'line_no': line_no,
+                    'all_lines': all_lines,
+                    'transcript_time': transcript_time,
+                    'score': score,
+                    'text': search_corpus_phrases[idx],
+                    'type': type
+                })
+
+            elif search_corpus_assoc[int(idx)]['type'] == 'marker':
+                search_results.append({
+                    'search_term': query,
+                    'file_path': search_corpus_assoc[int(idx)]['file_path'],
+                    'idx': int(idx),
+                    'score': score,
+                    'text': search_corpus_phrases[idx],
+                    'type': search_corpus_assoc[int(idx)]['type'],
+                    'marker_index': search_corpus_assoc[int(idx)]['marker_index'],
+                    'timeline': search_corpus_assoc[int(idx)]['timeline'],
+                    'project': search_corpus_assoc[int(idx)]['project']
+                })
+
+            else:
+                # in case the source file was a text file
+                file_path = search_corpus_assoc[int(idx)]['file_path']
+                type = search_corpus_assoc[int(idx)]['type']
+
+                # compile the results into the search results dict
+                search_results.append({
+                    'search_term': query,
+                    'file_path': file_path,
+                    'idx': int(idx),
+                    'score': score,
+                    'text': search_corpus_phrases[idx],
+                    'type': type
+                })
+
+            return True
 
         def save_search_embeddings(self, embeddings, embedding_type, source_associations, file_path=None):
             '''
@@ -8034,7 +8505,7 @@ class ToolkitOps:
         return self.whisper_device
 
     def prepare_transcription_file(self, toolkit_UI_obj=None, task=None, unique_id=None,
-                                   retranscribe=False, time_intervals=None, select_files=False):
+                                   retranscribe=False, time_intervals=None, select_files=False, **kwargs):
         '''
         This asks the user where to save the transcribed files,
          it chooses between transcribing an existing timeline (and first starting the render process)
@@ -8173,11 +8644,15 @@ class ToolkitOps:
                 logger.error("Timeline render failed.")
                 return False
 
+            # don't show the settings window and simply use the default settings (selected from Preferences window)
+            if self.stAI.get_app_setting('transcripts_skip_settings', default_if_none=False):
+                kwargs['skip_settings'] = True
+
             # now open up the transcription settings window
             for rendered_file in rendered_files:
                 self.start_transcription_config(audio_file_path=rendered_file,
                                                 name=currentTimelineName,
-                                                task=task, unique_id=unique_id)
+                                                task=task, unique_id=unique_id, **kwargs)
 
         # if resolve is not available or select_files is True, ask the user to select an audio file
         else:
@@ -8186,6 +8661,10 @@ class ToolkitOps:
             if select_files or toolkit_UI_obj.no_resolve_ok \
                     or messagebox.askyesno(message='A Resolve Timeline is not available.\n\n'
                                                     'Do you want to transcribe existing audio files instead?'):
+
+                # don't show the settings window and simply use the default settings (selected from Preferences window)
+                if self.stAI.get_app_setting('transcripts_skip_settings', default_if_none=False):
+                    kwargs['skip_settings'] = True
 
                 # remember that the user said it's ok to continue without resolve
                 toolkit_UI_obj.no_resolve_ok = True
@@ -8207,7 +8686,7 @@ class ToolkitOps:
                         # now open up the transcription settings window
                         self.start_transcription_config(audio_file_path=target_file,
                                                         name=file_name,
-                                                        task=task, unique_id=unique_id)
+                                                        task=task, unique_id=unique_id, **kwargs)
 
                     return True
 
@@ -8221,7 +8700,7 @@ class ToolkitOps:
 
     def start_transcription_config(self, audio_file_path=None, name=None, task=None,
                                    unique_id=None, transcription_file_path=False,
-                                   time_intervals=None, excluded_time_intervals=None):
+                                   time_intervals=None, excluded_time_intervals=None, **kwargs):
         '''
         Opens up a window to allow the user to configure and start the transcription process for each file
         :return:
@@ -8247,7 +8726,8 @@ class ToolkitOps:
                                                                       unique_id=unique_id,
                                                                       transcription_file_path=transcription_file_path,
                                                                       time_intervals=time_intervals,
-                                                                      excluded_time_intervals=excluded_time_intervals
+                                                                      excluded_time_intervals=excluded_time_intervals,
+                                                                        **kwargs
                                                                       )
 
     def add_to_transcription_log(self, unique_id=None, **attribute):
@@ -10650,7 +11130,7 @@ class StoryToolkitAI:
         # if the setting key, or any of the stuff above wasn't found
         return None
 
-    def check_update(self, release=False):
+    def check_update(self, standalone=False):
         '''
         This checks if there's a new version of the app on GitHub and returns True if it is and the version number
 
@@ -10658,10 +11138,8 @@ class StoryToolkitAI:
         :return: [bool, str online_version]
         '''
 
-        from requests import get
-
         # get the latest release from GitHub if release is True
-        if release:
+        if standalone:
 
             try:
                 # get the latest release from GitHub
@@ -10711,7 +11189,6 @@ class StoryToolkitAI:
 
             # return False - no update available and the local version number instead of what's online
             return False, self.__version__
-
 
         # take each number in the version string and compare it with the local numbers
         for n in range(len(online_version)):
@@ -10940,7 +11417,7 @@ if __name__ == '__main__':
     # check if a new version of the app exists on GitHub
     # but use either the release version number or version.py,
     # depending on standalone is True or False
-    [update_exists, online_version] = stAI.check_update(release=standalone)
+    [update_exists, online_version] = stAI.check_update(standalone=standalone)
 
     # if an update exists, let the user know about it
     update_available = None

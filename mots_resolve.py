@@ -50,7 +50,6 @@ class MotsResolve:
             = self.currentTimeline \
             = None
 
-
         # keep track if the Resolve API module
         self.api_module_loaded = False
 

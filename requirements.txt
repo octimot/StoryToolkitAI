@@ -2,7 +2,7 @@ certifi==2022.9.24
 charset-normalizer==2.1.1
 ffmpeg-python==0.2.0
 filelock==3.8.0
-future==0.18.2
+future==0.18.3
 huggingface-hub>=0.10.0
 idna==3.4
 librosa>=0.9.1

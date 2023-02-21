@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.17.12]
+
+### Added
+
+- The Advanced Search now supports changing the model using the command [model:<model_name>] (prompt [help] in Advanced Search for more details)
+- The Advanced Search window now has a prompt history that can be navigated using the up and down arrow keys (only available for the current session)
+- Preferences -> Skip Transcription Settings allows the user to make the Tool skip the Transcription Settings window on new transcriptions, by using the saved Transcription settings
+- Tool Update notifications now include the CHANGE LOG for the new updates
+
+### Fixed
+
+- Transcription Log Window lets the user know when the log is empty instead of rendering and empty window
+- Updated requirements.txt to use future==0.18.3 due to a security vulnerability in the previous future version (`pip install -r requirements.txt` is needed to update)
+
+### Bugfixes
+
+- Fixed crashes due to wrong encoding when reading certain files for Advanced Search
+- Fixed re-opening of Preferences window causing a crash
+
 ## [0.17.11] - 2023-02-20
 
 ### Added
