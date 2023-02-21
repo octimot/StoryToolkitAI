@@ -5981,7 +5981,7 @@ class toolkit_UI:
                          'If you want to perform multiple searches in the same time, use the | character to split the search terms\n' \
                          'For eg.: about life events | about family\n\n' \
                          'If you want to change the model, use [model:<model_name>]\n' \
-                         'For eg.: [model:distiluse-base-multilingual-cased-v1] about life events\n\n' \
+                         'For eg.: [model:distiluse-base-multilingual-cased-v1]\n\n' \
                          'See list of models here: https://www.sbert.net/docs/pretrained_models.html\n'
 
 
