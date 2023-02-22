@@ -25,6 +25,8 @@ from whisper import tokenizer as whisper_tokenizer
 import librosa
 import soundfile
 
+import numpy as np
+
 from mots_resolve import MotsResolve
 
 import re
@@ -2651,6 +2653,10 @@ class toolkit_UI:
                                    value=self.stAI.get_app_setting('transcription_default_language',
                                                                    default_if_none=''))
 
+                transcription_pre_detect_speech_var\
+                    = tk.BooleanVar(pref_form_frame,
+                                    value=self.stAI.get_app_setting('transcription_pre_detect_speech', default_if_none=True))
+
                 transcription_render_preset_var\
                     = tk.StringVar(pref_form_frame,
                                       value=self.stAI.get_app_setting('transcription_render_preset',
@@ -2737,25 +2743,30 @@ class toolkit_UI:
                                                                      *available_languages)
                 transcription_default_language_input.grid(row=11, column=1, **form_grid_and_paddings)
 
+                # pre-detect speech
+                tk.Label(pref_form_frame, text='Pre-Detect Speech', **label_settings).grid(row=12, column=0, **form_grid_and_paddings)
+                transcription_pre_detect_speech_input = tk.Checkbutton(pref_form_frame, variable=transcription_pre_detect_speech_var)
+                transcription_pre_detect_speech_input.grid(row=12, column=1, **form_grid_and_paddings)
+
                 # the render preset for transcriptions
-                tk.Label(pref_form_frame, text='Render Preset', **label_settings).grid(row=12, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Render Preset', **label_settings).grid(row=13, column=0, **form_grid_and_paddings)
                 transcription_render_preset_input = tk.Entry(pref_form_frame, textvariable=transcription_render_preset_var, **entry_settings)
-                transcription_render_preset_input.grid(row=12, column=1, **form_grid_and_paddings)
+                transcription_render_preset_input.grid(row=13, column=1, **form_grid_and_paddings)
 
                 # the transcript font size
-                tk.Label(pref_form_frame, text='Transcript Font Size', **label_settings).grid(row=13, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Transcript Font Size', **label_settings).grid(row=14, column=0, **form_grid_and_paddings)
                 transcript_font_size_input = tk.Entry(pref_form_frame, textvariable=transcript_font_size_var, **entry_settings_quarter)
-                transcript_font_size_input.grid(row=13, column=1, **form_grid_and_paddings)
+                transcript_font_size_input.grid(row=14, column=1, **form_grid_and_paddings)
 
                 # transcripts always on top
-                tk.Label(pref_form_frame, text='Transcript Always On Top', **label_settings).grid(row=14, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Transcript Always On Top', **label_settings).grid(row=15, column=0, **form_grid_and_paddings)
                 transcripts_always_on_top_input = tk.Checkbutton(pref_form_frame, variable=transcripts_always_on_top_var)
-                transcripts_always_on_top_input.grid(row=14, column=1, **form_grid_and_paddings)
+                transcripts_always_on_top_input.grid(row=15, column=1, **form_grid_and_paddings)
 
                 # transcripts always on top
-                tk.Label(pref_form_frame, text='Skip Transcription Settings', **label_settings).grid(row=15, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Skip Transcription Settings', **label_settings).grid(row=16, column=0, **form_grid_and_paddings)
                 transcripts_skip_settings_input = tk.Checkbutton(pref_form_frame, variable=transcripts_skip_settings_var)
-                transcripts_skip_settings_input.grid(row=15, column=1, **form_grid_and_paddings)
+                transcripts_skip_settings_input.grid(row=16, column=1, **form_grid_and_paddings)
 
                 # ffmpeg path
                 #tk.Label(pref_form_frame, text='FFmpeg Path', **label_settings).grid(row=14, column=0, **form_grid_and_paddings)
@@ -2775,6 +2786,7 @@ class toolkit_UI:
                      'whisper_model_name': whisper_model_name_var,
                      'whisper_device': whisper_device_var,
                      'transcription_default_language': transcription_default_language_var,
+                     'transcription_pre_detect_speech': transcription_pre_detect_speech_var,
                      'transcription_render_preset': transcription_render_preset_var,
                      'transcript_font_size': transcript_font_size_var,
                      'transcripts_always_on_top': transcripts_always_on_top_var,
@@ -3148,8 +3160,9 @@ class toolkit_UI:
                 # get the changelog text
                 changelog_text = changelog_file.text
                 changelog_new_versions = '# A new update is waiting!\n' + \
-                                         changelog_instructions + \
-                                         '# What\'s new?\n'
+                                         changelog_instructions
+
+                changelog_new_versions_info = ''
 
                 # split the changelog into versions
                 # the changelog is in a markdown format
@@ -3184,7 +3197,11 @@ class toolkit_UI:
                     if version_no == current_version:
                         break
 
-                    changelog_new_versions += f'\n## {version_no}\n\n{text}\n'
+                    changelog_new_versions_info += f'\n## {version_no}\n\n{text}\n'
+
+                # add the changelog to the message
+                if changelog_new_versions_info != '':
+                    changelog_new_versions += '# What\'s new?\n'+changelog_new_versions_info
 
                 # open the CHANGELOG.md file from github in a text window
                 update_window_id = self.open_text_window(title='New Update',
@@ -3499,25 +3516,6 @@ class toolkit_UI:
         #                                      )
         #
         #self.windows['main'].button10.grid(row=3, column=2, **self.paddings)
-
-
-        # self.windows['main'].link2 = Label(self.windows['main'].footer_frame, text="made by mots", font=("Courier", 10), cursor="hand2", anchor='s')
-        # self.windows['main'].link2.grid(row=1, column=1, columnspan=1, padx=10, pady=5, sticky='s')
-        # self.windows['main'].link2.bind("<Button-1>", lambda e: webbrowser.open_new("https://mots.us"))
-
-        # self.windows['main'].link2 = Label(self.windows['main'].footer_frame, text="StoryToolkitAI home", font=("Courier", 10), cursor="hand2", anchor='s')
-        # self.windows['main'].link2.grid(row=1, column=2, columnspan=1, padx=10, pady=5, sticky='s')
-        # self.windows['main'].link2.bind("<Button-1>", lambda e: webbrowser.open_new("https://github.com/octimot/StoryToolkitAI"))
-
-        # Other Frame row 2 (disabled for now)
-        # self.windows['main'].button7 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Transcribe\nDuration Markers")
-        # self.windows['main'].button7.grid(row=4, column=1, **self.paddings)
-        # self.windows['main'].button8 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Translate\nDuration Markers to English")
-        # self.windows['main'].button8.grid(row=4, column=1, **self.paddings)
-
-        # self.windows['main'].button_test = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings, **self.button_size, text="Test",
-        #                        command=lambda: self.open_transcription_window())
-        # self.windows['main'].button_test.grid(row=5, column=2, **self.paddings)
 
         # Make the window resizable false
         self.root.resizable(False, False)
@@ -4702,34 +4700,47 @@ class toolkit_UI:
             device_input = OptionMenu(ts_form_frame, device_var, *available_devices)
             device_input.grid(row=6, column=2, **self.input_grid_settings, **self.form_paddings)
 
+            # PRE-DETECT SPEACH
+            Label(ts_form_frame, text="Pre-Detect Speech", **self.label_settings).grid(row=7, column=1,
+                                                                                        **self.input_grid_settings,
+                                                                                        **self.form_paddings)
+            pre_detect_speech_var = tk.BooleanVar(ts_form_frame,
+                                               value=self.stAI.get_app_setting('transcription_pre_detect_speech',
+                                                                               default_if_none=True))
+
+            pre_detect_speech_input = tk.Checkbutton(ts_form_frame, variable=pre_detect_speech_var)
+            pre_detect_speech_input.grid(row=7, column=2, **self.input_grid_settings, **self.form_paddings)
+
+
+
             # INITIAL PROMPT INPUT
-            Label(ts_form_frame, text="Initial Prompt", **self.label_settings).grid(row=7, column=1,
+            Label(ts_form_frame, text="Initial Prompt", **self.label_settings).grid(row=8, column=1,
                                                                             sticky='nw',
                                                                           #**self.input_grid_settings,
                                                                           **self.form_paddings)
             # prompt_var = StringVar(ts_form_frame)
             prompt_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
-            prompt_input.grid(row=7, column=2, **self.input_grid_settings, **self.form_paddings)
+            prompt_input.grid(row=8, column=2, **self.input_grid_settings, **self.form_paddings)
             prompt_input.insert(END, " - How are you?\n - I'm fine, thank you.")
 
             # TIME INTERVALS INPUT
-            Label(ts_form_frame, text="Time Intervals", **self.label_settings).grid(row=8, column=1,
+            Label(ts_form_frame, text="Time Intervals", **self.label_settings).grid(row=9, column=1,
                                                                             sticky='nw',
                                                                           #**self.input_grid_settings,
                                                                           **self.form_paddings)
 
             time_intervals_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
-            time_intervals_input.grid(row=8, column=2, **self.input_grid_settings, **self.form_paddings)
+            time_intervals_input.grid(row=9, column=2, **self.input_grid_settings, **self.form_paddings)
             time_intervals_input.insert(END, str(time_intervals) if time_intervals is not None else '')
 
             # EXCLUDE TIME INTERVALS INPUT
-            Label(ts_form_frame, text="Exclude Time Intervals", **self.label_settings).grid(row=9, column=1,
+            Label(ts_form_frame, text="Exclude Time Intervals", **self.label_settings).grid(row=10, column=1,
                                                                             sticky='nw',
                                                                           #**self.input_grid_settings,
                                                                           **self.form_paddings)
 
             excluded_time_intervals_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
-            excluded_time_intervals_input.grid(row=9, column=2, **self.input_grid_settings, **self.form_paddings)
+            excluded_time_intervals_input.grid(row=10, column=2, **self.input_grid_settings, **self.form_paddings)
             excluded_time_intervals_input.insert(END,
                                                 str(excluded_time_intervals) \
                                                     if excluded_time_intervals is not None else '')
@@ -4739,10 +4750,10 @@ class toolkit_UI:
             # add all the settings entered by the use into a nice dictionary
             # transcription_config = dict(name=name_input.get(), language='English', beam_size=5, best_of=5)
 
-            Label(ts_form_frame, text="", **self.label_settings).grid(row=10, column=1,
+            Label(ts_form_frame, text="", **self.label_settings).grid(row=15, column=1,
                                                                       **self.input_grid_settings, **self.paddings)
             start_button = Button(ts_form_frame, text='Start')
-            start_button.grid(row=10, column=2, **self.input_grid_settings, **self.paddings)
+            start_button.grid(row=15, column=2, **self.input_grid_settings, **self.paddings)
             start_button.config(command=lambda audio_file_path=audio_file_path,
                                                transcription_file_path_var=transcription_file_path_var,
                                                unique_id=unique_id,
@@ -4756,6 +4767,7 @@ class toolkit_UI:
                                             model=model_var.get(),
                                             device=device_var.get(),
                                             initial_prompt=prompt_input.get(1.0, END),
+                                            pre_detect_speech=pre_detect_speech_var.get(),
                                             time_intervals=time_intervals_input.get(1.0, END),
                                             excluded_time_intervals=excluded_time_intervals_input.get(1.0, END),
                                             transcription_file_path=transcription_file_path_var.get()
@@ -4773,6 +4785,7 @@ class toolkit_UI:
                                                 model=model_var.get(),
                                                 device=device_var.get(),
                                                 initial_prompt=prompt_input.get(1.0, END),
+                                                pre_detect_speech=pre_detect_speech_var.get(),
                                                 time_intervals=time_intervals_input.get(1.0, END),
                                                 excluded_time_intervals=excluded_time_intervals_input.get(1.0, END),
                                                 transcription_file_path=transcription_file_path_var.get()
@@ -8810,7 +8823,7 @@ class ToolkitOps:
                                    name=None, language=None, model=None, device=None,
                                    unique_id=None, initial_prompt=None,
                                    time_intervals=None, excluded_time_intervals=None, transcription_file_path=None,
-                                   save_queue=True):
+                                   save_queue=True, **kwargs):
         '''
         Adds files to the transcription queue and then pings the queue in case it's sleeping.
         It also adds the files to the transcription log
@@ -8875,6 +8888,7 @@ class ToolkitOps:
                 file_dict = {'name': c_name, 'audio_file_path': audio_file_path, 'task': c_task,
                              'language': language, 'model': model, 'device': device,
                              'initial_prompt': initial_prompt,
+                             'pre_detect_speech': kwargs.get('pre_detect_speech', False),
                              'time_intervals': time_intervals,
                              'excluded_time_intervals': excluded_time_intervals,
                              'transcription_file_path': transcription_file_path,
@@ -9030,6 +9044,7 @@ class ToolkitOps:
         queue_attr['model'], \
         queue_attr['device'], \
         queue_attr['initial_prompt'], \
+        queue_attr['pre_detect_speech'], \
         queue_attr['time_intervals'], \
         queue_attr['excluded_time_intervals'], \
         queue_attr['transcription_file_path'],\
@@ -9081,6 +9096,7 @@ class ToolkitOps:
             return [queue_file['name'], queue_file['audio_file_path'], queue_file['task'],
                     queue_file['language'], queue_file['model'], queue_file['device'],
                     queue_file['initial_prompt'],
+                    queue_file['pre_detect_speech'],
                     queue_file['time_intervals'],
                     queue_file['excluded_time_intervals'],
                     queue_file['transcription_file_path'],
@@ -9105,6 +9121,9 @@ class ToolkitOps:
             # sort the audio segments by start time
             time_intervals = sorted(time_intervals, key=lambda x: x[0])
 
+            # combine overlapping segments
+            time_intervals = self.combine_intervals(time_intervals, 0)
+
             # take each time segment
             for time_interval in time_intervals:
                 # calculate duration based on start and end times!!
@@ -9125,6 +9144,153 @@ class ToolkitOps:
         audio_segments = [[0, len(audio_array / sr), audio_array]]
         return audio_segments, time_intervals
 
+    def get_speech_intervals(self, audio_segment, **kwargs):
+        """
+        Returns the an array of start and end times of the segments of speech in the audio_segment
+
+        :param audio_segment: a numpy array with the audio segment
+        :return: a list of start and end times of the segments of speech in the audio_segment
+        """
+
+        sample_rate = kwargs.get('sample_rate', 16_000)
+
+        # Removes silences from the audio file. This results in better transcription quality
+        # without hallucinations.
+        vad_model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad', model='silero_vad', force_reload=False,
+                                          onnx=True, trust_repo=True, verbose=False)
+        (get_speech_timestamps, _, read_audio, _, collect_chunks) = utils
+
+        # convert the audio_segment to a torch tensor
+        # if the audio segment is a list containing the start time, end time and the audio array,
+        #  we only take the audio array
+        if type(audio_segment) == list and len(audio_segment) == 3:
+            audio_segment_torch = torch.from_numpy(audio_segment[2])
+        else:
+            audio_segment_torch = torch.from_numpy(audio_segment)
+
+        speech_timestamps = get_speech_timestamps(audio_segment_torch, vad_model,
+                                                  sampling_rate=sample_rate,
+                                                  window_size_samples=512,
+                                                  speech_pad_ms=kwargs.get('silence_threshold', 200),
+                                                  threshold=kwargs.get('silence_threshold', 0.5)
+                                                  )
+
+        # convert speech_timestamps to seconds using the sample rate
+        # the speech_timestamps format is [{'start': start_time, 'end': end_time], ...]
+        speech_timestamps = [[speech_timestamp['start'] / sample_rate, speech_timestamp['end'] / sample_rate]
+                             for speech_timestamp in speech_timestamps]
+
+        # combine all the speech_timestamps that are less than X seconds apart
+        # this is to avoid having too many small segments
+        speech_timestamps = self.combine_intervals(speech_timestamps,
+                                                   combine_min_time=kwargs.get('combine_speech_min_time', 3))
+
+        return speech_timestamps
+
+    def combine_intervals(self, intervals, combine_min_time):
+        """
+        Combines intervals that are less than combine_min_time apart
+        :param intervals: a list of timestamps
+        :param combine_min_time: the minimum time (seconds) between two timestamps to be combined
+        :return:
+        """
+
+        # sort the timestamps by start time
+        intervals = sorted(intervals, key=lambda x: x[0])
+
+        # create a new list to store the combined timestamps
+        new_intervals = []
+
+        # take the first timestamp
+        current_timestamp = intervals[0]
+
+        # for each timestamp
+        for interval in intervals[1:]:
+            # if the current timestamp is less than min_time apart from the next timestamp
+            if interval[0] - current_timestamp[1] <= combine_min_time:
+                # combine the two timestamps
+                current_timestamp[1] = interval[1]
+
+            # if the current timestamp is more than min_time apart from the next timestamp
+            else:
+                # add the current timestamp to the new_timestamps list
+                new_intervals.append(current_timestamp)
+
+                # and set the current timestamp to the next timestamp
+                current_timestamp = interval
+
+        # add the last timestamp to the new_timestamps list
+        new_intervals.append(current_timestamp)
+
+        return new_intervals
+
+    def combine_overlapping_intervals(self, intervals, additional_intervals=None):
+        '''
+        Given a list of timestamps in the format [[start_time, end_time], ...]
+        return a list of timestamps with overlapping timestamps combined
+        :param intervals:
+        :param additional_intervals:
+        :return:
+        '''
+
+        # if there are no intervals and no additional intervals, return None
+        if (intervals is None or type(intervals) is bool) \
+                and additional_intervals is None or type(additional_intervals) is bool:
+            return None
+
+        # if there are no intervals but there are additional intervals,
+        # return the additional intervals
+        if (intervals is None or type(intervals) is bool) \
+                and additional_intervals is not None and type(additional_intervals) is not bool:
+            return additional_intervals
+
+        # sort the timestamps by start time
+        if intervals is not None and type(intervals) is not bool:
+            intervals = sorted(intervals, key=lambda x: x[0])
+
+        # if there are additional intervals,
+        # get the intersecting intervals
+        if additional_intervals is not None and type(additional_intervals) is not bool:
+
+            # sort the additional timestamps by start time
+            additional_intervals = sorted(additional_intervals, key=lambda x: x[0])
+
+            intersecting_intervals = []
+
+            # get the intersecting intervals
+            for interval in intervals:
+
+                for additional_interval in additional_intervals:
+
+                    if additional_interval[0] <= interval[1] and additional_interval[1] >= interval[0]:
+                        intersecting_intervals.append(
+                            [max(interval[0], additional_interval[0]), min(interval[1], additional_interval[1])])
+
+            # redeclare the intervals as the intersecting intervals
+            intervals = intersecting_intervals
+
+        return intervals
+
+    def pre_process_audio_segment(self, audio_segment, **kwargs):
+        """
+        Pre processes the audio segment before passing it to the whisper transcribe function
+        :param audio_segment:
+        :param kwargs:
+        :return:
+        """
+
+        return audio_segment
+
+    def post_process_whisper_result(self, result, audio_segment, **kwargs):
+        """
+        Post processes the result of a whisper transcribe call
+        :param result:
+        :param audio_segment:
+        :return:
+        """
+
+        return result
+
     def whisper_transcribe_segments(self, audio_segments, task, next_segment_id, other_whisper_options):
         """
         Transcribes only the passed audio segments
@@ -9141,12 +9307,18 @@ class ToolkitOps:
         # transcribe each audio segment
         for audio_segment in audio_segments:
 
+            # pre process the audio segment
+            audio_segment = self.pre_process_audio_segment(audio_segment, **other_whisper_options)
+
             # run whisper transcribe on the audio segment
             result = self.whisper_model.transcribe(audio_segment[2],
                                                    task=task,
                                                    verbose=True,
                                                    **other_whisper_options
                                                    )
+
+            # post process the result
+            result = self.post_process_whisper_result(result, audio_segment)
 
             # now process the result and add the original start time offset
             # to each transcript segment start and end times
@@ -9325,19 +9497,29 @@ class ToolkitOps:
         if 'model' in other_whisper_options:
             del other_whisper_options['model']
 
+        # load audio file as array using librosa
+        # this should work for most audio formats (so ffmpeg might not be needed at all)
+        audio_array, sr = librosa.load(audio_file_path, sr=16_000)
+
+        # if the audio_array is longer than 10 minutes, notify the user that the process will take a while
+        if len(audio_array) > 10 * 60 * 16_000:
+            long_audio_msg = "The audio is longer than a minute... This might take a while."
+        else:
+            long_audio_msg = ""
+
         # update the status of the item in the transcription log
         self.update_transcription_log(unique_id=queue_id, **{'status': 'transcribing'})
 
         # let the user know the transcription process has started
-        notification_msg = "Transcribing {}.\nThis may take a while.".format(name)
+        notification_msg = "Transcribing {}.\n{}".format(name, long_audio_msg)
         if self.is_UI_obj_available():
             self.toolkit_UI_obj.notify_via_os("Starting Transcription",
                                               notification_msg,
-                                              debug_message="Transcribing {}. This may take a while.".format(name))
+                                              debug_message="Transcribing {}. {}".format(name, long_audio_msg))
         else:
             logger.info(notification_msg)
 
-        start_time = time.time()
+        transcription_start_time = time.time()
 
         # remove empty language
         if 'language' in other_whisper_options and other_whisper_options['language'] == '':
@@ -9347,18 +9529,37 @@ class ToolkitOps:
         if 'initial_prompt' in other_whisper_options and other_whisper_options['initial_prompt'] == '':
             del other_whisper_options['initial_prompt']
 
-        # load audio file as array using librosa
-        # this should work for most audio formats (so ffmpeg might not be needed at all)
-        audio_array, sr = librosa.load(audio_file_path, sr=16_000)
+        # assume no time intervals
+        time_intervals = None
 
-        # if time_intervals was passed, only transcribe those time intervals from the audio file
+        # TIME INTERVALS PRE-PROCESSING starts here
+
+        # if pre_detect_speech is True, detect speech intervals in the audio
+        if 'pre_detect_speech' in other_whisper_options:
+
+            logger.info('Detecting speech intervals in the audio.')
+
+            # detect speech intervals and save them in time_intervals
+            if other_whisper_options['pre_detect_speech']:
+                time_intervals = self.get_speech_intervals(audio_array)
+
+            # remove this so it doesn't get passed to the transcribe function
+            del other_whisper_options['pre_detect_speech']
+
+        # if time_intervals was passed from the request, take them into consideration
         if 'time_intervals' in other_whisper_options:
-            time_intervals = other_whisper_options['time_intervals']
-            del other_whisper_options['time_intervals']
 
-        # otherwise assume no time intervals
-        else:
-            time_intervals = None
+            # if no time intervals were set before, just use the ones from the request
+            if time_intervals is None:
+                time_intervals = other_whisper_options['time_intervals']
+
+            else:
+                # intersect the time intervals from the request
+                # with the previously had time intervals (from speech for eg.)
+                time_intervals = \
+                    self.combine_overlapping_intervals(other_whisper_options['time_intervals'], time_intervals)
+
+            del other_whisper_options['time_intervals']
 
         # split the audio into segments according to the time intervals
         # in case no time intervals were passed, this will just return one audio segment with the whole audio
@@ -9416,7 +9617,13 @@ class ToolkitOps:
                                                       other_whisper_options=other_whisper_options
                                                       )
         except Exception as e:
-            logger.error('Error transcribing audio using Whisper: {}'.format(e))
+            logger.error('Error transcribing audio using Whisper.')
+
+            # let the user know that the packages are wrong
+            import traceback
+            traceback_str = traceback.format_exc()
+
+            logger.error(traceback_str)
 
             # update the status of the item in the transcription log
             self.update_transcription_log(unique_id=queue_id, **{'status': 'failed'})
@@ -9451,8 +9658,8 @@ class ToolkitOps:
         # self.speaker_diarization(audio_file_path)
 
         # let the user know that the speech was processed
-        notification_msg = "Finished transcription for {} in {} seconds".format(name,
-                                                                                round(time.time() - start_time))
+        notification_msg = "Finished transcription for {} in {} seconds"\
+            .format(name, round(time.time() - transcription_start_time))
 
         if self.is_UI_obj_available():
             self.toolkit_UI_obj.notify_via_os("Finished Transcription", notification_msg, notification_msg)

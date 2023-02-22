@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.17.13] - 2023-02-22
+
+### Added
+
+- Option to Pre-Detect Speech in the Transcription Settings window aiming to reduce the transcription time and AI hallucinations
+
+### Additional Info
+
+- Please use `pip install -r requirements.txt` to add the new required packages
+
 ## [0.17.12] - 2023-02-21
 
 ### Added
@@ -14,12 +24,16 @@ All notable changes to this project will be documented in this file, starting wi
 ### Fixed
 
 - Transcription Log Window lets the user know when the log is empty instead of rendering and empty window
-- Updated requirements.txt to use future==0.18.3 due to a security vulnerability in the previous future version (`pip install -r requirements.txt` is needed to update)
+- Updated requirements.txt to use future==0.18.3 due to a security vulnerability in the previous future version
 
 ### Bugfixes
 
 - Fixed crashes due to wrong encoding when reading certain files for Advanced Search
 - Fixed re-opening of Preferences window causing a crash
+
+### Additional Info
+
+- Please use `pip install -r requirements.txt` to add the new required packages
 
 ## [0.17.11] - 2023-02-20
 

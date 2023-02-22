@@ -182,7 +182,7 @@ For details regarding the models and their performance, please check
 Also, keep in mind that if you're transcribing on a CUDA device, you need minimum 5GB of VRAM for the medium model, and
 minimum 10GB for the large model.
 
-Starting with version 0.16.16, we added a setting called **Initial Prompt**. This is useful if you want the
+**Initial Prompt**. This is useful if you want the
 transcription algorithm to adopt a certain style (for eg. separating speaker sentences, or using caps after 
 punctuation), or even prime it to use certain names (for eg. "Helena" instead of "Elena"), or avoid rookie mistakes 
 (for eg. showing "Hey, Wood!" instead of "Heywood"). The default prompt separates speaker sentences and uses caps after 
@@ -190,6 +190,11 @@ punctuation.
 Remember: this is kind of like telling your assistant editor "do that", but it's up to them if they want to follow your 
 instructions or not - welcome to the wonderful world of AI. This feature is super experimental - it might even accept
 instructions like "separate speakers" or "make me coffee", but you have to try it on your own.
+
+**Pre-Detect Speech** - when enabled, the tool will try to detect speech-only parts in the audio and send only those
+parts to AI for transcription. This reduces the transcription time, but should also help avoid hallucinations on 
+silent parts of the audio. However, the AI might lose context from one speech segment to the next, so the quality
+of the transcription might take a hit.
 
 **Time Intervals** allows you to selectively transcribe only a portion of the timeline and Exclude Time Intervals allows 
 you to exclude certain portions of the timelines. The recommended format for these two fields is: "0.00 - 0.00".
