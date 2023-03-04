@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.17.14] - 2023-03-04
+
+### Added
+
+- Transcription progress now shown in the Transcription Log window
+- Status change when tool is pre-detecting speech in the Transcription Log window
+- mots_whisper.py (experimental - more info below)
+- Auto-install of required packages if requirements are not met
+
+### Changed
+
+- Update notifications based on the user's machine and architecture for the standalone version
+
+### Bugfixes
+
+- Fixed a bug that caused the tool to ignore pre_detect_speech when reloading transcription queues at startup
+- Fixed a bug that ignored transcribing audio without pre_detect_speech enabled
+
+### Additional Info
+
+- Starting with this update we're using a custom version of the openai-whisper module which will allow us more precise transcriptions and process visibility. 
+- Word-level timings and other transcription-related updates coming soon!
+
 ## [0.17.13] - 2023-02-22
 
 ### Added

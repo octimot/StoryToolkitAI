@@ -4,6 +4,7 @@ import time
 import json
 import sys
 import subprocess
+import ssl
 from requests import get
 
 import hashlib
@@ -19,7 +20,9 @@ from tkinter import *
 from threading import Thread
 
 import torch
-import whisper
+import torchaudio
+#import whisper
+import mots_whisper as whisper
 from whisper import tokenizer as whisper_tokenizer
 
 import librosa
@@ -169,21 +172,50 @@ except:
     import traceback
     traceback_str = traceback.format_exc()
 
-    logger.error(traceback_str)
-
     # get the relative path of the requirements file
     requirements_rel_path = os.path.relpath(os.path.join(os.path.dirname(__file__), 'requirements.txt'))
 
-    requirements_warning_msg = ('\n'
-          'Some of the packages required to run StoryToolkitAI are missing from your Python environment.\n'
-          'Please run pip install -r {} '
-          'to make sure that the right versions of the required packages are installed or StoryToolkitAI will not '
-          'run properly.\n\n'
-          'If you are running the standalone version of the app, please report this error to the developers together '
-                                'with the log file found at: {}\n'
-          .format(requirements_rel_path, APP_LOG_FILE))
+    logger.error(traceback_str)
 
-    logger.error(requirements_warning_msg)
+    requirements_warning_msg = ('Some of the packages required to run StoryToolkitAI '
+                                'are missing from your Python environment.\n')
+
+    logger.warning(requirements_warning_msg)
+
+    # if this is not a standalone app, try to install the requirements automatically
+    if not getattr(sys, 'frozen', False):
+
+        # try to install the requirements automatically
+        logger.warning('Attempting to automatically install the required packages...')
+
+        # install the requirements
+        # invoke pip as a subprocess:
+        pip_complete = subprocess.call([sys.executable, '-m', 'pip', 'install', '-r', requirements_rel_path])
+
+        if pip_complete == 0:
+            logger.warning('The required packages were installed. Restarting StoryToolkitAI...')
+
+            time.sleep(1)
+
+            # restart the app
+            subprocess.call([sys.executable, os.path.abspath(__file__)] + sys.argv[1:])
+            sys.exit(0)
+
+        else:
+            # let the user know that the automatic installation failed
+            logger.error(
+                'Could not auto-install the required packages. '
+                'StoryToolkitAI might not work properly without them. '
+                'To make sure that the right versions of the required packages are installed, '
+                'please close the tool and run:\n\n'
+                'pip install -r {} '
+                '\n\n'
+            .format(requirements_rel_path, APP_LOG_FILE))
+
+    else:
+        logger.warning('\n'
+        'If you are running the standalone version of the app, please report this error to the developers together '
+        'with the log file found at: {}\n'.format(APP_LOG_FILE))
 
     # keep this message in the console for a bit
     time.sleep(5)
@@ -3531,6 +3563,11 @@ class toolkit_UI:
         self.windows['main'].bind("<Button-2>", lambda event: self._focused_window('main'))
         self.windows['main'].bind("<Button-3>", lambda event: self._focused_window('main'))
 
+        # add key bindings to the main window
+        # key t for the transcription window
+        self.windows['main'].bind("t", lambda event: self.toolkit_ops_obj.prepare_transcription_file(
+                                                 toolkit_UI_obj=self))
+
         # load menubar items
         self.UI_menus.load_menubar()
 
@@ -5771,7 +5808,16 @@ class toolkit_UI:
                 if 'status' not in t_item:
                     t_item['status'] = ''
 
-                label_status = Label(log_frame, text=t_item['status'], anchor='w', width=15)
+                progress = ''
+                if 'progress' in t_item and t_item['progress'] and t_item['progress'] != '':
+
+                    # prevent weirdness with progress values over 100%
+                    if int(t_item['progress']) > 100:
+                        t_item['progress'] = 100
+
+                    progress = ' (' + str(t_item['progress']) + '%)'
+
+                label_status = Label(log_frame, text=t_item['status']+progress, anchor='w', width=15)
                 label_status.grid(row=num, column=2, **self.list_paddings, sticky='w')
 
                 # make the label clickable as soon as we have a file path for it in the log
@@ -7075,7 +7121,7 @@ class ToolkitOps:
         # this will be useful in case we need to add additional attributes to the transcription items
         # so that we don't have to update every single function that is using the transcription items
         # @todo make sure this is correctly implemented across the toolkit
-        self.transcription_item_attr = ['name', 'audio_file_path', 'translate', 'info', 'status',
+        self.transcription_item_attr = ['name', 'audio_file_path', 'translate', 'info', 'status', 'progress',
                                         'json_file_path', 'srt_file_path', 'txt_file_path']
 
         # transcription log - this keeps a track of all the transcriptions
@@ -8767,6 +8813,51 @@ class ToolkitOps:
             logger.warning('Missing unique id when trying to add item to transcription log.')
             return False
 
+    def in_transcription_log(self, unique_id=None, return_status=False):
+        '''
+        Checks if a unique id is in the transcription log
+        :param unique_id: 
+        :param return_status: Whether to return the status of the item or just True/False
+        :return:
+        '''
+
+        # if a unique id was passed, check if it's in the log
+        if unique_id:
+
+            # if the transcription log is a dict and the unique id is in there
+            if isinstance(self.transcription_log, dict) and unique_id in self.transcription_log:
+
+                # if the user wants the status, return it
+                if return_status and 'status' in self.transcription_log[unique_id]:
+                    return self.transcription_log[unique_id]['status']
+
+                # otherwise just return True
+                else:
+                    return True
+
+        # if no unique id was passed or the unique id was not found in the log, return False
+        return False
+
+    def transcription_progress(self, unique_id=None, progress=None):
+        '''
+        Updates the progress of a transcription item in the transcription log
+        :param unique_id:
+        :param progress:
+        :return:
+        '''
+
+        # if a progress was passed, update the progress
+        if unique_id and progress:
+            self.update_transcription_log(unique_id=unique_id, **{'progress': progress})
+
+        # if no progress was passed, just return the current progress
+        elif unique_id:
+            if unique_id in self.transcription_log and 'progress' in self.transcription_log[unique_id]:
+                return self.transcription_log[unique_id]['progress']
+            else:
+                self.transcription_log[unique_id]['progress'] = 0
+                return 0
+
     def update_transcription_log(self, unique_id=None, **attributes):
         '''
         Updates items in the transcription log (or adds them if necessary)
@@ -8807,6 +8898,7 @@ class ToolkitOps:
 
         # define the permitted attributes
         permitted_attributes = ['task', 'audio_file_path', 'name', 'language', 'model', 'device', 'unique_id',
+                                'pre_detect_speech',
                                 'transcription_file_path', 'time_intervals', 'excluded_time_intervals', 'initial_prompt'
                                 ]
 
@@ -8892,6 +8984,7 @@ class ToolkitOps:
                              'time_intervals': time_intervals,
                              'excluded_time_intervals': excluded_time_intervals,
                              'transcription_file_path': transcription_file_path,
+                             'progress': kwargs.get('progress', 0),
                              'status': 'waiting', 'info': None}
 
                 # add to transcription queue
@@ -9154,8 +9247,8 @@ class ToolkitOps:
 
         sample_rate = kwargs.get('sample_rate', 16_000)
 
-        # Removes silences from the audio file. This results in better transcription quality
-        # without hallucinations.
+        # Removes silences from the audio file.
+        # This results in better transcription quality, without hallucinations.
         vad_model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad', model='silero_vad', force_reload=False,
                                           onnx=True, trust_repo=True, verbose=False)
         (get_speech_timestamps, _, read_audio, _, collect_chunks) = utils
@@ -9184,6 +9277,12 @@ class ToolkitOps:
         # this is to avoid having too many small segments
         speech_timestamps = self.combine_intervals(speech_timestamps,
                                                    combine_min_time=kwargs.get('combine_speech_min_time', 3))
+
+        # if the first speech_timestamp starts after 0 but before 1 second
+        # we set the start time to 0
+        if type(speech_timestamps) is list and\
+                speech_timestamps[0][0] > 0 and speech_timestamps[0][0] < 1:
+            speech_timestamps[0][0] = 0
 
         return speech_timestamps
 
@@ -9281,17 +9380,17 @@ class ToolkitOps:
 
         return audio_segment
 
-    def post_process_whisper_result(self, result, audio_segment, **kwargs):
+    def post_process_whisper_result(self, audio, result, **kwargs):
         """
         Post processes the result of a whisper transcribe call
+        :param audio:
         :param result:
-        :param audio_segment:
         :return:
         """
 
         return result
 
-    def whisper_transcribe_segments(self, audio_segments, task, next_segment_id, other_whisper_options):
+    def whisper_transcribe_segments(self, audio_segments, task, next_segment_id, other_whisper_options, queue_id=None):
         """
         Transcribes only the passed audio segments
         and offsets the transcription segments start and end times
@@ -9304,8 +9403,17 @@ class ToolkitOps:
         # this will be counted up for each segment to provide a unique id
         id_count = 0
 
+        # the total duration of the audio is the sum of the duration of each audio segment
+        # the duration of each audio segment is the end time minus the start time
+        total_duration = sum([audio_segment[1] - audio_segment[0] for audio_segment in audio_segments])
+
         # transcribe each audio segment
+        previous_progress = 0
         for audio_segment in audio_segments:
+
+            if len(audio_segment) != 3:
+                logger.warning('Audio segment must be a list of [start, end, audio]')
+                continue
 
             # pre process the audio segment
             audio_segment = self.pre_process_audio_segment(audio_segment, **other_whisper_options)
@@ -9314,11 +9422,19 @@ class ToolkitOps:
             result = self.whisper_model.transcribe(audio_segment[2],
                                                    task=task,
                                                    verbose=True,
+                                                   queue_id=queue_id,
+                                                   toolkit_ops_obj=self,
+                                                   total_duration=total_duration,
+                                                   audio_segment_duration=audio_segment[1]-audio_segment[0],
+                                                   previous_progress=previous_progress,
                                                    **other_whisper_options
                                                    )
-
             # post process the result
-            result = self.post_process_whisper_result(result, audio_segment)
+            result = self.post_process_whisper_result(audio_segment[2], result)
+
+            # get the progress of the transcription so far,
+            # so we can pass it to the next audio segment for the progress calculation
+            previous_progress = self.transcription_progress(queue_id)
 
             # now process the result and add the original start time offset
             # to each transcript segment start and end times
@@ -9340,6 +9456,22 @@ class ToolkitOps:
                     # also avoid start time being smaller than the interval start time
                     if transcript_segment['start'] < audio_segment[0]:
                         transcript_segment['start'] = audio_segment[0]
+
+                    # if the segment contains a 'words' key,
+                    # then add the offset to the start and end time of each word
+                    if 'words' in transcript_segment:
+                        for word in transcript_segment['words']:
+                            word['start'] += audio_segment[0]
+                            word['end'] += audio_segment[0]
+
+                            # avoid end time being larger than the interval end time
+                            if word['end'] > audio_segment[1]:
+                                word['end'] = audio_segment[1]
+
+                            # also avoid start time being smaller than the interval start time
+                            if word['start'] < audio_segment[0]:
+                                word['start'] = audio_segment[0]
+
 
                     transcript_segment['id'] = next_segment_id + id_count
                     id_count += 1
@@ -9426,6 +9558,16 @@ class ToolkitOps:
 
     def whisper_transcribe(self, name=None, audio_file_path=None, task=None,
                            target_dir=None, queue_id=None, **other_whisper_options):
+        """
+        This prepares and transcribes audio using Whisper
+        :param name:
+        :param audio_file_path:
+        :param task:
+        :param target_dir:
+        :param queue_id:
+        :param other_whisper_options:
+        :return:
+        """
 
         # don't continue unless we have a queue_id
         if audio_file_path is None or not audio_file_path:
@@ -9470,6 +9612,10 @@ class ToolkitOps:
                                'depending on the Internet connection speed. '
                                .format(self.whisper_model_name)
                                )
+
+                # update the status of the item in the transcription log
+                self.update_transcription_log(unique_id=queue_id, **{'status': 'downloading model'})
+
                 model_downloaded_before = False
 
             logger.info('Loading Whisper {} model.'.format(self.whisper_model_name))
@@ -9503,22 +9649,11 @@ class ToolkitOps:
 
         # if the audio_array is longer than 10 minutes, notify the user that the process will take a while
         if len(audio_array) > 10 * 60 * 16_000:
-            long_audio_msg = "The audio is longer than a minute... This might take a while."
+            long_audio_msg = "The audio is long... This might take a while."
         else:
             long_audio_msg = ""
 
-        # update the status of the item in the transcription log
-        self.update_transcription_log(unique_id=queue_id, **{'status': 'transcribing'})
-
-        # let the user know the transcription process has started
-        notification_msg = "Transcribing {}.\n{}".format(name, long_audio_msg)
-        if self.is_UI_obj_available():
-            self.toolkit_UI_obj.notify_via_os("Starting Transcription",
-                                              notification_msg,
-                                              debug_message="Transcribing {}. {}".format(name, long_audio_msg))
-        else:
-            logger.info(notification_msg)
-
+        # technically the transcription process starts here, so start a timer for statistics
         transcription_start_time = time.time()
 
         # remove empty language
@@ -9537,10 +9672,14 @@ class ToolkitOps:
         # if pre_detect_speech is True, detect speech intervals in the audio
         if 'pre_detect_speech' in other_whisper_options:
 
-            logger.info('Detecting speech intervals in the audio.')
-
             # detect speech intervals and save them in time_intervals
             if other_whisper_options['pre_detect_speech']:
+                logger.info('Detecting speech intervals in the audio.')
+
+                # update the status of the item in the transcription log
+                self.update_transcription_log(unique_id=queue_id, **{'status': 'pre-detecting speech'})
+
+                # perform speech detection
                 time_intervals = self.get_speech_intervals(audio_array)
 
             # remove this so it doesn't get passed to the transcribe function
@@ -9549,15 +9688,17 @@ class ToolkitOps:
         # if time_intervals was passed from the request, take them into consideration
         if 'time_intervals' in other_whisper_options:
 
-            # if no time intervals were set before, just use the ones from the request
-            if time_intervals is None:
-                time_intervals = other_whisper_options['time_intervals']
+            # only take into consideration non boolean values
+            if type(other_whisper_options['time_intervals']) is not bool:
 
-            else:
-                # intersect the time intervals from the request
-                # with the previously had time intervals (from speech for eg.)
-                time_intervals = \
-                    self.combine_overlapping_intervals(other_whisper_options['time_intervals'], time_intervals)
+                # if no time intervals were set before, just use the ones from the request
+                if time_intervals is None:
+                    time_intervals = other_whisper_options['time_intervals']
+                else:
+                    # intersect the time intervals from the request
+                    # with the previously had time intervals (from speech for eg.)
+                    time_intervals = \
+                        self.combine_overlapping_intervals(other_whisper_options['time_intervals'], time_intervals)
 
             del other_whisper_options['time_intervals']
 
@@ -9608,13 +9749,26 @@ class ToolkitOps:
         else:
             next_segment_id = 0
 
+        # update the status of the item in the transcription log
+        self.update_transcription_log(unique_id=queue_id, **{'status': 'transcribing'})
+
+        # let the user know the transcription process has started
+        notification_msg = "Transcribing {}.\n{}".format(name, long_audio_msg)
+        if self.is_UI_obj_available():
+            self.toolkit_UI_obj.notify_via_os("Starting Transcription",
+                                              notification_msg,
+                                              debug_message="Transcribing {}. {}".format(name, long_audio_msg))
+        else:
+            logger.info(notification_msg)
+
         # transcribe the audio segments
         # (or just one audio segment with the whole audio if no time intervals were passed)
         try:
             result = self.whisper_transcribe_segments(audio_segments=audio_segments,
                                                       task=task,
                                                       next_segment_id=next_segment_id,
-                                                      other_whisper_options=other_whisper_options
+                                                      other_whisper_options=other_whisper_options,
+                                                      queue_id=queue_id
                                                       )
         except Exception as e:
             logger.error('Error transcribing audio using Whisper.')
@@ -9768,9 +9922,9 @@ class ToolkitOps:
         transcription_json_file_path = self.save_transcription_file(file_name=file_name, target_dir=target_dir,
                                                                     transcription_data=transcription_data)
 
-        # when done, change the status in the transcription log
+        # when done, change the status in the transcription log, clear the progress
         # and also add the file paths to the transcription log
-        self.update_transcription_log(unique_id=queue_id, status='done',
+        self.update_transcription_log(unique_id=queue_id, status='done', progress='',
                                       srt_file_path=transcription_data['srt_file_path'],
                                       txt_file_path=transcription_data['txt_file_path'],
                                       json_file_path=transcription_json_file_path)
@@ -11404,6 +11558,26 @@ class StoryToolkitAI:
             if n < 3:
                 # if there's a number larger online, return true
                 if int(online_version[n]) > int(local_version[n]):
+
+                    # if we're checking for a standalone release
+                    if standalone and 'latest_release' in locals() and 'assets' in latest_release:
+
+                        release_files = latest_release['assets']
+                        if len(release_files) == 0:
+                            return False, online_version_raw
+
+                        # is there a release file for mac, given the current architecture?
+                        if platform.system() == 'Darwin':
+                            # check if there is a file that contains the current machine's architecture
+                            release_file = [f for f in release_files if platform.machine() in f['name'].lower()]
+                            return len(release_file) > 0, online_version_raw
+
+                        # if we're on windows, check if there is a file that contains 'win'
+                        elif platform.system() == 'Windows':
+                            release_file = [f for f in release_files if 'win' in f['name'].lower()]
+                            return len(release_file) > 0, online_version_raw
+
+                    # worst case, return True to make sure the user is notified despite the lack of a release file
                     return True, online_version_raw
 
                 # continue the search if there's no version mismatch
@@ -11543,7 +11717,6 @@ class StoryToolkitAI:
             logger.info('Trying to connect to the API')
 
             import socket
-            import ssl
 
             # get the host and ip from self.api_host
             host = self.api_host.split(':')[0]
