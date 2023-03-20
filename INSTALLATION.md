@@ -87,7 +87,15 @@ using the following command!)
 
     source venv/bin/activate
 
-#### 7. Install all the requirements
+#### 7. Install OpenAI Whisper
+_Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
+If you followed the previous steps, your terminal prompt should now have `(venv)` before everything else._
+
+    pip install -U openai-whisper 
+
+For more info regarding Whisper installation, please check https://github.com/openai/whisper 
+
+#### 8. Install all the stuff the tool requires:
 _Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
 If you followed the previous steps, your terminal prompt should now have `(venv)` before everything else._
 
@@ -179,8 +187,14 @@ using the following command!)
 
     venv\Scripts\activate.bat
 
+### 8. Install OpenAI Whisper
+Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. If you followed the previous steps, your terminal prompt should now have (venv) before everything else.
 
-#### 8. Install all the requirements:
+    pip install -U openai-whisper
+
+For more info regarding Whisper installation, please check https://github.com/openai/whisper
+
+#### 9. Install all the stuff the tool requires:
 Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. If you followed the previous steps, your terminal prompt should now have (venv) before everything else.
 
     pip install -r StoryToolkitAI\requirements.txt

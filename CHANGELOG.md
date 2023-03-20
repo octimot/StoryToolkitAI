@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.17.15] - 2023-03-20
+
+### Added
+
+- "Increased Time Precision" gives better transcription timestamps due to the new openai-whisper module
+- Tool now warns user on exit if there still are transcriptions in progress
+- User can choose to not be notified about the current update
+- User Token check - see https://www.patreon.com/StoryToolkitAI for more info
+
+### Bugfixes
+
+- Fixed a bug that caused the transcription process to fail for files with an associated render.json file
+
 ## [0.17.14] - 2023-03-04
 
 ### Added

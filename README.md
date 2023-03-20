@@ -13,21 +13,32 @@ other AI technologies to get stuff done.
 https://vimeo.com/759962195/dee07a067a
 
 ## Key Features
-- [x] **Free Automatic Transcriptions in many languages** on your local machine directly from Resolve or local files
-- [x] **Free Automatic Translation** to English on your local machine
-- [x] **Advanced Search** - allows you to search one or many transcripts or text files semantically using AI
-- [x] **Mark and Navigate Resolve Timelines via Transcript**, plus other handy Resolve-only features
-- [X] **Transcript Segment Groups** allows the grouping of transcription segments into groups similar to marking in NLEs
-- [x] **Import subtitles after transcription** from the tool directly into Resolve
-- [x] **Convert existing SRT files to transcripts** and use them in the tool (non-standalone version only until next release)
+- [x] **Free Automatic Transcriptions in many languages** on your local machine using AI
+- [x] **Free Automatic Translation** to English on your local machine using AI
+- [x] **Advanced Search** - allows you to search transcripts or even text files semantically
+- [X] **Transcript Groups** allow the grouping of transcription segments for easier access
+- [X] Editing and Advanced Search of **existing SRT files**
 - [x] Export of transcripts to multiple formats, including SRT and TXT
 - [x] Batch transcriptions using transcription queuing
-- [x] Partial re-transcriptions of timelines/videos/audio files
+- [x] Partial re-transcribing of timelines/videos/audio files
 
-### Work in progress
-- [ ] **Speaker Recognition**
-- [ ] **Advanced Search on Markers** - for Resolve (and possibly other NLE) markers
-- [ ] **Integration with other AI / ML tools**
+### Resolve Studio Integrations
+- [x] **Mark and Navigate Resolve Timelines via Transcript**, plus other handy Resolve-only features
+- [x] **Import subtitles after transcription** from the tool directly into Resolve
+- [x] Easy **Resolve Markers to Transcript Group** vice versa
+- [x] **Advanced Search** of Resolve timeline markers
+- [x] Render to markers stills or clips feature
+- [x] Other timecode-based features, like copying transcript text to clipboard with timecodes etc.
+
+### Planned Features
+- [ ] **Advanced Search of transcript groups and notes** using AI
+- [ ] **Topic Classification** using AI to help you discover ideas in your transcripts
+- [ ] **Speaker Recognition** using AI (Diarization)
+- [ ] **Word-level timing** and Word subtitles
+- [ ] **Advanced Search of PDFs** using AI (for eg. screenplays or books)
+- [ ] **Automatic Timeline Creation** based on Topic Classification and Advanced Search]
+- [ ] Translation to other languages
+- [ ] **Integration with other AI tools**
 - [ ] **Integration with other NLEs / standalone players**
 - [X] Plus more flashy features as clickbait to unrealistically raise expectations and destroy competition
 
@@ -48,7 +59,7 @@ Yes, the tool runs locally like butter and there's no need for any additional ac
 English, or use any of its features. We may develop features that depend on external services, but the current features
 will always be free and will never be capped.
 
-Of course, we won't say no to envelopes with foreign currency banknotes or cases with contraband CRT editing screens.
+If you want to support the development, check out our Patreon page: https://www.patreon.com/StoryToolkitAI
 
 ### Transcription Results
 The results we get with Whisper are significantly better than other Speech-to-Text model (including Google, AWS
@@ -195,6 +206,9 @@ instructions like "separate speakers" or "make me coffee", but you have to try i
 parts to AI for transcription. This reduces the transcription time, but should also help avoid hallucinations on 
 silent parts of the audio. However, the AI might lose context from one speech segment to the next, so the quality
 of the transcription might take a hit.
+
+**Increased Time Precision** adds more precision to the transcription timestamps, but it increases the processing time.
+For best results, we recommend using the large model with this option enabled.
 
 **Time Intervals** allows you to selectively transcribe only a portion of the timeline and Exclude Time Intervals allows 
 you to exclude certain portions of the timelines. The recommended format for these two fields is: "0.00 - 0.00".

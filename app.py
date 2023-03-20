@@ -261,6 +261,7 @@ class toolkit_UI:
 
                 #helpmenu.add_separator()
                 filemenu.add_command(label="Preferences...", command=self.app_items_obj.open_preferences_window)
+                #filemenu.add_command(label="Quit", command=lambda: self.toolkit_UI_obj.on_exit())
 
                 helpmenu.add_command(label="About", command=self.about_dialog)
                 helpmenu.add_separator()
@@ -272,6 +273,9 @@ class toolkit_UI:
                 self.toolkit_UI_obj.root.createcommand('tkAboutDialog', self.app_items_obj.open_about_window)
                 self.toolkit_UI_obj.root.createcommand('tk::mac::ShowPreferences', self.app_items_obj.open_preferences_window)
                 #self.toolkit_UI_obj.root.createcommand('tkPreferencesDialog', self.app_items_obj.open_about_window)
+
+                # also bind to the cmd+q key combination
+                self.toolkit_UI_obj.root.createcommand("tk::mac::Quit", lambda: self.toolkit_UI_obj.on_exit())
 
                 # see https://tkdocs.com/tutorial/menus.html#platformmenus
                 #menubar = Menu(self.toolkit_UI_obj.root)
@@ -2477,6 +2481,11 @@ class toolkit_UI:
             old_transcription_file_data = \
                 self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path=transcription_file_path)
 
+            # does the transcription file contain word level timings?
+            word_level_timings = False
+            if len(old_transcription_file_data['segments']) >0 and 'words' in old_transcription_file_data['segments'][0]:
+                word_level_timings = True
+
             # only verify if skip_verification is False or the text is False
             if not skip_verification or text is not False:
 
@@ -2659,6 +2668,10 @@ class toolkit_UI:
                     = tk.BooleanVar(pref_form_frame,
                                     value=self.stAI.get_app_setting('show_welcome', default_if_none=True))
 
+                api_token_var \
+                    = tk.StringVar(pref_form_frame,
+                                    value=self.stAI.get_app_setting('api_token', default_if_none=''))
+
                 disable_resolve_api_var \
                     = tk.BooleanVar(pref_form_frame,
                                     value=self.stAI.get_app_setting('disable_resolve_api', default_if_none=False))
@@ -2688,6 +2701,10 @@ class toolkit_UI:
                 transcription_pre_detect_speech_var\
                     = tk.BooleanVar(pref_form_frame,
                                     value=self.stAI.get_app_setting('transcription_pre_detect_speech', default_if_none=True))
+
+                transcription_word_timestamps_var\
+                    = tk.BooleanVar(pref_form_frame,
+                                    value=self.stAI.get_app_setting('transcription_word_timestamps', default_if_none=True))
 
                 transcription_render_preset_var\
                     = tk.StringVar(pref_form_frame,
@@ -2733,72 +2750,81 @@ class toolkit_UI:
                 show_welcome_input = tk.Checkbutton(pref_form_frame, variable=show_welcome_var)
                 show_welcome_input.grid(row=3, column=1, **form_grid_and_paddings)
 
+                # api token
+                tk.Label(pref_form_frame, text='API Token', **label_settings).grid(row=4, column=0, **form_grid_and_paddings)
+                api_token_input = tk.Entry(pref_form_frame, textvariable=api_token_var, **entry_settings)
+                api_token_input.grid(row=4, column=1, **form_grid_and_paddings)
+
                 # Integrations
-                tk.Label(pref_form_frame, text='Integrations', **h1_font).grid(row=4, column=0, columnspan=2, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Integrations', **h1_font).grid(row=14, column=0, columnspan=2, **form_grid_and_paddings)
 
                 # disable the resolve API
-                tk.Label(pref_form_frame, text='Disable Resolve API', **label_settings).grid(row=5, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Disable Resolve API', **label_settings).grid(row=15, column=0, **form_grid_and_paddings)
                 disable_resolve_api_input = tk.Checkbutton(pref_form_frame, variable=disable_resolve_api_var)
-                disable_resolve_api_input.grid(row=5, column=1, **form_grid_and_paddings)
+                disable_resolve_api_input.grid(row=15, column=1, **form_grid_and_paddings)
 
                 # auto open the transcript groups window on timeline open
-                tk.Label(pref_form_frame, text='Open Linked Transcripts', **label_settings).grid(row=6, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Open Linked Transcripts', **label_settings).grid(row=16, column=0, **form_grid_and_paddings)
                 open_transcript_groups_window_on_open_input = tk.Checkbutton(pref_form_frame, variable=open_transcript_groups_window_on_open_var)
-                open_transcript_groups_window_on_open_input.grid(row=6, column=1, **form_grid_and_paddings)
+                open_transcript_groups_window_on_open_input.grid(row=16, column=1, **form_grid_and_paddings)
 
                 # close transcripts on timeline change
-                tk.Label(pref_form_frame, text='Close Transcripts on Timeline Change', **label_settings).grid(row=7, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Close Transcripts on Timeline Change', **label_settings).grid(row=17, column=0, **form_grid_and_paddings)
                 close_transcripts_on_timeline_change_input = tk.Checkbutton(pref_form_frame, variable=close_transcripts_on_timeline_change_var)
-                close_transcripts_on_timeline_change_input.grid(row=7, column=1, **form_grid_and_paddings)
+                close_transcripts_on_timeline_change_input.grid(row=17, column=1, **form_grid_and_paddings)
 
+                # the render preset for transcriptions
+                tk.Label(pref_form_frame, text='Transcription Render Preset', **label_settings).grid(row=18, column=0, **form_grid_and_paddings)
+                transcription_render_preset_input = tk.Entry(pref_form_frame, textvariable=transcription_render_preset_var, **entry_settings)
+                transcription_render_preset_input.grid(row=18, column=1, **form_grid_and_paddings)
 
                 # transcriptions
-                tk.Label(pref_form_frame, text='Transcriptions', **h1_font).grid(row=8, column=0, columnspan=2, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Transcriptions', **h1_font).grid(row=21, column=0, columnspan=2, **form_grid_and_paddings)
 
                 # the whisper model name
-                tk.Label(pref_form_frame, text='Whisper Model', **label_settings).grid(row=9, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Whisper Model', **label_settings).grid(row=22, column=0, **form_grid_and_paddings)
                 whisper_model_name_input = tk.OptionMenu(pref_form_frame, whisper_model_name_var, *whisper.available_models())
-                whisper_model_name_input.grid(row=9, column=1, **form_grid_and_paddings)
+                whisper_model_name_input.grid(row=22, column=1, **form_grid_and_paddings)
 
                 # the whisper device
-                tk.Label(pref_form_frame, text='Whisper Device', **label_settings).grid(row=10, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Whisper Device', **label_settings).grid(row=23, column=0, **form_grid_and_paddings)
                 whisper_device_input = tk.OptionMenu(pref_form_frame, whisper_device_var,
                                                      *self.toolkit_ops_obj.get_torch_available_devices())
-                whisper_device_input.grid(row=10, column=1, **form_grid_and_paddings)
+                whisper_device_input.grid(row=23, column=1, **form_grid_and_paddings)
 
                 # the default language for transcriptions
                 # first get the list of languages, but also add an empty string to the list
                 available_languages = [''] + self.toolkit_ops_obj.get_whisper_available_languages()
 
-                tk.Label(pref_form_frame, text='Default Language', **label_settings).grid(row=11, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Default Language', **label_settings).grid(row=24, column=0, **form_grid_and_paddings)
                 transcription_default_language_input = tk.OptionMenu(pref_form_frame, transcription_default_language_var,
                                                                      *available_languages)
-                transcription_default_language_input.grid(row=11, column=1, **form_grid_and_paddings)
+                transcription_default_language_input.grid(row=24, column=1, **form_grid_and_paddings)
 
                 # pre-detect speech
-                tk.Label(pref_form_frame, text='Pre-Detect Speech', **label_settings).grid(row=12, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Pre-Detect Speech', **label_settings).grid(row=25, column=0, **form_grid_and_paddings)
                 transcription_pre_detect_speech_input = tk.Checkbutton(pref_form_frame, variable=transcription_pre_detect_speech_var)
-                transcription_pre_detect_speech_input.grid(row=12, column=1, **form_grid_and_paddings)
+                transcription_pre_detect_speech_input.grid(row=25, column=1, **form_grid_and_paddings)
 
-                # the render preset for transcriptions
-                tk.Label(pref_form_frame, text='Render Preset', **label_settings).grid(row=13, column=0, **form_grid_and_paddings)
-                transcription_render_preset_input = tk.Entry(pref_form_frame, textvariable=transcription_render_preset_var, **entry_settings)
-                transcription_render_preset_input.grid(row=13, column=1, **form_grid_and_paddings)
+                # word timestamps (use "increased time precision" for now)
+                tk.Label(pref_form_frame, text='Increased Time Precision', **label_settings).grid(row=26, column=0, **form_grid_and_paddings)
+                transcription_word_timestamps_input = tk.Checkbutton(pref_form_frame, variable=transcription_word_timestamps_var)
+                transcription_word_timestamps_input.grid(row=26, column=1, **form_grid_and_paddings)
 
                 # the transcript font size
-                tk.Label(pref_form_frame, text='Transcript Font Size', **label_settings).grid(row=14, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Transcript Font Size', **label_settings).grid(row=28, column=0, **form_grid_and_paddings)
                 transcript_font_size_input = tk.Entry(pref_form_frame, textvariable=transcript_font_size_var, **entry_settings_quarter)
-                transcript_font_size_input.grid(row=14, column=1, **form_grid_and_paddings)
+                transcript_font_size_input.grid(row=28, column=1, **form_grid_and_paddings)
 
                 # transcripts always on top
-                tk.Label(pref_form_frame, text='Transcript Always On Top', **label_settings).grid(row=15, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Transcript Always On Top', **label_settings).grid(row=29, column=0, **form_grid_and_paddings)
                 transcripts_always_on_top_input = tk.Checkbutton(pref_form_frame, variable=transcripts_always_on_top_var)
-                transcripts_always_on_top_input.grid(row=15, column=1, **form_grid_and_paddings)
+                transcripts_always_on_top_input.grid(row=29, column=1, **form_grid_and_paddings)
 
                 # transcripts always on top
-                tk.Label(pref_form_frame, text='Skip Transcription Settings', **label_settings).grid(row=16, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Skip Transcription Settings', **label_settings).grid(row=30, column=0, **form_grid_and_paddings)
                 transcripts_skip_settings_input = tk.Checkbutton(pref_form_frame, variable=transcripts_skip_settings_var)
-                transcripts_skip_settings_input.grid(row=16, column=1, **form_grid_and_paddings)
+                transcripts_skip_settings_input.grid(row=30, column=1, **form_grid_and_paddings)
 
                 # ffmpeg path
                 #tk.Label(pref_form_frame, text='FFmpeg Path', **label_settings).grid(row=14, column=0, **form_grid_and_paddings)
@@ -2812,6 +2838,7 @@ class toolkit_UI:
                     'default_marker_color': default_marker_color_var,
                      'console_font_size': console_font_size_var,
                      'show_welcome': show_welcome_var,
+                     'api_token': api_token_var,
                      'disable_resolve_api': disable_resolve_api_var,
                      'open_transcript_groups_window_on_open': open_transcript_groups_window_on_open_var,
                      'close_transcripts_on_timeline_change': close_transcripts_on_timeline_change_var,
@@ -2819,6 +2846,7 @@ class toolkit_UI:
                      'whisper_device': whisper_device_var,
                      'transcription_default_language': transcription_default_language_var,
                      'transcription_pre_detect_speech': transcription_pre_detect_speech_var,
+                     'transcription_word_timestamps': transcription_word_timestamps_var,
                      'transcription_render_preset': transcription_render_preset_var,
                      'transcript_font_size': transcript_font_size_var,
                      'transcripts_always_on_top': transcripts_always_on_top_var,
@@ -2827,9 +2855,9 @@ class toolkit_UI:
                 }
 
 
-                Label(pref_form_frame, text="", **label_settings).grid(row=20, column=0, **form_grid_and_paddings)
+                Label(pref_form_frame, text="", **label_settings).grid(row=40, column=0, **form_grid_and_paddings)
                 start_button = tk.Button(pref_form_frame, text='Save')
-                start_button.grid(row=20, column=1, **form_grid_and_paddings)
+                start_button.grid(row=40, column=1, **form_grid_and_paddings)
                 start_button.config(command=lambda: self.save_preferences(input_variables))
 
         def save_preferences(self, input_variables: dict) -> bool:
@@ -2838,6 +2866,14 @@ class toolkit_UI:
             :param input_variables:
             :return:
             '''
+
+            # if the user has entered a new API token, check if it's valid
+            if input_variables['api_token'].get() != '' \
+                    and input_variables['api_token'].get() != self.stAI.config['api_token']:
+
+                if not self.stAI.check_api_token(input_variables['api_token'].get()):
+                    self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Error', message='Invalid API token.')
+                    return False
 
             # save all the variables to the config file
             for key, value in input_variables.items():
@@ -2949,6 +2985,15 @@ class toolkit_UI:
         # initialize tkinter as the main GUI
         self.root = tk.Tk()
 
+        # what happens when the user tries to close the main window
+        self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
+
+        # add icon
+        # todo: add icon to other folder + git
+        # todo: change app name from python to storytoolkitai for non-standalone version
+        photo = tk.PhotoImage(file = 'StoryToolkitAI.png')
+        self.root.wm_iconphoto(False, photo)
+
         # initialize app items object
         self.app_items_obj = self.AppItemsUI(toolkit_UI_obj=self)
 
@@ -3007,6 +3052,9 @@ class toolkit_UI:
 
         # currently focused window
         self.current_focused_window = None
+
+        # what to call before exiting the app
+        self.before_exit = None
 
         # set some UI styling here
         self.paddings = {'padx': 10, 'pady': 10}
@@ -3144,6 +3192,35 @@ class toolkit_UI:
         # use this variable to remember if the user said it's ok that resolve is not available to continue a process
         self.no_resolve_ok = False
 
+        # handling of api token validity
+        if not self.stAI.api_token_valid:
+
+            def before_exit(event=None):
+
+                support_page_url = 'https://storytoolkit.ai/support'
+
+                # check if a support page is available
+                try:
+                    support_page = get(support_page_url, timeout=2)
+
+                    # if the support page is not available
+                    if support_page.status_code != 200:
+                        return
+
+                except Exception as e:
+                    return
+
+                support = messagebox.askyesno("One more thing!",
+                                              "StoryToolkitAI is completely free and open source.\n\n "
+                                              "If you find it useful, "
+                                              "we need your help to speed up development. \n\n"
+                                              "Would you like to support the project?")
+                if support:
+                    webbrowser.open(support_page_url)
+
+            # redefine the on exit function
+            self.before_exit = before_exit
+
         # show the update available message if any
         if 'update_available' in other_options and other_options['update_available'] is not None:
 
@@ -3166,9 +3243,7 @@ class toolkit_UI:
                 changelog_instructions = 'Open the [release page]({}) to download it.\n\n'.format(release_url)
 
                 # prepare some action buttons for the text window
-                action_buttons = [{'text': 'Open release page', 'command': lambda: webbrowser.open(release_url)},
-                                  {'text': 'Later', 'command': lambda: self.destroy_text_window(update_window_id),
-                                   'side': tk.LEFT, 'anchor': 'e'}]
+                action_buttons = [{'text': 'Open release page', 'command': lambda: webbrowser.open(release_url)}]
 
             # for the non-standalone version
             else:
@@ -3179,9 +3254,7 @@ class toolkit_UI:
                                          'Quit the tool and use `git pull` to update.\n\n' \
 
                 # prepare some action buttons for the text window
-                action_buttons = [{'text': 'Quit to update', 'command': lambda: sys.exit()},
-                                  {'text': 'Later', 'command': lambda: self.destroy_text_window(update_window_id),
-                                   'side': tk.LEFT, 'anchor': 'e'}]
+                action_buttons = [{'text': 'Quit to update', 'command': lambda: sys.exit()}]
 
             # read the CHANGELOG.md file from github
             changelog_file = get('https://raw.githubusercontent.com/octimot/StoryToolkitAI/master/CHANGELOG.md')
@@ -3235,6 +3308,17 @@ class toolkit_UI:
                 if changelog_new_versions_info != '':
                     changelog_new_versions += '# What\'s new?\n'+changelog_new_versions_info
 
+                # add the skip and later buttons to the action buttons
+                action_buttons.append({'text': 'Skip this version',
+                                       'command': lambda: self.ignore_update(
+                                           version_to_ignore=other_options['update_available'],
+                                           window_id=update_window_id),
+                                       'side': tk.RIGHT,
+                                       'anchor': 'e'
+                                       })
+                action_buttons.append({'text': 'Later', 'command': lambda: self.destroy_text_window(update_window_id),
+                 'side': tk.RIGHT, 'anchor': 'e'})
+
                 # open the CHANGELOG.md file from github in a text window
                 update_window_id = self.open_text_window(title='New Update',
                                                   window_id=update_window_id,
@@ -3264,8 +3348,70 @@ class toolkit_UI:
             if goto_projectpage:
                 webbrowser.open(release_url)
 
+    def ignore_update(self, version_to_ignore=None, window_id=None):
+        '''
+        This function is called when the user clicks the "Skip this version" button in the update window.
+        :param version_to_ignore:
+        :param window_id:
+        :return:
+        '''
+
+        # confirm the action
+        if not messagebox.askyesno(title="Skip update", message="Are you sure you want to skip this update?\n\n"
+                                                                "You will only be notified again when a new update "
+                                                                "is available."):
+            return False
+
+        # if the window id is specified
+        if window_id is not None:
+            # destroy the window
+            self.destroy_text_window(window_id)
+
+        # if the version to ignore is not specified
+        if version_to_ignore is None:
+            return False
+
+        # add the version_to_ignore to the config file
+        self.stAI.config['ignore_update'] = version_to_ignore
+
+        # save the config file
+        self.stAI.save_config()
+
+
+
     class main_window:
         pass
+
+    def on_exit(self):
+        '''
+        This function is usually called when the user closes the main window or exits the program via the menu.
+        -- work in progress --
+        :return:
+        '''
+
+        # check if there are any items left in the queue
+        # if there are, ask the user if they want to quit anyway
+
+        if (self.toolkit_ops_obj.transcription_queue is not None and len(self.toolkit_ops_obj.transcription_queue) > 0) \
+            or (self.toolkit_ops_obj.transcription_queue_current_name is not None \
+                and self.toolkit_ops_obj.transcription_queue_current_name != ''):
+
+            quit_anyway = messagebox.askyesno(title="Are you sure?",
+                                              message="We're still transcribing. Quit anyway?")
+
+            # if the user doesn't want to quit anyway, return
+            if not quit_anyway:
+                return
+
+        # if a before_exit function is defined, call it
+        if self.before_exit is not None:
+            self.before_exit()
+
+        # close the main window
+        self.root.destroy()
+
+        # and finally, exit the program
+        sys.exit()
 
     def create_or_open_window(self, parent_element: tk.Toplevel or tk = None, window_id: str = None,
                                title: str = None, resizable: bool = False,
@@ -3714,8 +3860,9 @@ class toolkit_UI:
 
                 # scroll to the end of the last line
                 # but only if the window still exists
-                if window_id in self.text_windows:
-                    self.text_windows[window_id]['text_widget'].see('end-1c')
+                # - this is disabled since it should be handled within _text_window_prompts() (i.e. by each command)
+                #if window_id in self.text_windows:
+                #    self.text_windows[window_id]['text_widget'].see('end-1c')
 
                 return 'break'
 
@@ -3812,8 +3959,8 @@ class toolkit_UI:
         # and move the insert position right at the end
         self.text_windows[window_id]['text_widget'].mark_set('insert', 'end-1c')
 
-        # also scroll to the end of the last line
-        self.text_windows[window_id]['text_widget'].see('end-1c')
+        # also scroll to the end of the last line (or to whatever scroll_to was sent)
+        self.text_windows[window_id]['text_widget'].see(kwargs.get('scroll_to', 'end-1c'))
 
 
 
@@ -4216,11 +4363,11 @@ class toolkit_UI:
     def _find_text_in_widget(self, search_str: str=None, window_id: str=None, text_widget: tk.Text=None):
         '''
         This function finds and highlights found matches in a text widget
-        
+
         :param search_str: the string to search for
         :param window_id: the id of the window that contains the text widget
         :param text_widget: the text widget to search in
-        
+
         :return:
         '''
 
@@ -4748,36 +4895,48 @@ class toolkit_UI:
             pre_detect_speech_input = tk.Checkbutton(ts_form_frame, variable=pre_detect_speech_var)
             pre_detect_speech_input.grid(row=7, column=2, **self.input_grid_settings, **self.form_paddings)
 
+            # WORD TIMESTAMPS
+            # (USE "INCREASED TIME PRECISION" FOR NOW TO AVOID CONFUSION)
+            Label(ts_form_frame, text="Increased Time Precision", **self.label_settings).grid(row=8, column=1,
+                                                                                        **self.input_grid_settings,
+                                                                                        **self.form_paddings)
+            word_timestamps_var = tk.BooleanVar(ts_form_frame,
+                                               value=self.stAI.get_app_setting('transcription_word_timestamps',
+                                                                               default_if_none=True))
+
+            word_timestamps_input = tk.Checkbutton(ts_form_frame, variable=word_timestamps_var)
+            word_timestamps_input.grid(row=8, column=2, **self.input_grid_settings, **self.form_paddings)
+
 
 
             # INITIAL PROMPT INPUT
-            Label(ts_form_frame, text="Initial Prompt", **self.label_settings).grid(row=8, column=1,
+            Label(ts_form_frame, text="Initial Prompt", **self.label_settings).grid(row=9, column=1,
                                                                             sticky='nw',
                                                                           #**self.input_grid_settings,
                                                                           **self.form_paddings)
             # prompt_var = StringVar(ts_form_frame)
             prompt_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
-            prompt_input.grid(row=8, column=2, **self.input_grid_settings, **self.form_paddings)
+            prompt_input.grid(row=9, column=2, **self.input_grid_settings, **self.form_paddings)
             prompt_input.insert(END, " - How are you?\n - I'm fine, thank you.")
 
             # TIME INTERVALS INPUT
-            Label(ts_form_frame, text="Time Intervals", **self.label_settings).grid(row=9, column=1,
+            Label(ts_form_frame, text="Time Intervals", **self.label_settings).grid(row=10, column=1,
                                                                             sticky='nw',
                                                                           #**self.input_grid_settings,
                                                                           **self.form_paddings)
 
             time_intervals_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
-            time_intervals_input.grid(row=9, column=2, **self.input_grid_settings, **self.form_paddings)
+            time_intervals_input.grid(row=10, column=2, **self.input_grid_settings, **self.form_paddings)
             time_intervals_input.insert(END, str(time_intervals) if time_intervals is not None else '')
 
             # EXCLUDE TIME INTERVALS INPUT
-            Label(ts_form_frame, text="Exclude Time Intervals", **self.label_settings).grid(row=10, column=1,
+            Label(ts_form_frame, text="Exclude Time Intervals", **self.label_settings).grid(row=11, column=1,
                                                                             sticky='nw',
                                                                           #**self.input_grid_settings,
                                                                           **self.form_paddings)
 
             excluded_time_intervals_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
-            excluded_time_intervals_input.grid(row=10, column=2, **self.input_grid_settings, **self.form_paddings)
+            excluded_time_intervals_input.grid(row=11, column=2, **self.input_grid_settings, **self.form_paddings)
             excluded_time_intervals_input.insert(END,
                                                 str(excluded_time_intervals) \
                                                     if excluded_time_intervals is not None else '')
@@ -4805,6 +4964,7 @@ class toolkit_UI:
                                             device=device_var.get(),
                                             initial_prompt=prompt_input.get(1.0, END),
                                             pre_detect_speech=pre_detect_speech_var.get(),
+                                            word_timestamps=word_timestamps_var.get(),
                                             time_intervals=time_intervals_input.get(1.0, END),
                                             excluded_time_intervals=excluded_time_intervals_input.get(1.0, END),
                                             transcription_file_path=transcription_file_path_var.get()
@@ -4823,6 +4983,7 @@ class toolkit_UI:
                                                 device=device_var.get(),
                                                 initial_prompt=prompt_input.get(1.0, END),
                                                 pre_detect_speech=pre_detect_speech_var.get(),
+                                                word_timestamps=word_timestamps_var.get(),
                                                 time_intervals=time_intervals_input.get(1.0, END),
                                                 excluded_time_intervals=excluded_time_intervals_input.get(1.0, END),
                                                 transcription_file_path=transcription_file_path_var.get()
@@ -6006,7 +6167,9 @@ class toolkit_UI:
             search_file_list = search_file_list.strip()
 
             # add the list of files to the search window
-            self._text_window_update(search_window_id, 'Loaded {} files:'.format(len(search_item.search_file_paths)))
+            self._text_window_update(search_window_id, 'Loaded {} {}:'
+                                     .format(len(search_item.search_file_paths),
+                                             'file' if len(search_item.search_file_paths) == 1 else 'files'))
             self._text_window_update(search_window_id, search_file_list)
 
             if len(search_item.search_corpus) < 1000:
@@ -6222,7 +6385,6 @@ class toolkit_UI:
             # update the results text element
             results_text_element.insert(tk.END, '--------------------------------------\n')
             results_text_element.insert(tk.END, 'Search took {:.2f} seconds\n'.format(total_search_time))
-
 
             # use this to make sure we have a new prompt prefix for the next search
             self._text_window_update(search_window_id, 'Ready for new search.')
@@ -7480,6 +7642,8 @@ class ToolkitOps:
 
                         # then add each phrase to the search corpus
                         for phrase_index, phrase in enumerate(phrases):
+
+                            # todo: make this configurable!
                             # but only if it's longer than 2 characters
                             # to avoid adding stuff that is most likely meaningless
                             # like punctuation marks
@@ -7962,6 +8126,9 @@ class ToolkitOps:
                 # we use cosine-similarity and torch.topk to find the highest top_k scores
                 cos_scores = util.cos_sim(query_embedding, corpus_embeddings)[0]
                 top_results = torch.topk(cos_scores, k=top_k, sorted=True)
+
+                # reverse the results so that they are in descending order
+                top_results = (top_results[0].tolist()[::-1], top_results[1].tolist()[::-1])
 
                 logger.debug('Found results.')
 
@@ -8816,7 +8983,7 @@ class ToolkitOps:
     def in_transcription_log(self, unique_id=None, return_status=False):
         '''
         Checks if a unique id is in the transcription log
-        :param unique_id: 
+        :param unique_id:
         :param return_status: Whether to return the status of the item or just True/False
         :return:
         '''
@@ -8898,7 +9065,7 @@ class ToolkitOps:
 
         # define the permitted attributes
         permitted_attributes = ['task', 'audio_file_path', 'name', 'language', 'model', 'device', 'unique_id',
-                                'pre_detect_speech',
+                                'pre_detect_speech', 'word_timestamps',
                                 'transcription_file_path', 'time_intervals', 'excluded_time_intervals', 'initial_prompt'
                                 ]
 
@@ -8981,6 +9148,7 @@ class ToolkitOps:
                              'language': language, 'model': model, 'device': device,
                              'initial_prompt': initial_prompt,
                              'pre_detect_speech': kwargs.get('pre_detect_speech', False),
+                             'word_timestamps': kwargs.get('word_timestamps', False),
                              'time_intervals': time_intervals,
                              'excluded_time_intervals': excluded_time_intervals,
                              'transcription_file_path': transcription_file_path,
@@ -9109,6 +9277,7 @@ class ToolkitOps:
                 self.transcription_queue_thread = Thread(target=self.transcribe_from_queue,
                                                          args=(next_queue_id,)
                                                          )
+                self.transcription_queue_thread.daemon = True
                 self.transcription_queue_thread.start()
 
                 # delete this file from the queue
@@ -9138,6 +9307,7 @@ class ToolkitOps:
         queue_attr['device'], \
         queue_attr['initial_prompt'], \
         queue_attr['pre_detect_speech'], \
+        queue_attr['word_timestamps'], \
         queue_attr['time_intervals'], \
         queue_attr['excluded_time_intervals'], \
         queue_attr['transcription_file_path'],\
@@ -9163,7 +9333,7 @@ class ToolkitOps:
             # show error
             logger.error(traceback.format_exc())
             # update the status of the item in the transcription log
-            self.update_transcription_log(unique_id=queue_id, **{'status': 'failed'})
+            self.update_transcription_log(unique_id=queue_id, **{'status': 'failed', 'progress': ''})
 
         # reset the transcription thread and name:
         self.transcription_queue_current_name = None
@@ -9190,6 +9360,7 @@ class ToolkitOps:
                     queue_file['language'], queue_file['model'], queue_file['device'],
                     queue_file['initial_prompt'],
                     queue_file['pre_detect_speech'],
+                    queue_file['word_timestamps'],
                     queue_file['time_intervals'],
                     queue_file['excluded_time_intervals'],
                     queue_file['transcription_file_path'],
@@ -9429,6 +9600,22 @@ class ToolkitOps:
                                                    previous_progress=previous_progress,
                                                    **other_whisper_options
                                                    )
+
+            # do some housekeeping
+            # go through each segment in the result
+            for segment in result['segments']:
+
+                # do not allow empty segments
+                if 'text' not in segment or segment['text'] == '':
+
+                    # remove the segment from the result
+                    result['segments'].remove(segment)
+
+                # remove word timestamps from the result to avoid confusion,
+                # until the word-based transcript editing is implemented
+                if 'words' in segment:
+                    del segment['words']
+
             # post process the result
             result = self.post_process_whisper_result(audio_segment[2], result)
 
@@ -9679,6 +9866,8 @@ class ToolkitOps:
                 # update the status of the item in the transcription log
                 self.update_transcription_log(unique_id=queue_id, **{'status': 'pre-detecting speech'})
 
+                logger.info('Pre-detecting speech intervals in the audio.')
+
                 # perform speech detection
                 time_intervals = self.get_speech_intervals(audio_array)
 
@@ -9780,7 +9969,7 @@ class ToolkitOps:
             logger.error(traceback_str)
 
             # update the status of the item in the transcription log
-            self.update_transcription_log(unique_id=queue_id, **{'status': 'failed'})
+            self.update_transcription_log(unique_id=queue_id, **{'status': 'failed', 'progress': ''})
 
         # update the transcription data with the new segments
         # but first remove all the segments between the time intervals that were passed
@@ -9906,11 +10095,11 @@ class ToolkitOps:
             if os.path.exists(render_json_file_path):
                 with open(render_json_file_path, 'r') as render_json_file:
                     render_data = json.load(render_json_file)
-                    if 'timeline_fps' not in transcription_data:
+                    if 'timeline_fps' not in transcription_data and 'fps' in render_data:
                         transcription_data['timeline_fps'] = render_data['fps']
-                    if 'timeline_start_tc' not in transcription_data:
+                    if 'timeline_start_tc' not in transcription_data and 'timeline_start_tc' in render_data:
                         transcription_data['timeline_start_tc'] = render_data['timeline_start_tc']
-                    if 'timeline_name' not in transcription_data:
+                    if 'timeline_name' not in transcription_data and 'timeline_name' in render_data:
                         transcription_data['timeline_name'] = render_data['timeline_name']
 
                 logger.debug('Getting timeline data from render json file: {}'.format(render_json_file_path))
@@ -10016,6 +10205,10 @@ class ToolkitOps:
         if 'segments' not in transcription_json:
             logger.warning("The file {} is not a valid transcription file (segments missing)".format(transcription_file_path))
             return False
+
+        # check if the transcription file contains word timings
+        if len(transcription_json['segments']) > 0 and 'words' in transcription_json['segments'][0]:
+            logger.debug("Word level timings detected.")
 
         return transcription_json
 
@@ -11157,6 +11350,9 @@ class StoryToolkitAI:
         self.api_token = None
         self.api_host = None
         self.api = None
+        self.api_token_valid = False
+
+        self.check_api_token()
 
         logger.info(Style.BOLD+Style.UNDERLINE+"Running StoryToolkitAI{} version {} {}"
                     .format(' SERVER' if server else '',
@@ -11490,6 +11686,44 @@ class StoryToolkitAI:
 
         # if the setting key, or any of the stuff above wasn't found
         return None
+
+    def check_api_token(self, api_token=None):
+        '''
+        This checks if the user token is valid
+        If no token is set, it will return False without performing the check
+        :return:
+        '''
+
+        if api_token is None:
+            self.api_token = self.get_app_setting(setting_name='api_token', default_if_none=False)
+        else:
+            self.api_token = api_token
+
+        # if the user token is not empty
+        if self.api_token and self.api_token != '':
+            check_path = 'https://api.storytoolkit.ai/check_token?token={}'.format(self.api_token)
+
+            # check if the user token is valid on the server
+            try:
+                # access the check path
+                response = get(check_path, timeout=5)
+
+                # if the response is 200 and the text response is 'true'
+                if response.status_code == 200 and response.text == 'true':
+                    logger.debug('Using valid user token.')
+                    self.api_token_valid = True
+                    return True
+
+                else:
+                    logger.debug('User token is not valid.')
+                    self.api_token_valid = False
+                    return False
+
+            except:
+                pass
+
+        self.api_token_valid = False
+        return False
 
     def check_update(self, standalone=False):
         '''
