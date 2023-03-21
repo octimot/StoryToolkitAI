@@ -53,7 +53,7 @@ not only out of sheer generosity, but also because we'd like to change how peopl
 _Some of the above features are only available in the non-standalone version of the tool, but they will be available
 in the standalone version in the next release._
 
-For feature info, go here: [here](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md).
+For detailed features info, go [here](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md).
 
 ## Is it really completely free?
 Yes, the tool runs locally and there's no need for any additional account to transcribe, translate to English, or use 
