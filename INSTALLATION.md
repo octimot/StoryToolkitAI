@@ -2,7 +2,7 @@
 
 [Click here to the main project page](https://github.com/octimot/StoryToolkitAI)
 
-### Have you looked for a standalone version first?
+## Have you looked for a standalone version first?
 We're currently working to get the app in a standalone binary version for different operating systems and platforms,
 so if you don't want to get your hands dirty with terminal commands, check if there is a release available for your 
 platform [here](https://github.com/octimot/StoryToolkitAI/releases).
@@ -11,8 +11,20 @@ Please note that the standalone version may not always be up to date with the la
 so if you want to be sure to have the latest features (some buggy and experimental too), you should install the app 
 from source.
 
+The development of the standalone version depends highly on the support we get from our Patreon community, so
+[please consider supporting the development](https://www.patreon.com/StoryToolkitAI) if you find this tool useful
+in your work.
 
 ---
+
+## How to Install directly from GitHub
+If a binary isn't available, before you attempt something silly like actually installing this tool on your machine, 
+please keep in mind that by clicking on the instructions you will see many computer commands which are the main method 
+used by our ancestors to tame their machines. Approach them with no fear. But do keep in mind that you might end up
+ruining your computer, destroying the Internet, starting AI apocalypse, losing your job and your only real friend, have 
+children out of wedlock, and/or marry your lost non-identical twin by mistake - not necessarily in that order and
+highly unlikely because of the commands, but still slightly possible. Nevertheless, we're not responsible for any of it 
+or anything else that might happen.
 
 ### Quick Info before we start
 
