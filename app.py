@@ -2991,8 +2991,8 @@ class toolkit_UI:
         # add icon
         # todo: add icon to other folder + git
         # todo: change app name from python to storytoolkitai for non-standalone version
-        photo = tk.PhotoImage(file = 'StoryToolkitAI.png')
-        self.root.wm_iconphoto(False, photo)
+        #photo = tk.PhotoImage(file = 'StoryToolkitAI.png')
+        #self.root.wm_iconphoto(False, photo)
 
         # initialize app items object
         self.app_items_obj = self.AppItemsUI(toolkit_UI_obj=self)
