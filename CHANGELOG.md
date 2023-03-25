@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.17.16] - 2023-03-25
+
+### Added
+
+- Automatically disable Resolve API connection if running on a Windows machine and multiple Python versions are installed
+- App Icons for Windows and MacOS
+
+### Changed
+
+- Improved the way the tool checks for updates internally
+
+### Bugfixes
+
+- Small interface improvements
+- Advanced Search search_corpus_min_length can now be set via config.json to prevent the tool from not searching single-character languages properly.
+
 ## [0.17.15] - 2023-03-20
 
 ### Added
@@ -9,7 +25,7 @@ All notable changes to this project will be documented in this file, starting wi
 - "Increased Time Precision" gives better transcription timestamps due to the new openai-whisper module
 - Tool now warns user on exit if there still are transcriptions in progress
 - User can choose to not be notified about the current update
-- User Token check - see https://www.patreon.com/StoryToolkitAI for more info
+- User Token check - see [StoryToolkit on Patreon](https://www.patreon.com/StoryToolkitAI) for more info
 
 ### Bugfixes
 

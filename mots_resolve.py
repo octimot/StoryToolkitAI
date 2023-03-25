@@ -60,8 +60,69 @@ class MotsResolve:
         # this is where we hold the fusionscript module
         self.bmd = None
 
-        # initialize the Resolve API
-        self.api = self.get_resolve()
+        # only initialize the Resolve API if the Python version check is successful
+        if self.python_check():
+
+            # initialize the Resolve API
+            self.api = self.get_resolve()
+
+        else:
+            self.logger.error("Python version check failed. Resolve API connection disabled.")
+            self.api = None
+            self.api_module_available = False
+
+    def python_check(self):
+        '''
+        Checks if the default Python version is the same as the one used by the current running script
+        If this is not the case, the API will not work properly on Windows machines.
+        '''
+
+        if sys.platform == 'win32':
+
+            # get the current Python major and minor version numbers
+            current_python_version = '.'.join(platform.python_version().split('.')[:2])
+
+            result = subprocess.run(['py', '-0'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            output_str = result.stdout.decode('utf-8').strip()
+
+            output_str = output_str.split('\n')
+
+            # take all the lines that start with a dash
+            found_python_versions = []
+            for line in output_str:
+
+                if line.strip().startswith('-'):
+                    # get the version number
+                    found_python_version = line.strip()
+
+                    # remove the dash in front of the version number
+                    found_python_version = found_python_version[1:]
+
+                    # remove the -64 suffix if it's there
+                    found_python_version = found_python_version.replace('-64', '')
+
+                    # get the major and minor version numbers
+                    found_python_version = '.'.join(found_python_version.split('.')[:2])
+
+                    # add the version to the list of versions
+                    found_python_versions.append(found_python_version)
+
+            # check if more than one Python version was found
+            if len(found_python_versions) > 1 or \
+                    (len(found_python_versions) == 1 and current_python_version not in found_python_versions):
+
+                self.logger.warning("Found the following Python versions on this machine: {}"
+                                    .format(", ".join(found_python_versions)))
+                self.logger.warning("Current installation runs on Python version {}."
+                                    .format(current_python_version))
+                self.logger.warning("Unable be able to connect to DaVinci Resolve API on Windows if this is the case.")
+                self.logger.warning(
+                    "Please uninstall all Python versions except version {}.".format(current_python_version))
+
+                return False
+
+        return True
+
 
     def get_resolve(self):
         '''

@@ -322,7 +322,7 @@ class toolkit_UI:
             return
 
         def open_features_info(self):
-            webbrowser.open_new("https://github.com/octimot/StoryToolkitAI#features-info")
+            webbrowser.open_new("https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md")
             return
 
         def open_issue(self):
@@ -2989,10 +2989,16 @@ class toolkit_UI:
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
 
         # add icon
-        # todo: add icon to other folder + git
-        # todo: change app name from python to storytoolkitai for non-standalone version
-        #photo = tk.PhotoImage(file = 'StoryToolkitAI.png')
-        #self.root.wm_iconphoto(False, photo)
+        try:
+            photo = tk.PhotoImage(file = 'UI/StoryToolkitAI.png')
+            self.root.wm_iconphoto(False, photo)
+
+            # set bar icon for windows
+            if sys.platform == 'win32':
+                self.root.iconbitmap('UI/StoryToolkitAI.ico')
+
+        except:
+            logger.debug('Could not load StoryToolkitAI icon.')
 
         # initialize app items object
         self.app_items_obj = self.AppItemsUI(toolkit_UI_obj=self)
@@ -3077,7 +3083,7 @@ class toolkit_UI:
         if sys.platform == "darwin":
             font_size_ratio = 1.30
         else:
-            font_size_ratio = 0.9
+            font_size_ratio = 0.7
 
         # we're calculating the size based on the screen size
         screen_width, screen_height = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
@@ -3222,7 +3228,9 @@ class toolkit_UI:
             self.before_exit = before_exit
 
         # show the update available message if any
-        if 'update_available' in other_options and other_options['update_available'] is not None:
+        if self.stAI.update_available and self.stAI.update_available is not None:
+
+            print('update available', self.stAI.online_version)
 
             # the url to the releases page
             release_url = 'https://github.com/octimot/StoryToolkitAI/releases/latest'
@@ -3234,7 +3242,7 @@ class toolkit_UI:
             # if there is a new version available
             # the user will see a different update message
             # depending if they're using the standalone version or not
-            if standalone:
+            if self.stAI.standalone:
                 warn_message = 'A new standalone version of StoryToolkitAI is available.'
 
                 # add the question to the pop up message box
@@ -3311,7 +3319,7 @@ class toolkit_UI:
                 # add the skip and later buttons to the action buttons
                 action_buttons.append({'text': 'Skip this version',
                                        'command': lambda: self.ignore_update(
-                                           version_to_ignore=other_options['update_available'],
+                                           version_to_ignore=self.stAI.online_version,
                                            window_id=update_window_id),
                                        'side': tk.RIGHT,
                                        'anchor': 'e'
@@ -3332,7 +3340,7 @@ class toolkit_UI:
             # show a simple message popup
             else:
 
-                if standalone:
+                if self.stAI.standalone:
                     # notify the user and ask whether to open the release website or not
                     goto_projectpage = messagebox.askyesno(title="Update available",
                                                            message=messagebox_message)
@@ -7643,11 +7651,11 @@ class ToolkitOps:
                         # then add each phrase to the search corpus
                         for phrase_index, phrase in enumerate(phrases):
 
-                            # todo: make this configurable!
-                            # but only if it's longer than 2 characters
+                            # but only if it's longer than x characters
                             # to avoid adding stuff that is most likely meaningless
                             # like punctuation marks
-                            if len(phrase) > 2:
+                            if len(phrase) > self.stAI.get_app_setting(
+                                    setting_name='search_corpus_min_length', default_if_none=2):
 
                                 # add the phrase to the search corpus
                                 search_corpus_phrases.append(phrase.strip())
@@ -11312,12 +11320,12 @@ class StoryToolkitAI:
         # import version.py - this holds the version stored locally
         import version
 
-        # check if standalone exists in globals
-        if 'standalone' in globals():
-            global standalone
+        # are we running the standalone version?
+        # keep track of this in this class variable
+        if getattr(sys, 'frozen', False):
+            self.standalone = True
         else:
-            global standalone
-            standalone = False
+            self.standalone = False
 
         # keep the version in memory
         self.__version__ = self.version = version.__version__
@@ -11354,10 +11362,15 @@ class StoryToolkitAI:
 
         self.check_api_token()
 
+        # check if a new version of the app exists on GitHub
+        # but use either the release version number or version.py,
+        # depending on standalone is True or False
+        [self.update_available, self.online_version] = self.check_update()
+
         logger.info(Style.BOLD+Style.UNDERLINE+"Running StoryToolkitAI{} version {} {}"
                     .format(' SERVER' if server else '',
                             self.__version__,
-                            '(standalone)' if standalone else ''))
+                            '(standalone)' if self.standalone else ''))
 
     def user_data_dir_exists(self, create_if_not=True):
         '''
@@ -11725,7 +11738,7 @@ class StoryToolkitAI:
         self.api_token_valid = False
         return False
 
-    def check_update(self, standalone=False):
+    def check_update(self):
         '''
         This checks if there's a new version of the app on GitHub and returns True if it is and the version number
 
@@ -11734,7 +11747,7 @@ class StoryToolkitAI:
         '''
 
         # get the latest release from GitHub if release is True
-        if standalone:
+        if self.standalone:
 
             try:
                 # get the latest release from GitHub
@@ -11794,7 +11807,7 @@ class StoryToolkitAI:
                 if int(online_version[n]) > int(local_version[n]):
 
                     # if we're checking for a standalone release
-                    if standalone and 'latest_release' in locals() and 'assets' in latest_release:
+                    if self.standalone and 'latest_release' in locals() and 'assets' in latest_release:
 
                         release_files = latest_release['assets']
                         if len(release_files) == 0:
@@ -12017,26 +12030,9 @@ if __name__ == '__main__':
 
     # keep a global StoryToolkitAI object for now
     global stAI
-    global standalone
-
-    # are we running the standalone version?
-    if getattr(sys, 'frozen', False):
-        standalone = True
-    else:
-        standalone = False
 
     # init StoryToolkitAI object
     stAI = StoryToolkitAI()
-
-    # check if a new version of the app exists on GitHub
-    # but use either the release version number or version.py,
-    # depending on standalone is True or False
-    [update_exists, online_version] = stAI.check_update(standalone=standalone)
-
-    # if an update exists, let the user know about it
-    update_available = None
-    if update_exists:
-        update_available = online_version
 
     # connect to the API
     # stAI.check_API_credentials()
@@ -12046,8 +12042,7 @@ if __name__ == '__main__':
     toolkit_ops_obj = ToolkitOps(stAI=stAI)
 
     # initialize GUI
-    app_UI = toolkit_UI(toolkit_ops_obj=toolkit_ops_obj, stAI=stAI,
-                        update_available=update_available)
+    app_UI = toolkit_UI(toolkit_ops_obj=toolkit_ops_obj, stAI=stAI)
 
     # connect app UI to operations object
     toolkit_ops_obj.toolkit_UI_obj = app_UI
