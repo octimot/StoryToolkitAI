@@ -107,6 +107,9 @@ If you followed the previous steps, your terminal prompt should now have `(venv)
 
 For more info regarding Whisper installation, please check https://github.com/openai/whisper 
 
+If you are seeing an error message like `error: subprocess-exited-with-error` (or similar), 
+you might need to install rust first, see the instructions [here](https://www.rust-lang.org/learn/get-started)
+
 #### 8. Install all the stuff the tool requires:
 _Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
 If you followed the previous steps, your terminal prompt should now have `(venv)` before everything else._
@@ -199,7 +202,7 @@ using the following command!)
 
     venv\Scripts\activate.bat
 
-### 8. Install OpenAI Whisper
+#### 8. Install OpenAI Whisper
 Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. If you followed the previous steps, your terminal prompt should now have (venv) before everything else.
 
     pip install -U openai-whisper
@@ -207,15 +210,16 @@ Note: starting with step 7, you need to make sure that you are installing packag
 For more info regarding Whisper installation, please check https://github.com/openai/whisper
 
 #### 9. Install all the stuff the tool requires:
-Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. If you followed the previous steps, your terminal prompt should now have (venv) before everything else.
+Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
+If you followed the previous steps, your terminal prompt should now have (venv) before everything else.
 
     pip install -r StoryToolkitAI\requirements.txt
 
 If you are running the tool on a machine with an NVIDIA CUDA GPU, make sure you install Torch with CUDA:
     
-    pip uninstall torch
+    pip uninstall torch torchaudio torchvision
     pip cache purge
-    pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
+    pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu117
 
 _Note: If Resolve Studio is not turned on or not available, the transcription and translation functions will work on 
 normal wav files too. Simply press the transcribe or translate buttons and follow the process._
