@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file, starting wi
 ### Added
 
 - Automatically disable Resolve API connection if running on a Windows machine and multiple Python versions are installed
+- Tool accepts --skip-python-check argument to skip the above Python version check
 - App Icons for Windows and MacOS
 
 ### Changed
