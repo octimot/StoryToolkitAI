@@ -61,7 +61,8 @@ class MotsResolve:
         self.bmd = None
 
         # only initialize the Resolve API if the Python version check is successful
-        if self.python_check():
+        # (if the user did not pass --skip-python-check via the command line)
+        if self.python_check() or '--skip-python-check' in sys.argv:
 
             # initialize the Resolve API
             self.api = self.get_resolve()
