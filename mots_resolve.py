@@ -115,7 +115,7 @@ class MotsResolve:
                                     .format(", ".join(found_python_versions)))
                 self.logger.warning("Current installation runs on Python version {}."
                                     .format(current_python_version))
-                self.logger.warning("Unable be able to connect to DaVinci Resolve API on Windows if this is the case.")
+                self.logger.warning("Unable to connect to DaVinci Resolve API on Windows if this is the case.")
                 self.logger.warning(
                     "Please uninstall all Python versions except version {}.".format(current_python_version))
 
