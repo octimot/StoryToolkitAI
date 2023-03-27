@@ -11583,7 +11583,7 @@ class StoryToolkitAI:
         project_settings_path = self._project_settings_path(project_name=project_name)
 
         # read the project settings file if it exists
-        if os.path.exists(project_settings_path):
+        if project_settings_path is not None or os.path.exists(project_settings_path):
 
             # read the project settings from the project.json
             with open(project_settings_path, 'r') as json_file:
