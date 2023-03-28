@@ -5006,7 +5006,6 @@ class toolkit_UI:
             word_timestamps_var.trace('w', lambda *args: update_max_per_segment_inputs_visibility())
             update_max_per_segment_inputs_visibility()
 
-
             # INITIAL PROMPT INPUT
             Label(ts_form_frame, text="Initial Prompt", **self.label_settings).grid(row=20, column=1,
                                                                             sticky='nw',

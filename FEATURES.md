@@ -117,7 +117,8 @@ For best results, we recommend using the large model with this option enabled.
 **Max. Characters per Line** and **Max. Words per Line** make the tool split the transcript lines at the specified
 number of characters or words. This is useful if you want to make sure that the transcript lines are not too long,
 but since there's no AI involved in this process (yet), the tool might split sentences in the weirdest places.
-When both options are set, the Max. Characters per Line takes precedence.
+When both options are set, the Max. Characters per Line takes precedence. 
+Only works if Increased Time Precision is enabled.
 
 **Time Intervals** allows you to selectively transcribe only a portion of the timeline and Exclude Time Intervals allows 
 you to exclude certain portions of the timelines. The recommended format for these two fields is: "0.00 - 0.00".
