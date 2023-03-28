@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.17.17] - 2023-03-28
+
+### Added
+
+- Max. Words Per Line setting in the Transcription Settings window - more info in [Transcription Settings](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#transcription-settings)
+- Max. Characters Per Line setting in the Transcription Settings window - more info in [Transcription Settings](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#transcription-settings)
+- Added --skip-python-check argument to skip the python_check for brave users
+
+### Bugfixes
+
+- Quick fix on python_check and project path checks
+
 ## [0.17.16] - 2023-03-25
 
 ### Added

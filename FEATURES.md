@@ -114,6 +114,11 @@ of the transcription might take a hit.
 **Increased Time Precision** adds more precision to the transcription timestamps, but it increases the processing time.
 For best results, we recommend using the large model with this option enabled.
 
+**Max. Characters per Line** and **Max. Words per Line** make the tool split the transcript lines at the specified
+number of characters or words. This is useful if you want to make sure that the transcript lines are not too long,
+but since there's no AI involved in this process (yet), the tool might split sentences in the weirdest places.
+When both options are set, the Max. Characters per Line takes precedence.
+
 **Time Intervals** allows you to selectively transcribe only a portion of the timeline and Exclude Time Intervals allows 
 you to exclude certain portions of the timelines. The recommended format for these two fields is: "0.00 - 0.00".
 For eg., if you want to transcribe the first 10 seconds of the audio and the portion between 30 and 40 seconds, 
@@ -366,5 +371,12 @@ Other shortcuts etc.
     search results                        result in the transcript window
                                               
                                                 
+## Execution Arguments
+
+`--noresolve` - This will disable the Resolve API communication. 
+
+`--skip-python-check` -This will skip the check for conflicting Python versions
+
+`--debug` - This will show all the debug info in the console
 
 ---

@@ -2706,6 +2706,14 @@ class toolkit_UI:
                     = tk.BooleanVar(pref_form_frame,
                                     value=self.stAI.get_app_setting('transcription_word_timestamps', default_if_none=True))
 
+                transcription_max_chars_per_segment_var\
+                    = tk.StringVar(pref_form_frame,
+                                    value=self.stAI.get_app_setting('transcription_max_chars_per_segment', default_if_none=''))
+
+                transcription_max_words_per_segment_var\
+                    = tk.StringVar(pref_form_frame,
+                                    value=self.stAI.get_app_setting('transcription_max_words_per_segment', default_if_none=''))
+
                 transcription_render_preset_var\
                     = tk.StringVar(pref_form_frame,
                                       value=self.stAI.get_app_setting('transcription_render_preset',
@@ -2811,15 +2819,35 @@ class toolkit_UI:
                 transcription_word_timestamps_input = tk.Checkbutton(pref_form_frame, variable=transcription_word_timestamps_var)
                 transcription_word_timestamps_input.grid(row=26, column=1, **form_grid_and_paddings)
 
+                # max characters per line
+                tk.Label(pref_form_frame, text='Max. Characters Per Line', **label_settings).grid(row=27, column=0, **form_grid_and_paddings)
+                max_chars_per_segment_input = tk.Entry(pref_form_frame, textvariable=transcription_max_chars_per_segment_var, **entry_settings_quarter)
+                max_chars_per_segment_input.grid(row=27, column=1, **form_grid_and_paddings)
+
+                # only allow integers
+                max_chars_per_segment_input.config(validate="key",
+                                                   validatecommand=
+                                                   (max_chars_per_segment_input.register(self.toolkit_UI_obj.only_allow_integers), '%P'))
+
+                # max characters per line
+                tk.Label(pref_form_frame, text='Max. Words Per Line', **label_settings).grid(row=28, column=0, **form_grid_and_paddings)
+                max_words_per_segment_input = tk.Entry(pref_form_frame, textvariable=transcription_max_words_per_segment_var, **entry_settings_quarter)
+                max_words_per_segment_input.grid(row=28, column=1, **form_grid_and_paddings)
+
+                # only allow integers
+                max_words_per_segment_input.config(validate="key",
+                                                    validatecommand=
+                                                    (max_words_per_segment_input.register(self.toolkit_UI_obj.only_allow_integers), '%P'))
+
                 # the transcript font size
-                tk.Label(pref_form_frame, text='Transcript Font Size', **label_settings).grid(row=28, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Transcript Font Size', **label_settings).grid(row=29, column=0, **form_grid_and_paddings)
                 transcript_font_size_input = tk.Entry(pref_form_frame, textvariable=transcript_font_size_var, **entry_settings_quarter)
-                transcript_font_size_input.grid(row=28, column=1, **form_grid_and_paddings)
+                transcript_font_size_input.grid(row=29, column=1, **form_grid_and_paddings)
 
                 # transcripts always on top
-                tk.Label(pref_form_frame, text='Transcript Always On Top', **label_settings).grid(row=29, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Transcript Always On Top', **label_settings).grid(row=30, column=0, **form_grid_and_paddings)
                 transcripts_always_on_top_input = tk.Checkbutton(pref_form_frame, variable=transcripts_always_on_top_var)
-                transcripts_always_on_top_input.grid(row=29, column=1, **form_grid_and_paddings)
+                transcripts_always_on_top_input.grid(row=30, column=1, **form_grid_and_paddings)
 
                 # transcripts always on top
                 tk.Label(pref_form_frame, text='Skip Transcription Settings', **label_settings).grid(row=30, column=0, **form_grid_and_paddings)
@@ -2847,6 +2875,8 @@ class toolkit_UI:
                      'transcription_default_language': transcription_default_language_var,
                      'transcription_pre_detect_speech': transcription_pre_detect_speech_var,
                      'transcription_word_timestamps': transcription_word_timestamps_var,
+                     'transcription_max_chars_per_segment': transcription_max_chars_per_segment_var,
+                     'transcription_max_words_per_segment': transcription_max_words_per_segment_var,
                      'transcription_render_preset': transcription_render_preset_var,
                      'transcript_font_size': transcript_font_size_var,
                      'transcripts_always_on_top': transcripts_always_on_top_var,
@@ -2855,7 +2885,7 @@ class toolkit_UI:
                 }
 
 
-                Label(pref_form_frame, text="", **label_settings).grid(row=40, column=0, **form_grid_and_paddings)
+                Label(pref_form_frame, text="", **label_settings).grid(row=50, column=0, **form_grid_and_paddings)
                 start_button = tk.Button(pref_form_frame, text='Save')
                 start_button.grid(row=40, column=1, **form_grid_and_paddings)
                 start_button.config(command=lambda: self.save_preferences(input_variables))
@@ -3355,6 +3385,17 @@ class toolkit_UI:
             # open the browser and go to the release_url
             if goto_projectpage:
                 webbrowser.open(release_url)
+
+    def only_allow_integers(self, value):
+        '''
+        Validation function for the entry widget.
+        '''
+        if value.isdigit():
+            return True
+        elif value == "":
+            return True
+        else:
+            return False
 
     def ignore_update(self, version_to_ignore=None, window_id=None):
         '''
@@ -4914,37 +4955,86 @@ class toolkit_UI:
 
             word_timestamps_input = tk.Checkbutton(ts_form_frame, variable=word_timestamps_var)
             word_timestamps_input.grid(row=8, column=2, **self.input_grid_settings, **self.form_paddings)
+            
+            # MAX CHARACTERS PER SEGMENT
+            max_chars_per_segment_label = Label(ts_form_frame, text="Max. Characters Per Line", **self.label_settings)
+            max_chars_per_segment_label.grid(row=9, column=1, **self.input_grid_settings, **self.form_paddings)
+            max_chars_per_segment_var = tk.StringVar(ts_form_frame,
+                                                  value=self.stAI.get_app_setting('transcription_max_chars_per_segment',
+                                                                                    default_if_none=''))
+            
+            max_chars_per_segment_input = tk.Entry(ts_form_frame, textvariable=max_chars_per_segment_var, **self.entry_settings_quarter)
+            max_chars_per_segment_input.grid(row=9, column=2, **self.input_grid_settings, **self.form_paddings)
 
+            # only allow integers
+            max_chars_per_segment_input.config(validate="key",
+                                               validatecommand=
+                                               (max_chars_per_segment_input.register(
+                                                   self.only_allow_integers), '%P'))
+
+            # MAX WORDS PER SEGMENT
+            max_words_per_segment_label = Label(ts_form_frame, text="Max. Words Per Line", **self.label_settings)
+            max_words_per_segment_label.grid(row=10, column=1, **self.input_grid_settings, **self.form_paddings)
+
+            max_words_per_segment_var = tk.StringVar(ts_form_frame,
+                                                    value=self.stAI.get_app_setting('transcription_max_words_per_segment',
+                                                                                        default_if_none=''))
+            
+            max_words_per_segment_input = tk.Entry(ts_form_frame, textvariable=max_words_per_segment_var, **self.entry_settings_quarter)
+            max_words_per_segment_input.grid(row=10, column=2, **self.input_grid_settings, **self.form_paddings)
+
+            # only allow integers
+            max_words_per_segment_input.config(validate="key",
+                                               validatecommand=
+                                               (max_chars_per_segment_input.register(
+                                                   self.only_allow_integers), '%P'))
+
+            # if word_timestamps_var is False, hide the max words per segment input
+            # but check on every change of the word_timestamps_var
+            def update_max_per_segment_inputs_visibility():
+                if word_timestamps_var.get():
+                    max_words_per_segment_input.grid()
+                    max_chars_per_segment_input.grid()
+                    max_words_per_segment_label.grid()
+                    max_chars_per_segment_label.grid()
+                else:
+                    max_words_per_segment_input.grid_remove()
+                    max_chars_per_segment_input.grid_remove()
+                    max_words_per_segment_label.grid_remove()
+                    max_chars_per_segment_label.grid_remove()
+
+            word_timestamps_var.trace('w', lambda *args: update_max_per_segment_inputs_visibility())
+            update_max_per_segment_inputs_visibility()
 
 
             # INITIAL PROMPT INPUT
-            Label(ts_form_frame, text="Initial Prompt", **self.label_settings).grid(row=9, column=1,
+            Label(ts_form_frame, text="Initial Prompt", **self.label_settings).grid(row=20, column=1,
                                                                             sticky='nw',
                                                                           #**self.input_grid_settings,
                                                                           **self.form_paddings)
             # prompt_var = StringVar(ts_form_frame)
             prompt_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
-            prompt_input.grid(row=9, column=2, **self.input_grid_settings, **self.form_paddings)
+            prompt_input.grid(row=20, column=2, **self.input_grid_settings, **self.form_paddings)
             prompt_input.insert(END, " - How are you?\n - I'm fine, thank you.")
 
             # TIME INTERVALS INPUT
-            Label(ts_form_frame, text="Time Intervals", **self.label_settings).grid(row=10, column=1,
+            Label(ts_form_frame, text="Time Intervals", **self.label_settings).grid(row=30, column=1,
                                                                             sticky='nw',
                                                                           #**self.input_grid_settings,
                                                                           **self.form_paddings)
 
             time_intervals_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
-            time_intervals_input.grid(row=10, column=2, **self.input_grid_settings, **self.form_paddings)
+            time_intervals_input.grid(row=30, column=2, **self.input_grid_settings, **self.form_paddings)
             time_intervals_input.insert(END, str(time_intervals) if time_intervals is not None else '')
 
             # EXCLUDE TIME INTERVALS INPUT
-            Label(ts_form_frame, text="Exclude Time Intervals", **self.label_settings).grid(row=11, column=1,
+            Label(ts_form_frame, text="Exclude Time Intervals", **self.label_settings).grid(row=31, column=1,
                                                                             sticky='nw',
                                                                           #**self.input_grid_settings,
                                                                           **self.form_paddings)
 
             excluded_time_intervals_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
-            excluded_time_intervals_input.grid(row=11, column=2, **self.input_grid_settings, **self.form_paddings)
+            excluded_time_intervals_input.grid(row=31, column=2, **self.input_grid_settings, **self.form_paddings)
             excluded_time_intervals_input.insert(END,
                                                 str(excluded_time_intervals) \
                                                     if excluded_time_intervals is not None else '')
@@ -4954,10 +5044,10 @@ class toolkit_UI:
             # add all the settings entered by the use into a nice dictionary
             # transcription_config = dict(name=name_input.get(), language='English', beam_size=5, best_of=5)
 
-            Label(ts_form_frame, text="", **self.label_settings).grid(row=15, column=1,
+            Label(ts_form_frame, text="", **self.label_settings).grid(row=50, column=1,
                                                                       **self.input_grid_settings, **self.paddings)
             start_button = Button(ts_form_frame, text='Start')
-            start_button.grid(row=15, column=2, **self.input_grid_settings, **self.paddings)
+            start_button.grid(row=50, column=2, **self.input_grid_settings, **self.paddings)
             start_button.config(command=lambda audio_file_path=audio_file_path,
                                                transcription_file_path_var=transcription_file_path_var,
                                                unique_id=unique_id,
@@ -4973,6 +5063,8 @@ class toolkit_UI:
                                             initial_prompt=prompt_input.get(1.0, END),
                                             pre_detect_speech=pre_detect_speech_var.get(),
                                             word_timestamps=word_timestamps_var.get(),
+                                            max_chars_per_segment=max_chars_per_segment_var.get(),
+                                            max_words_per_segment=max_words_per_segment_var.get(),
                                             time_intervals=time_intervals_input.get(1.0, END),
                                             excluded_time_intervals=excluded_time_intervals_input.get(1.0, END),
                                             transcription_file_path=transcription_file_path_var.get()
@@ -4992,6 +5084,8 @@ class toolkit_UI:
                                                 initial_prompt=prompt_input.get(1.0, END),
                                                 pre_detect_speech=pre_detect_speech_var.get(),
                                                 word_timestamps=word_timestamps_var.get(),
+                                                max_chars_per_segment=max_chars_per_segment_var.get(),
+                                                max_words_per_segment=max_words_per_segment_var.get(),
                                                 time_intervals=time_intervals_input.get(1.0, END),
                                                 excluded_time_intervals=excluded_time_intervals_input.get(1.0, END),
                                                 transcription_file_path=transcription_file_path_var.get()
@@ -9073,7 +9167,7 @@ class ToolkitOps:
 
         # define the permitted attributes
         permitted_attributes = ['task', 'audio_file_path', 'name', 'language', 'model', 'device', 'unique_id',
-                                'pre_detect_speech', 'word_timestamps',
+                                'pre_detect_speech', 'word_timestamps', 'max_chars_per_segment', 'max_words_per_segment',
                                 'transcription_file_path', 'time_intervals', 'excluded_time_intervals', 'initial_prompt'
                                 ]
 
@@ -9157,6 +9251,8 @@ class ToolkitOps:
                              'initial_prompt': initial_prompt,
                              'pre_detect_speech': kwargs.get('pre_detect_speech', False),
                              'word_timestamps': kwargs.get('word_timestamps', False),
+                             'max_chars_per_segment': kwargs.get('max_chars_per_segment', False),
+                             'max_words_per_segment': kwargs.get('max_words_per_segment', False),
                              'time_intervals': time_intervals,
                              'excluded_time_intervals': excluded_time_intervals,
                              'transcription_file_path': transcription_file_path,
@@ -9316,6 +9412,8 @@ class ToolkitOps:
         queue_attr['initial_prompt'], \
         queue_attr['pre_detect_speech'], \
         queue_attr['word_timestamps'], \
+        queue_attr['max_chars_per_segment'], \
+        queue_attr['max_words_per_segment'], \
         queue_attr['time_intervals'], \
         queue_attr['excluded_time_intervals'], \
         queue_attr['transcription_file_path'],\
@@ -9369,6 +9467,8 @@ class ToolkitOps:
                     queue_file['initial_prompt'],
                     queue_file['pre_detect_speech'],
                     queue_file['word_timestamps'],
+                    queue_file['max_chars_per_segment'],
+                    queue_file['max_words_per_segment'],
                     queue_file['time_intervals'],
                     queue_file['excluded_time_intervals'],
                     queue_file['transcription_file_path'],
@@ -9559,6 +9659,222 @@ class ToolkitOps:
 
         return audio_segment
 
+    def split_segment(self, segment, segment_word_limit: int=None, segment_character_limit: int=None):
+        """
+        Splits the segment into multiple segments by the given word limit or character limit.
+        The word limit will be overridden by the character limit if both are specified.
+        """
+
+        if not segment_word_limit and not segment_character_limit:
+            return segment
+
+        # if the segment contains no words, we can't perform the split
+        # because we don't know the start and end times of the words
+        if 'words' not in segment or not segment['words']:
+            return segment
+
+        # we need to be aware that the segment might be split multiple times
+        # so we need to keep track of the current segment index
+        current_segment_index = 0
+
+        # we need to keep track of the current segment text - this is what we use to check over and over again
+        current_segment_text = segment['text']
+
+        # we need to keep track of the remaining words in the segment
+        current_segment_words = segment['words']
+
+        # we need to keep track of the number of words in the segment
+        # this might be used to determine the number of words to keep in the first part
+        # and the number of words to keep in the second part
+        current_segment_words_count = len(current_segment_words)
+
+        # here we keep track of the segments that result after splitting
+        resulting_segments = []
+
+        # while the current segment text is longer than the character limit
+        # or the current segment has more words than the word limit
+        while (segment_character_limit and len(current_segment_text) > segment_character_limit) \
+                or (segment_word_limit and current_segment_words_count > segment_word_limit):
+
+            # if we're doing a character limit split
+            if segment_character_limit:
+                # split the current segment text into two parts
+                # the first part is the first segment_character_limit characters
+                # the second part is the rest of the characters
+                # but make sure that you're not splitting a word
+                # so look for the last space before the segment_character_limit
+                # and split 1 character before that to include the space and preserve Whisper's formatting
+                last_space_index = current_segment_text.rfind(' ', 0, segment_character_limit)
+
+                # if there is no space before the segment_character_limit, try to find the space after the segment_character_limit
+                if last_space_index == -1:
+                    last_space_index = current_segment_text.find(' ', segment_character_limit)
+
+                # if there is no space before or after the segment_character_limit, don't split the segment
+                if last_space_index == -1:
+                    break
+
+            # otherwise, if we're doing a word limit split
+            else:
+
+                # we preserve the number of words according to the word limit by finding the relevant space index
+
+                # does the segment start with a space?
+                # if so, we need to skip the first occurence of the space
+                if current_segment_text[0] == ' ':
+                    skip = 1
+
+                def find_nth(haystack, needle, n, skip=True):
+
+                    if skip:
+                        start = haystack.find(needle, 1)
+                    else:
+                        start = haystack.find(needle)
+
+                    while start >= 0 and n > 1:
+                        start = haystack.find(needle, start + 1)
+                        n -= 1
+                    return start
+
+                last_space_index = find_nth(current_segment_text, ' ', segment_word_limit)
+
+                # if there is no space after the word limit, don't split the segment
+                if last_space_index == -1:
+                    break
+
+            # split the segment into two parts
+            segment_first_part = current_segment_text[:last_space_index]
+            segment_second_part = current_segment_text[last_space_index + 1:]
+
+            # the words list is a list of dictionaries,
+            # each dictionary containing the word and its start time, end time and probability
+            # considering that the word list is ordered and the words have to have the same order in the resulting segments
+            # and also that the words have the exact same length as the text in the segment
+            # we can use the length of the first part to determine which words to keep in the first part
+            # and which words to keep in the second part
+
+            # keep the character length of the words in the first part
+            first_part_words_character_length = 0
+            first_part_words = []
+            first_part_start = None
+            first_part_end = None
+            for word in current_segment_words:
+
+                # if the character length of the words in the first part is longer than the first part
+                # then we've reached the end of the first part
+                # when calculating the length of the first part,
+                # we need to add a space at the beginning to preserve Whisper's formatting
+                if first_part_words_character_length + len(word['word']) > len(' ' + segment_first_part):
+                    break
+
+                # if the first part start is None, then set it to the current word start time
+                if first_part_start is None:
+                    first_part_start = word['start']
+
+                first_part_words_character_length += len(word['word'])
+
+                # keep the words in the first part
+                first_part_words.append(word)
+
+                # keep updating the first part end time
+                first_part_end = word['end']
+
+                # remove the words from the current segment words
+                current_segment_words.remove(word)
+
+            # create a new segment
+            if segment_first_part != '':
+
+                # add a space at the beginning to preserve Whisper's formatting
+                if segment_first_part[0] != ' ':
+                    segment_first_part = ' ' + segment_first_part
+
+                new_segment = {
+                    'text': segment_first_part,
+                    'start': first_part_start if first_part_start is not None else segment['start'],
+                    'end': first_part_end if first_part_end is not None else segment['end'],
+                    'words': first_part_words,
+                }
+
+                # add the new segment to the resulting segments
+                resulting_segments.append(new_segment)
+
+            # set the current segment text to the second part
+            current_segment_text = segment_second_part
+
+            # increment the current segment index
+            current_segment_index += 1
+
+        # is there anything left in the current segment text?
+        if current_segment_text:
+            # create a new segment
+
+            # add a space at the beginning to preserve Whisper's formatting
+            # the space was most likely removed when splitting the segment
+            if current_segment_text[0] != ' ':
+                current_segment_text = ' ' + current_segment_text
+
+            new_segment = {
+                'text': current_segment_text,
+                'start': current_segment_words[0]['start'] if current_segment_words else segment['start'],
+                'end': current_segment_words[-1]['end'] if current_segment_words else segment['end'],
+                'words': current_segment_words,
+            }
+
+            # add the new segment to the resulting segments
+            resulting_segments.append(new_segment)
+
+        # return the resulting segments
+        return resulting_segments
+
+    def split_segments(self, segments, **kwargs):
+
+        # if there are no 'words' in the first segment it means that Whisper hasn't returned any word timings
+        # in this case, we can't split the segments
+        if len(segments) == 0 or 'words' not in segments[0]:
+            return segments
+
+        # get the segment word limit
+        segment_word_limit = kwargs.get('max_words_per_segment', None)
+
+        # get the segment character limit
+        segment_character_limit = kwargs.get('max_chars_per_segment', None)
+
+        # validate that the segment word limit is an integer
+        if segment_word_limit is not None:
+            try:
+                segment_word_limit = int(segment_word_limit)
+            except ValueError:
+                segment_word_limit = None
+
+        # validate that the segment character limit is an integer
+        if segment_character_limit is not None:
+            try:
+                segment_character_limit = int(segment_character_limit)
+            except ValueError:
+                segment_character_limit = None
+
+        # if there is a segment word limit or character limit
+        # and the result is longer than the any of the limits
+        # (the character limit takes precedence)
+        # then split the result into multiple segments
+        if segment_character_limit is not None or segment_word_limit is not None:
+
+            # the resulting segments
+            new_segments = []
+            # take each segment in the result
+            for segment in segments:
+                # split the segment into multiple segments
+                resulting_segment = self.split_segment(segment, segment_word_limit, segment_character_limit)
+
+                # add the resulting segments to the new segments list
+                new_segments.extend(resulting_segment)
+
+            # replace the segments in the result with the new segments
+            segments = new_segments
+
+        return segments
+
     def post_process_whisper_result(self, audio, result, **kwargs):
         """
         Post processes the result of a whisper transcribe call
@@ -9566,6 +9882,27 @@ class ToolkitOps:
         :param result:
         :return:
         """
+
+        # don't do anything if there are no segments
+        if 'segments' not in result:
+            return result
+
+        # split segments if necessary
+        result['segments'] = self.split_segments(result['segments'], **kwargs)
+
+        # do some housekeeping
+        # go through each segment in the result
+        for segment in result['segments']:
+
+            # do not allow empty segments
+            if 'text' not in segment or segment['text'] == '':
+                # remove the segment from the result
+                result['segments'].remove(segment)
+
+            # remove word timestamps from the result to avoid confusion,
+            # until the word-based transcript editing is implemented
+            if 'words' in segment:
+                del segment['words']
 
         return result
 
@@ -9597,6 +9934,16 @@ class ToolkitOps:
             # pre process the audio segment
             audio_segment = self.pre_process_audio_segment(audio_segment, **other_whisper_options)
 
+            # remove post processing options not used by whisper to prevent disaster
+            post_processing_options = {}
+            whisper_options = {}
+            for key in other_whisper_options:
+                if key in ['max_chars_per_segment', 'max_words_per_segment']:
+                    post_processing_options[key] = other_whisper_options[key]
+
+                else:
+                    whisper_options[key] = other_whisper_options[key]
+
             # run whisper transcribe on the audio segment
             result = self.whisper_model.transcribe(audio_segment[2],
                                                    task=task,
@@ -9606,26 +9953,11 @@ class ToolkitOps:
                                                    total_duration=total_duration,
                                                    audio_segment_duration=audio_segment[1]-audio_segment[0],
                                                    previous_progress=previous_progress,
-                                                   **other_whisper_options
+                                                   **whisper_options
                                                    )
 
-            # do some housekeeping
-            # go through each segment in the result
-            for segment in result['segments']:
-
-                # do not allow empty segments
-                if 'text' not in segment or segment['text'] == '':
-
-                    # remove the segment from the result
-                    result['segments'].remove(segment)
-
-                # remove word timestamps from the result to avoid confusion,
-                # until the word-based transcript editing is implemented
-                if 'words' in segment:
-                    del segment['words']
-
             # post process the result
-            result = self.post_process_whisper_result(audio_segment[2], result)
+            result = self.post_process_whisper_result(audio_segment[2], result, **post_processing_options)
 
             # get the progress of the transcription so far,
             # so we can pass it to the next audio segment for the progress calculation
