@@ -85,8 +85,15 @@ class MotsResolve:
             # get the current Python major and minor version numbers
             current_python_version = platform.python_version()
 
-            result = subprocess.run(['py', '-0'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            output_str = result.stdout.decode('utf-8').strip()
+            # get the list of all Python versions installed on this machine using py -0
+            try:
+                result = subprocess.run(['py', '-0'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                output_str = result.stdout.decode('utf-8').strip()
+
+            # if py is not found, assume the Python version is fine - the latest python versions should come with py
+            except FileNotFoundError:
+                self.logger.debug("py not found on this machine. Skipping Python version check.")
+                return True
 
             output_str = output_str.split('\n')
 
