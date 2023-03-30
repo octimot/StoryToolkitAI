@@ -12097,7 +12097,7 @@ class StoryToolkitAI:
 
         # otherwise get the latest version from the GitHub repo version.py file
         else:
-            version_request = "https://raw.githubusercontent.com/octimot/StoryToolkitAI/main/version.py"
+            version_request = "https://api.storytoolkit.ai/version"
 
             # retrieve the latest version number from github
             try:
