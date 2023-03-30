@@ -366,6 +366,10 @@ class MotsResolve:
             resolve_data: dict
         """
 
+        # do not run this is the API module is not available
+        if not self.api_module_available:
+            return None
+
         # initialize resolve objects
 
         resolve_init = [resolve, project, mediaPool, projectManager, currentBin, currentTimeline] \

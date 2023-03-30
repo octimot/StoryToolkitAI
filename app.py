@@ -25,6 +25,9 @@ import torchaudio
 import mots_whisper as whisper
 from whisper import tokenizer as whisper_tokenizer
 
+import openai
+from transformers import GPT2TokenizerFast
+
 import librosa
 import soundfile
 
@@ -680,7 +683,7 @@ class toolkit_UI:
                 return
 
             # for now, simply pass to select text lines if it matches one of these keys
-            if event.keysym in ['Up', 'Down', 'v', 'V', 'A', 'i', 'o', 'm', 'M', 'C', 'q', 's', 'L',
+            if event.keysym in ['Up', 'Down', 'v', 'V', 'A', 'i', 'o', 'O', 'm', 'M', 'C', 'q', 's', 'L',
                                 'g', 'G', 'BackSpace', 't', 'a',
                                 'apostrophe', 'semicolon', 'colon', 'quotedbl']:
                 self.segment_actions(event, **attributes)
@@ -1155,6 +1158,23 @@ class toolkit_UI:
 
                 # remove the selection references too
                 # self.clear_selection(window_id=window_id)
+
+            # 'o' key sends active segment as context to the Assistant window
+            # Shift+O also includes a time column
+            if event.keysym == 'o' or event.keysym == 'O':
+
+                # Shift+O includes a time column
+                if event.keysym == 'O':
+                    text, full_text, _, _ \
+                        = self.get_segments_or_selection(window_id, split_by='line', add_time_column=True)
+
+                else:
+                    text, full_text, _, _ \
+                        = self.get_segments_or_selection(window_id, split_by='line',
+                                                         add_time_column=False, timecodes=False)
+
+                self.toolkit_UI_obj.open_assistant_window(assistant_window_id='assistant',
+                                                          transcript_text=full_text.strip())
 
             # BackSpace key event (delete selected)
             if event.keysym == 'BackSpace':
@@ -2656,9 +2676,6 @@ class toolkit_UI:
                 # these are the app settings that can be changed
 
                 # take all the customizable app settings and create a variable for each one
-                default_marker_color_var \
-                    = tk.StringVar(pref_form_frame,
-                                   value=self.stAI.get_app_setting('default_marker_color', default_if_none='Blue'))
 
                 console_font_size_var \
                     = tk.IntVar(pref_form_frame,
@@ -2672,9 +2689,16 @@ class toolkit_UI:
                     = tk.StringVar(pref_form_frame,
                                     value=self.stAI.get_app_setting('api_token', default_if_none=''))
 
+                openai_api_key_var \
+                    = tk.StringVar(pref_form_frame,
+                                    value=self.stAI.get_app_setting('openai_api_key', default_if_none=''))
+
                 disable_resolve_api_var \
                     = tk.BooleanVar(pref_form_frame,
                                     value=self.stAI.get_app_setting('disable_resolve_api', default_if_none=False))
+                default_marker_color_var \
+                    = tk.StringVar(pref_form_frame,
+                                   value=self.stAI.get_app_setting('default_marker_color', default_if_none='Blue'))
 
                 open_transcript_groups_window_on_open_var \
                     = tk.BooleanVar(pref_form_frame,
@@ -2739,14 +2763,7 @@ class toolkit_UI:
                 # general settings
                 tk.Label(pref_form_frame, text='General Settings', **h1_font).grid(row=0, column=0, columnspan=2, **form_grid_and_paddings)
 
-                tk.Label(pref_form_frame, text='Default Marker Color', **label_settings).grid(row=1, column=0, **form_grid_and_paddings)
 
-                # the default marker color
-                # the dropdown for the default marker color
-                default_marker_color_input = tk.OptionMenu(pref_form_frame,
-                                                           default_marker_color_var,
-                                                           *self.toolkit_UI_obj.resolve_marker_colors)
-                default_marker_color_input.grid(row=1, column=1, **form_grid_and_paddings)
 
                 # the font size for the console
                 tk.Label(pref_form_frame, text='Console Font Size', **label_settings).grid(row=2, column=0, **form_grid_and_paddings)
@@ -2758,10 +2775,21 @@ class toolkit_UI:
                 show_welcome_input = tk.Checkbutton(pref_form_frame, variable=show_welcome_var)
                 show_welcome_input.grid(row=3, column=1, **form_grid_and_paddings)
 
+                # the show window can only be updated if the user has a valid API token
+                if not self.stAI.api_token_valid:
+                    show_welcome_input.config(state='disabled')
+                else:
+                    show_welcome_input.config(state='normal')
+
                 # api token
-                tk.Label(pref_form_frame, text='API Token', **label_settings).grid(row=4, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='StoryToolkitAI API Token', **label_settings).grid(row=4, column=0, **form_grid_and_paddings)
                 api_token_input = tk.Entry(pref_form_frame, textvariable=api_token_var, **entry_settings)
                 api_token_input.grid(row=4, column=1, **form_grid_and_paddings)
+
+                # OpenAI API key
+                tk.Label(pref_form_frame, text='OpenAI API Key', **label_settings).grid(row=5, column=0, **form_grid_and_paddings)
+                openai_api_key_input = tk.Entry(pref_form_frame, show="*", textvariable=openai_api_key_var, **entry_settings)
+                openai_api_key_input.grid(row=5, column=1, **form_grid_and_paddings)
 
                 # Integrations
                 tk.Label(pref_form_frame, text='Integrations', **h1_font).grid(row=14, column=0, columnspan=2, **form_grid_and_paddings)
@@ -2781,10 +2809,20 @@ class toolkit_UI:
                 close_transcripts_on_timeline_change_input = tk.Checkbutton(pref_form_frame, variable=close_transcripts_on_timeline_change_var)
                 close_transcripts_on_timeline_change_input.grid(row=17, column=1, **form_grid_and_paddings)
 
+                # the default marker color
+                tk.Label(pref_form_frame, text='Default Marker Color', **label_settings).grid(row=18, column=0,
+                                                                                              **form_grid_and_paddings)
+
+                # the dropdown for the default marker color
+                default_marker_color_input = tk.OptionMenu(pref_form_frame,
+                                                           default_marker_color_var,
+                                                           *self.toolkit_UI_obj.resolve_marker_colors)
+                default_marker_color_input.grid(row=18, column=1, **form_grid_and_paddings)
+
                 # the render preset for transcriptions
-                tk.Label(pref_form_frame, text='Transcription Render Preset', **label_settings).grid(row=18, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Transcription Render Preset', **label_settings).grid(row=19, column=0, **form_grid_and_paddings)
                 transcription_render_preset_input = tk.Entry(pref_form_frame, textvariable=transcription_render_preset_var, **entry_settings)
-                transcription_render_preset_input.grid(row=18, column=1, **form_grid_and_paddings)
+                transcription_render_preset_input.grid(row=19, column=1, **form_grid_and_paddings)
 
                 # transcriptions
                 tk.Label(pref_form_frame, text='Transcriptions', **h1_font).grid(row=21, column=0, columnspan=2, **form_grid_and_paddings)
@@ -2867,6 +2905,7 @@ class toolkit_UI:
                      'console_font_size': console_font_size_var,
                      'show_welcome': show_welcome_var,
                      'api_token': api_token_var,
+                     'openai_api_key': openai_api_key_var,
                      'disable_resolve_api': disable_resolve_api_var,
                      'open_transcript_groups_window_on_open': open_transcript_groups_window_on_open_var,
                      'close_transcripts_on_timeline_change': close_transcripts_on_timeline_change_var,
@@ -3086,6 +3125,9 @@ class toolkit_UI:
         # this holds the index of the current prompt in the prompt history
         self.window_prompts_index = {}
 
+        # this holds all the assistent windows
+        self.assistant_windows = {}
+
         # currently focused window
         self.current_focused_window = None
 
@@ -3260,8 +3302,6 @@ class toolkit_UI:
         # show the update available message if any
         if self.stAI.update_available and self.stAI.update_available is not None:
 
-            print('update available', self.stAI.online_version)
-
             # the url to the releases page
             release_url = 'https://github.com/octimot/StoryToolkitAI/releases/latest'
 
@@ -3337,6 +3377,7 @@ class toolkit_UI:
                     text = text.replace('\n\n', '\n')
 
                     # if we reached the current version, stop
+                    # this doesn't behave well if the version number is x.x.x.x vs x.x.x
                     if version_no == current_version:
                         break
 
@@ -3732,6 +3773,16 @@ class toolkit_UI:
 
         self.windows['main'].button9.grid(row=3, column=1, **self.paddings)
 
+
+        # THE ASSISTANT BUTTON
+        self.windows['main'].button10 = tk.Button(self.windows['main'].other_buttons_frame,
+                                                  **self.blank_img_button_settings,
+                                                  **self.button_size,
+                                                  text="Assistant",
+                                                  command=lambda: self.open_assistant_window())
+
+        self.windows['main'].button10.grid(row=3, column=2, **self.paddings)
+
         # THE CONSOLE BUTTON
         # self.windows['main'].button10 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings,
         #                                        **self.button_size,
@@ -4049,7 +4100,8 @@ class toolkit_UI:
 
         # open the text window
         if self.create_or_open_window(parent_element=self.root, window_id=window_id, title=title, resizable=True,
-                                      close_action=close_action
+                                      close_action=close_action,
+                                      open_multiple=kwargs.get('open_multiple', True)
                                       ):
 
             # create menu bar
@@ -4092,7 +4144,10 @@ class toolkit_UI:
             # create the text widget
             # set up the text element where we'll add the actual transcript
             text = Text(text_form_frame, name='window_text',
-                        font=(self.console_font), width=45, height=30, padx=5, pady=5, wrap=tk.WORD,
+                        font=(self.console_font),
+                        width=kwargs.get('window_width', 45),
+                        height=kwargs.get('window_height', 30),
+                        padx=5, pady=5, wrap=tk.WORD,
                                                 background=self.resolve_theme_colors['black'],
                                                 foreground=self.resolve_theme_colors['normal'])
 
@@ -4241,6 +4296,7 @@ class toolkit_UI:
                 # so we need to find all the urls and their text
                 urls = re.findall(r'\[.*\]\(.*\)', line)
 
+                n = 0
                 for url_md in urls:
 
                     # use regex to get the url text
@@ -4264,11 +4320,12 @@ class toolkit_UI:
 
                     text_widget.insert(tk.INSERT, url_text)
 
-                    # add the url tag
-                    text_widget.tag_add('url', start_index, tk.INSERT)
+                    # add the url tags
+                    text_widget.tag_add('url-color', start_index, tk.INSERT)
+                    text_widget.tag_add('url-'+str(start_index), start_index, tk.INSERT)
 
                     # on click, open the url in the default browser
-                    text_widget.tag_bind('url', '<Button-1>', lambda event, url=url: webbrowser.open(url))
+                    text_widget.tag_bind('url-'+str(start_index), '<Button-1>', lambda event, url=url: webbrowser.open(url))
 
                 # finally, insert the rest of the line
                 text_widget.insert(tk.INSERT, line)
@@ -4292,15 +4349,22 @@ class toolkit_UI:
         text_widget.tag_config('h2', font=(self.default_font_h2, int(self.default_font_size_after_ratio*1.25)), foreground=self.resolve_theme_colors['white'])
         text_widget.tag_config('h3', font=(self.default_font_h3, int(self.default_font_size_after_ratio*1.1)), foreground=self.resolve_theme_colors['white'])
 
+        # add a bit of space between the headers and the text
+        text_widget.tag_config('h1', spacing1=10)
+        text_widget.tag_config('h2', spacing1=10)
+        text_widget.tag_config('h3', spacing1=10)
+
         # change the color of the version number
         text_widget.tag_config('version', foreground=self.resolve_theme_colors['white'])
 
         # change the font of the code blocks into console font
         text_widget.tag_config('code3', font=(self.console_font), foreground=self.resolve_theme_colors['normal'])
 
-
         # change the color of the url
-        text_widget.tag_config('url', foreground=self.theme_colors['blue'])
+        text_widget.tag_config('url-color', foreground=self.theme_colors['blue'])
+
+        text_widget.tag_bind('url-color', '<Enter>', lambda event: text_widget.config(cursor='hand2'))
+        text_widget.tag_bind('url-color', '<Leave>', lambda event: text_widget.config(cursor=''))
 
 
     def open_find_replace_window(self, window_id=None, title: str = 'Find and Replace',
@@ -6274,11 +6338,11 @@ class toolkit_UI:
             self._text_window_update(search_window_id, search_file_list)
 
             if len(search_item.search_corpus) < 1000:
-                self._text_window_update(search_window_id, 'Ready for search. Type [help] for help.')
+                self._text_window_update(search_window_id, 'Ready for search. Type [help] if you need help.')
             else:
                 self._text_window_update(search_window_id, 'Large search corpus detected. '
                                                            'The first search will take longer.\n\n'
-                                                           'Ready for search. Type [help] for help.')
+                                                           'Ready for search. Type [help] if you need help.')
 
         else:
             self._text_window_update(search_window_id, 'Search corpus could not be prepared.')
@@ -6489,6 +6553,170 @@ class toolkit_UI:
 
             # use this to make sure we have a new prompt prefix for the next search
             self._text_window_update(search_window_id, 'Ready for new search.')
+
+
+    def open_assistant_window(self, assistant_window_id: str = None,
+                              transcript_text: str = None
+                              ):
+
+        if self.toolkit_ops_obj is None:
+            logger.error('Cannot open advanced search window. A ToolkitOps object is needed to continue.')
+            return False
+
+        # open a new console assistant window
+        assistant_window_id = 'assistant'
+        assistant_window_title = 'Assistant'
+
+        # create an entry for the assistant window (if one does not exist)
+        if assistant_window_id not in self.assistant_windows:
+            self.assistant_windows[assistant_window_id] = {}
+
+        # initialize an assistant item
+        if 'assistant_item' not in self.assistant_windows[assistant_window_id]:
+            self.assistant_windows[assistant_window_id]['assistant_item'] = \
+                self.toolkit_ops_obj.AssistantGPT(toolkit_ops_obj=self.toolkit_ops_obj)
+
+        # but use a simpler reference here
+        assistant_item = self.assistant_windows[assistant_window_id]['assistant_item']
+
+        # set the transcript text
+        received_context = False
+        if transcript_text is not None:
+            transcript_text = "TRANSCRIPT\n\n{}\n\nEND".format(transcript_text)
+            assistant_item.add_context(context=transcript_text)
+
+            received_context = True
+
+        # does this window already exist?
+        window_existed = False
+        if assistant_window_id in self.windows:
+            window_existed = True
+
+        # open a new console search window
+        self.open_text_window(window_id=assistant_window_id,
+                              title=assistant_window_title,
+                              can_find=True,
+                              user_prompt=True,
+                              close_action= lambda assistant_window_id=assistant_window_id:
+                                    self.destroy_assistant_window(assistant_window_id),
+                              prompt_prefix='U > ',
+                              prompt_callback=self.assistant_query,
+                              prompt_callback_kwargs={
+                                  'assistant_item': assistant_item,
+                                  'assistant_window_id': assistant_window_id
+                              },
+                              window_width=60,
+                              open_multiple=False
+                              )
+
+        # show the initial message if the window didn't exist before
+        if not window_existed:
+            initial_info = 'Your requests might be billed by OpenAI.\n' + \
+                           'Type [help] or just ask a question.'
+
+            self._text_window_update(assistant_window_id, initial_info)
+
+        if received_context:
+            self._text_window_update(assistant_window_id, 'Added transcript items as context.')
+
+    def assistant_query(self, prompt, assistant_window_id: str, assistant_item=None):
+
+        if assistant_item is None:
+            # use the assistant item from the assistant window
+            if assistant_window_id in self.assistant_windows:
+                assistant_item = self.assistant_windows[assistant_window_id]['assistant_item']
+
+            if assistant_item is None:
+                logger.error('Cannot run assistant query. No assistant item found.')
+                return False
+
+        # is the user asking for help?
+        if prompt.lower() == '[help]':
+
+            help_reply = "StoryToolkitAI Assistant uses gpt-3.5-turbo.\n" \
+                         "You might be billed by OpenAI around $0.002 for every 1000 tokens. " \
+                         "See openai https://openai.com/pricing for more info. \n\n" \
+                         "Every time you ask something, the OpenAI will receive the entire conversation. " \
+                         "The longer the conversation, the more tokens you are using on each request.\n" \
+                         "Use [usage] to keep track of your usage in this Assistant window.\n\n" \
+                         "Use [reset] to reset the conversation, while preserving any contexts. " \
+                         "This will make the Assistant forget the entire conversation," \
+                         "but also reduce the tokens you're sending to OpenAI.\n" \
+                         "Use [resetall] to reset the conversation and any context. " \
+                         "But also reduce the amount of information you're sending on each request.\n\n" \
+                         "Use [context] to see the context text.\n\n" \
+                         "Use [exit] to exit the Assistant.\n\n" \
+                         "Now, just ask something..."
+
+
+            #help_reply = 'Simply enter a search term and press enter.\n' \
+            #             'For eg.: about life events\n\n' \
+            #             'If you want to restrict the number of results, just add [n] to the beginning of the query.\n' \
+            #             'For eg.: [10] about life events\n\n' \
+            #             'If you want to perform multiple searches in the same time, use the | character to split the search terms\n' \
+            #             'For eg.: about life events | about family\n\n' \
+            #             'If you want to change the model, use [model:<model_name>]\n' \
+            #             'For eg.: [model:distiluse-base-multilingual-cased-v1]\n\n' \
+            #             'See list of models here: https://www.sbert.net/docs/pretrained_models.html\n'
+
+            # use this to make sure we have a new prompt prefix for the next search
+            self._text_window_update(assistant_window_id, help_reply)
+            return
+
+        # if the user is asking for usage
+        elif prompt.lower() == '[usage]':
+            usage_reply = "You have used {} tokens in this Assistant window.\n".format(assistant_item.usage)
+            usage_reply += "That's probably around ${:.6f}".format(assistant_item.usage * assistant_item.price / 1000)
+            self._text_window_update(assistant_window_id, usage_reply)
+            return
+
+        elif prompt.lower() == '[reset]':
+            assistant_item.reset()
+            self._text_window_update(assistant_window_id, 'Conversation reset. Context preserved.')
+            return
+
+        elif prompt.lower() == '[resetall]':
+            assistant_item.reset()
+            assistant_item.add_context(context='')
+            self._text_window_update(assistant_window_id, 'Conversation reset. Context removed.')
+            return
+
+        elif prompt.lower() == '[context]':
+            if assistant_item.context is None:
+                self._text_window_update(assistant_window_id, 'No context used for this conversation.')
+
+            else:
+                self._text_window_update(assistant_window_id,
+                                         "The context used for this conversation is:\n\n{}\n"
+                                         .format(assistant_item.context))
+
+            return
+
+        # is the user trying to quit?
+        elif prompt.lower() == '[quit]':
+            self.destroy_assistant_window(assistant_window_id)
+            return
+
+        # get the assistant response
+        assistant_response = assistant_item.send_query(prompt)
+
+        # update the assistant window
+        self._text_window_update(assistant_window_id, "A > "+assistant_response)
+
+        # update the assistant window prompt
+        #self._text_window_update_prompt(assistant_window_id, ' > ')
+
+    def destroy_assistant_window(self, assistant_window_id: str):
+        '''
+        Destroys the assistant window
+        '''
+
+        # remove assistant window from the assistant windows dict
+        if assistant_window_id in self.assistant_windows:
+            del self.assistant_windows[assistant_window_id]
+
+        # destroy the assistant window
+        self.destroy_text_window(assistant_window_id)
 
 
     def _get_group_id_from_listbox(self, groups_listbox: tk.Listbox) -> str:
@@ -7445,6 +7673,230 @@ class ToolkitOps:
         if self.resume_transcription_queue_from_file():
             logger.info('Resuming transcription queue from file')
 
+    class ToolkitAssistant:
+        '''
+        This is the main class for the assistant
+        '''
+
+        def __init__(self, toolkit_ops_obj):
+
+            # load the toolkit ops object
+            self.toolkit_ops_obj = toolkit_ops_obj
+
+            # load the stAI object
+            self.stAI = self.toolkit_ops_obj.stAI
+
+            # load the toolkit UI object
+            self.toolkit_UI_obj = self.toolkit_ops_obj.toolkit_UI_obj
+
+    class AssistantGPT(ToolkitAssistant):
+        '''
+        This is a class that is used to create an OpenAI GPT-based assistant
+        It should be instantiated for each assistant and then used to pass queries
+        and results between UI and whatever assistant model / API we're using
+        '''
+
+        def __init__(self, **kwargs):
+
+            super().__init__(toolkit_ops_obj=kwargs.get('toolkit_ops_obj', None))
+
+            # get all the attributes from the kwargs
+            self.model_name = kwargs.get('model_name', "gpt-3.5-turbo")
+
+            # store the number of tokens used for the assistant
+            self.usage = 0
+
+            # the price per 1000 tokens - this should probably be stored somewhere else
+            self.price = 0.002
+
+            self.initial_system = kwargs.get('initial_system', "You are an assistant editor that gives succinct answers.")
+
+            # keep a chat history, which can be also altered if needed
+            # if no chat history is passed, we'll use a default one which defines the system
+            self.chat_history = kwargs.get('chat_history',
+                                           [{"role": "system", "content": self.initial_system}])
+
+            # to keep track of the context
+            self.context = kwargs.get('context', None)
+
+            # and the index of the context in the chat history
+            self.context_idx = None
+
+            if self.context is not None:
+                # add the context to the chat history
+                self.add_context(self.context)
+
+
+            # get the API key from the config
+            openai.api_key = self.api_key \
+                = self.stAI.get_app_setting(setting_name='openai_api_key', default_if_none=None)
+
+        def reset(self):
+            '''
+            This function is used to reset the assistant, by clearing the chat history
+            '''
+
+            # just reset the chat history to the initial system message
+            self.chat_history = [{"role": "system", "content": self.initial_system}]
+
+            # also re-add the context if it exists
+            if self.context is not None:
+                self.context_idx = len(self.chat_history)
+
+                # add the context to the chat history
+                self.chat_history.append({"role": "user", "content": self.context})
+
+        def set_initial_system(self, initial_system):
+
+            initial_system_changed = False
+
+            # check so that the initial system message is not empty
+            if not initial_system:
+
+                # set the initial system message
+                self.initial_system = initial_system
+
+                # find the system message in the chat history
+                for i, message in enumerate(self.chat_history):
+
+                    # if the role is system, then we've found the system message
+                    if message['role'] == 'system':
+
+                        # set the new system message
+                        self.chat_history[i]['content'] = self.initial_system
+
+                        initial_system_changed = True
+
+                        break
+
+                # if we didn't find the system message, then we'll just add it on top
+                self.chat_history.insert(0, {"role": "system", "content": self.initial_system})
+
+                return True
+
+            # just return false if the initial system message is empty
+            logger.debug('Initial system message is empty. Not changing it.')
+            return False
+
+        def add_context(self, context):
+            '''
+            This function is used to add context to the assistant by introducing a message with the context string,
+            right after the initial system message
+            '''
+
+            # check so that the context is not empty
+            if context:
+
+                # if we already set the context, then we'll just change it
+                if self.context is not None and self.context_idx is not None:
+
+                    # change the context in the chat history
+                    self.chat_history[self.context_idx]['content'] = context
+
+                    # remember that we've changed the context
+                    self.context = context
+
+                    logger.debug('Changed context in the chat history.')
+
+                    return True
+
+                # otherwise we'll just add it
+                # find the system message in the chat history
+                for i, message in enumerate(self.chat_history):
+
+                    # if the role is system, then we've found the system message
+                    if message['role'] == 'system':
+
+                        # insert the context message right after the system message
+                        self.chat_history.insert(i+1, {"role": "user", "content": context})
+
+                        # remember that we've added the context
+                        self.context = context
+
+                        # remember the index of the context in case we need to change it later
+                        self.context_idx = i+1
+
+                        logger.debug('Added context to the chat history.')
+
+                        return True
+
+                logger.debug('Could not find the system message in the chat history. Adding the context on top.')
+
+                # if we didn't find the system message, then we'll just add it on top
+                self.chat_history.insert(0, {"role": "user", "content": context})
+
+                # remember that we've added the context
+                self.context = context
+
+                return True
+
+            elif context is not None and context == '':
+
+                # just remove any context that might exist
+                if self.context is not None and self.context_idx is not None:
+
+                    # remove the context from the chat history
+                    self.chat_history.pop(self.context_idx)
+
+                    # remember that we've removed the context
+                    self.context = None
+                    self.context_idx = None
+
+                    logger.debug('Removed context from the chat history.')
+
+            else:
+                logger.debug('Context is empty. Ignoring add context request.')
+                return False
+
+
+        def send_query(self, content):
+            '''
+            This function is used to send a query to the assistant
+            '''
+
+            # the query should always contain the role and the content
+            # the role should be either user, system or assistant
+            # in this case, since we're sending a query, the role should be user
+
+            query = {"role": "user", "content": content}
+
+            # add the query to the chat history
+            self.chat_history.append(query)
+
+            #print(json.dumps(self.chat_history, indent=4))
+
+            # now send the query to the assistant
+            try:
+                response = openai.ChatCompletion.create(
+                    model=self.model_name,
+                    messages=self.chat_history
+                )
+
+            except openai.error.AuthenticationError as e:
+
+                error_message = 'Please check your OpenAI Key in the preferences window.\n' + \
+                                str(e)
+
+                logger.debug('OpenAI API key is invalid. Please check your key in the preferences window.')
+                return error_message
+
+            except Exception as e:
+                logger.debug('Error sending query to AssistantGPT: ')
+                logger.debug(e)
+                return str(e)+"\nI'm sorry, I'm having trouble connecting to the assistant. Please try again later."
+
+            result = ''
+            for choice in response.choices:
+                result += choice.message.content
+
+                # add the result to the chat history
+                self.chat_history.append({"role": "assistant", "content": result})
+
+            # add the usage to the total usage
+            self.usage += response.usage.total_tokens
+
+            return result
+
     class ToolkitSearch:
         '''
         This is the main class for the search engine
@@ -8376,7 +8828,6 @@ class ToolkitOps:
                 logger.error('Could not save search embeddings to file {}: \n {}'.format(file_path, e))
                 return False
 
-
     class TranscriptGroups:
         '''
         This class contains functions for working with transcript groups.
@@ -8915,7 +9366,8 @@ class ToolkitOps:
 
         # if Resolve is available and the user has an open timeline, render the timeline to an audio file
         # but only if select files is False
-        elif not select_files and resolve_data['resolve'] != None and 'currentTimeline' in resolve_data and \
+        elif not select_files and resolve_data is not None and resolve_data['resolve'] != None \
+                and 'currentTimeline' in resolve_data and \
                 resolve_data['currentTimeline'] != '' and resolve_data['currentTimeline'] is not None:
 
             # reset any potential yes that the user might have said when asked to continue without resolve
@@ -12095,7 +12547,7 @@ class StoryToolkitAI:
                 # return False - no update available and None instead of an online version number
                 return False, None
 
-        # otherwise get the latest version from the GitHub repo version.py file
+        # otherwise get the latest version from the api.storytoolkit.ai/version file
         else:
             version_request = "https://api.storytoolkit.ai/version"
 

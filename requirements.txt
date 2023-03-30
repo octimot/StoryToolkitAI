@@ -27,3 +27,4 @@ urllib3==1.26.12
 openai-whisper @ git+https://github.com/openai/whisper.git
 dtw-python
 resampy
+openai
