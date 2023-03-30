@@ -943,6 +943,7 @@ class toolkit_UI:
 
                         # now, take care of the marker name
                         marker_name = False
+                        marker_color = self.stAI.get_app_setting('default_marker_color', default_if_none='Blue')
 
                         # if Shift+M was pressed, prompt the user for the marker name
                         if event.keysym == 'M':
