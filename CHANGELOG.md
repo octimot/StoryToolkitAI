@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.17.18] - 2023-03-30
+
+### Info
+
+This update allows you to use ChatGPT for whatever section of your transcripts you want and leverage state-of-the-art AI in your process.
+More ChatGPT-related optimizations will be added in the future!
+Update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+
+### Added
+
+- Direct interface to ChatGPT via Assistant window
+- Key O sends selected transcript segments to Assistant window as context for conversation
+- SHIFT+O includes times when sending transcript segments to Assistant window
+- OpenAI Key entry in the Preferences window - needed to use ChatGPT
+
+### Bugfixes
+
+- Fixed a bug that prevented the tool from starting on Windows machines
+- Fixed a formatting bug for text windows
+
 ## [0.17.17] - 2023-03-28
 
 ### Added

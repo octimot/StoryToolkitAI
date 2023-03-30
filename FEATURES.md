@@ -237,6 +237,8 @@ give you some really good results** if you prompt it right - remember it's a neu
 Feel free to be as descriptive as you want in your search, and try to tweak the search terms until you get the results
 you're looking for.
 
+More info about the commands you can use in the Advanced Search window can be found with the `[help]` command.
+
 _Important Note: **The first time you use this feature**, it will take a bit longer to start the process because the 
 tool needs to download the model file (around 500MB) to your local cache. But, after the model is saved on your
 machine, the search should work almost in real time._
@@ -245,6 +247,66 @@ _About search speed: the search is pretty fast, but it will depend on the size o
 Using a lot of them will make the search slower, so a smaller transform model is recommended (more on that later). 
 The first time you open a window and search something, it will take a while to turn the data  into something that the 
 machine understands, but after the first search is completed, all other searches should work fast._
+
+## Assistant
+
+This feature is currently only available for our Patron supporters. 
+ - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+
+The Assistant is basically an interface to OpenAI ChatGPT (or gpt-3.5-turbo).
+
+### Obtaining an OpenAI API Key
+
+First, you need to have an OpenAI API key to use this feature. 
+You can get one by signing up on [OpenAI.com](https://platform.openai.com/signup/), 
+and then creating a new secret key on the [API Keys page](https://platform.openai.com/account/api-keys).
+Make sure you keep this key safe, as it will allow anyone to use your OpenAI account on your expense!
+
+Once you have the key, just add it in Preferences -> OpenAI API Key. 
+This will be saved locally on your machine, so only people who have access to your machine will be able to see it.
+
+### Usage and billing
+
+Depending on the account you have with OpenAI, you might be charged for using the API, most likely using the token 
+system they have in place. For more info on how OpenAI billing works, 
+please check their [pricing page](https://openai.com/pricing/).
+StoryToolkitAI is not responsible for any charges you might incur by using the Assistant, 
+and we are not affiliated with OpenAI in any way.
+
+To find out how many tokens you've used within the Assistant window, just type `[usage]` in the Assistant window
+and you'll get a cost estimate. Again, this is just an estimate, so you should check your 
+[OpenAI Usage page](https://platform.openai.com/account/usage) to see the actual cost.
+
+### Assistant window
+
+You can access the Assistant either by clicking on "Assistant" in the main tool window, or from a Transcription Window.
+
+If you want to use a certain portion of the transcript as the context for the Assistant:
+1. Open the transcription
+2. Select the lines that you want to send to the Assistant using the 'v' key
+3. Press Key O (not zero) to send the selected lines to the Assistant. You can also use SHIFT+O to also include the 
+times or timecodes (if Resolve is connected) together with the lines to the Assistant.
+4. The Assistant window will open and you can start typing your questions.
+
+More info on the Assistant can be found by typing `[help]` in the Assistant window.
+
+### Quick tips for using the Assistant
+
+The possibilities here are endless. Feel free to use natural language to ask anything.
+You can use the Assistant to:
+- Ask questions about the transcript (characters, locations, events, etc)
+- Summarize (try typing `tldr;`)
+- Deduct certain things from the transcript (try typing `what is the main conflict?`)
+- Understand the emotional tone of the transcript (try typing `how is the tone?`, `what makes this scene sad?`, `are the characters polite to each other?` etc.)
+- Get ideas about what to ask the characters (try typing `what should I ask the character?`)
+- Get ideas about possible outlines (try typing `outline the plot described in the transcript, each line should be a scene`)
+- Get ideas about possible storylines (try typing `what is the main storyline?`)
+- Even get you a .srt subtitle file (after sending transcript lines with times (SHIFT+O) try typing `subtitle this in .srt format`)
+- Ask about the deepest black hole in the universe (try typing `what is the meaning of life?`)
+- Anything else you can think of!..
+
+Also remember to use `[reset]` as often as you can, so that you don't send the whole conversation to the Assistant 
+over and over again, unless you're trying to follow something relevant from the previous messages.
 
 ## Davinci Resolve Studio integrations
 
