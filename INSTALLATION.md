@@ -114,7 +114,7 @@ you might need to install rust first, see the instructions [here](https://www.ru
 _Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
 If you followed the previous steps, your terminal prompt should now have `(venv)` before everything else._
 
-    pip install -r StoryToolkitAI/requirements.txt
+    pip install -r StoryToolkitAI-dev/requirements.txt
 
 If you are running the tool on a machine with an NVIDIA CUDA GPU, make sure you install Torch with CUDA:
 
@@ -128,7 +128,7 @@ normal wav files too. Simply press the transcribe or translate buttons and follo
 #### That's it!
 Inside the virtual environment, you should now be able to start the tool:
 
-    python StoryToolkitAI/app.py
+    python StoryToolkitAI-dev/app.py
 
 _Note: After restart of the machine or your terminal window, never forget to activate the virtual environment before
 starting the app. In the folder where you created venv, run:_
@@ -213,7 +213,7 @@ For more info regarding Whisper installation, please check https://github.com/op
 Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
 If you followed the previous steps, your terminal prompt should now have (venv) before everything else.
 
-    pip install -r StoryToolkitAI\requirements.txt
+    pip install -r StoryToolkitAI-dev\requirements.txt
 
 If you are running the tool on a machine with an NVIDIA CUDA GPU, make sure you install Torch with CUDA:
     
@@ -227,7 +227,7 @@ normal wav files too. Simply press the transcribe or translate buttons and follo
 #### That's it!
 Inside the virtual environment, you should now be able to start the tool:
 
-    py StoryToolkitAI\app.py
+    py StoryToolkitAI-dev\app.py
 
 _Note: After restart of the machine or your terminal window, never forget to activate the virtual environment before
 starting the app. In the folder where you created venv, run:_
@@ -242,12 +242,12 @@ If you haven't downloaded the app in a binary format, simply activate the virtua
 ### On windows:
 
     venv\Scripts\activate.bat
-    py StoryToolkitAI\app.py
+    py StoryToolkitAI-dev\app.py
 
 ### On Mac OS:
 
     source venv/bin/activate
-    python StoryToolkitAI/app.py
+    python StoryToolkitAI-dev/app.py
 
 A simple GUI with a mind-bending mid-2000s inspired design should appear on the screen.
 Don't worry, that's intentional:
