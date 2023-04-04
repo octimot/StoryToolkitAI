@@ -11915,7 +11915,7 @@ class StoryToolkitAI:
         project_settings_path = self._project_settings_path(project_name=project_name)
 
         # read the project settings file if it exists
-        if project_settings_path is not None or os.path.exists(project_settings_path):
+        if project_settings_path is not None and os.path.exists(project_settings_path):
 
             # read the project settings from the project.json
             with open(project_settings_path, 'r') as json_file:
@@ -11926,6 +11926,7 @@ class StoryToolkitAI:
 
         # if the project settings file doesn't exist, return an empty dict
         else:
+            logger.debug('Project settings file {} not found.'.format(project_settings_path))
             return {}
 
     def save_project_settings(self, project_name=None, project_settings=None):
