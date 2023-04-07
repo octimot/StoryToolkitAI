@@ -11,7 +11,7 @@ Update available for Patreon Frequent Users and Producers only - more info on [p
 - Split On Punctuation setting in the Transcription Settings window - more info in  [Transcription Settings](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#transcription-settings)
 - Prevent Gaps Shorter Than setting in the Transcription Settings window - more info in [Transcription Settings](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#transcription-settings)
 - CMD+SHIFT+G in transcription window adds the selected segments to the currently selected group without clearing the group 
-- Assistant [calc] function to get the minimum number of tokens you're sending with each to OpenAI
+- Assistant [calc] function to get the minimum number of tokens you're sending with each message to OpenAI
 
 ### Bugfixes
 - Fixed API token check default value
