@@ -261,7 +261,7 @@ machine understands, but after the first search is completed, all other searches
 
 ## Assistant
 
-This feature is currently only available for Patron Producers+ -
+This feature is currently only available for Patreon Frequent Users and Producers -
 more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
 
 The Assistant is basically an interface to OpenAI ChatGPT (or gpt-3.5-turbo).
