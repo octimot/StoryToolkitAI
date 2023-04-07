@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
-## [0.17.19] - 2023-03-08
+## [0.17.19] - 2023-03-07
 
 ## Info
 Update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
