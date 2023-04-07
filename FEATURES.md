@@ -114,11 +114,22 @@ of the transcription might take a hit.
 **Increased Time Precision** adds more precision to the transcription timestamps, but it increases the processing time.
 For best results, we recommend using the large model with this option enabled.
 
-**Max. Characters per Line** and **Max. Words per Line** make the tool split the transcript lines at the specified
-number of characters or words. This is useful if you want to make sure that the transcript lines are not too long,
+**Max. Characters per Line** and **Max. Words per Line** make the tool split the transcript segments at the specified
+number of characters or words. This is useful if you want to make sure that the transcript segments are not too long,
 but since there's no AI involved in this process (yet), the tool might split sentences in the weirdest places.
 When both options are set, the Max. Characters per Line takes precedence. 
 Only works if Increased Time Precision is enabled.
+
+**Split on Punctuation** (version 0.17.19) splits the transcript lines at punctuation marks (. ! ? …)
+This might not always be the best option, for eg. if your text contains many abbreviations (Dr., Mr. etc.),
+but you could still activate it and then manually fix the transcript afterwards. We're looking for ways to improve this 
+using AI. 
+Only works if Increased Time Precision is enabled.
+
+**Prevent Gaps Shorter Than** (version 0.17.19) allows you to specify a minimum duration for the gaps between transcript 
+segments. If the gap between two segments is shorter than the specified duration, the end time of the previous segment 
+will be extended to the start time of the next segment. This is useful especially if you want to avoid having too many 
+small gaps when using the transcript for subtitles.
 
 **Time Intervals** allows you to selectively transcribe only a portion of the timeline and Exclude Time Intervals allows 
 you to exclude certain portions of the timelines. The recommended format for these two fields is: "0.00 - 0.00".
@@ -250,8 +261,8 @@ machine understands, but after the first search is completed, all other searches
 
 ## Assistant
 
-This feature is currently only available for our Patron supporters. 
- - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+This feature is currently only available for Patron Producers+ -
+more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
 
 The Assistant is basically an interface to OpenAI ChatGPT (or gpt-3.5-turbo).
 
@@ -279,7 +290,8 @@ and you'll get a cost estimate. Again, this is just an estimate, so you should c
 
 ### Assistant window
 
-You can access the Assistant either by clicking on "Assistant" in the main tool window, or from a Transcription Window.
+You can access the Assistant either by clicking on "Assistant" in the main tool window, or from a Transcription Window. 
+(available only in version 0.17.18)
 
 If you want to use a certain portion of the transcript as the context for the Assistant:
 1. Open the transcription

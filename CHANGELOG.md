@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.17.19] - 2023-03-08
+
+## Info
+Update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+
+### Added
+- Split On Punctuation setting in the Transcription Settings window - more info in  [Transcription Settings](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#transcription-settings)
+- Prevent Gaps Shorter Than setting in the Transcription Settings window - more info in [Transcription Settings](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#transcription-settings)
+- CMD+SHIFT+G in transcription window adds the selected segments to the currently selected group without clearing the group 
+- Assistant [calc] function to get the minimum number of tokens you're sending with each to OpenAI
+
+### Bugfixes
+- Fixed API token check default value
+- Fixed project settings file check
+- Fixed m shortcut bug in transcription window
+
 ## [0.17.18] - 2023-03-30
 
 ### Info

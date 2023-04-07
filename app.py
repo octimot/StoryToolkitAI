@@ -21,11 +21,12 @@ from threading import Thread
 
 import torch
 import torchaudio
-#import whisper
+# import whisper
 import mots_whisper as whisper
 from whisper import tokenizer as whisper_tokenizer
 
 import openai
+import tiktoken
 from transformers import GPT2TokenizerFast
 
 import librosa
@@ -46,7 +47,6 @@ import webbrowser
 # but start with the user's home directory
 user_home_dir = os.path.expanduser("~")
 initial_target_dir = user_home_dir
-
 
 # this is where we used to store the user data prior to version 0.16.14
 # but we need to have a more universal approach, so we'll move this to
@@ -69,6 +69,7 @@ APP_CONFIG_FILE_NAME = 'config.json'
 
 # the location of the log file
 APP_LOG_FILE = os.path.join(USER_DATA_PATH, 'app.log')
+
 
 class Style():
     BOLD = '\33[1m'
@@ -95,10 +96,10 @@ class Style():
 # System call so that Windows enables console colors
 os.system("")
 
+
 # logger colors + style
 class Logger_ConsoleFormatter(logging.Formatter):
-
-    #format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
+    # format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
     format = '%(levelname)s: %(message)s'
 
     FORMATS = {
@@ -113,6 +114,7 @@ class Logger_ConsoleFormatter(logging.Formatter):
         log_fmt = self.FORMATS.get(record.levelno)
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
+
 
 # enable logger
 logger = logging.getLogger('StAI')
@@ -145,18 +147,14 @@ logger_file_handler.setLevel(logging.DEBUG)
 # add file handler to logger
 logger.addHandler(logger_file_handler)
 
-
 # signal the start of the session in the log by adding some info about the machine
 logger.debug('\n--------------\n'
              'Platform: {} {}\n Platform version: {}\n OS: {} \n running Python {}'
              '\n--------------'.format(
     platform.system(), platform.release(),
     platform.version(),
-    ' '.join(map(str, platform.win32_ver()+platform.mac_ver())),
+    ' '.join(map(str, platform.win32_ver() + platform.mac_ver())),
     '.'.join(map(str, sys.version_info))))
-
-
-
 
 # this makes sure that the user has all the required packages installed
 try:
@@ -165,6 +163,7 @@ try:
 
     # check if all the requirements are met
     import pkg_resources
+
     pkg_resources.require(open(os.path.join(os.path.dirname(file_path), 'requirements.txt'), mode='r'))
 
     logger.debug('All package requirements met.')
@@ -173,6 +172,7 @@ except:
 
     # let the user know that the packages are wrong
     import traceback
+
     traceback_str = traceback.format_exc()
 
     # get the relative path of the requirements file
@@ -213,12 +213,12 @@ except:
                 'please close the tool and run:\n\n'
                 'pip install -r {} '
                 '\n\n'
-            .format(requirements_rel_path, APP_LOG_FILE))
+                .format(requirements_rel_path, APP_LOG_FILE))
 
     else:
         logger.warning('\n'
-        'If you are running the standalone version of the app, please report this error to the developers together '
-        'with the log file found at: {}\n'.format(APP_LOG_FILE))
+                       'If you are running the standalone version of the app, please report this error to the developers together '
+                       'with the log file found at: {}\n'.format(APP_LOG_FILE))
 
     # keep this message in the console for a bit
     time.sleep(5)
@@ -262,9 +262,9 @@ class toolkit_UI:
             # if this is not on MacOS, add the about button in the menu
             if platform.system() != 'Darwin':
 
-                #helpmenu.add_separator()
+                # helpmenu.add_separator()
                 filemenu.add_command(label="Preferences...", command=self.app_items_obj.open_preferences_window)
-                #filemenu.add_command(label="Quit", command=lambda: self.toolkit_UI_obj.on_exit())
+                # filemenu.add_command(label="Quit", command=lambda: self.toolkit_UI_obj.on_exit())
 
                 helpmenu.add_command(label="About", command=self.about_dialog)
                 helpmenu.add_separator()
@@ -274,26 +274,27 @@ class toolkit_UI:
 
                 # change the link in the about dialogue
                 self.toolkit_UI_obj.root.createcommand('tkAboutDialog', self.app_items_obj.open_about_window)
-                self.toolkit_UI_obj.root.createcommand('tk::mac::ShowPreferences', self.app_items_obj.open_preferences_window)
-                #self.toolkit_UI_obj.root.createcommand('tkPreferencesDialog', self.app_items_obj.open_about_window)
+                self.toolkit_UI_obj.root.createcommand('tk::mac::ShowPreferences',
+                                                       self.app_items_obj.open_preferences_window)
+                # self.toolkit_UI_obj.root.createcommand('tkPreferencesDialog', self.app_items_obj.open_about_window)
 
                 # also bind to the cmd+q key combination
                 self.toolkit_UI_obj.root.createcommand("tk::mac::Quit", lambda: self.toolkit_UI_obj.on_exit())
 
                 # see https://tkdocs.com/tutorial/menus.html#platformmenus
-                #menubar = Menu(self.toolkit_UI_obj.root)
-                #appmenu = Menu(menubar, name='apple')
-                #menubar.add_cascade(menu=appmenu)
-                #appmenu.add_command(label='About My Application')
-                #appmenu.add_separator()
+                # menubar = Menu(self.toolkit_UI_obj.root)
+                # appmenu = Menu(menubar, name='apple')
+                # menubar.add_cascade(menu=appmenu)
+                # appmenu.add_command(label='About My Application')
+                # appmenu.add_separator()
 
                 system_menu = tk.Menu(self.main_menubar, name='apple')
-                #system_menu.add_command(command=lambda: self.w.call('tk::mac::standardAboutPanel'))
-                #system_menu.add_command(command=lambda: self.updater.checkForUpdates())
+                # system_menu.add_command(command=lambda: self.w.call('tk::mac::standardAboutPanel'))
+                # system_menu.add_command(command=lambda: self.updater.checkForUpdates())
 
-                #system_menu.entryconfigure(0, label="About")
+                # system_menu.entryconfigure(0, label="About")
                 system_menu.entryconfigure(1, label="Check for Updates...")
-                #self.main_menubar.add_cascade(menu=system_menu)
+                # self.main_menubar.add_cascade(menu=system_menu)
 
                 helpmenu.add_command(label="Go to project page", command=self.open_project_page)
 
@@ -422,10 +423,8 @@ class toolkit_UI:
             # this keeps track of which transcription window is in sync with the resolve playhead
             self.sync_with_playhead = {}
 
-
-        def link_to_timeline_button(self, button: tk.Button = None, transcription_file_path: str =None,
-                                    link=None, timeline_name: str =None, window_id: str = None):
-
+        def link_to_timeline_button(self, button: tk.Button = None, transcription_file_path: str = None,
+                                    link=None, timeline_name: str = None, window_id: str = None):
 
             if transcription_file_path is None and window_id is None:
                 logger.debug('No transcription file path or window id provided')
@@ -433,7 +432,7 @@ class toolkit_UI:
 
             # if no transcription file path was provided, try to get it from the window id
             if transcription_file_path is None and window_id is not None \
-                and window_id in self.transcription_file_paths:
+                    and window_id in self.transcription_file_paths:
                 transcription_file_path = self.transcription_file_paths[window_id]
 
             # if no window id was passed, get it from the transcription file path
@@ -696,7 +695,7 @@ class toolkit_UI:
             :return:
             '''
 
-            #print(event.state)
+            # print(event.state)
             # for now simply pass the event to the segment actions
             self.segment_actions(event, mouse=True, **attributes)
 
@@ -713,13 +712,13 @@ class toolkit_UI:
             global resolve
             global current_timeline
 
-            #if special_key is not None:
+            # if special_key is not None:
             #     print(special_key)
 
             # HERE ARE SOME USEFUL SHORTCUTS FOR THE TRANSCRIPTION WINDOW:
             # see the shortcuts in the README file
 
-             # initialize the active segment number
+            # initialize the active segment number
             self.active_segment[window_id] = self.get_active_segment(window_id, 1)
 
             # PRE- CURSOR MOVE EVENTS:
@@ -762,7 +761,6 @@ class toolkit_UI:
 
                 # if cmd was also pressed
                 if special_key == 'cmd':
-
                     # add clicked segment to selection
                     self.segment_to_selection(window_id, text_element, int(line_str))
 
@@ -774,7 +772,6 @@ class toolkit_UI:
 
             # v key events
             if event.keysym == 'v':
-
                 # add/remove active segment to selection
                 # if it's not in the selection
                 self.segment_to_selection(window_id, text_element, line)
@@ -784,14 +781,13 @@ class toolkit_UI:
                 # clear selection
                 self.clear_selection(window_id, text_element)
 
-            # CMD+A key events
+            # CMD+A key events (select all)
             if event.keysym == 'a' and special_key == 'cmd':
-
                 # get the number of segments in the transcript
                 num_segments = len(self.transcript_segments[window_id])
 
                 # create a list containing all the segment numbers
-                segment_list = list(range(1, num_segments+1))
+                segment_list = list(range(1, num_segments + 1))
 
                 # select all segments by passing all the line numbers
                 self.segment_to_selection(window_id, text_element, segment_list)
@@ -824,7 +820,6 @@ class toolkit_UI:
                 if start_segment > max_segment:
                     start_segment, max_segment = max_segment, start_segment
 
-
                 # first clear the entire selection
                 self.clear_selection(window_id, text_element)
 
@@ -832,8 +827,7 @@ class toolkit_UI:
                 n = start_segment
                 while n <= max_segment:
                     self.segment_to_selection(window_id, text_element, n)
-                    n = n+1
-
+                    n = n + 1
 
             # Shift+C key event (copy segments with timecodes to clipboard)
             if event.keysym == 'C':
@@ -849,7 +843,6 @@ class toolkit_UI:
                 else:
                     # copy the text content to clipboard
                     self.get_segments_or_selection(window_id, add_to_clipboard=True, split_by='index')
-
 
             # m key event (quick add duration markers)
             # and Shift+M key event (add duration markers with name input)
@@ -882,7 +875,7 @@ class toolkit_UI:
                         user_input = self.toolkit_UI_obj.AskDialog(title='Markers to Selection',
                                                                    input_widgets=input_widgets,
                                                                    parent=self.toolkit_UI_obj.windows[window_id]
-                                                                     ).value()
+                                                                   ).value()
 
                         # if the user didn't cancel add the group
                         if user_input != None:
@@ -912,10 +905,10 @@ class toolkit_UI:
                                 # add them to the transcript group, based on their start time and duration
                                 # the start time (marker) and duration are in frames
                                 for marker in selected_markers:
-
                                     # convert the frames to seconds
                                     start_time = int(marker) / current_timeline_fps
-                                    duration = int(current_timeline['markers'][marker]['duration']) / current_timeline_fps
+                                    duration = int(
+                                        current_timeline['markers'][marker]['duration']) / current_timeline_fps
                                     end_time = start_time + duration
 
                                     # add the time interval to the list of time intervals
@@ -925,9 +918,10 @@ class toolkit_UI:
 
                                 # convert the time intervals to segments
                                 segment_list = \
-                                    self.toolkit_ops_obj\
+                                    self.toolkit_ops_obj \
                                         .time_intervals_to_transcript_segments(time_intervals=time_intervals,
-                                                                               segments=self.transcript_segments[window_id],
+                                                                               segments=self.transcript_segments[
+                                                                                   window_id],
                                                                                )
                                 # now select the segments
                                 self.segment_to_selection(window_id, text_element, segment_list)
@@ -955,7 +949,8 @@ class toolkit_UI:
                             input_widgets = [
                                 {'name': 'name', 'label': 'Name:', 'type': 'entry', 'default_value': ''},
                                 {'name': 'color', 'label': 'Color:', 'type': 'option_menu',
-                                 'default_value': self.stAI.get_app_setting('default_marker_color', default_if_none='Blue'),
+                                 'default_value': self.stAI.get_app_setting('default_marker_color',
+                                                                            default_if_none='Blue'),
                                  'options': self.toolkit_UI_obj.resolve_marker_colors.keys()}
                             ]
 
@@ -963,7 +958,7 @@ class toolkit_UI:
                             user_input = self.toolkit_UI_obj.AskDialog(title='Add Markers from Selection',
                                                                        input_widgets=input_widgets,
                                                                        parent=self.toolkit_UI_obj.windows[window_id]
-                                                                         ).value()
+                                                                       ).value()
 
                             # if the user didn't cancel add the group
                             if user_input == None:
@@ -998,7 +993,7 @@ class toolkit_UI:
                             # and subtract the end timecode from the start_tc of the text_chunk
                             # to get the marker duration (still timecode object for now)
                             # the start_tc of the text_chunk should be already in the text list
-                            marker_duration_tc = end_tc-start_tc
+                            marker_duration_tc = end_tc - start_tc
 
                             # in Resolve, marker indexes are the number of frames from the beginning of the timeline
                             # so in order to get the marker index, we need to subtract the timeline_start_tc from start_tc
@@ -1006,7 +1001,7 @@ class toolkit_UI:
                             # but only if the start_tc is larger than the timeline_start_tc so we don't get a
                             # Timecode class error
                             if start_tc > timeline_start_tc:
-                                start_tc_zero = start_tc-timeline_start_tc
+                                start_tc_zero = start_tc - timeline_start_tc
                                 marker_index = start_tc_zero.frames
 
                             # if not consider that we are at frame 1
@@ -1029,17 +1024,17 @@ class toolkit_UI:
 
                                     # notify the user that the index is blocked by another marker
                                     add_frame = messagebox.askyesno(title='Cannot add marker',
-                                                        message="Another marker exists at {}.\n\n"
-                                                                "Do you want to place the new marker one frame later?"
+                                                                    message="Another marker exists at {}.\n\n"
+                                                                            "Do you want to place the new marker one frame later?"
                                                                     .format(start_tc))
 
                                     # if the user wants to move this marker one frame to the right, be it
                                     if add_frame:
-                                        start_tc.frames = start_tc.frames+1
-                                        marker_index = marker_index+1
+                                        start_tc.frames = start_tc.frames + 1
+                                        marker_index = marker_index + 1
 
                                         # but this means that the duration should be one frame shorter
-                                        marker_duration_tc.frames = marker_duration_tc.frames-1
+                                        marker_duration_tc.frames = marker_duration_tc.frames - 1
                                     else:
                                         return False
 
@@ -1077,28 +1072,48 @@ class toolkit_UI:
             # Shift+L key event (link current timeline to this transcription)
             if event.keysym == 'L':
                 # link transcription to file
-                #self.toolkit_ops_obj.link_transcription_to_timeline(self.transcription_file_paths[window_id])
+                # self.toolkit_ops_obj.link_transcription_to_timeline(self.transcription_file_paths[window_id])
                 self.link_to_timeline_button(window_id=window_id)
 
             # s key event (sync transcript cursor with playhead)
             if event.keysym == 's':
-                #self.sync_with_playhead_update(window_id=window_id)
+                # self.sync_with_playhead_update(window_id=window_id)
                 self.sync_with_playhead_button(window_id=window_id)
 
-            # CMD+G key event (group selected - adds new group or updates segments of existing group)
-            if event.keysym == 'g' and special_key == 'cmd':
+            # CMD+G and CMD+SHIFT+G key events
+            # (group selected - adds new group or updates segments of existing group)
+            if (event.keysym == 'g' or event.keysym == 'G') and special_key == 'cmd':
 
                 # if a group is selected, just update it
-                if window_id in self.selected_groups and len(self.selected_groups[window_id])==1:
+                if window_id in self.selected_groups and len(self.selected_groups[window_id]) == 1:
 
                     # use the selected group id
                     group_id = self.selected_groups[window_id][0]
 
-                    # update group
-                    self.toolkit_UI_obj.on_group_update_press(t_window_id=window_id,
-                                                               t_group_window_id=window_id+'_transcript_groups',
-                                                               group_id=group_id)
+                    # if the user pressed CMD+G, replace the current segments with the selected ones
+                    if event.keysym == 'g':
 
+                        # update group
+                        self.toolkit_UI_obj.on_group_update_press(t_window_id=window_id,
+                                                                  t_group_window_id=window_id + '_transcript_groups',
+                                                                  group_id=group_id)
+
+                        logger.debug('Segments added to group {}.'.format(group_id))
+
+                    # if the user pressed CMD+SHIFT+G,
+                    # add selected segments to the group, without removing any existing one
+                    elif event.keysym == 'G':
+
+                        # add selected segments to the group, but keep the name and the notes
+                        self.group_selected(window_id=window_id, group_name=group_id, add=True,
+                                            keep_name=True, keep_notes=True)
+
+                        logger.debug('Only new segments added to group {}.'.format(group_id))
+
+                        # update group
+                        # self.toolkit_UI_obj.on_group_update_press(t_window_id=window_id,
+                        #                                           t_group_window_id=window_id+'_transcript_groups',
+                        #                                           group_id=group_id)
 
                 # otherwise create a new group
                 else:
@@ -1140,14 +1155,14 @@ class toolkit_UI:
 
                 # ask the user if they want to re-transcribe
                 retranscribe = messagebox.askyesno(title='Re-transcribe',
-                                               message=ask_message)
+                                                   message=ask_message)
 
                 # if the user cancels re-transcribe or no segments were selected, cancel
                 if not retranscribe:
                     return False
 
                 # and start the transcription config process
-                self.toolkit_ops_obj\
+                self.toolkit_ops_obj \
                     .prepare_transcription_file(toolkit_UI_obj=self.toolkit_UI_obj,
                                                 task='transcribe',
                                                 retranscribe=self.transcription_file_paths[window_id],
@@ -1198,10 +1213,9 @@ class toolkit_UI:
 
             # ask the user if they are sure
             if messagebox.askyesno(title='Delete line',
-                                     message='Are you sure you want to delete this line?'):
-
+                                   message='Are you sure you want to delete this line?'):
                 # get the line
-                tkinter_line_index = '{}.0'.format(line_no), '{}.0'.format(int(line_no)+1).split(' ')
+                tkinter_line_index = '{}.0'.format(line_no), '{}.0'.format(int(line_no) + 1).split(' ')
 
                 # enable editing on the text element
                 text_element.config(state=NORMAL)
@@ -1214,7 +1228,7 @@ class toolkit_UI:
                 text_element.config(state=DISABLED)
 
                 # calculate the segment index
-                segment_index = int(line_no)-1
+                segment_index = int(line_no) - 1
 
                 # remove the line from the text list
                 self.transcript_segments[window_id].pop(segment_index)
@@ -1252,10 +1266,10 @@ class toolkit_UI:
                 return False
 
             move_playhead = messagebox.askokcancel(title='Move playhead',
-                                   message='Move the Resolve playhead exactly '
-                                            'where you want to align the {} of this segment, '
-                                            'then press OK to align.'.format(position)
-                                   )
+                                                   message='Move the Resolve playhead exactly '
+                                                           'where you want to align the {} of this segment, '
+                                                           'then press OK to align.'.format(position)
+                                                   )
 
             if not move_playhead:
                 logger.debug('User cancelled segment alignment.')
@@ -1267,16 +1281,16 @@ class toolkit_UI:
             # check if we actually have a timecode
             if current_tc_sec is None:
                 self.toolkit_UI_obj.notify_via_messagebox(title='Cannot align line to playhead',
-                                                message='Cannot align to playhead: '
-                                                        'Resolve playhead timecode not available.',
-                                                type='error')
+                                                          message='Cannot align to playhead: '
+                                                                  'Resolve playhead timecode not available.',
+                                                          type='error')
                 return False
 
             # convert line_index to segment_index (not segment_id!)
-            segment_index = line_index-1
+            segment_index = line_index - 1
 
             # stop if the segment index is not in the transcript segments
-            if segment_index > len(self.transcript_segments[window_id])-1:
+            if segment_index > len(self.transcript_segments[window_id]) - 1:
                 logger.error('Cannot align line to playhead: no segment index found.')
                 return False
 
@@ -1299,29 +1313,29 @@ class toolkit_UI:
             # and throw an error and cancel if it is
             if segment_data['start'] >= segment_data['end']:
                 self.toolkit_UI_obj.notify_via_messagebox(title='Cannot align line to playhead',
-                                                message='Cannot align to playhead: '
-                                                        'Start time is after end time.',
-                                                type='error')
+                                                          message='Cannot align to playhead: '
+                                                                  'Start time is after end time.',
+                                                          type='error')
                 return False
 
             # check if the start time is before the previous segment end time
             # and throw an error and cancel if it is
             if segment_index > 0:
-                if segment_data['start'] < self.transcript_segments[window_id][segment_index-1]['end']:
+                if segment_data['start'] < self.transcript_segments[window_id][segment_index - 1]['end']:
                     self.toolkit_UI_obj.notify_via_messagebox(title='Cannot align line to playhead',
-                                                    message='Cannot align to playhead: '
-                                                            'Start time is before previous segment\'s end time.',
-                                                    type='error')
+                                                              message='Cannot align to playhead: '
+                                                                      'Start time is before previous segment\'s end time.',
+                                                              type='error')
                     return False
 
             # check if the end time is after the next segment start time
             # and throw an error and cancel if it is
-            if segment_index < len(self.transcript_segments[window_id])-1:
-                if segment_data['end'] > self.transcript_segments[window_id][segment_index+1]['start']:
+            if segment_index < len(self.transcript_segments[window_id]) - 1:
+                if segment_data['end'] > self.transcript_segments[window_id][segment_index + 1]['start']:
                     self.toolkit_UI_obj.notify_via_messagebox(title='Cannot align line to playhead',
-                                                    message='Cannot align to playhead: '
-                                                            'End time is after next segment\'s start time.',
-                                                    type='error')
+                                                              message='Cannot align to playhead: '
+                                                                      'End time is after next segment\'s start time.',
+                                                              type='error')
                     return False
 
             # update the transcript segments
@@ -1382,10 +1396,10 @@ class toolkit_UI:
                     logger.debug('Timeline timecode not available, trying transcription data instead')
 
                     timeline_start_tc = self.transcription_data[window_id]['timeline_start_tc'] \
-                                        if 'timeline_start_tc' in self.transcription_data[window_id] else None
+                        if 'timeline_start_tc' in self.transcription_data[window_id] else None
 
                     timeline_fps = self.transcription_data[window_id]['timeline_fps'] \
-                                        if 'timeline_fps' in self.transcription_data[window_id] else None
+                        if 'timeline_fps' in self.transcription_data[window_id] else None
 
                     # convert the timeline_start_tc to a Timecode object but only if the fps is also known
                     if timeline_start_tc is not None and timeline_fps is not None:
@@ -1435,12 +1449,12 @@ class toolkit_UI:
 
                         # if the segment is not right after the previous segment that we processed
                         # it means that there are other segments between them which haven't been selected
-                        elif prev_transcript_segment_index+1 != transcript_segment_index:
-                            current_chunk_num = current_chunk_num+1
+                        elif prev_transcript_segment_index + 1 != transcript_segment_index:
+                            current_chunk_num = current_chunk_num + 1
                             text.append({})
 
                             # show that there might be missing text from the transcription
-                            full_text = full_text+'\n[...]\n'
+                            full_text = full_text + '\n[...]\n'
 
                     # split into blocks of text that have no time gaps between them
                     if split_by == 'time':
@@ -1452,16 +1466,16 @@ class toolkit_UI:
                         # if the start time of the current segment
                         # doesn't match with the end time of the previous segment
                         elif selected_segment['start'] != prev_segment_end_time:
-                            current_chunk_num = current_chunk_num+1
+                            current_chunk_num = current_chunk_num + 1
                             text.append({})
 
                             # show that there might be missing text from the transcription
-                            full_text = full_text+'\n[...]\n'
+                            full_text = full_text + '\n[...]\n'
 
                     # add the current segment text to the current text chunk
                     text[current_chunk_num]['text'] = \
-                        text[current_chunk_num]['text']+'\n'+selected_segment['text'].strip() \
-                        if 'text' in text[current_chunk_num] else selected_segment['text']
+                        text[current_chunk_num]['text'] + '\n' + selected_segment['text'].strip() \
+                            if 'text' in text[current_chunk_num] else selected_segment['text']
 
                     # add the start time to the current text block
                     # but only for the first segment of this text block
@@ -1481,7 +1495,7 @@ class toolkit_UI:
                                                                   start_seconds=selected_segment['start'])
 
                                 # factor in the timeline start tc and use it for this chunk
-                                text[current_chunk_num]['start_tc'] = str(timeline_start_tc+segment_start_timecode)
+                                text[current_chunk_num]['start_tc'] = str(timeline_start_tc + segment_start_timecode)
 
                             # otherwise use the timeline_start_timecode
                             else:
@@ -1489,12 +1503,12 @@ class toolkit_UI:
 
                             # add it to the beginning of the text
                             text[current_chunk_num]['text'] = \
-                                text[current_chunk_num]['start_tc']+':\n'+text[current_chunk_num]['text'].strip()
+                                text[current_chunk_num]['start_tc'] + ':\n' + text[current_chunk_num]['text'].strip()
 
                             # add it to the full text body
                             # but only if we're not adding a time column later
                             if not add_time_column:
-                                full_text = full_text+'\n'+text[current_chunk_num]['start_tc']+':\n'
+                                full_text = full_text + '\n' + text[current_chunk_num]['start_tc'] + ':\n'
 
                     # add the end time of the current text chunk
                     text[current_chunk_num]['end'] = selected_segment['end']
@@ -1503,19 +1517,19 @@ class toolkit_UI:
                     if add_time_column:
                         # use timecode or seconds depending on the timecodes parameter
                         time_column = text[current_chunk_num]['start_tc'] \
-                                        if timecodes else '{:.2f}'.format(text[current_chunk_num]['start'])
+                            if timecodes else '{:.2f}'.format(text[current_chunk_num]['start'])
 
                         full_text = '{}{}\t'.format(full_text, str(time_column))
 
                     # add the segment text to the full text variable
-                    full_text = (full_text+selected_segment['text'].strip()+'\n')
+                    full_text = (full_text + selected_segment['text'].strip() + '\n')
 
                     # remember the index for the next iteration
                     prev_transcript_segment_index = transcript_segment_index
 
                     # split the text by each line, no matter if they're next to each other or not
                     if split_by == 'line':
-                        current_chunk_num = current_chunk_num+1
+                        current_chunk_num = current_chunk_num + 1
                         text.append({})
 
 
@@ -1529,7 +1543,6 @@ class toolkit_UI:
 
                 # if there is no active_segment for the window
                 if window_id not in self.active_segment:
-
                     # create one
                     self.active_segment[window_id] = 1
 
@@ -1540,7 +1553,7 @@ class toolkit_UI:
                 segment_index = line - 1
 
                 # add the time in front of the text
-                #if add_time_column:
+                # if add_time_column:
                 #    full_text = str(self.transcript_segments[window_id][segment_index]['start']) + '\t'
 
                 # get the text form the active segment
@@ -1570,7 +1583,7 @@ class toolkit_UI:
                         start_tc = str(timeline_start_tc)
 
                     # add it at the beginning of the text body
-                    full_text = start_tc+':\n'+full_text
+                    full_text = start_tc + ':\n' + full_text
 
                     # add this to the return list
                     text = [{'text': full_text.strip(), 'start': start_sec, 'end': end_sec, 'start_tc': start_tc}]
@@ -1621,7 +1634,7 @@ class toolkit_UI:
                 line = self.active_segment[window_id]
 
                 # we need to convert the line number to the segment_index used in the transcript_segments list
-                segment_index = line-1
+                segment_index = line - 1
 
                 # get the start and end times from the active segment
                 start_sec = self.transcript_segments[window_id][segment_index]['start']
@@ -1680,9 +1693,8 @@ class toolkit_UI:
 
             # if no text element is passed,
             # try to get the transcript text element from the window with the window_id
-            if text_element is None and self.toolkit_UI_obj is not None and window_id is not None\
+            if text_element is None and self.toolkit_UI_obj is not None and window_id is not None \
                     and window_id in self.toolkit_UI_obj.windows:
-
                 text_element = self.get_transcription_window_text_element(window_id=window_id)
 
             # if no text element is found, return
@@ -1770,9 +1782,8 @@ class toolkit_UI:
 
             # if no text element is passed,
             # try to get the transcript text element from the window with the window_id
-            if text_element is None and self.toolkit_UI_obj is not None and window_id is not None\
+            if text_element is None and self.toolkit_UI_obj is not None and window_id is not None \
                     and window_id in self.toolkit_UI_obj.windows:
-
                 text_element = self.get_transcription_window_text_element(window_id=window_id)
 
             if window_id is None or text_element is None or line is None:
@@ -1794,7 +1805,6 @@ class toolkit_UI:
                     # if a list of segments was passed (if they are dicts)
                     # we need to convert them to line numbers
                     if type(line_num) is dict:
-
                         # get the line number from the segment
                         line_num = self.segment_id_to_line(window_id=window_id, segment_id=line_num['id'])
 
@@ -1813,15 +1823,13 @@ class toolkit_UI:
                     text_element.tag_config('l_selected', foreground='blue',
                                             background=self.toolkit_UI_obj.resolve_theme_colors['superblack'])
 
-
-
                 return True
 
             # if a single line was passed, add or remove it from the selection
             else:
 
                 # convert the line number to segment_index
-                segment_index = line-1
+                segment_index = line - 1
 
                 # if the segment is not in the transcript segments dict
                 if line in self.selected_segments[window_id]:
@@ -1855,7 +1863,6 @@ class toolkit_UI:
 
                 # is there a reference to the line number?
                 if line in self.transcript_segments_ids[window_id]:
-
                     # then return the stored segment id
                     return self.transcript_segments_ids[window_id][line]
 
@@ -1871,7 +1878,7 @@ class toolkit_UI:
                 # go through all the ids and return the line number
                 try:
                     line = list(self.transcript_segments_ids[window_id].keys()) \
-                                [list(self.transcript_segments_ids[window_id].values()).index(segment_id)]
+                        [list(self.transcript_segments_ids[window_id].values()).index(segment_id)]
 
                     # if the line was found, return it
                     return line
@@ -1879,7 +1886,6 @@ class toolkit_UI:
                 # if the line wasn't found return None
                 except ValueError:
                     return None
-
 
             # if all fails return None
             return None
@@ -1896,25 +1902,26 @@ class toolkit_UI:
                         max_id = self.transcript_segments_ids[window_id][line_id]
 
                 # if the line was found, return it
-                return int(max_id)+1
+                return int(max_id) + 1
 
             # if all fails return None
             return None
 
-        def group_selected(self, window_id: str, group_name: str = None, add: bool = False) -> bool:
+        def group_selected(self, window_id: str, group_name: str = None, add: bool = False, **kwargs) -> bool:
             '''
             This adds the selected segments to a group based on their start and end times
             :param window_id:
             :param group_name: If this is passed, we're just adding the selected segments to the group
-            :param add: If this is True, we're adding the selected segments to the group, if it's False,
-                        we're only keeping the selected segments in the group
+            :param add: If this is True, we're adding the selected segments to the group,
+                        if it's False, we're keeping only what is selected in the group
             :return:
             '''
 
-            #group_name = 'another test group'
-            #group_notes = 'some test notes'
+            # group_name = 'another test group'
+            # group_notes = 'some test notes'
 
-            group_notes = ''
+            # this will not be preserved if this is an add operation
+            group_notes = kwargs.get('group_notes', '')
 
             # if we have some selected segments, group them
             if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0:
@@ -1953,15 +1960,23 @@ class toolkit_UI:
                 # (so keep the old segments in the group too)
                 if add is True and group_name is not None and group_name.lower() in transcript_groups_lower \
                         and len(transcript_groups[group_name]) > 0 \
-                        and 'time_intervals' in transcript_groups[group_name]\
+                        and 'time_intervals' in transcript_groups[group_name] \
                         and len(transcript_groups[group_name]['time_intervals']) > 0:
+
+                    # keep the notes if they exist and we're supposed to keep them
+                    if 'notes' in transcript_groups[group_name] and kwargs.get('keep_notes', False):
+                        group_notes = transcript_groups[group_name]['notes']
+
+                    # keep the name if we're supposed to keep it
+                    if kwargs.get('keep_name', False):
+                        group_name = transcript_groups[group_name]['name']
 
                     # but we first need to get the existing segments in the group
                     # by going through the time intervals of the group and getting the corresponding segments
                     existing_group_segments = \
                         self.toolkit_ops_obj.time_intervals_to_transcript_segments(
-                                transcript_groups[group_name]['time_intervals'],
-                                self.transcript_segments[window_id]
+                            transcript_groups[group_name]['time_intervals'],
+                            self.transcript_segments[window_id]
                         )
 
                     if existing_group_segments is not None:
@@ -1990,14 +2005,14 @@ class toolkit_UI:
                     logger.debug('Creating new group: {}'.format(group_name))
 
                 # save the segments to the transcription file
-                save_return = self.toolkit_ops_obj.t_groups_obj\
-                                        .save_segments_as_group_in_transcription_file(
-                                            transcription_file_path=transcription_file_path,
-                                            segments=segments_for_group,
-                                            group_name=group_name,
-                                            group_notes=group_notes,
-                                            existing_transcript_groups=transcript_groups,
-                                            overwrite_existing=True
+                save_return = self.toolkit_ops_obj.t_groups_obj \
+                    .save_segments_as_group_in_transcription_file(
+                    transcription_file_path=transcription_file_path,
+                    segments=segments_for_group,
+                    group_name=group_name,
+                    group_notes=group_notes,
+                    existing_transcript_groups=transcript_groups,
+                    overwrite_existing=True
                 )
 
                 if type(save_return) is dict:
@@ -2069,7 +2084,7 @@ class toolkit_UI:
                 del transcript_groups[group_id]
 
                 # save the groups to the transcription file
-                save_return = self.toolkit_ops_obj.t_groups_obj\
+                save_return = self.toolkit_ops_obj.t_groups_obj \
                     .save_transcript_groups(transcription_file_path=transcription_file_path,
                                             transcript_groups=transcript_groups)
 
@@ -2082,10 +2097,9 @@ class toolkit_UI:
                     # if the selected group is no longer in the groups of this window
                     # make sure it's also not selected anymore
                     if t_window_id in self.selected_groups \
-                        and group_id in self.selected_groups[t_window_id]:
-
-                            # remove the group from the selected groups
-                            self.selected_groups[t_window_id].remove(group_id)
+                            and group_id in self.selected_groups[t_window_id]:
+                        # remove the group from the selected groups
+                        self.selected_groups[t_window_id].remove(group_id)
 
                     # update the transcript groups window, if the right arguments were passed:
                     # the kwargs should contain the transcript groups window id and the groups listbox
@@ -2097,8 +2111,6 @@ class toolkit_UI:
                 else:
                     logger.debug('Something may have went wrong while saving the groups to the transcription file')
                     return False
-
-
 
         def on_press_add_segment(self, event, window_id=None, text=None):
             '''
@@ -2116,13 +2128,13 @@ class toolkit_UI:
             # and the last character of the line
             line, char, last_char = self.get_current_segment_chars(text=text)
 
-            #print('Pos: {}.{}; Last: {}'.format(line, char, last_char))
+            # print('Pos: {}.{}; Last: {}'.format(line, char, last_char))
 
             # initialize the new_line dict
             new_line = {}
 
             # the end time of the new line is the end of the current line
-            new_line['end'] = self.transcript_segments[window_id][int(line)-1]['end']
+            new_line['end'] = self.transcript_segments[window_id][int(line) - 1]['end']
 
             # get the text that is supposed to go on the next line
             new_line['text'] = text.get(INSERT, "{}.end".format(line))
@@ -2131,18 +2143,18 @@ class toolkit_UI:
             new_line['id'] = self.next_segment_id(window_id=window_id)
 
             # keep in mind the minimum and maximum split times
-            split_time_seconds_min = self.transcript_segments[window_id][int(line)-1]['start']
-            split_time_seconds_max = self.transcript_segments[window_id][int(line)-1]['end']
+            split_time_seconds_min = self.transcript_segments[window_id][int(line) - 1]['start']
+            split_time_seconds_max = self.transcript_segments[window_id][int(line) - 1]['end']
 
             # if resolve is connected, get the timecode from resolve
             if resolve:
 
                 # ask the user to move the playhead in Resolve to where the split should happen via info dialog
                 move_playhead = messagebox.askokcancel(title='Move playhead',
-                                       message='Move the Resolve playhead exactly '
-                                              'where the new segment starts, '
-                                              'then press OK to split.'
-                                       )
+                                                       message='Move the Resolve playhead exactly '
+                                                               'where the new segment starts, '
+                                                               'then press OK to split.'
+                                                       )
 
                 if not move_playhead:
                     logger.debug('User cancelled segment split.')
@@ -2156,13 +2168,13 @@ class toolkit_UI:
 
                 # ask the user to enter the timecode manually
                 split_time_seconds = simpledialog.askstring(
-                                        parent=self.toolkit_UI_obj.windows[window_id],
-                                        title='Where to split?',
-                                        prompt='At what time should we split this segment?\n\n'
-                                               'Enter a value between {} and {}:\n'
-                                                .format(split_time_seconds_min,
-                                                        split_time_seconds_max),
-                                        initialvalue=split_time_seconds_min)
+                    parent=self.toolkit_UI_obj.windows[window_id],
+                    title='Where to split?',
+                    prompt='At what time should we split this segment?\n\n'
+                           'Enter a value between {} and {}:\n'
+                    .format(split_time_seconds_min,
+                            split_time_seconds_max),
+                    initialvalue=split_time_seconds_min)
 
             # if the user didn't specify the split time
             if not split_time_seconds:
@@ -2170,22 +2182,20 @@ class toolkit_UI:
                 return 'break'
 
             if float(split_time_seconds) >= float(split_time_seconds_max):
-
                 self.toolkit_UI_obj.notify_via_messagebox(title='Time Value Error',
                                                           message="The {} time is larger "
                                                                   "than the end time of "
                                                                   "the segment you're splitting. Try again.".
-                                                                    format('playhead' if resolve else 'entered'),
+                                                          format('playhead' if resolve else 'entered'),
                                                           type='warning')
                 return 'break'
 
             if float(split_time_seconds) <= float(split_time_seconds_min):
-
                 self.toolkit_UI_obj.notify_via_messagebox(title='Time Value Error',
                                                           message="The {} time is smaller "
                                                                   "than the start time of "
                                                                   "the segment you're splitting. Try again.".
-                                                                    format('playhead' if resolve else 'entered'),
+                                                          format('playhead' if resolve else 'entered'),
                                                           type='warning')
 
                 return 'break'
@@ -2194,7 +2204,7 @@ class toolkit_UI:
             new_line['start'] = split_time_seconds
 
             # and also the end of the previous line
-            self.transcript_segments[window_id][int(line)-1]['end'] = split_time_seconds
+            self.transcript_segments[window_id][int(line) - 1]['end'] = split_time_seconds
 
             # add the element to the transcript segments right after the current line
             self.transcript_segments[window_id].insert(int(line), new_line)
@@ -2203,7 +2213,7 @@ class toolkit_UI:
             text.delete("{}.{}".format(line, char), "{}.end".format(line))
 
             # re-insert the text after the last character of the current line, but also add a line break
-            text.insert("{}.end+1c".format(line), new_line['text']+'\n')
+            text.insert("{}.end+1c".format(line), new_line['text'] + '\n')
 
             # remap the line numbers to segment ids for this window
             self.remap_lines_to_segment_ids(window_id=window_id, text=text)
@@ -2229,7 +2239,6 @@ class toolkit_UI:
 
                     # the last line of the text widget is always empty, so avoid that
                     if line_no < len(self.transcript_segments[window_id]):
-
                         # print(line_no, line)
 
                         # get the segment id for this line directly from the transcript segments dict
@@ -2261,15 +2270,15 @@ class toolkit_UI:
 
             # text focusout saves transcript
             text.bind('<FocusOut>', lambda e: self.on_press_save_transcript(e, window_id, text,
-                                                                          status_label=status_label))
+                                                                            status_label=status_label))
 
             # BACKSPACE key at first line character merges the current and the previous segment
             text.bind('<BackSpace>', lambda e:
-                    self.on_press_merge_segments(e, window_id=window_id, text=text, merge='previous'))
+            self.on_press_merge_segments(e, window_id=window_id, text=text, merge='previous'))
 
             # DELETE key at last line character merges the current and the next segment
             text.bind('<Delete>', lambda e:
-                    self.on_press_merge_segments(e, window_id=window_id, text=text, merge='next'))
+            self.on_press_merge_segments(e, window_id=window_id, text=text, merge='next'))
 
             if status_label is not None:
                 status_label.config(text='Not saved.', foreground=self.toolkit_UI_obj.resolve_theme_colors['red'])
@@ -2346,9 +2355,9 @@ class toolkit_UI:
 
             # ignore if we are not at the beginning nor at the end of the current line
             # or if the direction of the merge doesn't match the character number
-            if char not in ['0', last_char]\
-                or (char == '0' and merge != 'previous')\
-                or (char == last_char and merge != 'next'):
+            if char not in ['0', last_char] \
+                    or (char == '0' and merge != 'previous') \
+                    or (char == last_char and merge != 'next'):
                 return
 
             # if we are at the beginning of the line
@@ -2356,10 +2365,10 @@ class toolkit_UI:
             if char == '0' and merge == 'previous':
 
                 # get the previous segment
-                previous_segment = self.transcript_segments[window_id][int(line)-2]
+                previous_segment = self.transcript_segments[window_id][int(line) - 2]
 
                 # get the current segment
-                current_segment = self.transcript_segments[window_id][int(line)-1]
+                current_segment = self.transcript_segments[window_id][int(line) - 1]
 
                 # merge the current segment with the previous one
                 previous_segment['end'] = current_segment['end']
@@ -2372,13 +2381,13 @@ class toolkit_UI:
                 previous_segment['merged'] = True
 
                 # remove the line break from the previous line
-                text.delete("{}.end".format(int(line)-1), "{}.end+1c".format(int(line)-1))
+                text.delete("{}.end".format(int(line) - 1), "{}.end+1c".format(int(line) - 1))
 
                 # update the previous segment in the list
-                self.transcript_segments[window_id][int(line)-2] = previous_segment
+                self.transcript_segments[window_id][int(line) - 2] = previous_segment
 
                 # remove the current segment from the list (the list starts with index 0)
-                self.transcript_segments[window_id].pop(int(line)-1)
+                self.transcript_segments[window_id].pop(int(line) - 1)
 
                 # remap self.transcript_segments_ids
                 self.remap_lines_to_segment_ids(window_id=window_id, text=text)
@@ -2394,7 +2403,7 @@ class toolkit_UI:
             if char == last_char and merge == 'next':
 
                 # get the current segment
-                current_segment = self.transcript_segments[window_id][int(line)-1]
+                current_segment = self.transcript_segments[window_id][int(line) - 1]
 
                 # get the next segment
                 next_segment = self.transcript_segments[window_id][int(line)]
@@ -2504,7 +2513,8 @@ class toolkit_UI:
 
             # does the transcription file contain word level timings?
             word_level_timings = False
-            if len(old_transcription_file_data['segments']) >0 and 'words' in old_transcription_file_data['segments'][0]:
+            if len(old_transcription_file_data['segments']) > 0 and 'words' in old_transcription_file_data['segments'][
+                0]:
                 word_level_timings = True
 
             # only verify if skip_verification is False or the text is False
@@ -2521,16 +2531,16 @@ class toolkit_UI:
 
                 # but even if the transcript has not been modified,
                 # we still need to check if the transcript has been edited
-                while segment_no < len(text_lines)-1:
+                while segment_no < len(text_lines) - 1:
 
                     # add the segment text to a full text variable in case we need it later
-                    full_text = full_text+' '+text_lines[segment_no]
+                    full_text = full_text + ' ' + text_lines[segment_no]
 
                     # if any change to the text was found
-                    if text_lines[segment_no].strip() != self.transcript_segments[window_id][segment_no]['text'].strip():
-
+                    if text_lines[segment_no].strip() != self.transcript_segments[window_id][segment_no][
+                        'text'].strip():
                         # overwrite the segment text with the new text
-                        self.transcript_segments[window_id][segment_no]['text'] = text_lines[segment_no].strip()+' '
+                        self.transcript_segments[window_id][segment_no]['text'] = text_lines[segment_no].strip() + ' '
 
                         # it means that we have to save the new file
                         modified = True
@@ -2605,7 +2615,6 @@ class toolkit_UI:
                     srt_file_name = modified_transcription_file_data['srt_file_path']
 
                 if srt_file_name is not None and srt_file_name != '':
-
                     # the srt file should be in the same directory as the transcription file
                     srt_file_path = os.path.join(transcription_file_dir, srt_file_name)
 
@@ -2654,8 +2663,10 @@ class toolkit_UI:
             '''
 
             # create a window for the transcription settings if one doesn't already exist
-            if pref_window := self.toolkit_UI_obj.create_or_open_window(parent_element=self.root, window_id='preferences',
-                                           title='Preferences', resizable=True, return_window=True):
+            if pref_window := self.toolkit_UI_obj.create_or_open_window(parent_element=self.root,
+                                                                        window_id='preferences',
+                                                                        title='Preferences', resizable=True,
+                                                                        return_window=True):
 
                 form_grid_and_paddings = {**self.toolkit_UI_obj.input_grid_settings,
                                           **self.toolkit_UI_obj.form_paddings}
@@ -2680,7 +2691,7 @@ class toolkit_UI:
 
                 console_font_size_var \
                     = tk.IntVar(pref_form_frame,
-                                   value=self.stAI.get_app_setting('console_font_size', default_if_none=13))
+                                value=self.stAI.get_app_setting('console_font_size', default_if_none=13))
 
                 show_welcome_var \
                     = tk.BooleanVar(pref_form_frame,
@@ -2688,11 +2699,11 @@ class toolkit_UI:
 
                 api_token_var \
                     = tk.StringVar(pref_form_frame,
-                                    value=self.stAI.get_app_setting('api_token', default_if_none=''))
+                                   value=self.stAI.get_app_setting('api_token', default_if_none=''))
 
                 openai_api_key_var \
                     = tk.StringVar(pref_form_frame,
-                                    value=self.stAI.get_app_setting('openai_api_key', default_if_none=''))
+                                   value=self.stAI.get_app_setting('openai_api_key', default_if_none=''))
 
                 disable_resolve_api_var \
                     = tk.BooleanVar(pref_form_frame,
@@ -2710,69 +2721,85 @@ class toolkit_UI:
                                     value=self.stAI.get_app_setting('close_transcripts_on_timeline_change',
                                                                     default_if_none=True))
 
-                whisper_model_name_var\
+                whisper_model_name_var \
                     = tk.StringVar(pref_form_frame,
                                    value=self.stAI.get_app_setting('whisper_model_name', default_if_none='medium'))
 
-                whisper_device_var\
+                whisper_device_var \
                     = tk.StringVar(pref_form_frame,
-                                  value=self.stAI.get_app_setting('whisper_device', default_if_none='auto'))
+                                   value=self.stAI.get_app_setting('whisper_device', default_if_none='auto'))
 
-                transcription_default_language_var\
+                transcription_default_language_var \
                     = tk.StringVar(pref_form_frame,
                                    value=self.stAI.get_app_setting('transcription_default_language',
                                                                    default_if_none=''))
 
-                transcription_pre_detect_speech_var\
+                transcription_pre_detect_speech_var \
                     = tk.BooleanVar(pref_form_frame,
-                                    value=self.stAI.get_app_setting('transcription_pre_detect_speech', default_if_none=True))
+                                    value=self.stAI.get_app_setting('transcription_pre_detect_speech',
+                                                                    default_if_none=True))
 
-                transcription_word_timestamps_var\
+                transcription_word_timestamps_var \
                     = tk.BooleanVar(pref_form_frame,
-                                    value=self.stAI.get_app_setting('transcription_word_timestamps', default_if_none=True))
+                                    value=self.stAI.get_app_setting('transcription_word_timestamps',
+                                                                    default_if_none=True))
 
-                transcription_max_chars_per_segment_var\
+                transcription_max_chars_per_segment_var \
                     = tk.StringVar(pref_form_frame,
-                                    value=self.stAI.get_app_setting('transcription_max_chars_per_segment', default_if_none=''))
+                                   value=self.stAI.get_app_setting('transcription_max_chars_per_segment',
+                                                                   default_if_none=''))
 
-                transcription_max_words_per_segment_var\
+                transcription_max_words_per_segment_var \
                     = tk.StringVar(pref_form_frame,
-                                    value=self.stAI.get_app_setting('transcription_max_words_per_segment', default_if_none=''))
+                                   value=self.stAI.get_app_setting('transcription_max_words_per_segment',
+                                                                   default_if_none=''))
 
-                transcription_render_preset_var\
+                transcription_split_on_punctuation_marks_var \
                     = tk.StringVar(pref_form_frame,
-                                      value=self.stAI.get_app_setting('transcription_render_preset',
-                                                                      default_if_none='transcription_WAV'))
+                                   value=self.stAI.get_app_setting('transcription_split_on_punctuation_marks',
+                                                                   default_if_none=False))
 
-                transcript_font_size_var\
+                transcription_prevent_short_gaps_var \
+                    = tk.StringVar(pref_form_frame,
+                                      value=self.stAI.get_app_setting('transcription_prevent_short_gaps',
+                                                                        default_if_none=''))
+
+                transcription_render_preset_var \
+                    = tk.StringVar(pref_form_frame,
+                                   value=self.stAI.get_app_setting('transcription_render_preset',
+                                                                   default_if_none='transcription_WAV'))
+
+                transcript_font_size_var \
                     = tk.IntVar(pref_form_frame,
-                                      value=self.stAI.get_app_setting('transcript_font_size', default_if_none=15))
+                                value=self.stAI.get_app_setting('transcript_font_size', default_if_none=15))
 
-                transcripts_always_on_top_var\
+                transcripts_always_on_top_var \
                     = tk.BooleanVar(pref_form_frame,
                                     value=self.stAI.get_app_setting('transcripts_always_on_top', default_if_none=False))
 
-                transcripts_skip_settings_var\
+                transcripts_skip_settings_var \
                     = tk.BooleanVar(pref_form_frame,
                                     value=self.stAI.get_app_setting('transcripts_skip_settings', default_if_none=False))
 
-                #ffmpeg_path_var\
+                # ffmpeg_path_var\
                 #    = tk.StringVar(pref_form_frame,
                 #                    value=self.stAI.get_app_setting('ffmpeg_path', default_if_none=''))
 
                 # now create the form for all of the above settings
                 # general settings
-                tk.Label(pref_form_frame, text='General Settings', **h1_font).grid(row=0, column=0, columnspan=2, **form_grid_and_paddings)
-
-
+                tk.Label(pref_form_frame, text='General Settings', **h1_font).grid(row=0, column=0, columnspan=2,
+                                                                                   **form_grid_and_paddings)
 
                 # the font size for the console
-                tk.Label(pref_form_frame, text='Console Font Size', **label_settings).grid(row=2, column=0, **form_grid_and_paddings)
-                console_font_size_input = tk.Entry(pref_form_frame, textvariable=console_font_size_var, **entry_settings_quarter)
+                tk.Label(pref_form_frame, text='Console Font Size', **label_settings).grid(row=2, column=0,
+                                                                                           **form_grid_and_paddings)
+                console_font_size_input = tk.Entry(pref_form_frame, textvariable=console_font_size_var,
+                                                   **entry_settings_quarter)
                 console_font_size_input.grid(row=2, column=1, **form_grid_and_paddings)
 
                 # show the welcome window on startup
-                tk.Label(pref_form_frame, text='Show Welcome Window', **label_settings).grid(row=3, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Show Welcome Window', **label_settings).grid(row=3, column=0,
+                                                                                             **form_grid_and_paddings)
                 show_welcome_input = tk.Checkbutton(pref_form_frame, variable=show_welcome_var)
                 show_welcome_input.grid(row=3, column=1, **form_grid_and_paddings)
 
@@ -2783,31 +2810,41 @@ class toolkit_UI:
                     show_welcome_input.config(state='normal')
 
                 # api token
-                tk.Label(pref_form_frame, text='StoryToolkitAI API Token', **label_settings).grid(row=4, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='StoryToolkitAI API Token', **label_settings).grid(row=4, column=0,
+                                                                                                  **form_grid_and_paddings)
                 api_token_input = tk.Entry(pref_form_frame, textvariable=api_token_var, **entry_settings)
                 api_token_input.grid(row=4, column=1, **form_grid_and_paddings)
 
                 # OpenAI API key
-                tk.Label(pref_form_frame, text='OpenAI API Key', **label_settings).grid(row=5, column=0, **form_grid_and_paddings)
-                openai_api_key_input = tk.Entry(pref_form_frame, show="*", textvariable=openai_api_key_var, **entry_settings)
+                tk.Label(pref_form_frame, text='OpenAI API Key', **label_settings).grid(row=5, column=0,
+                                                                                        **form_grid_and_paddings)
+                openai_api_key_input = tk.Entry(pref_form_frame, show="*", textvariable=openai_api_key_var,
+                                                **entry_settings)
                 openai_api_key_input.grid(row=5, column=1, **form_grid_and_paddings)
 
                 # Integrations
-                tk.Label(pref_form_frame, text='Integrations', **h1_font).grid(row=14, column=0, columnspan=2, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Integrations', **h1_font).grid(row=14, column=0, columnspan=2,
+                                                                               **form_grid_and_paddings)
 
                 # disable the resolve API
-                tk.Label(pref_form_frame, text='Disable Resolve API', **label_settings).grid(row=15, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Disable Resolve API', **label_settings).grid(row=15, column=0,
+                                                                                             **form_grid_and_paddings)
                 disable_resolve_api_input = tk.Checkbutton(pref_form_frame, variable=disable_resolve_api_var)
                 disable_resolve_api_input.grid(row=15, column=1, **form_grid_and_paddings)
 
                 # auto open the transcript groups window on timeline open
-                tk.Label(pref_form_frame, text='Open Linked Transcripts', **label_settings).grid(row=16, column=0, **form_grid_and_paddings)
-                open_transcript_groups_window_on_open_input = tk.Checkbutton(pref_form_frame, variable=open_transcript_groups_window_on_open_var)
+                tk.Label(pref_form_frame, text='Open Linked Transcripts', **label_settings).grid(row=16, column=0,
+                                                                                                 **form_grid_and_paddings)
+                open_transcript_groups_window_on_open_input = tk.Checkbutton(pref_form_frame,
+                                                                             variable=open_transcript_groups_window_on_open_var)
                 open_transcript_groups_window_on_open_input.grid(row=16, column=1, **form_grid_and_paddings)
 
                 # close transcripts on timeline change
-                tk.Label(pref_form_frame, text='Close Transcripts on Timeline Change', **label_settings).grid(row=17, column=0, **form_grid_and_paddings)
-                close_transcripts_on_timeline_change_input = tk.Checkbutton(pref_form_frame, variable=close_transcripts_on_timeline_change_var)
+                tk.Label(pref_form_frame, text='Close Transcripts on Timeline Change', **label_settings).grid(row=17,
+                                                                                                              column=0,
+                                                                                                              **form_grid_and_paddings)
+                close_transcripts_on_timeline_change_input = tk.Checkbutton(pref_form_frame,
+                                                                            variable=close_transcripts_on_timeline_change_var)
                 close_transcripts_on_timeline_change_input.grid(row=17, column=1, **form_grid_and_paddings)
 
                 # the default marker color
@@ -2821,20 +2858,27 @@ class toolkit_UI:
                 default_marker_color_input.grid(row=18, column=1, **form_grid_and_paddings)
 
                 # the render preset for transcriptions
-                tk.Label(pref_form_frame, text='Transcription Render Preset', **label_settings).grid(row=19, column=0, **form_grid_and_paddings)
-                transcription_render_preset_input = tk.Entry(pref_form_frame, textvariable=transcription_render_preset_var, **entry_settings)
+                tk.Label(pref_form_frame, text='Transcription Render Preset', **label_settings).grid(row=19, column=0,
+                                                                                                     **form_grid_and_paddings)
+                transcription_render_preset_input = tk.Entry(pref_form_frame,
+                                                             textvariable=transcription_render_preset_var,
+                                                             **entry_settings)
                 transcription_render_preset_input.grid(row=19, column=1, **form_grid_and_paddings)
 
                 # transcriptions
-                tk.Label(pref_form_frame, text='Transcriptions', **h1_font).grid(row=21, column=0, columnspan=2, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Transcriptions', **h1_font).grid(row=21, column=0, columnspan=2,
+                                                                                 **form_grid_and_paddings)
 
                 # the whisper model name
-                tk.Label(pref_form_frame, text='Whisper Model', **label_settings).grid(row=22, column=0, **form_grid_and_paddings)
-                whisper_model_name_input = tk.OptionMenu(pref_form_frame, whisper_model_name_var, *whisper.available_models())
+                tk.Label(pref_form_frame, text='Whisper Model', **label_settings).grid(row=22, column=0,
+                                                                                       **form_grid_and_paddings)
+                whisper_model_name_input = tk.OptionMenu(pref_form_frame, whisper_model_name_var,
+                                                         *whisper.available_models())
                 whisper_model_name_input.grid(row=22, column=1, **form_grid_and_paddings)
 
                 # the whisper device
-                tk.Label(pref_form_frame, text='Whisper Device', **label_settings).grid(row=23, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Whisper Device', **label_settings).grid(row=23, column=0,
+                                                                                        **form_grid_and_paddings)
                 whisper_device_input = tk.OptionMenu(pref_form_frame, whisper_device_var,
                                                      *self.toolkit_ops_obj.get_torch_available_devices())
                 whisper_device_input.grid(row=23, column=1, **form_grid_and_paddings)
@@ -2843,87 +2887,128 @@ class toolkit_UI:
                 # first get the list of languages, but also add an empty string to the list
                 available_languages = [''] + self.toolkit_ops_obj.get_whisper_available_languages()
 
-                tk.Label(pref_form_frame, text='Default Language', **label_settings).grid(row=24, column=0, **form_grid_and_paddings)
-                transcription_default_language_input = tk.OptionMenu(pref_form_frame, transcription_default_language_var,
+                tk.Label(pref_form_frame, text='Default Language', **label_settings).grid(row=24, column=0,
+                                                                                          **form_grid_and_paddings)
+                transcription_default_language_input = tk.OptionMenu(pref_form_frame,
+                                                                     transcription_default_language_var,
                                                                      *available_languages)
                 transcription_default_language_input.grid(row=24, column=1, **form_grid_and_paddings)
 
                 # pre-detect speech
-                tk.Label(pref_form_frame, text='Pre-Detect Speech', **label_settings).grid(row=25, column=0, **form_grid_and_paddings)
-                transcription_pre_detect_speech_input = tk.Checkbutton(pref_form_frame, variable=transcription_pre_detect_speech_var)
+                tk.Label(pref_form_frame, text='Pre-Detect Speech', **label_settings).grid(row=25, column=0,
+                                                                                           **form_grid_and_paddings)
+                transcription_pre_detect_speech_input = tk.Checkbutton(pref_form_frame,
+                                                                       variable=transcription_pre_detect_speech_var)
                 transcription_pre_detect_speech_input.grid(row=25, column=1, **form_grid_and_paddings)
 
                 # word timestamps (use "increased time precision" for now)
-                tk.Label(pref_form_frame, text='Increased Time Precision', **label_settings).grid(row=26, column=0, **form_grid_and_paddings)
-                transcription_word_timestamps_input = tk.Checkbutton(pref_form_frame, variable=transcription_word_timestamps_var)
+                tk.Label(pref_form_frame, text='Increased Time Precision', **label_settings).grid(row=26, column=0,
+                                                                                                  **form_grid_and_paddings)
+                transcription_word_timestamps_input = tk.Checkbutton(pref_form_frame,
+                                                                     variable=transcription_word_timestamps_var)
                 transcription_word_timestamps_input.grid(row=26, column=1, **form_grid_and_paddings)
 
                 # max characters per line
-                tk.Label(pref_form_frame, text='Max. Characters Per Line', **label_settings).grid(row=27, column=0, **form_grid_and_paddings)
-                max_chars_per_segment_input = tk.Entry(pref_form_frame, textvariable=transcription_max_chars_per_segment_var, **entry_settings_quarter)
+                tk.Label(pref_form_frame, text='Max. Characters Per Line', **label_settings).grid(row=27, column=0,
+                                                                                                  **form_grid_and_paddings)
+                max_chars_per_segment_input = tk.Entry(pref_form_frame,
+                                                       textvariable=transcription_max_chars_per_segment_var,
+                                                       **entry_settings_quarter)
                 max_chars_per_segment_input.grid(row=27, column=1, **form_grid_and_paddings)
 
                 # only allow integers
                 max_chars_per_segment_input.config(validate="key",
                                                    validatecommand=
-                                                   (max_chars_per_segment_input.register(self.toolkit_UI_obj.only_allow_integers), '%P'))
+                                                   (max_chars_per_segment_input.register(
+                                                       self.toolkit_UI_obj.only_allow_integers), '%P'))
 
                 # max characters per line
-                tk.Label(pref_form_frame, text='Max. Words Per Line', **label_settings).grid(row=28, column=0, **form_grid_and_paddings)
-                max_words_per_segment_input = tk.Entry(pref_form_frame, textvariable=transcription_max_words_per_segment_var, **entry_settings_quarter)
+                tk.Label(pref_form_frame, text='Max. Words Per Line', **label_settings).grid(row=28, column=0,
+                                                                                             **form_grid_and_paddings)
+                max_words_per_segment_input = tk.Entry(pref_form_frame,
+                                                       textvariable=transcription_max_words_per_segment_var,
+                                                       **entry_settings_quarter)
                 max_words_per_segment_input.grid(row=28, column=1, **form_grid_and_paddings)
 
                 # only allow integers
                 max_words_per_segment_input.config(validate="key",
-                                                    validatecommand=
-                                                    (max_words_per_segment_input.register(self.toolkit_UI_obj.only_allow_integers), '%P'))
+                                                   validatecommand=
+                                                   (max_words_per_segment_input.register(
+                                                       self.toolkit_UI_obj.only_allow_integers), '%P'))
+
+                # split on punctuation
+                tk.Label(pref_form_frame, text='Split On Punctuation', **label_settings).grid(row=29, column=0,
+                                                                                              **form_grid_and_paddings)
+                split_on_punctuation_marks_input = tk.Checkbutton(pref_form_frame,
+                                                                  variable=transcription_split_on_punctuation_marks_var)
+                split_on_punctuation_marks_input.grid(row=29, column=1, **form_grid_and_paddings)
+
+                # prevent short gaps between segments
+                tk.Label(pref_form_frame, text='Prevent Gaps Shorter Than', **label_settings)\
+                    .grid(row=30, column=0, **form_grid_and_paddings)
+                prevent_short_gaps_input = tk.Entry(pref_form_frame, textvariable=transcription_prevent_short_gaps_var,
+                                                    **entry_settings_quarter)
+                prevent_short_gaps_input.grid(row=30, column=1, **form_grid_and_paddings)
+
+                # only allow floats
+                prevent_short_gaps_input.config(validate="key",
+                                                validatecommand=
+                                                (prevent_short_gaps_input.register(
+                                                    self.toolkit_UI_obj.only_allow_floats), '%P'))
 
                 # the transcript font size
-                tk.Label(pref_form_frame, text='Transcript Font Size', **label_settings).grid(row=29, column=0, **form_grid_and_paddings)
-                transcript_font_size_input = tk.Entry(pref_form_frame, textvariable=transcript_font_size_var, **entry_settings_quarter)
-                transcript_font_size_input.grid(row=29, column=1, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Transcript Font Size', **label_settings).grid(row=31, column=0,
+                                                                                              **form_grid_and_paddings)
+                transcript_font_size_input = tk.Entry(pref_form_frame, textvariable=transcript_font_size_var,
+                                                      **entry_settings_quarter)
+                transcript_font_size_input.grid(row=31, column=1, **form_grid_and_paddings)
 
                 # transcripts always on top
-                tk.Label(pref_form_frame, text='Transcript Always On Top', **label_settings).grid(row=30, column=0, **form_grid_and_paddings)
-                transcripts_always_on_top_input = tk.Checkbutton(pref_form_frame, variable=transcripts_always_on_top_var)
-                transcripts_always_on_top_input.grid(row=30, column=1, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Transcript Always On Top', **label_settings).grid(row=32, column=0,
+                                                                                                  **form_grid_and_paddings)
+                transcripts_always_on_top_input = tk.Checkbutton(pref_form_frame,
+                                                                 variable=transcripts_always_on_top_var)
+                transcripts_always_on_top_input.grid(row=32, column=1, **form_grid_and_paddings)
 
-                # transcripts always on top
-                tk.Label(pref_form_frame, text='Skip Transcription Settings', **label_settings).grid(row=31, column=0, **form_grid_and_paddings)
-                transcripts_skip_settings_input = tk.Checkbutton(pref_form_frame, variable=transcripts_skip_settings_var)
-                transcripts_skip_settings_input.grid(row=31, column=1, **form_grid_and_paddings)
+                # skip transcription settings
+                tk.Label(pref_form_frame, text='Skip Transcription Settings', **label_settings).grid(row=33, column=0,
+                                                                                                     **form_grid_and_paddings)
+                transcripts_skip_settings_input = tk.Checkbutton(pref_form_frame,
+                                                                 variable=transcripts_skip_settings_var)
+                transcripts_skip_settings_input.grid(row=33, column=1, **form_grid_and_paddings)
 
                 # ffmpeg path
-                #tk.Label(pref_form_frame, text='FFmpeg Path', **label_settings).grid(row=14, column=0, **form_grid_and_paddings)
-                #ffmpeg_path_input = tk.Entry(pref_form_frame, textvariable=ffmpeg_path_var, **entry_settings)
-                #ffmpeg_path_input.grid(row=14, column=1, **form_grid_and_paddings)
+                # tk.Label(pref_form_frame, text='FFmpeg Path', **label_settings).grid(row=14, column=0, **form_grid_and_paddings)
+                # ffmpeg_path_input = tk.Entry(pref_form_frame, textvariable=ffmpeg_path_var, **entry_settings)
+                # ffmpeg_path_input.grid(row=14, column=1, **form_grid_and_paddings)
 
                 # SAVE BUTTON
 
                 # keep track of all the input variables above
                 input_variables = {
                     'default_marker_color': default_marker_color_var,
-                     'console_font_size': console_font_size_var,
-                     'show_welcome': show_welcome_var,
-                     'api_token': api_token_var,
-                     'openai_api_key': openai_api_key_var,
-                     'disable_resolve_api': disable_resolve_api_var,
-                     'open_transcript_groups_window_on_open': open_transcript_groups_window_on_open_var,
-                     'close_transcripts_on_timeline_change': close_transcripts_on_timeline_change_var,
-                     'whisper_model_name': whisper_model_name_var,
-                     'whisper_device': whisper_device_var,
-                     'transcription_default_language': transcription_default_language_var,
-                     'transcription_pre_detect_speech': transcription_pre_detect_speech_var,
-                     'transcription_word_timestamps': transcription_word_timestamps_var,
-                     'transcription_max_chars_per_segment': transcription_max_chars_per_segment_var,
-                     'transcription_max_words_per_segment': transcription_max_words_per_segment_var,
-                     'transcription_render_preset': transcription_render_preset_var,
-                     'transcript_font_size': transcript_font_size_var,
-                     'transcripts_always_on_top': transcripts_always_on_top_var,
-                     'transcripts_skip_settings': transcripts_skip_settings_var,
-                     # 'ffmpeg_path': ffmpeg_path_var
+                    'console_font_size': console_font_size_var,
+                    'show_welcome': show_welcome_var,
+                    'api_token': api_token_var,
+                    'openai_api_key': openai_api_key_var,
+                    'disable_resolve_api': disable_resolve_api_var,
+                    'open_transcript_groups_window_on_open': open_transcript_groups_window_on_open_var,
+                    'close_transcripts_on_timeline_change': close_transcripts_on_timeline_change_var,
+                    'whisper_model_name': whisper_model_name_var,
+                    'whisper_device': whisper_device_var,
+                    'transcription_default_language': transcription_default_language_var,
+                    'transcription_pre_detect_speech': transcription_pre_detect_speech_var,
+                    'transcription_word_timestamps': transcription_word_timestamps_var,
+                    'transcription_max_chars_per_segment': transcription_max_chars_per_segment_var,
+                    'transcription_max_words_per_segment': transcription_max_words_per_segment_var,
+                    'transcription_split_on_punctuation_marks': transcription_split_on_punctuation_marks_var,
+                    'transcription_prevent_short_gaps': transcription_prevent_short_gaps_var,
+                    'transcription_render_preset': transcription_render_preset_var,
+                    'transcript_font_size': transcript_font_size_var,
+                    'transcripts_always_on_top': transcripts_always_on_top_var,
+                    'transcripts_skip_settings': transcripts_skip_settings_var,
+                    # 'ffmpeg_path': ffmpeg_path_var
                 }
-
 
                 Label(pref_form_frame, text="", **label_settings).grid(row=50, column=0, **form_grid_and_paddings)
                 start_button = tk.Button(pref_form_frame, text='Save')
@@ -2982,9 +3067,9 @@ class toolkit_UI:
 
             # create a window for the transcription log if one doesn't already exist
             if about_window := self.toolkit_UI_obj.create_or_open_window(parent_element=self.root,
-                                                    window_id='about', title='About StoryToolkitAI', resizable=False,
-                                                                          return_window=True):
-
+                                                                         window_id='about',
+                                                                         title='About StoryToolkitAI', resizable=False,
+                                                                         return_window=True):
                 # the text justify
                 justify = {'justify': tk.LEFT}
 
@@ -2993,7 +3078,7 @@ class toolkit_UI:
                 about_frame.pack(**self.toolkit_UI_obj.paddings)
 
                 # add the app name text
-                app_name = 'StoryToolkitAI version '+self.stAI.version
+                app_name = 'StoryToolkitAI version ' + self.stAI.version
 
                 # create the app name heading
                 app_name_label = Label(about_frame, text=app_name, font=self.toolkit_UI_obj.default_font_h1, **justify)
@@ -3041,9 +3126,6 @@ class toolkit_UI:
 
             return
 
-
-
-
     def __init__(self, toolkit_ops_obj=None, stAI=None, **other_options):
 
         # make a reference to toolkit ops obj
@@ -3060,7 +3142,7 @@ class toolkit_UI:
 
         # add icon
         try:
-            photo = tk.PhotoImage(file = 'UI/StoryToolkitAI.png')
+            photo = tk.PhotoImage(file='UI/StoryToolkitAI.png')
             self.root.wm_iconphoto(False, photo)
 
             # set bar icon for windows
@@ -3083,7 +3165,6 @@ class toolkit_UI:
 
         # alert the user if ffmpeg isn't installed
         if 'ffmpeg_status' in other_options and not other_options['ffmpeg_status']:
-
             self.notify_via_messagebox(title='FFMPEG not found',
                                        message='FFMPEG was not found on this machine.\n'
                                                'Please follow the installation instructions or StoryToolkitAI will '
@@ -3160,7 +3241,7 @@ class toolkit_UI:
 
         # we're calculating the size based on the screen size
         screen_width, screen_height = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        font_size_ratio *= (screen_width if screen_width>screen_height else screen_height) / 1920
+        font_size_ratio *= (screen_width if screen_width > screen_height else screen_height) / 1920
 
         # set platform independent transcript font
         self.transcript_font = font.Font()
@@ -3182,7 +3263,7 @@ class toolkit_UI:
         # set the transcript font size based on the font ratio
         self.transcript_font.configure(size=int(transcript_font_size * font_size_ratio))
 
-        #self.transcript_font.configure(size=16)
+        # self.transcript_font.configure(size=16)
 
         # get console font size
         console_font_size = self.stAI.get_app_setting('console_font_size', default_if_none=13)
@@ -3207,15 +3288,15 @@ class toolkit_UI:
 
         # set the platform independent default font for headings
         self.default_font_h1 = font.nametofont(name='TkHeadingFont')
-        self.default_font_h1.configure(size=int(default_font_size_after_ratio+3))
+        self.default_font_h1.configure(size=int(default_font_size_after_ratio + 3))
 
         # set the platform independent default font for headings
         self.default_font_h2 = font.nametofont(name='TkHeadingFont')
-        self.default_font_h2.configure(size=int(default_font_size_after_ratio+2))
+        self.default_font_h2.configure(size=int(default_font_size_after_ratio + 2))
 
         # set the platform independent default font for headings
         self.default_font_h3 = font.nametofont(name='TkHeadingFont')
-        self.default_font_h3.configure(size=int(default_font_size_after_ratio+1))
+        self.default_font_h3.configure(size=int(default_font_size_after_ratio + 1))
 
         # define the pixel size for buttons
         pixel = tk.PhotoImage(width=1, height=1)
@@ -3331,8 +3412,8 @@ class toolkit_UI:
 
                 changelog_instructions = 'Maybe update now before getting back to work?\n' + \
                                          'Quit the tool and use `git pull` to update.\n\n' \
-
-                # prepare some action buttons for the text window
+ \
+                    # prepare some action buttons for the text window
                 action_buttons = [{'text': 'Quit to update', 'command': lambda: sys.exit()}]
 
             # read the CHANGELOG.md file from github
@@ -3340,6 +3421,8 @@ class toolkit_UI:
 
             # if the request was successful
             if changelog_file.status_code == 200:
+
+                import packaging
 
                 # get the changelog text
                 changelog_text = changelog_file.text
@@ -3379,14 +3462,14 @@ class toolkit_UI:
 
                     # if we reached the current version, stop
                     # this doesn't behave well if the version number is x.x.x.x vs x.x.x
-                    if version_no == current_version:
+                    if packaging.version.parse(version_no) <= packaging.version.parse(current_version):
                         break
 
                     changelog_new_versions_info += f'\n## {version_no}\n\n{text}\n'
 
                 # add the changelog to the message
                 if changelog_new_versions_info != '':
-                    changelog_new_versions += '# What\'s new?\n'+changelog_new_versions_info
+                    changelog_new_versions += '# What\'s new?\n' + changelog_new_versions_info
 
                 # add the skip and later buttons to the action buttons
                 action_buttons.append({'text': 'Skip this version',
@@ -3397,13 +3480,13 @@ class toolkit_UI:
                                        'anchor': 'e'
                                        })
                 action_buttons.append({'text': 'Later', 'command': lambda: self.destroy_text_window(update_window_id),
-                 'side': tk.RIGHT, 'anchor': 'e'})
+                                       'side': tk.RIGHT, 'anchor': 'e'})
 
                 # open the CHANGELOG.md file from github in a text window
                 update_window_id = self.open_text_window(title='New Update',
-                                                  window_id=update_window_id,
-                                                  initial_text=changelog_new_versions,
-                                                  action_buttons=action_buttons)
+                                                         window_id=update_window_id,
+                                                         initial_text=changelog_new_versions,
+                                                         action_buttons=action_buttons)
 
                 # format the text
                 self.text_window_format_md(update_window_id)
@@ -3439,6 +3522,20 @@ class toolkit_UI:
         else:
             return False
 
+    def only_allow_floats(self, value):
+        '''
+        Validation function for the entry widget.
+        '''
+
+        if value == "":
+            return True
+
+        try:
+            float(value)
+            return True
+        except ValueError:
+            return False
+
     def ignore_update(self, version_to_ignore=None, window_id=None):
         '''
         This function is called when the user clicks the "Skip this version" button in the update window.
@@ -3468,8 +3565,6 @@ class toolkit_UI:
         # save the config file
         self.stAI.save_config()
 
-
-
     class main_window:
         pass
 
@@ -3484,8 +3579,8 @@ class toolkit_UI:
         # if there are, ask the user if they want to quit anyway
 
         if (self.toolkit_ops_obj.transcription_queue is not None and len(self.toolkit_ops_obj.transcription_queue) > 0) \
-            or (self.toolkit_ops_obj.transcription_queue_current_name is not None \
-                and self.toolkit_ops_obj.transcription_queue_current_name != ''):
+                or (self.toolkit_ops_obj.transcription_queue_current_name is not None \
+                    and self.toolkit_ops_obj.transcription_queue_current_name != ''):
 
             quit_anyway = messagebox.askyesno(title="Are you sure?",
                                               message="We're still transcribing. Quit anyway?")
@@ -3505,9 +3600,9 @@ class toolkit_UI:
         sys.exit()
 
     def create_or_open_window(self, parent_element: tk.Toplevel or tk = None, window_id: str = None,
-                               title: str = None, resizable: bool = False,
-                               close_action=None,
-                               open_multiple: bool = False, return_window: bool = False) \
+                              title: str = None, resizable: bool = False,
+                              close_action=None,
+                              open_multiple: bool = False, return_window: bool = False) \
             -> tk.Toplevel or str or bool:
         '''
         This function creates a new window or opens an existing one based on the window_id.
@@ -3706,74 +3801,86 @@ class toolkit_UI:
         # label1.grid(row=0, column=1, sticky='w', padx=10, pady=10)
 
         # resolve buttons frame row 1
-        self.windows['main'].button1 = tk.Button(self.windows['main'].resolve_buttons_frame, **self.blank_img_button_settings,
-                                             **self.button_size,
-                                             text="Copy Timeline\nMarkers to Same Clip",
-                                             command=lambda: self.toolkit_ops_obj.execute_operation('copy_markers_timeline_to_clip', self))
+        self.windows['main'].button1 = tk.Button(self.windows['main'].resolve_buttons_frame,
+                                                 **self.blank_img_button_settings,
+                                                 **self.button_size,
+                                                 text="Copy Timeline\nMarkers to Same Clip",
+                                                 command=lambda: self.toolkit_ops_obj.execute_operation(
+                                                     'copy_markers_timeline_to_clip', self))
         self.windows['main'].button1.grid(row=1, column=1, **self.paddings)
 
-        self.windows['main'].button2 = tk.Button(self.windows['main'].resolve_buttons_frame, **self.blank_img_button_settings,
-                                             **self.button_size,
-                                             text="Copy Clip Markers\nto Same Timeline",
-                                             command=lambda: self.toolkit_ops_obj.execute_operation('copy_markers_clip_to_timeline', self))
+        self.windows['main'].button2 = tk.Button(self.windows['main'].resolve_buttons_frame,
+                                                 **self.blank_img_button_settings,
+                                                 **self.button_size,
+                                                 text="Copy Clip Markers\nto Same Timeline",
+                                                 command=lambda: self.toolkit_ops_obj.execute_operation(
+                                                     'copy_markers_clip_to_timeline', self))
         self.windows['main'].button2.grid(row=1, column=2, **self.paddings)
 
         # resolve buttons frame row 2
-        self.windows['main'].button3 = tk.Button(self.windows['main'].resolve_buttons_frame, **self.blank_img_button_settings,
-                                             **self.button_size, text="Render Markers\nto Stills",
-                                             command=lambda: self.toolkit_ops_obj.execute_operation('render_markers_to_stills', self))
+        self.windows['main'].button3 = tk.Button(self.windows['main'].resolve_buttons_frame,
+                                                 **self.blank_img_button_settings,
+                                                 **self.button_size, text="Render Markers\nto Stills",
+                                                 command=lambda: self.toolkit_ops_obj.execute_operation(
+                                                     'render_markers_to_stills', self))
         self.windows['main'].button3.grid(row=2, column=1, **self.paddings)
 
-        self.windows['main'].button4 = tk.Button(self.windows['main'].resolve_buttons_frame, **self.blank_img_button_settings,
-                                             **self.button_size, text="Render Markers\nto Clips",
-                                             command=lambda: self.toolkit_ops_obj.execute_operation('render_markers_to_clips', self))
+        self.windows['main'].button4 = tk.Button(self.windows['main'].resolve_buttons_frame,
+                                                 **self.blank_img_button_settings,
+                                                 **self.button_size, text="Render Markers\nto Clips",
+                                                 command=lambda: self.toolkit_ops_obj.execute_operation(
+                                                     'render_markers_to_clips', self))
         self.windows['main'].button4.grid(row=2, column=2, **self.paddings)
 
         # Other Frame Row 1
-        self.windows['main'].button5 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings,
-                                             **self.button_size, text="Transcribe\nTimeline",
-                                             command=lambda: self.toolkit_ops_obj.prepare_transcription_file(
-                                                 toolkit_UI_obj=self))
+        self.windows['main'].button5 = tk.Button(self.windows['main'].other_buttons_frame,
+                                                 **self.blank_img_button_settings,
+                                                 **self.button_size, text="Transcribe\nTimeline",
+                                                 command=lambda: self.toolkit_ops_obj.prepare_transcription_file(
+                                                     toolkit_UI_obj=self))
         # add the shift+click binding to the button
         self.windows['main'].button5.bind('<Shift-Button-1>',
-                                      lambda event: toolkit_ops_obj.prepare_transcription_file(
-                                                 toolkit_UI_obj=self, select_files=True))
+                                          lambda event: toolkit_ops_obj.prepare_transcription_file(
+                                              toolkit_UI_obj=self, select_files=True))
         self.windows['main'].button5.grid(row=1, column=1, **self.paddings)
 
-        self.windows['main'].button6 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings,
-                                             **self.button_size,
-                                             text="Translate\nTimeline to English",
-                                             command=lambda: self.toolkit_ops_obj.prepare_transcription_file(
-                                                 toolkit_UI_obj=self, task='translate'))
+        self.windows['main'].button6 = tk.Button(self.windows['main'].other_buttons_frame,
+                                                 **self.blank_img_button_settings,
+                                                 **self.button_size,
+                                                 text="Translate\nTimeline to English",
+                                                 command=lambda: self.toolkit_ops_obj.prepare_transcription_file(
+                                                     toolkit_UI_obj=self, task='translate'))
         # add the shift+click binding to the button
         self.windows['main'].button6.bind('<Shift-Button-1>',
-                                      lambda event: toolkit_ops_obj.prepare_transcription_file(
-                                                 toolkit_UI_obj=self, task='translate', select_files=True))
+                                          lambda event: toolkit_ops_obj.prepare_transcription_file(
+                                              toolkit_UI_obj=self, task='translate', select_files=True))
 
         self.windows['main'].button6.grid(row=1, column=2, **self.paddings)
 
-        self.windows['main'].button7 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings,
-                                             **self.button_size,
-                                             text="Open\nTranscript", command=lambda: self.open_transcript())
+        self.windows['main'].button7 = tk.Button(self.windows['main'].other_buttons_frame,
+                                                 **self.blank_img_button_settings,
+                                                 **self.button_size,
+                                                 text="Open\nTranscript", command=lambda: self.open_transcript())
         self.windows['main'].button7.grid(row=2, column=1, **self.paddings)
 
-        self.windows['main'].button8 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings,
-                                             **self.button_size,
-                                             text="Open\nTranscription Log",
-                                             command=lambda: self.open_transcription_log_window())
+        self.windows['main'].button8 = tk.Button(self.windows['main'].other_buttons_frame,
+                                                 **self.blank_img_button_settings,
+                                                 **self.button_size,
+                                                 text="Open\nTranscription Log",
+                                                 command=lambda: self.open_transcription_log_window())
         self.windows['main'].button8.grid(row=2, column=2, **self.paddings)
 
         # THE ADVANCED SEARCH BUTTON
-        self.windows['main'].button9 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings,
-                                             **self.button_size,
-                                             text="Advanced\n Search", command=lambda:
-                                                            self.open_advanced_search_window())
+        self.windows['main'].button9 = tk.Button(self.windows['main'].other_buttons_frame,
+                                                 **self.blank_img_button_settings,
+                                                 **self.button_size,
+                                                 text="Advanced\n Search", command=lambda:
+            self.open_advanced_search_window())
         # add the shift+click binding to the button
         self.windows['main'].button9.bind('<Shift-Button-1>',
-                                      lambda event: self.open_advanced_search_window(select_dir=True))
+                                          lambda event: self.open_advanced_search_window(select_dir=True))
 
         self.windows['main'].button9.grid(row=3, column=1, **self.paddings)
-
 
         # THE ASSISTANT BUTTON
         self.windows['main'].button10 = tk.Button(self.windows['main'].other_buttons_frame,
@@ -3794,7 +3901,7 @@ class toolkit_UI:
         #                                                                          prompt_prefix="> ")
         #                                      )
         #
-        #self.windows['main'].button10.grid(row=3, column=2, **self.paddings)
+        # self.windows['main'].button10.grid(row=3, column=2, **self.paddings)
 
         # Make the window resizable false
         self.root.resizable(False, False)
@@ -3813,7 +3920,7 @@ class toolkit_UI:
         # add key bindings to the main window
         # key t for the transcription window
         self.windows['main'].bind("t", lambda event: self.toolkit_ops_obj.prepare_transcription_file(
-                                                 toolkit_UI_obj=self))
+            toolkit_UI_obj=self))
 
         # load menubar items
         self.UI_menus.load_menubar()
@@ -3849,7 +3956,7 @@ class toolkit_UI:
             self.text_windows[window_id]['text_widget'].see('end-1c')
 
             # if the prompt history is empty, do nothing
-            if len(self.window_prompts[window_id]) == 0:
+            if window_id not in self.window_prompts or len(self.window_prompts[window_id]) == 0:
                 return 'break'
 
             if window_id not in self.window_prompts_index:
@@ -3895,11 +4002,10 @@ class toolkit_UI:
 
                 # set the prompt in the text widget
                 # but also add the prompt prefix if there is one
-                self.text_windows[window_id]['text_widget']\
-                    .insert('end-1c', self.text_windows[window_id]['prompt_prefix']+prompt)
+                self.text_windows[window_id]['text_widget'] \
+                    .insert('end-1c', self.text_windows[window_id]['prompt_prefix'] + prompt)
 
             return 'break'
-
 
         # if the cursor is not past the last line, only allow arrow keys
         if int(cursor_pos.split('.')[0]) < int(lines.split('.')[0]):
@@ -3934,7 +4040,6 @@ class toolkit_UI:
 
             # if the cursor is not past the prefix, move it to the end of the prefix
             if int(cursor_pos.split('.')[1]) < len(self.text_windows[window_id]['prompt_prefix']):
-
                 # first move the cursor to the end of the last line
                 self.text_windows[window_id]['text_widget'].mark_set('insert', 'end-1c')
 
@@ -3962,7 +4067,7 @@ class toolkit_UI:
                 # scroll to the end of the last line
                 # but only if the window still exists
                 # - this is disabled since it should be handled within _text_window_prompts() (i.e. by each command)
-                #if window_id in self.text_windows:
+                # if window_id in self.text_windows:
                 #    self.text_windows[window_id]['text_widget'].see('end-1c')
 
                 return 'break'
@@ -3976,7 +4081,7 @@ class toolkit_UI:
                 prompt_prefix_length = len(kwargs.get('prompt_prefix', ''))
 
                 if self.text_windows[window_id]['text_widget'].index('insert') \
-                    == str(last_line) + '.' + str(prompt_prefix_length):
+                        == str(last_line) + '.' + str(prompt_prefix_length):
                     return 'break'
 
         return
@@ -4015,7 +4120,6 @@ class toolkit_UI:
         if window_id and response:
             self._text_window_update(window_id=window_id, text=response, prompt_prefix=kwargs.get('prompt_prefix', ''))
 
-
     def _text_window_update(self, window_id, text, **kwargs):
         '''
         This function updates the text in the text window, but keeps the command line at the bottom if it exists
@@ -4045,7 +4149,7 @@ class toolkit_UI:
         self.text_windows[window_id]['text_widget'].insert('insert', text + '\n\n')
 
         # now change the color of the last entry to supernormal (almost white)
-        self.text_windows[window_id]['text_widget'].tag_add('reply', insert_pos, 'end-1c'+linestart)
+        self.text_windows[window_id]['text_widget'].tag_add('reply', insert_pos, 'end-1c' + linestart)
         self.text_windows[window_id]['text_widget'].tag_config('reply',
                                                                foreground=self.resolve_theme_colors['supernormal'])
 
@@ -4062,8 +4166,6 @@ class toolkit_UI:
 
         # also scroll to the end of the last line (or to whatever scroll_to was sent)
         self.text_windows[window_id]['text_widget'].see(kwargs.get('scroll_to', 'end-1c'))
-
-
 
     def open_text_window(self, window_id=None, title: str = 'Console', initial_text: str = None,
                          can_find: bool = False, user_prompt: bool = False, prompt_prefix: str = None,
@@ -4116,7 +4218,6 @@ class toolkit_UI:
             # add the save as option
             # file_menu.add_command(label='Save as...', command=lambda: self.save_text_window_as(window_id=window_id))
 
-
             # create an entry in the text_windows dict
             self.text_windows[window_id] = {'text': initial_text}
 
@@ -4127,9 +4228,8 @@ class toolkit_UI:
 
             # add the CTRL+F behavior to the text window
             if can_find:
-
                 # if the user presses CTRL/CMD+F, open the find window
-                self.windows[window_id].bind('<'+self.ctrl_cmd_bind+'-f>',
+                self.windows[window_id].bind('<' + self.ctrl_cmd_bind + '-f>',
                                              lambda event:
                                              self.open_find_replace_window(
                                                  parent_window_id=window_id,
@@ -4149,8 +4249,8 @@ class toolkit_UI:
                         width=kwargs.get('window_width', 45),
                         height=kwargs.get('window_height', 30),
                         padx=5, pady=5, wrap=tk.WORD,
-                                                background=self.resolve_theme_colors['black'],
-                                                foreground=self.resolve_theme_colors['normal'])
+                        background=self.resolve_theme_colors['black'],
+                        foreground=self.resolve_theme_colors['normal'])
 
             # add a scrollbar to the text element
             scrollbar = Scrollbar(text_form_frame, orient="vertical", **self.scrollbar_settings)
@@ -4162,7 +4262,7 @@ class toolkit_UI:
 
             # add the initial text to the text element
             if initial_text:
-                text.insert(tk.END, initial_text+'\n\n')
+                text.insert(tk.END, initial_text + '\n\n')
 
             # change the color of text to supernormal (almost white)
             text.tag_add('reply', '1.0', 'end-1c')
@@ -4206,16 +4306,14 @@ class toolkit_UI:
 
                 # add the action buttons to the frame
                 for button in action_buttons:
-
                     # create the button
                     action_button = tk.Button(action_buttons_frame, text=button['text'],
-                                                command=button['command'])
+                                              command=button['command'])
 
                     # add the button to the frame
                     action_button.pack(side=button['side'] if 'side' in button else tk.LEFT,
                                        anchor=button['anchor'] if 'anchor' in button else tk.W,
                                        **self.paddings)
-
 
             # add the text widget to the text_windows dict
             self.text_windows[window_id]['text_widget'] = text
@@ -4266,7 +4364,6 @@ class toolkit_UI:
 
             # FORMAT HEADERS
             if line.strip().startswith('#'):
-
                 # get the number of # signs
                 num_hashes = len(line.split(' ')[0])
 
@@ -4287,7 +4384,6 @@ class toolkit_UI:
 
                 md = True
 
-
             # FORMAT URLS
             if re.search(r'\[.*\]\(.*\)', line):
 
@@ -4299,7 +4395,6 @@ class toolkit_UI:
 
                 n = 0
                 for url_md in urls:
-
                     # use regex to get the url text
                     url_text = re.findall(r'\[(.*)\]', url_md)[0]
                     url = re.findall(r'\((.*)\)', url_md)[0]
@@ -4323,10 +4418,11 @@ class toolkit_UI:
 
                     # add the url tags
                     text_widget.tag_add('url-color', start_index, tk.INSERT)
-                    text_widget.tag_add('url-'+str(start_index), start_index, tk.INSERT)
+                    text_widget.tag_add('url-' + str(start_index), start_index, tk.INSERT)
 
                     # on click, open the url in the default browser
-                    text_widget.tag_bind('url-'+str(start_index), '<Button-1>', lambda event, url=url: webbrowser.open(url))
+                    text_widget.tag_bind('url-' + str(start_index), '<Button-1>',
+                                         lambda event, url=url: webbrowser.open(url))
 
                 # finally, insert the rest of the line
                 text_widget.insert(tk.INSERT, line)
@@ -4346,9 +4442,12 @@ class toolkit_UI:
         text_widget.config(foreground=self.resolve_theme_colors['supernormal'])
 
         # set the headers font
-        text_widget.tag_config('h1', font=(self.default_font_h1, int(self.default_font_size_after_ratio*1.5)), foreground=self.resolve_theme_colors['white'])
-        text_widget.tag_config('h2', font=(self.default_font_h2, int(self.default_font_size_after_ratio*1.25)), foreground=self.resolve_theme_colors['white'])
-        text_widget.tag_config('h3', font=(self.default_font_h3, int(self.default_font_size_after_ratio*1.1)), foreground=self.resolve_theme_colors['white'])
+        text_widget.tag_config('h1', font=(self.default_font_h1, int(self.default_font_size_after_ratio * 1.5)),
+                               foreground=self.resolve_theme_colors['white'])
+        text_widget.tag_config('h2', font=(self.default_font_h2, int(self.default_font_size_after_ratio * 1.25)),
+                               foreground=self.resolve_theme_colors['white'])
+        text_widget.tag_config('h3', font=(self.default_font_h3, int(self.default_font_size_after_ratio * 1.1)),
+                               foreground=self.resolve_theme_colors['white'])
 
         # add a bit of space between the headers and the text
         text_widget.tag_config('h1', spacing1=10)
@@ -4367,9 +4466,8 @@ class toolkit_UI:
         text_widget.tag_bind('url-color', '<Enter>', lambda event: text_widget.config(cursor='hand2'))
         text_widget.tag_bind('url-color', '<Leave>', lambda event: text_widget.config(cursor=''))
 
-
     def open_find_replace_window(self, window_id=None, title: str = 'Find and Replace',
-                                 parent_window_id: str = None, text_widget= None,
+                                 parent_window_id: str = None, text_widget=None,
                                  replace_field: bool = False, find_text: str = None, replace_text: str = None,
                                  post_replace_action: str = None, post_replace_action_args: list = None
                                  ):
@@ -4414,11 +4512,11 @@ class toolkit_UI:
             # if the user presses a key in the find input,
             # call the _find_text_in_widget function
             find_str.trace("w", lambda name, index, mode, find_str=find_str, parent_window_id=parent_window_id:
-                           self._find_text_in_widget(find_str, parent_window_id, text_widget=parent_text_widget))
+            self._find_text_in_widget(find_str, parent_window_id, text_widget=parent_text_widget))
 
             # return key cycles through the results
             find_input.bind('<Return>',
-                          lambda e, parent_text_widget=parent_text_widget, parent_window_id=parent_window_id:
+                            lambda e, parent_text_widget=parent_text_widget, parent_window_id=parent_window_id:
                             self._cycle_through_find_results(text_widget=parent_text_widget,
                                                              window_id=parent_window_id))
 
@@ -4450,13 +4548,12 @@ class toolkit_UI:
                 if replace_text:
                     replace_input.insert(0, replace_text)
 
-
                 replace_button = tk.Button(replace_frame, text='Replace', name='replace_button',
-                                             command=lambda: self._replace_text_in_widget(window_id=window_id, text_widget=text_widget,
-                                                                                post_replace_action=post_replace_action,
-                                                                                post_replace_action_args=post_replace_action_args))
+                                           command=lambda: self._replace_text_in_widget(window_id=window_id,
+                                                                                        text_widget=text_widget,
+                                                                                        post_replace_action=post_replace_action,
+                                                                                        post_replace_action_args=post_replace_action_args))
                 replace_button.pack(side=tk.LEFT, padx=5)
-
 
             # create a footer frame that holds stuff on the bottom of the window
             footer_frame = tk.Frame(self.windows[window_id], name='footer_frame')
@@ -4470,11 +4567,7 @@ class toolkit_UI:
             # add the status label to the find_windows dict so we can update it later
             self.find_windows[window_id]['status_label'] = status_label
 
-
-
-
-
-    def _find_text_in_widget(self, search_str: str=None, window_id: str=None, text_widget: tk.Text=None):
+    def _find_text_in_widget(self, search_str: str = None, window_id: str = None, text_widget: tk.Text = None):
         '''
         This function finds and highlights found matches in a text widget
 
@@ -4530,7 +4623,6 @@ class toolkit_UI:
                     text_widget.tag_add('found', idx, lastidx)
                     idx = lastidx
 
-
                 #  take the viewer to the first occurrence
                 if self.find_result_indexes[window_id] and len(self.find_result_indexes[window_id]) > 0 \
                         and self.find_result_indexes[window_id][0] != '':
@@ -4545,7 +4637,7 @@ class toolkit_UI:
                 # update the status label in the find window
                 if 'find_window_id' in self.text_windows[window_id]:
                     find_window_id = self.text_windows[window_id]['find_window_id']
-                    self.find_windows[find_window_id]['status_label']\
+                    self.find_windows[find_window_id]['status_label'] \
                         .config(text=f'{len(self.find_result_indexes[window_id])} results found')
 
             # update the status label in the find window
@@ -4554,75 +4646,72 @@ class toolkit_UI:
                 self.find_windows[find_window_id]['status_label'] \
                     .config(text='')
 
+    def _tag_find_results(self, text_widget: tk.Text = None, text_index: str = None, window_id: str = None):
+        '''
+        Another handy function that tags the search results directly on the transcript inside the transcript window
+        This is also used to show on which of the search results is the user right now according to search_result_pos
+        :param text_element:
+        :param text_index:
+        :param window_id:
+        :return:
+        '''
+        if text_widget is None:
+            return False
 
+        # remove previous position tags
+        text_widget.tag_delete('find_result_tag')
 
-    def _tag_find_results(self, text_widget: tk.Text=None, text_index: str=None, window_id: str=None):
-            '''
-            Another handy function that tags the search results directly on the transcript inside the transcript window
-            This is also used to show on which of the search results is the user right now according to search_result_pos
-            :param text_element:
-            :param text_index:
-            :param window_id:
-            :return:
-            '''
-            if text_widget is None:
+        if not text_index or text_index == '' or text_index is None or window_id is None:
+            return False
+
+        # add tag to show the user on which result position we are now
+        # the tag starts at the text_index and ends according to the length of the search string
+        text_widget.tag_add('find_result_tag', text_index, text_index + '+'
+                            + str(len(self.find_strings[window_id])) + 'c')
+
+        # the result tag has a white background and a red foreground
+        text_widget.tag_config('find_result_tag', background=self.resolve_theme_colors['white'],
+                               foreground=self.resolve_theme_colors['red'])
+
+    def _cycle_through_find_results(self, text_widget: tk.Text = None, window_id: str = None):
+
+        if text_widget is not None or window_id is not None \
+                or self.find_result_indexes[window_id] or self.find_result_indexes[window_id][0] != '':
+
+            # if we have no results, return
+            if window_id not in self.find_result_indexes \
+                    or not self.find_result_indexes[window_id]:
                 return False
 
-            # remove previous position tags
-            text_widget.tag_delete('find_result_tag')
+            # get the current search result position
+            current_pos = self.find_result_pos[window_id]
 
-            if not text_index or text_index == '' or text_index is None or window_id is None:
-                return False
+            # as long as we're not going over the number of results
+            if current_pos < len(self.find_result_indexes[window_id]) - 1:
 
-            # add tag to show the user on which result position we are now
-            # the tag starts at the text_index and ends according to the length of the search string
-            text_widget.tag_add('find_result_tag', text_index, text_index + '+'
-                                 + str(len(self.find_strings[window_id])) + 'c')
+                # add 1 to the current result position
+                current_pos = self.find_result_pos[window_id] = current_pos + 1
 
-            # the result tag has a white background and a red foreground
-            text_widget.tag_config('find_result_tag', background=self.resolve_theme_colors['white'],
-                                    foreground=self.resolve_theme_colors['red'])
+                # this is the index of the current result position
+                text_index = self.find_result_indexes[window_id][current_pos]
 
-    def _cycle_through_find_results(self, text_widget: tk.Text=None, window_id: str=None):
+                # go to the next search result
+                text_widget.see(text_index)
 
-            if text_widget is not None or window_id is not None \
-                    or self.find_result_indexes[window_id] or self.find_result_indexes[window_id][0] != '':
+            # otherwise go back to start
+            else:
+                current_pos = self.find_result_pos[window_id] = 0
 
-                # if we have no results, return
-                if window_id not in self.find_result_indexes \
-                        or not self.find_result_indexes[window_id]:
-                    return False
+                # this is the index of the current result position
+                text_index = self.find_result_indexes[window_id][current_pos]
 
-                # get the current search result position
-                current_pos = self.find_result_pos[window_id]
+                # go to the next search result
+                text_widget.see(self.find_result_indexes[window_id][current_pos])
 
-                # as long as we're not going over the number of results
-                if current_pos < len(self.find_result_indexes[window_id]) - 1:
+            # visually tag the results
+            self._tag_find_results(text_widget, text_index, window_id)
 
-                    # add 1 to the current result position
-                    current_pos = self.find_result_pos[window_id] = current_pos + 1
-
-                    # this is the index of the current result position
-                    text_index = self.find_result_indexes[window_id][current_pos]
-
-                    # go to the next search result
-                    text_widget.see(text_index)
-
-                # otherwise go back to start
-                else:
-                    current_pos = self.find_result_pos[window_id] = 0
-
-                    # this is the index of the current result position
-                    text_index = self.find_result_indexes[window_id][current_pos]
-
-                    # go to the next search result
-                    text_widget.see(self.find_result_indexes[window_id][current_pos])
-
-                # visually tag the results
-                self._tag_find_results(text_widget, text_index, window_id)
-
-
-    def open_text_file(self, file_path: str=None, window_id: str=None, tag_text=None, **kwargs):
+    def open_text_file(self, file_path: str = None, window_id: str = None, tag_text=None, **kwargs):
         '''
         This opens a text file in a new (or existing) text window
         :param file_path:
@@ -4659,7 +4748,6 @@ class toolkit_UI:
 
             # if we have a tag_index, tag the text
             if tag_index != -1:
-
                 # tag the text
                 text_widget.tag_add('find_result_tag', f'{tag_index}', f'{tag_index} + {len(tag_text)}c')
 
@@ -4668,7 +4756,6 @@ class toolkit_UI:
 
                 # scroll to the tag
                 text_widget.see(f'{tag_index}')
-
 
     class AskDialog(tk.Toplevel):
         '''
@@ -4781,7 +4868,8 @@ class toolkit_UI:
                 # spinbox widget
                 elif widget['type'] == 'spinbox':
                     input_value = IntVar(input_frame, widget_default_value)
-                    input_widget = tk.Spinbox(input_frame, from_=widget['from'], to=widget['to'], textvariable=input_value)
+                    input_widget = tk.Spinbox(input_frame, from_=widget['from'], to=widget['to'],
+                                              textvariable=input_value)
 
                 # if we don't have a valid widget, skip
                 if input_widget is None:
@@ -4899,7 +4987,7 @@ class toolkit_UI:
 
         # create a window for the transcription settings if one doesn't already exist
         if self.create_or_open_window(parent_element=self.root, window_id=ts_window_id, title=title,
-                                       resizable=True, close_action=close_action):
+                                      resizable=True, close_action=close_action):
 
             self.toolkit_ops_obj.update_transcription_log(unique_id=unique_id, **{'status': 'waiting user'})
 
@@ -5000,11 +5088,11 @@ class toolkit_UI:
 
             # PRE-DETECT SPEACH
             Label(ts_form_frame, text="Pre-Detect Speech", **self.label_settings).grid(row=7, column=1,
-                                                                                        **self.input_grid_settings,
-                                                                                        **self.form_paddings)
+                                                                                       **self.input_grid_settings,
+                                                                                       **self.form_paddings)
             pre_detect_speech_var = tk.BooleanVar(ts_form_frame,
-                                               value=self.stAI.get_app_setting('transcription_pre_detect_speech',
-                                                                               default_if_none=True))
+                                                  value=self.stAI.get_app_setting('transcription_pre_detect_speech',
+                                                                                  default_if_none=True))
 
             pre_detect_speech_input = tk.Checkbutton(ts_form_frame, variable=pre_detect_speech_var)
             pre_detect_speech_input.grid(row=7, column=2, **self.input_grid_settings, **self.form_paddings)
@@ -5012,23 +5100,25 @@ class toolkit_UI:
             # WORD TIMESTAMPS
             # (USE "INCREASED TIME PRECISION" FOR NOW TO AVOID CONFUSION)
             Label(ts_form_frame, text="Increased Time Precision", **self.label_settings).grid(row=8, column=1,
-                                                                                        **self.input_grid_settings,
-                                                                                        **self.form_paddings)
+                                                                                              **self.input_grid_settings,
+                                                                                              **self.form_paddings)
             word_timestamps_var = tk.BooleanVar(ts_form_frame,
-                                               value=self.stAI.get_app_setting('transcription_word_timestamps',
-                                                                               default_if_none=True))
+                                                value=self.stAI.get_app_setting('transcription_word_timestamps',
+                                                                                default_if_none=True))
 
             word_timestamps_input = tk.Checkbutton(ts_form_frame, variable=word_timestamps_var)
             word_timestamps_input.grid(row=8, column=2, **self.input_grid_settings, **self.form_paddings)
-            
+
             # MAX CHARACTERS PER SEGMENT
             max_chars_per_segment_label = Label(ts_form_frame, text="Max. Characters Per Line", **self.label_settings)
             max_chars_per_segment_label.grid(row=9, column=1, **self.input_grid_settings, **self.form_paddings)
             max_chars_per_segment_var = tk.StringVar(ts_form_frame,
-                                                  value=self.stAI.get_app_setting('transcription_max_chars_per_segment',
-                                                                                    default_if_none=''))
-            
-            max_chars_per_segment_input = tk.Entry(ts_form_frame, textvariable=max_chars_per_segment_var, **self.entry_settings_quarter)
+                                                     value=self.stAI.get_app_setting(
+                                                         'transcription_max_chars_per_segment',
+                                                         default_if_none=''))
+
+            max_chars_per_segment_input = tk.Entry(ts_form_frame, textvariable=max_chars_per_segment_var,
+                                                   **self.entry_settings_quarter)
             max_chars_per_segment_input.grid(row=9, column=2, **self.input_grid_settings, **self.form_paddings)
 
             # only allow integers
@@ -5042,10 +5132,12 @@ class toolkit_UI:
             max_words_per_segment_label.grid(row=10, column=1, **self.input_grid_settings, **self.form_paddings)
 
             max_words_per_segment_var = tk.StringVar(ts_form_frame,
-                                                    value=self.stAI.get_app_setting('transcription_max_words_per_segment',
-                                                                                        default_if_none=''))
-            
-            max_words_per_segment_input = tk.Entry(ts_form_frame, textvariable=max_words_per_segment_var, **self.entry_settings_quarter)
+                                                     value=self.stAI.get_app_setting(
+                                                         'transcription_max_words_per_segment',
+                                                         default_if_none=''))
+
+            max_words_per_segment_input = tk.Entry(ts_form_frame, textvariable=max_words_per_segment_var,
+                                                   **self.entry_settings_quarter)
             max_words_per_segment_input.grid(row=10, column=2, **self.input_grid_settings, **self.form_paddings)
 
             # only allow integers
@@ -5053,6 +5145,36 @@ class toolkit_UI:
                                                validatecommand=
                                                (max_chars_per_segment_input.register(
                                                    self.only_allow_integers), '%P'))
+
+            # SPLIT ON PUNCTUATION MARKS
+            split_on_punctuation_marks_label = Label(ts_form_frame, text="Split On Punctuation", **self.label_settings)
+            split_on_punctuation_marks_label.grid(row=11, column=1, **self.input_grid_settings, **self.form_paddings)
+
+            split_on_punctuation_marks_var = tk.BooleanVar(ts_form_frame,
+                                                           value=self.stAI.get_app_setting(
+                                                               'transcription_split_on_punctuation_marks',
+                                                               default_if_none=False))
+
+            split_on_punctuation_marks_input = tk.Checkbutton(ts_form_frame, variable=split_on_punctuation_marks_var)
+            split_on_punctuation_marks_input.grid(row=11, column=2, **self.input_grid_settings, **self.form_paddings)
+
+            # PREVENT GAPS SHORTER THAN
+            prevent_short_gaps_label = Label(ts_form_frame, text="Prevent Gaps Shorter Than", **self.label_settings)
+            prevent_short_gaps_label.grid(row=12, column=1, **self.input_grid_settings, **self.form_paddings)
+
+            prevent_short_gaps_var = tk.StringVar(ts_form_frame,
+                                                            value=self.stAI.get_app_setting(
+                                                                'transcription_prevent_short_gaps',
+                                                                default_if_none=''))
+            prevent_short_gaps_input = tk.Entry(ts_form_frame, textvariable=prevent_short_gaps_var,
+                                                         **self.entry_settings_quarter)
+            prevent_short_gaps_input.grid(row=12, column=2, **self.input_grid_settings, **self.form_paddings)
+
+            # only allow floats
+            prevent_short_gaps_input.config(validate="key",
+                                                    validatecommand=
+                                                    (prevent_short_gaps_input.register(
+                                                        self.only_allow_floats), '%P'))
 
             # if word_timestamps_var is False, hide the max words per segment input
             # but check on every change of the word_timestamps_var
@@ -5062,20 +5184,24 @@ class toolkit_UI:
                     max_chars_per_segment_input.grid()
                     max_words_per_segment_label.grid()
                     max_chars_per_segment_label.grid()
+                    split_on_punctuation_marks_input.grid()
+                    split_on_punctuation_marks_label.grid()
                 else:
                     max_words_per_segment_input.grid_remove()
                     max_chars_per_segment_input.grid_remove()
                     max_words_per_segment_label.grid_remove()
                     max_chars_per_segment_label.grid_remove()
+                    split_on_punctuation_marks_input.grid_remove()
+                    split_on_punctuation_marks_label.grid_remove()
 
             word_timestamps_var.trace('w', lambda *args: update_max_per_segment_inputs_visibility())
             update_max_per_segment_inputs_visibility()
 
             # INITIAL PROMPT INPUT
             Label(ts_form_frame, text="Initial Prompt", **self.label_settings).grid(row=20, column=1,
-                                                                            sticky='nw',
-                                                                          #**self.input_grid_settings,
-                                                                          **self.form_paddings)
+                                                                                    sticky='nw',
+                                                                                    # **self.input_grid_settings,
+                                                                                    **self.form_paddings)
             # prompt_var = StringVar(ts_form_frame)
             prompt_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
             prompt_input.grid(row=20, column=2, **self.input_grid_settings, **self.form_paddings)
@@ -5083,9 +5209,9 @@ class toolkit_UI:
 
             # TIME INTERVALS INPUT
             Label(ts_form_frame, text="Time Intervals", **self.label_settings).grid(row=30, column=1,
-                                                                            sticky='nw',
-                                                                          #**self.input_grid_settings,
-                                                                          **self.form_paddings)
+                                                                                    sticky='nw',
+                                                                                    # **self.input_grid_settings,
+                                                                                    **self.form_paddings)
 
             time_intervals_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
             time_intervals_input.grid(row=30, column=2, **self.input_grid_settings, **self.form_paddings)
@@ -5093,15 +5219,15 @@ class toolkit_UI:
 
             # EXCLUDE TIME INTERVALS INPUT
             Label(ts_form_frame, text="Exclude Time Intervals", **self.label_settings).grid(row=31, column=1,
-                                                                            sticky='nw',
-                                                                          #**self.input_grid_settings,
-                                                                          **self.form_paddings)
+                                                                                            sticky='nw',
+                                                                                            # **self.input_grid_settings,
+                                                                                            **self.form_paddings)
 
             excluded_time_intervals_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
             excluded_time_intervals_input.grid(row=31, column=2, **self.input_grid_settings, **self.form_paddings)
             excluded_time_intervals_input.insert(END,
-                                                str(excluded_time_intervals) \
-                                                    if excluded_time_intervals is not None else '')
+                                                 str(excluded_time_intervals) \
+                                                     if excluded_time_intervals is not None else '')
 
             # START BUTTON
 
@@ -5129,6 +5255,8 @@ class toolkit_UI:
                                             word_timestamps=word_timestamps_var.get(),
                                             max_chars_per_segment=max_chars_per_segment_var.get(),
                                             max_words_per_segment=max_words_per_segment_var.get(),
+                                            split_on_punctuation_marks=split_on_punctuation_marks_var.get(),
+                                            prevent_short_gaps=prevent_short_gaps_var.get(),
                                             time_intervals=time_intervals_input.get(1.0, END),
                                             excluded_time_intervals=excluded_time_intervals_input.get(1.0, END),
                                             transcription_file_path=transcription_file_path_var.get()
@@ -5150,6 +5278,8 @@ class toolkit_UI:
                                                 word_timestamps=word_timestamps_var.get(),
                                                 max_chars_per_segment=max_chars_per_segment_var.get(),
                                                 max_words_per_segment=max_words_per_segment_var.get(),
+                                                split_on_punctuation_marks=split_on_punctuation_marks_var.get(),
+                                                prevent_short_gaps=prevent_short_gaps_var.get(),
                                                 time_intervals=time_intervals_input.get(1.0, END),
                                                 excluded_time_intervals=excluded_time_intervals_input.get(1.0, END),
                                                 transcription_file_path=transcription_file_path_var.get()
@@ -5214,7 +5344,7 @@ class toolkit_UI:
                     # if the format is 0:00:00:00
                     # convert the time to seconds
                     return int(time_array[0]) * 3600 + int(time_array[1]) * 60 + int(time_array[2]) + \
-                           int(time_array[3]) / fps
+                        int(time_array[3]) / fps
 
                 else:
                     logger.error('The time format is 0:00:00:00, but the fps is not specified.')
@@ -5309,12 +5439,12 @@ class toolkit_UI:
 
         # destroy the associated search window (if it exists)
         # - in the future, if were to have multiple search windows, we will need to do it differently
-        if window_id+'_search' in self.windows:
+        if window_id + '_search' in self.windows:
             self.destroy_window_(self.windows, window_id=window_id + '_search')
 
         # also destroy the associated groups window (if it exists)
         # - in the future, if were to have multiple search windows, we will need to do it differently
-        if window_id+'_transcript_groups' in self.windows:
+        if window_id + '_transcript_groups' in self.windows:
             self.destroy_transcript_groups_window(window_id=window_id + '_transcript_groups')
 
         # remove the transcription segments from the transcription_segments dict
@@ -5337,7 +5467,6 @@ class toolkit_UI:
 
         # close any find windows
         if 'find_window_id' in self.text_windows[window_id]:
-
             find_window_id = self.text_windows[window_id]['find_window_id']
 
             # call the default destroy window function to destroy the find window
@@ -5413,7 +5542,6 @@ class toolkit_UI:
         if not transcription_json_file_path:
             return False
 
-
         # if resolve is connected, save the directory where the file is as a last last target dir
         if resolve and transcription_json_file_path and os.path.exists(transcription_json_file_path):
             self.stAI.save_project_setting(project_name=current_project,
@@ -5423,7 +5551,7 @@ class toolkit_UI:
         # if this is an srt file, but a .transcription.json file exists in the same directory,
         # ask the user if they want to open the .transcription.json file instead
         if transcription_json_file_path.endswith('.srt') \
-            and os.path.exists(transcription_json_file_path.replace('.srt', '.transcription.json')):
+                and os.path.exists(transcription_json_file_path.replace('.srt', '.transcription.json')):
 
             # ask user
             if messagebox.askyesno(title="Open Transcript",
@@ -5435,7 +5563,6 @@ class toolkit_UI:
                                            'If you answer NO, the transcription.json will be '
                                            'overwritten with the content of the SRT file.'
                                            ''):
-
                 # change the file path
                 transcription_json_file_path = transcription_json_file_path.replace('.srt', '.transcription.json')
 
@@ -5448,26 +5575,24 @@ class toolkit_UI:
 
             # if the user wants to convert the srt file to json
             if convert_from_srt:
-
                 # convert the srt file to json
                 # (it will overwrite any existing transcription.json with the same name in the same directory)
                 transcription_json_file_path \
                     = self.toolkit_ops_obj.convert_srt_to_transcription_json(
-                                                        srt_file_path=transcription_json_file_path,
-                                                        overwrite=True
-                                                        )
+                    srt_file_path=transcription_json_file_path,
+                    overwrite=True
+                )
 
         # if the file is not a json file, abort
         if not transcription_json_file_path.endswith('.json'):
             self.notify_via_messagebox(title='Not a transcription',
-                                            message='The file \n{}\nis not a transcription file.'
-                                                        .format(os.path.basename(transcription_json_file_path)),
-                                            message_log='The file {} is not a transcription file.',
-                                            type='error')
+                                       message='The file \n{}\nis not a transcription file.'
+                                       .format(os.path.basename(transcription_json_file_path)),
+                                       message_log='The file {} is not a transcription file.',
+                                       type='error')
             return False
 
         # open the transcript in a transcript window
-
 
         # why not open the transcript in a transcription window?
         self.open_transcription_window(transcription_file_path=transcription_json_file_path, **options)
@@ -5531,11 +5656,10 @@ class toolkit_UI:
         #                                   ):
         #             print(timeline_fps)
 
-
         # create a window for the transcript if one doesn't already exist
         if self.create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title, resizable=True,
-                                       close_action=lambda t_window_id=t_window_id: \
-                                            self.destroy_transcription_window(t_window_id)
+                                      close_action=lambda t_window_id=t_window_id: \
+                                              self.destroy_transcription_window(t_window_id)
                                       ):
 
             # add the path to the transcription_file_paths dict in case we need it later
@@ -5580,8 +5704,8 @@ class toolkit_UI:
                 # set up the text element where we'll add the actual transcript
                 text = Text(text_form_frame, name='transcript_text',
                             font=(self.transcript_font), width=45, height=30, padx=5, pady=5, wrap=tk.WORD,
-                                                    background=self.resolve_theme_colors['black'],
-                                                    foreground=self.resolve_theme_colors['normal'])
+                            background=self.resolve_theme_colors['black'],
+                            foreground=self.resolve_theme_colors['normal'])
 
                 # add a scrollbar to the text element
                 scrollbar = Scrollbar(text_form_frame, orient="vertical", **self.scrollbar_settings)
@@ -5608,7 +5732,7 @@ class toolkit_UI:
                 for t_segment in transcription_json['segments']:
 
                     # start counting the lines
-                    line = line+1
+                    line = line + 1
 
                     # add a reference for its id
                     if 'id' in t_segment:
@@ -5672,7 +5796,6 @@ class toolkit_UI:
                                      text="", anchor='w', foreground=self.resolve_theme_colors['normal'])
                 status_label.pack(side=tk.LEFT, **self.paddings)
 
-
                 # bind shift click events to the text
                 # text.bind("<Shift-Button-1>", lambda e:
                 #         self.t_edit_obj.select_text_lines(event=e, text_element=text, window_id=t_window_id))
@@ -5694,29 +5817,28 @@ class toolkit_UI:
                 # bind all mouse clicks on text
                 text.bind("<Button-1>", lambda e,
                                                select_options=select_options:
-                                                    self.t_edit_obj.transcription_window_mouse(e,
-                                                                                               **select_options))
+                self.t_edit_obj.transcription_window_mouse(e,
+                                                           **select_options))
 
                 # bind CMD/CTRL + mouse Clicks to text
-                text.bind("<"+self.ctrl_cmd_bind+"-Button-1>",
+                text.bind("<" + self.ctrl_cmd_bind + "-Button-1>",
                           lambda e, select_options=select_options:
-                            self.t_edit_obj.transcription_window_mouse(e,
-                                                                       special_key='cmd',
-                                                                       **select_options))
-
+                          self.t_edit_obj.transcription_window_mouse(e,
+                                                                     special_key='cmd',
+                                                                     **select_options))
 
                 # bind ALT/OPT + mouse Click to edit transcript
-                text.bind("<"+self.alt_bind+"-Button-1>",
+                text.bind("<" + self.alt_bind + "-Button-1>",
                           lambda e: self.t_edit_obj.edit_transcript(window_id=t_window_id, text=text,
                                                                     status_label=status_label)
                           )
 
                 # bind CMD/CTRL + e to edit transcript
-                self.windows[t_window_id].bind("<"+self.ctrl_cmd_bind+"-e>",
-                          lambda e: self.t_edit_obj.edit_transcript(window_id=t_window_id, text=text,
-                                                                    status_label=status_label)
-                          )
-
+                self.windows[t_window_id].bind("<" + self.ctrl_cmd_bind + "-e>",
+                                               lambda e: self.t_edit_obj.edit_transcript(window_id=t_window_id,
+                                                                                         text=text,
+                                                                                         status_label=status_label)
+                                               )
 
                 # FIND BUTTON
 
@@ -5729,37 +5851,34 @@ class toolkit_UI:
                 find_button.pack(side=tk.LEFT, **self.paddings)
 
                 # bind CMD/CTRL + f to open find and replace window
-                self.windows[t_window_id].bind("<"+self.ctrl_cmd_bind+"-f>", lambda e:
-                                            self.open_find_replace_window(parent_window_id=t_window_id,
-                                                                          title="Find in {}".format(title)
-                                                                          ))
-
+                self.windows[t_window_id].bind("<" + self.ctrl_cmd_bind + "-f>", lambda e:
+                self.open_find_replace_window(parent_window_id=t_window_id,
+                                              title="Find in {}".format(title)
+                                              ))
 
                 # ADVANCED SEARCH
                 # this button will open a new window with advanced search options
                 advanced_search_button = tk.Button(header_frame, text='Advanced Search', name='advanced_search_button',
                                                    command=lambda:
-                                            self.open_advanced_search_window(transcription_window_id=t_window_id,
-                                                                             search_file_path=\
-                                                                                transcription_file_path))
+                                                   self.open_advanced_search_window(transcription_window_id=t_window_id,
+                                                                                    search_file_path= \
+                                                                                        transcription_file_path))
 
                 advanced_search_button.pack(side=tk.LEFT, **self.paddings)
 
-
                 # GROUPS BUTTON
                 groups_button = tk.Button(header_frame, text='Groups', name='groups_button',
-                                            command=lambda:
-                    self.open_transcript_groups_window(transcription_window_id=t_window_id)
-                                            )
+                                          command=lambda:
+                                          self.open_transcript_groups_window(transcription_window_id=t_window_id)
+                                          )
                 groups_button.pack(side=tk.LEFT, **self.paddings)
-
 
                 # KEEP ON TOP BUTTON
                 on_top_button = tk.Button(header_frame, name='on_top_button', text="Keep on top", takefocus=False)
                 # add the command function here
                 on_top_button.config(command=lambda on_top_button=on_top_button, t_window_id=t_window_id:
-                                            self.window_on_top_button(button=on_top_button, window_id=t_window_id)
-                                                                 )
+                self.window_on_top_button(button=on_top_button, window_id=t_window_id)
+                                     )
                 on_top_button.pack(side=tk.RIGHT, **self.paddings, anchor='e')
 
                 # keep the transcript window on top or not according to the config
@@ -5777,19 +5896,18 @@ class toolkit_UI:
                                                   text="Import SRT into Bin",
                                                   takefocus=False,
                                                   command=lambda:
-                                                    self.toolkit_ops_obj.resolve_api.import_media(srt_file_path)
+                                                  self.toolkit_ops_obj.resolve_api.import_media(srt_file_path)
                                                   )
                     import_srt_button.pack(side=tk.RIGHT, **self.paddings, anchor='e')
-
 
                 # SYNC BUTTON
 
                 sync_button = tk.Button(header_frame, name='sync_button', takefocus=False)
                 sync_button.config(command=lambda sync_button=sync_button, window_id=t_window_id:
-                                                self.t_edit_obj.sync_with_playhead_button(
-                                                    button=sync_button,
-                                                    window_id=t_window_id)
-                                                                   )
+                self.t_edit_obj.sync_with_playhead_button(
+                    button=sync_button,
+                    window_id=t_window_id)
+                                   )
 
                 # LINK TO TIMELINE BUTTON
 
@@ -5801,21 +5919,21 @@ class toolkit_UI:
                 link_button = tk.Button(footer_frame, name='link_button')
                 link_button.config(command=lambda link_button=link_button,
                                                   transcription_file_path=transcription_file_path:
-                                            self.t_edit_obj.link_to_timeline_button(
-                                                button=link_button,
-                                                transcription_file_path=transcription_file_path)
-                                                               )
+                self.t_edit_obj.link_to_timeline_button(
+                    button=link_button,
+                    transcription_file_path=transcription_file_path)
+                                   )
 
                 # start update the transcription window with some stuff
                 # here we send the update transcription window function a few items that need to be updated
                 self.windows[t_window_id].after(100, lambda link_button=link_button,
                                                             t_window_id=t_window_id,
                                                             transcription_file_path=transcription_file_path:
-                    self.update_transcription_window(window_id=t_window_id,
-                                                     link_button=link_button,
-                                                     sync_button=sync_button,
-                                                     transcription_file_path=transcription_file_path,
-                                                     text=text)
+                self.update_transcription_window(window_id=t_window_id,
+                                                 link_button=link_button,
+                                                 sync_button=sync_button,
+                                                 transcription_file_path=transcription_file_path,
+                                                 text=text)
                                                 )
 
                 # add this window to the list of text windows
@@ -5953,8 +6071,7 @@ class toolkit_UI:
             # only do this if the sync is on for this window
             # and if the timecode in resolve has changed compared to last time
             if self.t_edit_obj.sync_with_playhead[window_id] \
-                and self.t_edit_obj.current_window_tc[window_id] != current_tc:
-
+                    and self.t_edit_obj.current_window_tc[window_id] != current_tc:
                 update_attr = self.sync_current_tc_to_transcript(window_id=window_id, **update_attr)
 
         # hide some stuff if resolve isn't connected
@@ -5968,7 +6085,6 @@ class toolkit_UI:
 
         # if no text was passed, get it from the window
         if 'text' not in update_attr or type(update_attr['text']) is not tk.Text:
-
             # so get the link button from the window by using the hard-coded name
             update_attr['text'] \
                 = self.windows[window_id].nametowidget('text_form_frame.transcript_text')
@@ -6028,8 +6144,7 @@ class toolkit_UI:
 
             # check if it needs to be synced with the playhead
             if window_id in self.t_edit_obj.sync_with_playhead \
-            and self.t_edit_obj.sync_with_playhead[window_id]:
-
+                    and self.t_edit_obj.sync_with_playhead[window_id]:
                 # and if it does, sync it
                 self.sync_current_tc_to_transcript(window_id)
 
@@ -6040,10 +6155,8 @@ class toolkit_UI:
 
             # if the window is a transcription window
             if window_id in self.t_edit_obj.transcript_segments:
-
                 # update the window
                 self.update_transcription_window(window_id)
-
 
     def close_inactive_transcription_windows(self, timeline_transcription_file_paths=None):
         '''
@@ -6061,8 +6174,8 @@ class toolkit_UI:
 
             # if the transcription window is not in the timeline_transcription_file_paths
             if timeline_transcription_file_paths is None \
-                or timeline_transcription_file_paths == [] \
-                or self.t_edit_obj.transcription_file_paths[transcription_window] \
+                    or timeline_transcription_file_paths == [] \
+                    or self.t_edit_obj.transcription_file_paths[transcription_window] \
                     not in timeline_transcription_file_paths:
 
                 # if the transcription window is open
@@ -6111,14 +6224,14 @@ class toolkit_UI:
             log_canvas.pack(side=LEFT, fill=BOTH, expand=True)
 
             # show the frame in the canvas
-            log_canvas.create_window((4,4), window=log_frame, anchor="nw")
+            log_canvas.create_window((4, 4), window=log_frame, anchor="nw")
 
             # make scroll region adjust each time the canvas changes in size
             # and also adjust the width according to the frame inside it
             log_frame.bind("<Configure>", lambda event, log_canvas=log_canvas:
-                                                log_canvas.configure(scrollregion=log_canvas.bbox("all"),
-                                                                     width=event.width
-                                                                     ))
+            log_canvas.configure(scrollregion=log_canvas.bbox("all"),
+                                 width=event.width
+                                 ))
 
             # populate the log frame with the transcription items from the transcription log
             num = 0
@@ -6144,7 +6257,7 @@ class toolkit_UI:
 
                     progress = ' (' + str(t_item['progress']) + '%)'
 
-                label_status = Label(log_frame, text=t_item['status']+progress, anchor='w', width=15)
+                label_status = Label(log_frame, text=t_item['status'] + progress, anchor='w', width=15)
                 label_status.grid(row=num, column=2, **self.list_paddings, sticky='w')
 
                 # make the label clickable as soon as we have a file path for it in the log
@@ -6170,12 +6283,11 @@ class toolkit_UI:
 
         # create a window for the transcription log if one doesn't already exist
         if self.create_or_open_window(parent_element=self.root,
-                                        window_id='t_log', title='Transcription Log', resizable=True):
+                                      window_id='t_log', title='Transcription Log', resizable=True):
             # and then call the update function to fill the window up
             self.update_transcription_log_window()
 
             return True
-
 
     def open_advanced_search_window(self, transcription_window_id=None, search_file_path=None,
                                     select_dir=False):
@@ -6219,21 +6331,20 @@ class toolkit_UI:
             if select_dir:
                 # ask the user to select a directory with searchable files
                 selected_file_path = filedialog.askdirectory(initialdir=initial_dir,
-                                                                   title='Select a directory to search')
+                                                             title='Select a directory to search')
 
             else:
                 # ask the user to select the searchable files to use in the search corpus
                 selected_file_path \
                     = filedialog.askopenfilenames(initialdir=initial_dir,
-                                                            title='Select files to use in the search',
-                                                            filetypes=[('Transcription files', '*.json'),
-                                                                       ('Text files', '*.txt'),
-                                                                       ('Pickle files', '*.pkl')])
+                                                  title='Select files to use in the search',
+                                                  filetypes=[('Transcription files', '*.json'),
+                                                             ('Text files', '*.txt'),
+                                                             ('Pickle files', '*.pkl')])
 
             # if resolve is connected, save the last target dir
             if resolve and search_file_paths \
-                and type(search_file_paths) is list and os.path.exists(search_file_paths[0]):
-
+                    and type(search_file_paths) is list and os.path.exists(search_file_paths[0]):
                 self.stAI.save_project_setting(project_name=current_project,
                                                setting_key='last_target_dir',
                                                setting_value=os.path.dirname(search_file_paths[0]))
@@ -6280,24 +6391,24 @@ class toolkit_UI:
 
             # if the user selected a directory, use the directory name as the title
             if select_dir and os.path.isdir(selected_file_path):
-                search_window_title_ext = ' - '+os.path.basename(selected_file_path)
+                search_window_title_ext = ' - ' + os.path.basename(selected_file_path)
 
             elif search_file_paths and (type(search_file_paths) is list or type(search_file_paths) is tuple):
 
-                search_window_title_ext = ' - '+os.path.basename(search_file_paths[0])
+                search_window_title_ext = ' - ' + os.path.basename(search_file_paths[0])
 
                 # if there are multiple files, sho that there are others
                 if len(search_file_paths) > 1:
                     search_window_title_ext += ' + others'
 
-            search_window_id = 'adv_search_'+str(time.time())
+            search_window_id = 'adv_search_' + str(time.time())
             search_window_title = 'Search' + search_window_title_ext
             search_window_parent = self.root
 
             # this allows us to open multiple search windows at the same time
             open_multiple = True
 
-        #search_kwargs = {'search_item': search_file_paths, 'search_id': search_window_id}
+        # search_kwargs = {'search_item': search_file_paths, 'search_id': search_window_id}
 
         # prepare the search item
         search_item.search_id = search_window_id
@@ -6308,15 +6419,15 @@ class toolkit_UI:
                               title=search_window_title,
                               can_find=True,
                               user_prompt=True,
-                              close_action= lambda search_window_id=search_window_id:
-                                    self.destroy_advanced_search_window(search_window_id),
+                              close_action=lambda search_window_id=search_window_id:
+                              self.destroy_advanced_search_window(search_window_id),
                               prompt_prefix='SEARCH > ',
                               prompt_callback=self.advanced_search,
                               prompt_callback_kwargs={'search_item': search_item,
                                                       'search_window_id': search_window_id})
 
         # add text to the search window
-        #self._text_window_update(search_window_id, 'Reading {} file{}.'
+        # self._text_window_update(search_window_id, 'Reading {} file{}.'
         #                         .format(len(search_file_paths), 's' if len(search_file_paths) > 1 else ''))
 
         # now prepare the search corpus
@@ -6328,7 +6439,7 @@ class toolkit_UI:
 
             # prepare a list with all the files
             for search_file_path in search_item.search_file_paths:
-                search_file_list = search_file_list + os.path.basename(search_file_path)+'\n'
+                search_file_list = search_file_list + os.path.basename(search_file_path) + '\n'
 
             search_file_list = search_file_list.strip()
 
@@ -6347,7 +6458,6 @@ class toolkit_UI:
 
         else:
             self._text_window_update(search_window_id, 'Search corpus could not be prepared.')
-
 
     def advanced_search(self, prompt, search_item, search_window_id):
         '''
@@ -6371,7 +6481,6 @@ class toolkit_UI:
                          'If you want to change the model, use [model:<model_name>]\n' \
                          'For eg.: [model:distiluse-base-multilingual-cased-v1]\n\n' \
                          'See list of models here: https://www.sbert.net/docs/pretrained_models.html\n'
-
 
             # use this to make sure we have a new prompt prefix for the next search
             self._text_window_update(search_window_id, help_reply)
@@ -6538,7 +6647,7 @@ class toolkit_UI:
 
                     # add the timeline name
                     results_text_element.insert(tk.END, ' -- Frame: {}\n'.format(result['marker_index']))
-                    #results_text_element.insert(tk.END, ' -- Source: Timeline Marker\n')
+                    # results_text_element.insert(tk.END, ' -- Source: Timeline Marker\n')
 
 
                 else:
@@ -6554,7 +6663,6 @@ class toolkit_UI:
 
             # use this to make sure we have a new prompt prefix for the next search
             self._text_window_update(search_window_id, 'Ready for new search.')
-
 
     def open_assistant_window(self, assistant_window_id: str = None,
                               transcript_text: str = None
@@ -6598,8 +6706,8 @@ class toolkit_UI:
                               title=assistant_window_title,
                               can_find=True,
                               user_prompt=True,
-                              close_action= lambda assistant_window_id=assistant_window_id:
-                                    self.destroy_assistant_window(assistant_window_id),
+                              close_action=lambda assistant_window_id=assistant_window_id:
+                              self.destroy_assistant_window(assistant_window_id),
                               prompt_prefix='U > ',
                               prompt_callback=self.assistant_query,
                               prompt_callback_kwargs={
@@ -6640,6 +6748,7 @@ class toolkit_UI:
                          "Every time you ask something, the OpenAI will receive the entire conversation. " \
                          "The longer the conversation, the more tokens you are using on each request.\n" \
                          "Use [usage] to keep track of your usage in this Assistant window.\n\n" \
+                         "Use [calc] to get the minimum number of tokens you're sending with each request.\n\n" \
                          "Use [reset] to reset the conversation, while preserving any contexts. " \
                          "This will make the Assistant forget the entire conversation," \
                          "but also reduce the tokens you're sending to OpenAI.\n" \
@@ -6649,25 +6758,27 @@ class toolkit_UI:
                          "Use [exit] to exit the Assistant.\n\n" \
                          "Now, just ask something..."
 
-
-            #help_reply = 'Simply enter a search term and press enter.\n' \
-            #             'For eg.: about life events\n\n' \
-            #             'If you want to restrict the number of results, just add [n] to the beginning of the query.\n' \
-            #             'For eg.: [10] about life events\n\n' \
-            #             'If you want to perform multiple searches in the same time, use the | character to split the search terms\n' \
-            #             'For eg.: about life events | about family\n\n' \
-            #             'If you want to change the model, use [model:<model_name>]\n' \
-            #             'For eg.: [model:distiluse-base-multilingual-cased-v1]\n\n' \
-            #             'See list of models here: https://www.sbert.net/docs/pretrained_models.html\n'
-
             # use this to make sure we have a new prompt prefix for the next search
             self._text_window_update(assistant_window_id, help_reply)
             return
 
         # if the user is asking for usage
-        elif prompt.lower() == '[usage]':
+        elif prompt.lower() == '[usage]' or prompt.lower() == '[calc]':
+
+            if prompt.lower() == '[calc]':
+                num_tokens = assistant_item.calculate_history()
+                calc_reply = "The stored conversation, including context totals cca. {} tokens.\n".format(num_tokens)
+                calc_reply += "That's probably ${:.6f}\n" \
+                              "(might not be accurate, check OpenAI pricing)\n" \
+                    .format(num_tokens * assistant_item.price / 1000)
+                calc_reply += "This is the minimum amount of tokens you send on each request, " \
+                              "plus your message, unless you reset."
+                self._text_window_update(assistant_window_id, calc_reply)
+
             usage_reply = "You have used {} tokens in this Assistant window.\n".format(assistant_item.usage)
-            usage_reply += "That's probably around ${:.6f}".format(assistant_item.usage * assistant_item.price / 1000)
+            usage_reply += "That's probably ${:.6f}\n" \
+                           "(might not be accurate, check OpenAI pricing)" \
+                .format(assistant_item.usage * assistant_item.price / 1000)
             self._text_window_update(assistant_window_id, usage_reply)
             return
 
@@ -6702,10 +6813,10 @@ class toolkit_UI:
         assistant_response = assistant_item.send_query(prompt)
 
         # update the assistant window
-        self._text_window_update(assistant_window_id, "A > "+assistant_response)
+        self._text_window_update(assistant_window_id, "A > " + assistant_response)
 
         # update the assistant window prompt
-        #self._text_window_update_prompt(assistant_window_id, ' > ')
+        # self._text_window_update_prompt(assistant_window_id, ' > ')
 
     def destroy_assistant_window(self, assistant_window_id: str):
         '''
@@ -6718,7 +6829,6 @@ class toolkit_UI:
 
         # destroy the assistant window
         self.destroy_text_window(assistant_window_id)
-
 
     def _get_group_id_from_listbox(self, groups_listbox: tk.Listbox) -> str:
         '''
@@ -6750,7 +6860,7 @@ class toolkit_UI:
                 logger.error('No group is selected in transcription window {}'.format(t_window_id))
                 return None
 
-            if self.t_edit_obj.selected_groups[t_window_id] is None\
+            if self.t_edit_obj.selected_groups[t_window_id] is None \
                     or len(self.t_edit_obj.selected_groups[t_window_id]) == 0:
                 return None
 
@@ -6768,7 +6878,7 @@ class toolkit_UI:
         return group_id.strip().lower()
 
     def on_group_update_press(self, t_window_id: str, t_group_window_id: str, group_id: str = None,
-                       groups_listbox: tk.Listbox = None):
+                              groups_listbox: tk.Listbox = None):
         '''
         Do stuff and update the group data in the transcription file,
         but only with the update_only_data (everything else will be left untouched in the group dict)
@@ -6776,8 +6886,6 @@ class toolkit_UI:
         :param t_group_window_id:
         :param group_id:
         :param groups_listbox:
-        :param update_only_data: The only data to update in the group (everything else is taken
-                                    from the group window dict)
         :return:
         '''
 
@@ -6805,12 +6913,12 @@ class toolkit_UI:
 
         # get the current group data from the group window dict
         if t_window_id in self.t_edit_obj.transcript_groups \
-            and group_id in self.t_edit_obj.transcript_groups[t_window_id]:
+                and group_id in self.t_edit_obj.transcript_groups[t_window_id]:
 
             # get the current group data
             group_data = self.t_edit_obj.transcript_groups[t_window_id][group_id]
 
-            # update the current group data with the update_only_data
+            # update the current group data with the update_data
             group_data.update(update_data)
 
             # get the selected segments for the group
@@ -6828,15 +6936,14 @@ class toolkit_UI:
                 #                                         group_id=group_id)
 
                 # save the segments to the transcription file
-                save_return = self.toolkit_ops_obj.t_groups_obj\
-                                        .save_segments_as_group_in_transcription_file(
-                                            transcription_file_path=transcription_file_path,
-                                            segments=segments_for_group,
-                                            group_name=group_data['name'],
-                                            group_notes=group_data['notes'],
-                                            existing_transcript_groups=self.t_edit_obj.transcript_groups[t_window_id],
-                                            overwrite_existing=True)
-
+                save_return = self.toolkit_ops_obj.t_groups_obj \
+                    .save_segments_as_group_in_transcription_file(
+                    transcription_file_path=transcription_file_path,
+                    segments=segments_for_group,
+                    group_name=group_data['name'],
+                    group_notes=group_data['notes'],
+                    existing_transcript_groups=self.t_edit_obj.transcript_groups[t_window_id],
+                    overwrite_existing=True)
 
                 if not save_return:
                     logger.error('Could not save group {} data to transcription file {}'
@@ -6859,10 +6966,8 @@ class toolkit_UI:
 
         return False
 
-
-
     def on_group_delete_press(self, t_window_id: str, t_group_window_id: str, group_id: str = None,
-                       groups_listbox: tk.Listbox = None):
+                              groups_listbox: tk.Listbox = None):
         '''
         Do stuff when the delete group button is pressed:
         this will delete the group from the transcription data
@@ -6993,7 +7098,6 @@ class toolkit_UI:
 
                         # go through the segments and get their line numbers
                         for segment in group_segments:
-
                             # get the line number
                             group_lines.append(self.t_edit_obj.segment_id_to_line(t_window_id, segment['id']))
 
@@ -7022,7 +7126,6 @@ class toolkit_UI:
         if group_id is not None and \
                 t_window_id in self.t_edit_obj.transcript_groups \
                 and group_id in self.t_edit_obj.transcript_groups[t_window_id]:
-
             # get the group data
             group_data = self.t_edit_obj.transcript_groups[t_window_id][group_id]
 
@@ -7090,7 +7193,6 @@ class toolkit_UI:
             logger.debug('Not all requested form inputs were not found in the window')
 
         return form_data
-
 
     def _populate_form_data(self, window_id, form_data):
         '''
@@ -7160,7 +7262,6 @@ class toolkit_UI:
 
         # if we didn't find all the inputs
         if len(found_inputs) != len(all_inputs):
-
             # get the inputs that we didn't find
             missing_inputs = list(set(all_inputs) - set(found_inputs))
 
@@ -7170,13 +7271,12 @@ class toolkit_UI:
             logger.error('The following inputs were not found while updating window {}: {}'
                          .format(window_id, missing_inputs))
 
-
     def update_transcript_groups_window(self, t_window_id: str, t_group_window_id: str = None,
                                         groups_listbox: tk.Listbox = None):
 
         # if the group window id is not provided, assume this:
         if t_group_window_id is None:
-            t_group_window_id = t_window_id+'_transcript_groups'
+            t_group_window_id = t_window_id + '_transcript_groups'
 
         # we'll definitely need the groups notes input
         group_details_frame = None
@@ -7226,7 +7326,7 @@ class toolkit_UI:
 
         # clear all the group form inputs
         # but only if no group or more than a group is selected
-        if t_window_id not in self.t_edit_obj.selected_groups\
+        if t_window_id not in self.t_edit_obj.selected_groups \
                 or len(self.t_edit_obj.selected_groups[t_window_id]) != 1:
 
             update_group_data = {'group_notes': ''}
@@ -7236,10 +7336,22 @@ class toolkit_UI:
 
             self._hide_group_details_frame(t_group_window_id, group_details_frame)
 
-        elif t_window_id in self.t_edit_obj.selected_groups\
+        elif t_window_id in self.t_edit_obj.selected_groups \
                 and len(self.t_edit_obj.selected_groups[t_window_id]) == 1:
 
             self._show_group_details_frame(t_group_window_id, group_details_frame)
+
+        # now, if there are any selected groups for this window
+        if t_window_id in self.t_edit_obj.selected_groups:
+
+            # select the groups in the listbox
+            for group_name in self.t_edit_obj.selected_groups[t_window_id]:
+                groups_listbox.selection_set(group_names.index(group_name))
+
+                # select the segments in the transcription window
+                # - if multiple groups are selected, this will select the segments from the last group
+                # - so if we want to implement the multi-group selection in the future, we'll need to change this!
+                self.select_group_segments(t_window_id, group_name)
 
         return True
 
@@ -7290,7 +7402,6 @@ class toolkit_UI:
         # call the default destroy window function
         self.destroy_text_window(window_id=window_id)
 
-
     def open_transcript_groups_window(self, transcription_window_id, transcription_name=None):
 
         # the transcript groups window id
@@ -7304,11 +7415,11 @@ class toolkit_UI:
 
         # create a window for the transcript groups if one doesn't already exist
         if self.create_or_open_window(parent_element=self.windows[transcription_window_id],
-                                       window_id=transcript_groups_window_id,
-                                       title=transcript_groups_window_title, resizable=True,
-                                       close_action=
-                                            lambda: self.destroy_transcript_groups_window(transcript_groups_window_id)
-                                       ):
+                                      window_id=transcript_groups_window_id,
+                                      title=transcript_groups_window_title, resizable=True,
+                                      close_action=
+                                      lambda: self.destroy_transcript_groups_window(transcript_groups_window_id)
+                                      ):
 
             # the current transcript groups window object
             current_transcript_groups_window = self.windows[transcript_groups_window_id]
@@ -7352,7 +7463,7 @@ class toolkit_UI:
             # for the transcript group name, notes and some buttons
 
             # the transcript group notes text box
-            Label(transcript_group_details_frame, text="Group Notes:", anchor='nw')\
+            Label(transcript_group_details_frame, text="Group Notes:", anchor='nw') \
                 .pack(side=tk.TOP, expand=True, fill=tk.X)
             transcript_group_notes = tk.StringVar()
             transcript_group_notes_input = Text(transcript_group_details_frame, name='group_notes',
@@ -7360,7 +7471,7 @@ class toolkit_UI:
             transcript_group_notes_input.pack(side=tk.TOP, expand=True, fill=tk.X, anchor='nw')
 
             # update the transcript group notes variable when the text box is changed
-            #transcript_group_notes_input.bind('<KeyRelease>', lambda e: transcript
+            # transcript_group_notes_input.bind('<KeyRelease>', lambda e: transcript
 
             # add a frame to hold the buttons
             transcript_group_buttons_frame = tk.Frame(transcript_group_details_frame)
@@ -7370,27 +7481,26 @@ class toolkit_UI:
             transcript_group_update = tk.Button(transcript_group_buttons_frame, text='Save',
                                                 command=lambda
 
-                                                 transcription_window_id=transcription_window_id,
-                                                 transcript_groups_window_id=transcript_groups_window_id,
-                                                 group_notes=transcript_group_notes_input.get(0.0, tk.END),
-                                                 groups_listbox=groups_listbox:
-                                                    self.on_group_update_press(
-                                                        transcription_window_id,
-                                                        transcript_groups_window_id,
-                                                        groups_listbox=groups_listbox
-                                                  ))
+                                                    transcription_window_id=transcription_window_id,
+                                                    transcript_groups_window_id=transcript_groups_window_id,
+                                                    group_notes=transcript_group_notes_input.get(0.0, tk.END),
+                                                    groups_listbox=groups_listbox:
+                                                self.on_group_update_press(
+                                                    transcription_window_id,
+                                                    transcript_groups_window_id,
+                                                    groups_listbox=groups_listbox
+                                                ))
             transcript_group_update.pack(side=tk.LEFT)
-
 
             # the transcript group delete button
             transcript_group_delete = tk.Button(transcript_group_buttons_frame, text="Delete",
-                                               command=lambda
-                                                   transcription_window_id=transcription_window_id,
-                                                   transcript_groups_window_id=transcript_groups_window_id,
-                                                   groups_listbox=groups_listbox:
-                                                    self.on_group_delete_press(transcription_window_id,
-                                                                               transcript_groups_window_id,
-                                                                               groups_listbox=groups_listbox))
+                                                command=lambda
+                                                    transcription_window_id=transcription_window_id,
+                                                    transcript_groups_window_id=transcript_groups_window_id,
+                                                    groups_listbox=groups_listbox:
+                                                self.on_group_delete_press(transcription_window_id,
+                                                                           transcript_groups_window_id,
+                                                                           groups_listbox=groups_listbox))
             transcript_group_delete.pack(side=tk.RIGHT)
 
             # when a user selects a transcript group from the listbox, update the transcript group details
@@ -7399,9 +7509,9 @@ class toolkit_UI:
                                        transcription_window_id=transcription_window_id,
                                        transcript_groups_window_id=transcript_groups_window_id,
                                        groups_listbox=groups_listbox:
-                                    self.on_group_press(e, t_window_id=transcription_window_id,
-                                                             t_group_window_id=transcript_groups_window_id,
-                                                             groups_listbox=groups_listbox))
+                                self.on_group_press(e, t_window_id=transcription_window_id,
+                                                    t_group_window_id=transcript_groups_window_id,
+                                                    groups_listbox=groups_listbox))
 
             # place the transcript groups window on top of the transcription window
             self.windows[transcript_groups_window_id].attributes('-topmost', 'true')
@@ -7412,7 +7522,6 @@ class toolkit_UI:
             self.update_transcript_groups_window(t_window_id=transcription_window_id,
                                                  t_group_window_id=transcript_groups_window_id,
                                                  groups_listbox=groups_listbox)
-
 
     def open_file_in_os(self, file_path):
         '''
@@ -7483,7 +7592,7 @@ class toolkit_UI:
                                                      filetypes=filetypes)
         else:
             target_file = filedialog.askopenfilenames(title="Choose the files", initialdir=initial_target_dir,
-                                                     filetypes=filetypes)
+                                                      filetypes=filetypes)
 
         # what happens if the user cancels
         if not target_file:
@@ -7655,7 +7764,7 @@ class ToolkitOps:
 
         # init Resolve (if resolve API isn't disabled via config or parameter)
         if not self.stAI.get_app_setting('disable_resolve_api', default_if_none=False) \
-                and not disable_resolve_api\
+                and not disable_resolve_api \
                 and '--noresolve' not in sys.argv:
             self.resolve_api = MotsResolve(logger=logger)
 
@@ -7680,7 +7789,6 @@ class ToolkitOps:
         '''
 
         def __init__(self, toolkit_ops_obj):
-
             # load the toolkit ops object
             self.toolkit_ops_obj = toolkit_ops_obj
 
@@ -7701,6 +7809,12 @@ class ToolkitOps:
 
             super().__init__(toolkit_ops_obj=kwargs.get('toolkit_ops_obj', None))
 
+            # get the stAI object (needed for statistics)
+            self.stAI = self.toolkit_ops_obj.stAI
+
+            # save the model provider for internal use
+            self.model_provider = 'openai'
+
             # get all the attributes from the kwargs
             self.model_name = kwargs.get('model_name', "gpt-3.5-turbo")
 
@@ -7710,7 +7824,8 @@ class ToolkitOps:
             # the price per 1000 tokens - this should probably be stored somewhere else
             self.price = 0.002
 
-            self.initial_system = kwargs.get('initial_system', "You are an assistant editor that gives succinct answers.")
+            self.initial_system = kwargs.get('initial_system',
+                                             "You are an assistant editor that gives succinct answers.")
 
             # keep a chat history, which can be also altered if needed
             # if no chat history is passed, we'll use a default one which defines the system
@@ -7726,7 +7841,6 @@ class ToolkitOps:
             if self.context is not None:
                 # add the context to the chat history
                 self.add_context(self.context)
-
 
             # get the API key from the config
             openai.api_key = self.api_key \
@@ -7762,7 +7876,6 @@ class ToolkitOps:
 
                     # if the role is system, then we've found the system message
                     if message['role'] == 'system':
-
                         # set the new system message
                         self.chat_history[i]['content'] = self.initial_system
 
@@ -7790,7 +7903,6 @@ class ToolkitOps:
 
                 # if we already set the context, then we'll just change it
                 if self.context is not None and self.context_idx is not None:
-
                     # change the context in the chat history
                     self.chat_history[self.context_idx]['content'] = context
 
@@ -7807,15 +7919,14 @@ class ToolkitOps:
 
                     # if the role is system, then we've found the system message
                     if message['role'] == 'system':
-
                         # insert the context message right after the system message
-                        self.chat_history.insert(i+1, {"role": "user", "content": context})
+                        self.chat_history.insert(i + 1, {"role": "user", "content": context})
 
                         # remember that we've added the context
                         self.context = context
 
                         # remember the index of the context in case we need to change it later
-                        self.context_idx = i+1
+                        self.context_idx = i + 1
 
                         logger.debug('Added context to the chat history.')
 
@@ -7835,7 +7946,6 @@ class ToolkitOps:
 
                 # just remove any context that might exist
                 if self.context is not None and self.context_idx is not None:
-
                     # remove the context from the chat history
                     self.chat_history.pop(self.context_idx)
 
@@ -7849,6 +7959,37 @@ class ToolkitOps:
                 logger.debug('Context is empty. Ignoring add context request.')
                 return False
 
+        def calculate_history(self):
+            '''
+            This calculates the amount of tokens used by the assistant
+            on each query taken into consideration the current chat_history (but without the query itself)
+            '''
+
+            # use tiktoken to calculate the number of tokens used by the assistant
+            # encoding = tiktoken.get_encoding("cl100k_base")
+            encoding = tiktoken.encoding_for_model(self.model_name)
+
+            # turn the chat history into a string take the 'content' field from each message
+            chat_history_str = ' '.join([message['content'] for message in self.chat_history])
+
+            # the number of tokens used for the chat history
+            tokens = len(encoding.encode(chat_history_str))
+
+            return tokens
+
+        def add_usage(self, tokens):
+            '''
+            This function is used to add usage of the assistant
+            '''
+
+            # add the usage for the current assistant item
+            self.usage += tokens
+
+            # but also keep track of the total usage of this model since the tool was started
+            self.stAI.update_statistics('assistant_usage_{}_{}'.format(self.model_provider, self.model_name),
+                                        self.usage)
+
+            print(self.stAI.statistics)
 
         def send_query(self, content):
             '''
@@ -7864,7 +8005,7 @@ class ToolkitOps:
             # add the query to the chat history
             self.chat_history.append(query)
 
-            #print(json.dumps(self.chat_history, indent=4))
+            # print(json.dumps(self.chat_history, indent=4))
 
             # now send the query to the assistant
             try:
@@ -7884,7 +8025,7 @@ class ToolkitOps:
             except Exception as e:
                 logger.debug('Error sending query to AssistantGPT: ')
                 logger.debug(e)
-                return str(e)+"\nI'm sorry, I'm having trouble connecting to the assistant. Please try again later."
+                return str(e) + "\nI'm sorry, I'm having trouble connecting to the assistant. Please try again later."
 
             result = ''
             for choice in response.choices:
@@ -7894,7 +8035,7 @@ class ToolkitOps:
                 self.chat_history.append({"role": "assistant", "content": result})
 
             # add the usage to the total usage
-            self.usage += response.usage.total_tokens
+            self.add_usage(response.usage.total_tokens)
 
             return result
 
@@ -7904,7 +8045,6 @@ class ToolkitOps:
         '''
 
         def __init__(self, toolkit_ops_obj):
-
             # load the toolkit ops object
             self.toolkit_ops_obj = toolkit_ops_obj
 
@@ -7967,7 +8107,7 @@ class ToolkitOps:
 
             self.query = kwargs.get('query', None)
 
-        def is_file_searchable (self, file_path):
+        def is_file_searchable(self, file_path):
 
             return super().is_file_searchable(file_path)
 
@@ -7987,16 +8127,16 @@ class ToolkitOps:
             # which ends with .pkl we'll return it directly
             # to be used as a search corpus (search cache)
             if search_paths is not None \
-                and ((type(search_paths) is str and os.path.isfile(search_paths)) \
-                or ((type(search_paths) is list or type(search_paths) is tuple)
-                    and len(search_paths) == 1 and os.path.isfile(search_paths[0]))) \
+                    and ((type(search_paths) is str and os.path.isfile(search_paths)) \
+                         or ((type(search_paths) is list or type(search_paths) is tuple)
+                             and len(search_paths) == 1 and os.path.isfile(search_paths[0]))) \
                     and search_paths[0].endswith('.pkl'):
                 return search_paths[0]
 
             # is this a search for a single file or a directory?
             # if it's a single file, we'll just add it to the search_file_paths list
             if search_paths is not None and type(search_paths) is str and os.path.isfile(search_paths) \
-                and self.is_file_searchable(search_paths):
+                    and self.is_file_searchable(search_paths):
                 search_file_paths = [search_paths]
 
             # if it's a list of files, we'll just add it to the search_file_paths list
@@ -8099,9 +8239,9 @@ class ToolkitOps:
 
                         # first get the transcription file data
                         transcription_file_data = self.toolkit_ops_obj.get_transcription_file_data(
-                                                        transcription_file_path=s_file_path)
+                            transcription_file_path=s_file_path)
 
-                        if type(transcription_file_data) is not dict\
+                        if type(transcription_file_data) is not dict \
                                 or 'segments' not in transcription_file_data:
                             logger.warning('Transcription file {} is not in the right format. Skipping.'
                                            .format(s_file_path))
@@ -8179,7 +8319,6 @@ class ToolkitOps:
                         # skip this .txt file to avoid reading the same content twice
                         # (we're making the assumption that that .txt file was saved with the transcription file)
                         if s_file_path.replace('.txt', '.transcription.json') in search_file_paths:
-
                             # also remove it from the search file paths list
                             search_file_paths.remove(s_file_path)
 
@@ -8202,7 +8341,6 @@ class ToolkitOps:
                             # like punctuation marks
                             if len(phrase) > self.stAI.get_app_setting(
                                     setting_name='search_corpus_min_length', default_if_none=2):
-
                                 # add the phrase to the search corpus
                                 search_corpus_phrases.append(phrase.strip())
 
@@ -8215,7 +8353,7 @@ class ToolkitOps:
                                                                               'text': phrase.strip(),
                                                                               'phrase_index': phrase_index,
                                                                               'type': 'text'
-                                                                             }
+                                                                              }
 
                     # if it's a project file
                     elif s_file_path.endswith('project.json'):
@@ -8226,9 +8364,8 @@ class ToolkitOps:
 
                         # first check if it contains the project name
                         if 'name' not in project_file_data or 'timelines' not in project_file_data:
-
                             logger.warning('Project file {} is not in the right format. Skipping.'
-                                .format(s_file_path))
+                                           .format(s_file_path))
                             continue
 
                         # take each timeline and add all its markers to the search corpus
@@ -8244,7 +8381,6 @@ class ToolkitOps:
 
                                     # add the marker name to the search corpus
                                     if 'name' in timeline['markers'][marker]:
-
                                         marker_content = timeline['markers'][marker]['name']
 
                                         # add the marker name to the search corpus
@@ -8256,16 +8392,16 @@ class ToolkitOps:
 
                                         # add the marker to the search corpus association list
                                         search_corpus_assoc[general_segment_index] = {'file_path': s_file_path,
-                                                                                        'text': marker_content,
-                                                                                        'timeline': timeline_name,
-                                                                                        'project': project_file_data['name'],
-                                                                                        'marker_index': marker,
-                                                                                        'type': 'marker'
-                                                                                        }
+                                                                                      'text': marker_content,
+                                                                                      'timeline': timeline_name,
+                                                                                      'project': project_file_data[
+                                                                                          'name'],
+                                                                                      'marker_index': marker,
+                                                                                      'type': 'marker'
+                                                                                      }
 
                                     # add the marker note to the search corpus
                                     if 'note' in timeline['markers'][marker]:
-
                                         marker_content = timeline['markers'][marker]['note']
 
                                         # add the marker name to the search corpus
@@ -8277,13 +8413,13 @@ class ToolkitOps:
 
                                         # add the marker to the search corpus association list
                                         search_corpus_assoc[general_segment_index] = {'file_path': s_file_path,
-                                                                                        'text': marker_content,
-                                                                                        'timeline': timeline_name,
-                                                                                        'project': project_file_data['name'],
-                                                                                        'marker_index': marker,
-                                                                                        'type': 'marker'
-                                                                                        }
-
+                                                                                      'text': marker_content,
+                                                                                      'timeline': timeline_name,
+                                                                                      'project': project_file_data[
+                                                                                          'name'],
+                                                                                      'marker_index': marker,
+                                                                                      'type': 'marker'
+                                                                                      }
 
                 # add the corpus to the search corpus dict, so we don't have to re-create it every time we search
                 # for eg. we could use the search window id as the key
@@ -8327,8 +8463,8 @@ class ToolkitOps:
                                            .format(transcription_file_path))
 
                         elif type(transcription_file_data) is dict \
-                            and 'segments' in transcription_file_data \
-                            and type(transcription_file_data['segments']) is list:
+                                and 'segments' in transcription_file_data \
+                                and type(transcription_file_data['segments']) is list:
 
                             # group the segment texts into phrases using punctuation as dividers
                             # instead of how they're currently segmented
@@ -8357,14 +8493,14 @@ class ToolkitOps:
                                                                                   'start':
                                                                                       segment['start'],
                                                                                   'all_lines':
-                                                                                      [int(segment_index)+1],
+                                                                                      [int(segment_index) + 1],
                                                                                   }
 
                                 # otherwise, if this is not a new phrase
                                 else:
                                     # just append the current segment index to the list of all lines
-                                    search_corpus_assoc[general_segment_index]['all_lines'].append(int(segment_index)+1)
-
+                                    search_corpus_assoc[general_segment_index]['all_lines'].append(
+                                        int(segment_index) + 1)
 
                                 # add the segment text to the current phrase
                                 # but only if it's longer than 2 characters to avoid adding stuff that is most likely meaningless
@@ -8400,9 +8536,6 @@ class ToolkitOps:
 
                         # first get the file contents
 
-
-
-
                 # add the corpus to the search corpus dict, so we don't have to re-create it every time we search
                 # for eg. we could use the search window id as the key
                 self.search_corpuses[search_id] = {'corpus': {}, 'assoc': {}}
@@ -8411,7 +8544,7 @@ class ToolkitOps:
 
             return self.search_corpuses[search_id]['corpus'], self.search_corpuses[search_id]['assoc']
 
-        def prepare_search_query(self, query, max_results:int = 10, search_type='semantic'):
+        def prepare_search_query(self, query, max_results: int = 10, search_type='semantic'):
             '''
             This interprets the query and prepares it for searching.
             With this, we can filter out and use certain arguments to perform the search
@@ -8494,7 +8627,7 @@ class ToolkitOps:
                 self.search_model = None
 
                 # clear the search corpus embeddings
-                if self.search_id is not None and  self.search_id in self.search_embeddings:
+                if self.search_id is not None and self.search_id in self.search_embeddings:
                     del self.search_embeddings[self.search_id]
 
                 # assign the new model name
@@ -8583,8 +8716,8 @@ class ToolkitOps:
             for paraphrase in paraphrases:
                 score, i, j = paraphrase
                 if score < 1.0:
-                    print("{} \t\t {} \t\t Score: {:.4f}".format(search_corpus_phrases[i], search_corpus_phrases[j], score))
-
+                    print("{} \t\t {} \t\t Score: {:.4f}".format(search_corpus_phrases[i], search_corpus_phrases[j],
+                                                                 score))
 
             return search_results, top_k
 
@@ -8635,7 +8768,8 @@ class ToolkitOps:
             if search_id is None or search_id not in self.search_embeddings:
 
                 # encode the search corpus
-                corpus_embeddings = embedder.encode(search_corpus_phrases, convert_to_tensor=True, show_progress_bar=True)
+                corpus_embeddings = embedder.encode(search_corpus_phrases, convert_to_tensor=True,
+                                                    show_progress_bar=True)
 
                 # save the embeddings in the cache
                 self.search_embeddings[search_id] = corpus_embeddings
@@ -8694,7 +8828,6 @@ class ToolkitOps:
                 for score, idx in zip(top_results[0], top_results[1]):
 
                     if str(search_corpus_phrases[idx]) != '':
-
                         self.add_search_result(search_results=search_results,
                                                query=query,
                                                search_corpus_phrases=search_corpus_phrases,
@@ -8898,7 +9031,7 @@ class ToolkitOps:
             return {}
 
         def save_transcript_groups(self, transcription_file_path: str, transcript_groups: dict,
-                                   group_id: str=None) -> dict or bool or None:
+                                   group_id: str = None) -> dict or bool or None:
             '''
             This function saves transcript groups to a transcription file.
 
@@ -8988,7 +9121,6 @@ class ToolkitOps:
 
             # if the group id is not provided, use the group name
             if group_id is None:
-
                 # generate a group id
                 group_id = str(group_name).lower()
 
@@ -9006,7 +9138,6 @@ class ToolkitOps:
 
                     # first try the group name as is
                     if group_name_suffix != 1:
-
                         # but after the first iteration, add a suffix (should start at 2)
                         group_id = group_name.lower() + '_' + str(group_name_suffix)
 
@@ -9113,9 +9244,9 @@ class ToolkitOps:
 
             if not saved:
                 logger.debug('Could not save to transcription file {} the following transcript group: {}'.
-                    format(transcription_file_path, transcript_group))
+                             format(transcription_file_path, transcript_group))
 
-            #elif :
+            # elif :
             #    saved = group_id
 
             logger.debug('Saved transcript groups {} to transcription file {}'
@@ -9168,9 +9299,6 @@ class ToolkitOps:
                     break
 
         return segments_to_return
-
-
-
 
     def transcript_segments_to_time_intervals(self, segments: list) -> list or None:
         '''
@@ -9338,7 +9466,6 @@ class ToolkitOps:
                     if not os.path.isfile(audio_file_path):
                         audio_file_path = None
 
-
                 # if no audio file was found, notify the user
                 if audio_file_path is None:
                     audio_file_error = 'The audio file path is not in the transcription file ' \
@@ -9349,7 +9476,6 @@ class ToolkitOps:
                     else:
                         logger.error(audio_file_error)
                     return False
-
 
                 # get the transcription name from the transcription file
                 name = transcription_data['name'] if 'name' in transcription_data else ''
@@ -9440,7 +9566,7 @@ class ToolkitOps:
             # ask the user if they want to simply transcribe a file from the drive
             if select_files or toolkit_UI_obj.no_resolve_ok \
                     or messagebox.askyesno(message='A Resolve Timeline is not available.\n\n'
-                                                    'Do you want to transcribe existing audio files instead?'):
+                                                   'Do you want to transcribe existing audio files instead?'):
 
                 # don't show the settings window and simply use the default settings (selected from Preferences window)
                 if self.stAI.get_app_setting('transcripts_skip_settings', default_if_none=False):
@@ -9456,7 +9582,6 @@ class ToolkitOps:
                 if target_files:
 
                     for target_file in target_files:
-
                         # the file name also becomes currentTimelineName for future use
                         file_name = os.path.basename(target_file)
 
@@ -9507,7 +9632,7 @@ class ToolkitOps:
                                                                       transcription_file_path=transcription_file_path,
                                                                       time_intervals=time_intervals,
                                                                       excluded_time_intervals=excluded_time_intervals,
-                                                                        **kwargs
+                                                                      **kwargs
                                                                       )
 
     def add_to_transcription_log(self, unique_id=None, **attribute):
@@ -9619,7 +9744,9 @@ class ToolkitOps:
 
         # define the permitted attributes
         permitted_attributes = ['task', 'audio_file_path', 'name', 'language', 'model', 'device', 'unique_id',
-                                'pre_detect_speech', 'word_timestamps', 'max_chars_per_segment', 'max_words_per_segment',
+                                'pre_detect_speech', 'word_timestamps',
+                                'max_chars_per_segment', 'max_words_per_segment',
+                                'split_on_punctuation_marks', 'prevent_short_gaps',
                                 'transcription_file_path', 'time_intervals', 'excluded_time_intervals', 'initial_prompt'
                                 ]
 
@@ -9676,7 +9803,7 @@ class ToolkitOps:
         # add all the above tasks to the queue
         for c_task in tasks:
 
-            task_num = task_num+1
+            task_num = task_num + 1
 
             # generate a unique id if one hasn't been passed
             if unique_id is None:
@@ -9705,6 +9832,8 @@ class ToolkitOps:
                              'word_timestamps': kwargs.get('word_timestamps', False),
                              'max_chars_per_segment': kwargs.get('max_chars_per_segment', False),
                              'max_words_per_segment': kwargs.get('max_words_per_segment', False),
+                             'split_on_punctuation_marks': kwargs.get('split_on_punctuation_marks', False),
+                             'prevent_short_gaps': kwargs.get('prevent_short_gaps', False),
                              'time_intervals': time_intervals,
                              'excluded_time_intervals': excluded_time_intervals,
                              'transcription_file_path': transcription_file_path,
@@ -9751,7 +9880,6 @@ class ToolkitOps:
 
                     # add each element to the transcription queue
                     for unique_id in transcription_queue:
-
                         # clean up the attributes
                         transcription_queue_attributes = self.transcription_queue_attr(transcription_queue[unique_id])
 
@@ -9856,20 +9984,22 @@ class ToolkitOps:
 
         # get file info from queue
         queue_attr['name'], \
-        queue_attr['audio_file_path'], \
-        queue_attr['task'], \
-        queue_attr['language'], \
-        queue_attr['model'], \
-        queue_attr['device'], \
-        queue_attr['initial_prompt'], \
-        queue_attr['pre_detect_speech'], \
-        queue_attr['word_timestamps'], \
-        queue_attr['max_chars_per_segment'], \
-        queue_attr['max_words_per_segment'], \
-        queue_attr['time_intervals'], \
-        queue_attr['excluded_time_intervals'], \
-        queue_attr['transcription_file_path'],\
-        info \
+            queue_attr['audio_file_path'], \
+            queue_attr['task'], \
+            queue_attr['language'], \
+            queue_attr['model'], \
+            queue_attr['device'], \
+            queue_attr['initial_prompt'], \
+            queue_attr['pre_detect_speech'], \
+            queue_attr['word_timestamps'], \
+            queue_attr['max_chars_per_segment'], \
+            queue_attr['max_words_per_segment'], \
+            queue_attr['split_on_punctuation_marks'], \
+            queue_attr['prevent_short_gaps'], \
+            queue_attr['time_intervals'], \
+            queue_attr['excluded_time_intervals'], \
+            queue_attr['transcription_file_path'], \
+            info \
             = self.get_queue_file_info(queue_id)
 
         logger.info("Starting to transcribe {}".format(queue_attr['name']))
@@ -9921,6 +10051,8 @@ class ToolkitOps:
                     queue_file['word_timestamps'],
                     queue_file['max_chars_per_segment'],
                     queue_file['max_words_per_segment'],
+                    queue_file['split_on_punctuation_marks'],
+                    queue_file['prevent_short_gaps'],
                     queue_file['time_intervals'],
                     queue_file['excluded_time_intervals'],
                     queue_file['transcription_file_path'],
@@ -9996,7 +10128,7 @@ class ToolkitOps:
                                                   sampling_rate=sample_rate,
                                                   window_size_samples=512,
                                                   speech_pad_ms=kwargs.get('silence_threshold', 200),
-                                                  threshold=kwargs.get('silence_threshold', 0.5)
+                                                  threshold=kwargs.get('silence_threshold', 0.5),
                                                   )
 
         # convert speech_timestamps to seconds using the sample rate
@@ -10011,7 +10143,7 @@ class ToolkitOps:
 
         # if the first speech_timestamp starts after 0 but before 1 second
         # we set the start time to 0
-        if type(speech_timestamps) is list and\
+        if type(speech_timestamps) is list and \
                 speech_timestamps[0][0] > 0 and speech_timestamps[0][0] < 1:
             speech_timestamps[0][0] = 0
 
@@ -10111,7 +10243,7 @@ class ToolkitOps:
 
         return audio_segment
 
-    def split_segment(self, segment, segment_word_limit: int=None, segment_character_limit: int=None):
+    def split_segment(self, segment, segment_word_limit: int = None, segment_character_limit: int = None):
         """
         Splits the segment into multiple segments by the given word limit or character limit.
         The word limit will be overridden by the character limit if both are specified.
@@ -10123,6 +10255,8 @@ class ToolkitOps:
         # if the segment contains no words, we can't perform the split
         # because we don't know the start and end times of the words
         if 'words' not in segment or not segment['words']:
+            logger.warning('Segment does not contain words-level timings. '
+                           'Cannot split segment by word or character limit.')
             return segment
 
         # we need to be aware that the segment might be split multiple times
@@ -10279,12 +10413,157 @@ class ToolkitOps:
         # return the resulting segments
         return resulting_segments
 
+    def split_segment_on_punctuation_marks(self, segment, punctuation_marks=['.', '!', '?', '…']):
+        '''
+        Splits a segment on punctuation marks and returns a list of segments, including their start and end times.
+        '''
+
+        # if the segment contains no words, we can't perform the split
+        # because we don't know the start and end times of the words
+        if 'words' not in segment or not segment['words']:
+            logger.warning('The segment contains no word-level timings, so we can\'t split it on punctuation marks.')
+            return segment
+
+        # the resulting segments
+        resulting_segments = []
+
+        # the current segment text
+        current_segment_text = segment['text']
+
+        # the current segment words
+        current_segment_words = segment['words']
+
+        # convert the punctuation marks to a list if it's a string
+        if isinstance(punctuation_marks, str):
+            punctuation_marks = list(punctuation_marks)
+
+        # the current segment index
+        current_segment_index = 0
+
+        # first, replace all instances of ... with a single …
+        current_segment_text = current_segment_text.replace('...', '…')
+
+        # while there are punctuation marks in the current segment text
+        while any(punctuation_mark in current_segment_text for punctuation_mark in punctuation_marks):
+
+            # find the first punctuation mark in the current segment text
+            first_punctuation_mark_index = min(current_segment_text.find(punctuation_mark)
+                                               for punctuation_mark in punctuation_marks if
+                                               punctuation_mark in current_segment_text)
+
+            # split the segment into two parts
+            segment_first_part = current_segment_text[:first_punctuation_mark_index + 1]
+
+            # the words list is a list of dictionaries,
+            # each dictionary containing the word and its start time, end time and probability
+            # considering that the word list is ordered and the words have to have the same order in the resulting segments
+            # and also that the words have the exact same length as the text in the segment
+            # we can use the length of the first part to determine which words to keep in the first part
+            # and which words to keep in the second part
+
+            # keep the character length of the words in the first part
+            first_part_words_character_length = 0
+            first_part_words = []
+
+            # keep the start and end times of the first part
+            first_part_start = None
+            first_part_end = None
+
+            for word in current_segment_words:
+
+                # if the character length of the words in the first part is longer than the first part
+                # then we've reached the end of the first part
+                # when calculating the length of the first part,
+                # we need to add a space at the beginning to preserve Whisper's formatting
+                if first_part_words_character_length + len(word['word']) > len(' ' + segment_first_part):
+                    break
+
+                # if the first part start is None, then set it to the current word start time
+                if first_part_start is None:
+                    first_part_start = word['start']
+
+                first_part_words_character_length += len(word['word'])
+
+                # keep the words in the first part
+                first_part_words.append(word)
+
+                # keep updating the first part end time
+                first_part_end = word['end']
+
+                # remove the words from the current segment words
+                current_segment_words.remove(word)
+
+            # create a new segment
+            if segment_first_part != '':
+
+                # add a space at the beginning to preserve Whisper's formatting
+                if segment_first_part[0] != ' ':
+                    segment_first_part = ' ' + segment_first_part
+
+                new_segment = {
+                    'text': segment_first_part,
+                    'start': first_part_start if first_part_start is not None else segment['start'],
+                    'end': first_part_end if first_part_end is not None else segment['end'],
+                    'words': first_part_words,
+                }
+
+                # add the new segment to the resulting segments
+                resulting_segments.append(new_segment)
+
+            # set the current segment text to the second part
+            current_segment_text = current_segment_text[first_punctuation_mark_index + 1:]
+
+            # increment the current segment index
+            current_segment_index += 1
+
+        # is there anything left in the current segment text?
+        if current_segment_text:
+            # create a new segment
+
+            # add a space at the beginning to preserve Whisper's formatting
+            if current_segment_text[0] != ' ':
+                current_segment_text = ' ' + current_segment_text
+
+            new_segment = {
+                'text': current_segment_text,
+                'start': current_segment_words[0]['start'] if current_segment_words else segment['start'],
+                'end': current_segment_words[-1]['end'] if current_segment_words else segment['end'],
+                'words': current_segment_words,
+            }
+
+            # add the new segment to the resulting segments
+            resulting_segments.append(new_segment)
+
+        # return the resulting segments
+        return resulting_segments
+
     def split_segments(self, segments, **kwargs):
 
         # if there are no 'words' in the first segment it means that Whisper hasn't returned any word timings
         # in this case, we can't split the segments
         if len(segments) == 0 or 'words' not in segments[0]:
+            logger.debug('No word-level timings available, so we can\'t split the segments.')
             return segments
+
+        # get the punctuation mark splitting option
+        split_on_punctuation_marks = kwargs.get('split_on_punctuation_marks', False)
+
+        # split the result on punctuation marks if the option is set
+        if split_on_punctuation_marks:
+
+            # the resulting segments
+            new_segments = []
+
+            # take each segment
+            for segment in segments:
+                # split the segment into multiple segments
+                resulting_segment = self.split_segment_on_punctuation_marks(segment)
+
+                # add the resulting segments to the new segments list
+                new_segments.extend(resulting_segment)
+
+            # replace the segments in the result with the new segments
+            segments = new_segments
 
         # get the segment word limit
         segment_word_limit = kwargs.get('max_words_per_segment', None)
@@ -10339,22 +10618,69 @@ class ToolkitOps:
         if 'segments' not in result:
             return result
 
-        # split segments if necessary
+        # split segments if necessary (by punctuation marks or by word/character limits)
         result['segments'] = self.split_segments(result['segments'], **kwargs)
+
+        # get the prevent short gaps option (if any)
+        prevent_short_gaps = kwargs.get('prevent_short_gaps', False)
+
+        if prevent_short_gaps:
+            try:
+                prevent_short_gaps = float(prevent_short_gaps)
+            except ValueError:
+                prevent_short_gaps = False
 
         # do some housekeeping
         # go through each segment in the result
-        for segment in result['segments']:
+        previous_segment_end_time = None
+        new_result_segments = []
+        for n, segment in enumerate(result['segments']):
 
-            # do not allow empty segments
-            if 'text' not in segment or segment['text'] == '':
+            if not isinstance(segment, dict):
+                logger.debug('Segment {} is not a dictionary: {}\nRemoving from results.'.format(n, segment))
+
                 # remove the segment from the result
                 result['segments'].remove(segment)
+
+                # continue to the next segment
+                continue
+
+            # do not allow empty segments or segments that are not strings
+            if 'text' not in segment or not isinstance(segment['text'], str) or segment['text'] == '':
+                # remove the segment from the result
+                result['segments'].remove(segment)
+
+                # continue to the next segment
+                continue
 
             # remove word timestamps from the result to avoid confusion,
             # until the word-based transcript editing is implemented
             if 'words' in segment:
                 del segment['words']
+
+            # add the segment to the new result segments
+            new_result_segments.append(segment)
+
+            # if we're supposed to prevent short gaps between segments
+            # and the previous segment ended less than 'prevent_short_gaps' seconds ago
+            # do this
+            if previous_segment_end_time is not None and isinstance(prevent_short_gaps, float):
+
+                # get the time difference between the end of the previous segment and the start of this segment
+                time_difference = segment['start'] - previous_segment_end_time
+
+                # if the time difference is less than the prevent_short_gaps value
+                if time_difference < prevent_short_gaps:
+
+                    # set the end time of the previous segment to the start time of this segment
+                    new_result_segments[-2]['end'] = segment['start']
+
+            # if we made it so far it means that the segment will be included in the result,
+            # so remember the end time of this segment
+            previous_segment_end_time = segment['end']
+
+        # replace the segments in the result with the new segments
+        result['segments'] = new_result_segments
 
         return result
 
@@ -10390,7 +10716,8 @@ class ToolkitOps:
             post_processing_options = {}
             whisper_options = {}
             for key in other_whisper_options:
-                if key in ['max_chars_per_segment', 'max_words_per_segment']:
+                if key in ['max_chars_per_segment', 'max_words_per_segment',
+                           'split_on_punctuation_marks', 'prevent_short_gaps']:
                     post_processing_options[key] = other_whisper_options[key]
 
                 else:
@@ -10403,7 +10730,7 @@ class ToolkitOps:
                                                    queue_id=queue_id,
                                                    toolkit_ops_obj=self,
                                                    total_duration=total_duration,
-                                                   audio_segment_duration=audio_segment[1]-audio_segment[0],
+                                                   audio_segment_duration=audio_segment[1] - audio_segment[0],
                                                    previous_progress=previous_progress,
                                                    **whisper_options
                                                    )
@@ -10451,12 +10778,11 @@ class ToolkitOps:
                             if word['start'] < audio_segment[0]:
                                 word['start'] = audio_segment[0]
 
-
                     transcript_segment['id'] = next_segment_id + id_count
                     id_count += 1
 
                     # update the segment in the result
-                    #result['segments'][i] = transcript_segment
+                    # result['segments'][i] = transcript_segment
 
                     # add the transcription of the audio segment to the results list
                     results['segments'].append(transcript_segment)
@@ -10470,7 +10796,7 @@ class ToolkitOps:
         """
 
         # if there are exclusion time segments and time_intervals
-        if excluded_time_intervals and type(excluded_time_intervals) == list and len(excluded_time_intervals) > 0\
+        if excluded_time_intervals and type(excluded_time_intervals) == list and len(excluded_time_intervals) > 0 \
                 and time_intervals and type(time_intervals) == list and len(time_intervals) > 0:
 
             # sort the excluded segments by start time
@@ -10701,7 +11027,7 @@ class ToolkitOps:
 
         # ignore the transcription file path if it's empty
         if 'transcription_file_path' in other_whisper_options \
-            and other_whisper_options['transcription_file_path'] is None:
+                and other_whisper_options['transcription_file_path'] is None:
 
             del other_whisper_options['transcription_file_path']
 
@@ -10709,7 +11035,6 @@ class ToolkitOps:
         elif 'transcription_file_path' in other_whisper_options:
 
             if other_whisper_options['transcription_file_path'].strip() != '':
-
                 transcription_file_path = other_whisper_options['transcription_file_path']
 
                 # load the transcription data from the file
@@ -10726,7 +11051,7 @@ class ToolkitOps:
 
         # get the next id based on the largest id from transcription_data segments
         if type(transcription_data) == dict and 'segments' in transcription_data:
-            next_segment_id = max([int(segment['id']) for segment in transcription_data['segments']]) +1
+            next_segment_id = max([int(segment['id']) for segment in transcription_data['segments']]) + 1
         else:
             next_segment_id = 0
 
@@ -10780,11 +11105,10 @@ class ToolkitOps:
 
                 # if we have segments in result, add them to the transcription data
                 if type(result) is dict and 'segments' in result:
-
                     # add the new segments to the transcription data
                     transcription_data['segments'] += [segment for segment in result['segments']
-                                                        if  segment['start'] >= start_time
-                                                        and segment['end'] <= end_time]
+                                                       if segment['start'] >= start_time
+                                                       and segment['end'] <= end_time]
 
             # now make sure that the segments are sorted by start time
             transcription_data['segments'] = sorted(transcription_data['segments'], key=lambda k: k['start'])
@@ -10793,7 +11117,7 @@ class ToolkitOps:
         # self.speaker_diarization(audio_file_path)
 
         # let the user know that the speech was processed
-        notification_msg = "Finished transcription for {} in {} seconds"\
+        notification_msg = "Finished transcription for {} in {} seconds" \
             .format(name, round(time.time() - transcription_start_time))
 
         if self.is_UI_obj_available():
@@ -10830,7 +11154,7 @@ class ToolkitOps:
             file_num = 2
             while os.path.exists(os.path.join(target_dir, file_name + '.transcription.json')):
                 file_name = audio_file_name + "_{}".format(file_num)
-                file_num = file_num+1
+                file_num = file_num + 1
 
             # also create the transcription data dictionary
             transcription_data = result
@@ -10876,12 +11200,12 @@ class ToolkitOps:
         # try to get them from a render.json file
         # these files are saved by the render() function in mots_resolve.py
         if 'timeline_fps' not in transcription_data or transcription_data['timeline_fps'] == '' \
-            or 'timeline_start_tc' not in transcription_data or transcription_data['timeline_start_tc'] == '' \
-            or 'timeline_name' not in transcription_data or transcription_data['timeline_name'] == '':
+                or 'timeline_start_tc' not in transcription_data or transcription_data['timeline_start_tc'] == '' \
+                or 'timeline_name' not in transcription_data or transcription_data['timeline_name'] == '':
 
             # the render.json file path should be next to the audio file
             # and will have the same name as the audio file, but with .json at the end
-            render_json_file_path = os.path.join(os.path.dirname(audio_file_path), file_name+'.json')
+            render_json_file_path = os.path.join(os.path.dirname(audio_file_path), file_name + '.json')
 
             # if the render.json file exists, try to get the data from it
             if os.path.exists(render_json_file_path):
@@ -10957,7 +11281,7 @@ class ToolkitOps:
 
                 # format the name of the backup file
                 backup_transcription_file_path = \
-                    os.path.splitext(os.path.basename(transcription_file_path))[0]+'.'+str(backup)+'.json'
+                    os.path.splitext(os.path.basename(transcription_file_path))[0] + '.' + str(backup) + '.json'
 
                 backups_dir = os.path.join(os.path.dirname(transcription_file_path), '.backups')
 
@@ -10979,7 +11303,6 @@ class ToolkitOps:
 
             return transcription_file_path
 
-
         return False
 
     def get_transcription_file_data(self, transcription_file_path):
@@ -10995,7 +11318,8 @@ class ToolkitOps:
 
         # make sure that it's a transcription file
         if 'segments' not in transcription_json:
-            logger.warning("The file {} is not a valid transcription file (segments missing)".format(transcription_file_path))
+            logger.warning(
+                "The file {} is not a valid transcription file (segments missing)".format(transcription_file_path))
             return False
 
         # check if the transcription file contains word timings
@@ -11021,9 +11345,9 @@ class ToolkitOps:
 
             # calculate the seconds
             seconds = int(time_match.group(1)) * 3600 + \
-                        int(time_match.group(2)) * 60 + \
-                        int(time_match.group(3)) + \
-                        int(time_match.group(4)) / 1000
+                      int(time_match.group(2)) * 60 + \
+                      int(time_match.group(3)) + \
+                      int(time_match.group(4)) / 1000
 
         # otherwise, throw an error
         else:
@@ -11093,10 +11417,10 @@ class ToolkitOps:
                         # add the text to the last subtitle segment
                         # but also a white space if there's already a string inside the segment text
                         srt_segments[-1]['text'] += \
-                            ' '+line_string if len(srt_segments[-1]['text']) > 0 else line_string
+                            ' ' + line_string if len(srt_segments[-1]['text']) > 0 else line_string
 
                         # add the text to the full text
-                        full_text += ' '+line_string if len(full_text) > 0 else line_string
+                        full_text += ' ' + line_string if len(full_text) > 0 else line_string
 
         # initialize the transcription_data for the transcription_file
         transcription_data = {'text': full_text,
@@ -11130,11 +11454,6 @@ class ToolkitOps:
         self.save_transcription_file(transcription_file_path, transcription_data)
 
         return transcription_file_path
-
-
-
-
-
 
     def process_transcription_data(self, transcription_segments=None, transcription_data=None):
         '''
@@ -11187,7 +11506,6 @@ class ToolkitOps:
         """
 
         with open(srt_file_path, "w", encoding="utf-8") as srt_file:
-
             i = 1
             for segment in transcript_segments:
                 # write srt lines
@@ -11564,7 +11882,6 @@ class ToolkitOps:
     def go_to_time(self, seconds=0):
 
         if resolve:
-
             new_timeline_tc = self.calculate_sec_to_resolve_timecode(seconds)
 
             # move playhead in resolve
@@ -11622,7 +11939,6 @@ class ToolkitOps:
         if event_name == 'resolve_changed':
 
             if self.is_UI_obj_available():
-
                 # update the main window
                 self.toolkit_UI_obj.update_main_window()
 
@@ -11650,7 +11966,7 @@ class ToolkitOps:
 
                 # and open a transcript window for each of them
                 if timeline_transcription_file_paths \
-                        and timeline_transcription_file_paths is not None\
+                        and timeline_transcription_file_paths is not None \
                         and self.toolkit_UI_obj is not None:
                     for transcription_file_path in timeline_transcription_file_paths:
                         self.toolkit_UI_obj.open_transcription_window(transcription_file_path=transcription_file_path)
@@ -11658,7 +11974,6 @@ class ToolkitOps:
         # when the playhead has moved
         elif event_name == 'tc_changed':
             if self.toolkit_UI_obj is not None:
-
                 # sync all the synced transcription windows
                 self.toolkit_UI_obj.sync_all_transcription_windows()
 
@@ -11667,7 +11982,6 @@ class ToolkitOps:
 
             # save the markers to the project settings
             self.save_markers_to_project_settings()
-
 
     def resolve_exists(self):
         '''
@@ -11682,7 +11996,6 @@ class ToolkitOps:
 
         else:
             return False
-
 
     def poll_resolve_thread(self):
         '''
@@ -11730,9 +12043,9 @@ class ToolkitOps:
 
                 resolve_data = self.resolve_api.get_resolve_data(silent=True)
 
-                #print('resolve')
-                #print(resolve_data)
-                #print(resolve_data['resolve'])
+                # print('resolve')
+                # print(resolve_data)
+                # print(resolve_data['resolve'])
 
                 # for all the global variables related with resolve data,
                 #  check if the data has changed and if so, update the global variable
@@ -11740,7 +12053,6 @@ class ToolkitOps:
                 #  also, if the global variable is not '' and the polled data doesn't contain the key,
                 #  set the global variable to ''
                 # also, make sure you trigger the on_resolve event if the data has changed
-
 
                 if type(resolve) != type(resolve_data['resolve']):
                     # update the global resolve variable with the resolve object
@@ -11750,8 +12062,7 @@ class ToolkitOps:
                 # if current_project has been previously set (is not '')
                 # check to see if it's different than the currently polled data
                 if (current_project != '' and 'currentProject' not in resolve_data) \
-                or current_project != resolve_data['currentProject']:
-
+                        or current_project != resolve_data['currentProject']:
                     current_project = resolve_data['currentProject'] if 'currentProject' in resolve_data else ''
                     self.on_resolve('project_changed')
                     # logger.info('Current Project: {}'.format(current_project))
@@ -11759,7 +12070,7 @@ class ToolkitOps:
                 # if current_timeline has been previously set (is not '')
                 # check to see if it's different than the currently polled data
                 if (current_timeline != '' and 'currentTimeline' not in resolve_data) \
-                   or current_timeline != resolve_data['currentTimeline']:
+                        or current_timeline != resolve_data['currentTimeline']:
 
                     # if the resolve data is empty, set the current timeline to ''
                     # and trigger the timeline_changed event
@@ -11770,10 +12081,10 @@ class ToolkitOps:
                     # if the names or the types differ, then the timeline has changed
                     # otherwise timeline_change will be triggered on any setting change (markers etc)
                     elif 'currentTimeline' in resolve_data \
-                        and (type(current_timeline) != type(resolve_data['currentTimeline']) \
-                      or ('name' in current_timeline and not 'name' in resolve_data['currentTimeline']) \
-                      or ('name' not in current_timeline and 'name' in resolve_data['currentTimeline']) \
-                      or (current_timeline['name'] != resolve_data['currentTimeline']['name'])):
+                            and (type(current_timeline) != type(resolve_data['currentTimeline']) \
+                                 or ('name' in current_timeline and not 'name' in resolve_data['currentTimeline']) \
+                                 or ('name' not in current_timeline and 'name' in resolve_data['currentTimeline']) \
+                                 or (current_timeline['name'] != resolve_data['currentTimeline']['name'])):
 
                         # update the current timeline
                         current_timeline = resolve_data['currentTimeline'] if 'currentTimeline' in resolve_data else ''
@@ -11817,14 +12128,12 @@ class ToolkitOps:
                 else:
                     current_timeline_markers = None
 
-
                     # self.on_resolve_timeline_changed()
                     # logger.info("Current Timeline: {}".format(current_timeline))
 
                 #  updates the currentBin
                 if (current_bin != '' and 'currentBin' not in resolve_data) \
-                or current_bin != resolve_data['currentBin']:
-
+                        or current_bin != resolve_data['currentBin']:
                     current_bin = resolve_data['currentBin'] if 'currentBin' in resolve_data else ''
 
                     self.on_resolve('bin_changed')
@@ -11832,13 +12141,13 @@ class ToolkitOps:
 
                 # update current playhead timecode
                 if (current_tc != '00:00:00:00' and 'currentTC' not in resolve_data) \
-                or current_tc != resolve_data['currentTC']:
+                        or current_tc != resolve_data['currentTC']:
                     current_tc = resolve_data['currentTC']
                     self.on_resolve('tc_changed')
 
                 # update current playhead timecode
                 if (current_timeline_fps != '' and 'currentTC' not in resolve_data) \
-                or current_timeline_fps != resolve_data['currentTimelineFPS']:
+                        or current_timeline_fps != resolve_data['currentTimelineFPS']:
                     current_timeline_fps = resolve_data['currentTimelineFPS']
                     self.on_resolve('fps_changed')
 
@@ -11853,7 +12162,7 @@ class ToolkitOps:
                 elif resolve is None:
                     resolve_error += 1
 
-                #return resolve_data
+                # return resolve_data
 
             # if an exception is thrown while trying to work with Resolve, don't crash, but continue to try to poll
             except:
@@ -11867,7 +12176,7 @@ class ToolkitOps:
                 # resolve is now None in the global variable
                 # resolve = None
 
-                #return False
+                # return False
 
             # how often do we poll resolve?
             polling_interval = 500
@@ -11879,10 +12188,10 @@ class ToolkitOps:
 
                 # after 15+ errors, deduce that Resolve will not be started this session, so stop polling
                 if resolve_error > 15:
-                        logger.warning("Resolve not reachable after 15 tries. "
-                                     "Disabling Resolve API polling until tool restart.")
+                    logger.warning("Resolve not reachable after 15 tries. "
+                                   "Disabling Resolve API polling until tool restart.")
 
-                        polling_interval = None
+                    polling_interval = None
 
                 # after 10+ tries, assume the user is no longer paying attention and reduce the frequency of tries
                 elif resolve_error > 10:
@@ -11918,14 +12227,13 @@ class ToolkitOps:
                 if polling_interval is not None and polling_time > 1:
                     polling_interval = polling_interval + polling_time
 
-
-                #logger.debug('Polling time: {} seconds'.format(round(time.time() - polling_start_time), 2))
+                # logger.debug('Polling time: {} seconds'.format(round(time.time() - polling_start_time), 2))
 
             if polling_interval is None:
                 return False
 
             # take a short break before continuing the loop
-            time.sleep(polling_interval/1000)
+            time.sleep(polling_interval / 1000)
 
     def speaker_diarization(self, audio_path, add_speakers_to_segments):
 
@@ -11942,7 +12250,6 @@ class ToolkitOps:
         # for turn, _, speaker in diarization.itertracks(yield_label=True):
         #    print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
         return False
-
 
     def resolve_check_timeline(self, resolve_data, toolkit_UI_obj):
         '''
@@ -12002,9 +12309,9 @@ class ToolkitOps:
             # this will delete the existing clip/timeline destination markers,
             # but the user can undo the operation from Resolve
             return self.resolve_api.copy_markers(source, destination,
-                                             resolve_data['currentTimeline']['name'],
-                                             resolve_data['currentTimeline']['name'],
-                                             True)
+                                                 resolve_data['currentTimeline']['name'],
+                                                 resolve_data['currentTimeline']['name'],
+                                                 True)
 
         # render marker operation
         elif operation == 'render_markers_to_stills' or operation == 'render_markers_to_clips':
@@ -12016,7 +12323,6 @@ class ToolkitOps:
             current_timeline_marker_colors = []
             if self.resolve_check_timeline(resolve_data, toolkit_UI_obj) and \
                     current_timeline and 'markers' in current_timeline:
-
                 # take each marker from timeline and get its color
                 # but also add a an empty string to the list to allow the user to render all markers
                 current_timeline_marker_colors = [' '] + sorted(list(set([current_timeline['markers'][marker]['color']
@@ -12024,11 +12330,10 @@ class ToolkitOps:
 
             # if no markers exist, cancel operation and let the user know that there are no markers to render
             if current_timeline_marker_colors:
-                #marker_color = simpledialog.askstring(title="Markers Color",
+                # marker_color = simpledialog.askstring(title="Markers Color",
                 #                                      prompt="What color markers should we render?\n\n"
                 #                                             "These are the marker colors on the current timeline:\n"
                 #                                             + ", ".join(current_timeline_marker_colors))
-
 
                 # create a list of widgets for the input dialogue
                 input_widgets = [
@@ -12085,7 +12390,6 @@ class ToolkitOps:
                                             starts_with=starts_with)
 
         return False
-
 
 
 # @todo change these to None when empty
@@ -12146,15 +12450,40 @@ class StoryToolkitAI:
 
         self.check_api_token()
 
+        # add a variable that holds usage statistics
+        # this is only preserved until the app is closed
+        self.statistics = {}
+
         # check if a new version of the app exists on GitHub
         # but use either the release version number or version.py,
         # depending on standalone is True or False
         [self.update_available, self.online_version] = self.check_update()
 
-        logger.info(Style.BOLD+Style.UNDERLINE+"Running StoryToolkitAI{} version {} {}"
+        logger.info(Style.BOLD + Style.UNDERLINE + "Running StoryToolkitAI{} version {} {}"
                     .format(' SERVER' if server else '',
                             self.__version__,
                             '(standalone)' if self.standalone else ''))
+
+    def update_statistics(self, key, value):
+        '''
+        Updates the statistics dictionary
+        '''
+        if key not in self.statistics:
+            self.statistics[key] = 0
+
+        self.statistics[key] = value
+
+    def read_statistics(self, key):
+        '''
+        Reads the statistics dictionary
+        '''
+
+        # return none if the key doesn't exist
+        if key not in self.statistics:
+            return None
+
+        # otherwise return the value
+        return self.statistics[key]
 
     def user_data_dir_exists(self, create_if_not=True):
         '''
@@ -12188,13 +12517,13 @@ class StoryToolkitAI:
 
                     # let the user know that we are moving the files
                     move_user_data_path_msg = \
-                                    'Starting with version 0.16.14, '\
-                                    'the user data directory on {} has moved to {}.\n'\
-                                    'This means that any existing configuration and project ' \
-                                    'settings files will be copied there.\n'\
-                                    'If the files are at the new location, feel free to delete {}\n' \
-                                    .format(platform.node(),
-                                            self.user_data_path, old_user_data_path_abs, old_user_data_path_abs)
+                        'Starting with version 0.16.14, ' \
+                        'the user data directory on {} has moved to {}.\n' \
+                        'This means that any existing configuration and project ' \
+                        'settings files will be copied there.\n' \
+                        'If the files are at the new location, feel free to delete {}\n' \
+                            .format(platform.node(),
+                                    self.user_data_path, old_user_data_path_abs, old_user_data_path_abs)
 
                     logger.warning(move_user_data_path_msg)
 
@@ -12219,7 +12548,7 @@ class StoryToolkitAI:
 
                     # leave a readme file in the OLD_USER_DATA_PATH so that the user knows that stuff was moved
                     with open(os.path.join(old_user_data_path_abs, 'README.txt'), 'a') as f:
-                        f.write('\n'+str(date.today())+'\n')
+                        f.write('\n' + str(date.today()) + '\n')
                         f.write(move_user_data_path_msg)
 
 
@@ -12300,12 +12629,11 @@ class StoryToolkitAI:
 
         # if a setting name and value was passed
         if setting_name is not None and setting_value is not None:
-
             # get existing configuration
             self.config = self.get_config()
 
             logger.info('Updated config file {} with {} data.'
-                           .format(os.path.abspath(self.config_file_path), setting_name))
+                        .format(os.path.abspath(self.config_file_path), setting_name))
             self.config[setting_name] = setting_value
 
         # if the config is empty something might be wrong
@@ -12408,7 +12736,7 @@ class StoryToolkitAI:
                 json.dump(project_settings, outfile, indent=3)
 
             logger.debug('Updated project settings file {}.'
-                           .format(os.path.abspath(project_settings_path)))
+                         .format(os.path.abspath(project_settings_path)))
 
             # and return the config back to the user
             return project_settings
@@ -12577,7 +12905,6 @@ class StoryToolkitAI:
 
         # if they did, is the online version the same as the one they ignored?
         if ignore_update and ignore_update.split(".") == online_version:
-
             logger.info('Ignoring the new update (version {}) according to app settings.'.format(ignore_update))
 
             # return False - no update available and the local version number instead of what's online
@@ -12758,7 +13085,7 @@ class StoryToolkitAI:
             self.api = socket.create_connection((host, port))
 
             # wrap the socket in an SSL context
-            #self.api = ssl.wrap_socket(self.api, ssl_version=ssl.PROTOCOL_TLSv1_2)
+            # self.api = ssl.wrap_socket(self.api, ssl_version=ssl.PROTOCOL_TLSv1_2)
 
             # send the username and token to the API
             self.api.send(bytes('login:{}:{}'.format(self.api_user, self.api_token), 'utf-8'))
@@ -12780,7 +13107,7 @@ class StoryToolkitAI:
                 self.send_API_command(command='ping')
 
             # send the ping command
-            #self.send_API_command(command='transcribe:file_path')
+            # self.send_API_command(command='transcribe:file_path')
 
             return True
 
@@ -12810,9 +13137,7 @@ class StoryToolkitAI:
             return False
 
 
-
 if __name__ == '__main__':
-
     # keep a global StoryToolkitAI object for now
     global stAI
 

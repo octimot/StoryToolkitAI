@@ -18,7 +18,7 @@ https://vimeo.com/759962195/dee07a067a
 ## Key Features
 - [x] **Free Automatic Transcriptions in many languages** on your local machine using AI
 - [x] **Free Automatic Translation** to English on your local machine using AI
-- [x] **ChatGPT integration** - state-of-the-art AI to assist you in your work and chat about your transcripts
+- [x] **ChatGPT integration** - state-of-the-art AI to assist you in your work and chat about your transcripts (for Patreon Producers+)
 - [x] **Advanced Search** - allows you to search transcripts or even text files semantically using AI
 - [X] **Transcript Groups** allow the grouping of transcription segments for easier access
 - [X] Editing and Advanced Search of **existing SRT files**
