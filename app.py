@@ -12041,7 +12041,7 @@ class StoryToolkitAI:
         '''
 
         if api_token is None:
-            self.api_token = self.get_app_setting(setting_name='api_token', default_if_none=False)
+            self.api_token = self.get_app_setting(setting_name='api_token', default_if_none=None)
         else:
             self.api_token = api_token
 
