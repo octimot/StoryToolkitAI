@@ -2851,9 +2851,9 @@ class toolkit_UI:
                 transcripts_always_on_top_input.grid(row=30, column=1, **form_grid_and_paddings)
 
                 # transcripts always on top
-                tk.Label(pref_form_frame, text='Skip Transcription Settings', **label_settings).grid(row=30, column=0, **form_grid_and_paddings)
+                tk.Label(pref_form_frame, text='Skip Transcription Settings', **label_settings).grid(row=31, column=0, **form_grid_and_paddings)
                 transcripts_skip_settings_input = tk.Checkbutton(pref_form_frame, variable=transcripts_skip_settings_var)
-                transcripts_skip_settings_input.grid(row=30, column=1, **form_grid_and_paddings)
+                transcripts_skip_settings_input.grid(row=31, column=1, **form_grid_and_paddings)
 
                 # ffmpeg path
                 #tk.Label(pref_form_frame, text='FFmpeg Path', **label_settings).grid(row=14, column=0, **form_grid_and_paddings)
