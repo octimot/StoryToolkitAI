@@ -26,7 +26,6 @@ ch = logging.StreamHandler()
 ch.setFormatter(formatter)
 log_resolve.addHandler(ch)
 
-
 class MotsResolve:
 
     def __init__(self, logger=None):
@@ -437,7 +436,8 @@ class MotsResolve:
 
                 #self.logger.debug(currentTimeline.GetSetting('timelineFrameRate'))
 
-                #@TODO: fix hack - for some reason 23.976 is no longer outputed by Resolve
+                #todo: this is no longer necessary, because Resolve gives 23.976 FPS
+                # - let's remove this and implement it further
                 if resolve_data['currentTimelineFPS'] == '23':
                     resolve_data['currentTimelineFPS'] = '24'
 
