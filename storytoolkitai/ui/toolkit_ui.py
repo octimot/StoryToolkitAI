@@ -3195,6 +3195,10 @@ class toolkit_UI:
             if goto_projectpage:
                 webbrowser.open(release_url)
 
+        # open the transcription log window if something is up in the transcription queue
+        if self.toolkit_ops_obj.transcription_queue_current_name:
+            self.open_transcription_log_window()
+
     def only_allow_integers(self, value):
         '''
         Validation function for the entry widget.
@@ -3520,6 +3524,7 @@ class toolkit_UI:
                                                  command=lambda: self.toolkit_ops_obj.prepare_transcription_file(
                                                      toolkit_UI_obj=self))
         # add the shift+click binding to the button
+        # this forces the user to select the files manually
         self.windows['main'].button5.bind('<Shift-Button-1>',
                                           lambda event: toolkit_ops_obj.prepare_transcription_file(
                                               toolkit_UI_obj=self, select_files=True))
@@ -3532,6 +3537,7 @@ class toolkit_UI:
                                                  command=lambda: self.toolkit_ops_obj.prepare_transcription_file(
                                                      toolkit_UI_obj=self, task='translate'))
         # add the shift+click binding to the button
+        # this forces the user to select the files manually
         self.windows['main'].button6.bind('<Shift-Button-1>',
                                           lambda event: toolkit_ops_obj.prepare_transcription_file(
                                               toolkit_UI_obj=self, task='translate', select_files=True))
@@ -5238,7 +5244,7 @@ class toolkit_UI:
             if messagebox.askyesno(title="Open Transcript",
                                    message='The file you selected is an SRT file, '
                                            'but a transcription.json file with the exact name '
-                                           'exists in the same directory.\n\n'
+                                           'exists in the same folder.\n\n'
                                            'Do you want to open the transcription.json file instead?'
                                            '\n\n'
                                            'If you answer NO, the transcription.json will be '
@@ -5996,7 +6002,7 @@ class toolkit_UI:
             return True
 
     def open_advanced_search_window(self, transcription_window_id=None, search_file_path=None,
-                                    select_dir=False):
+                                    select_dir=False, **kwargs):
 
         if self.toolkit_ops_obj is None or self.toolkit_ops_obj.t_search_obj is None:
             logger.error('Cannot open advanced search window. A ToolkitSearch object is needed to continue.')
@@ -6033,7 +6039,7 @@ class toolkit_UI:
             if select_dir:
                 # ask the user to select a directory with searchable files
                 selected_file_path = filedialog.askdirectory(initialdir=initial_dir,
-                                                             title='Select a directory to search')
+                                                             title='Select a folder to search')
 
             else:
                 # ask the user to select the searchable files to use in the search corpus

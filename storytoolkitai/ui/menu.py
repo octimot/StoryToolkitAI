@@ -25,15 +25,45 @@ class UImenus:
 
     def load_menubar(self):
 
+        # FILE MENU
         filemenu = Menu(self.main_menubar, tearoff=0)
-        filemenu.add_command(label="Configuration directory", command=self.open_userdata_dir)
-        # filemenu.add_command(label="New", command=donothing)
-        # filemenu.add_command(label="Open", command=donothing)
-        # filemenu.add_command(label="Save", command=donothing)
-        # filemenu.add_separator()
-        # filemenu.add_command(label="Exit", command=lambda: sys.exit())
+
+        # add open transcription file menu item
+        filemenu.add_command(label="Open transcription file...", command=self.toolkit_UI_obj.open_transcript)
+        filemenu.add_separator()
+
+        filemenu.add_command(label="Transcribe audio file...", command=self.transcribe_audio_files)
+        filemenu.add_command(label="Translate audio file...", command=self.translate_audio_files)
+
+        filemenu.add_separator()
+        filemenu.add_command(label="Open configuration folder", command=self.open_userdata_dir)
+        #filemenu.add_command(label="Open last folder", command=self.open_last_dir)
+
         self.main_menubar.add_cascade(label="File", menu=filemenu)
 
+        # ADVANCED SEARCH MENU
+        searchmenu = Menu(self.main_menubar, tearoff=0)
+
+
+        #searchmenu.add_command(label="Search current transcription...", command=lambda: self.toolkit_UI_obj.open_advanced_search_window())
+
+        #searchmenu.add_separator()
+        searchmenu.add_command(label="Advanced Search in files...",
+                               command=lambda: self.toolkit_UI_obj.open_advanced_search_window())
+        searchmenu.add_command(label="Advanced Search in folders...",
+                               command= lambda: self.toolkit_UI_obj.open_advanced_search_window(select_dir=True))
+        #searchmenu.add_command(label="Search entire project...",
+        #                       command=self.toolkit_UI_obj.open_advanced_search_window)
+
+        self.main_menubar.add_cascade(label="Search", menu=searchmenu)
+
+        # ASSISTANT MENU
+        assistantmenu = Menu(self.main_menubar, tearoff=0)
+        assistantmenu.add_command(label="Open Assistant...", command=self.toolkit_UI_obj.open_assistant_window)
+        self.main_menubar.add_cascade(label="Assistant", menu=assistantmenu)
+
+
+        # HELP MENU
         helpmenu = Menu(self.main_menubar, tearoff=0)
 
         # if this is not on MacOS, add the about button in the menu
@@ -82,8 +112,34 @@ class UImenus:
 
         self.toolkit_UI_obj.root.config(menu=self.main_menubar)
 
+    def transcribe_audio_files(self):
+
+        self.toolkit_ops_obj.prepare_transcription_file(
+            toolkit_UI_obj=self.toolkit_UI_obj, task='transcribe', select_files=True)
+
+    def translate_audio_files(self):
+
+        self.toolkit_ops_obj.prepare_transcription_file(
+            toolkit_UI_obj=self.toolkit_UI_obj, task='translate', select_files=True)
+
     def donothing(self):
         return
+
+    def open_last_dir(self):
+
+        global initial_target_dir
+
+        # if we're on a Mac, open the user data dir in Finder
+        if platform.system() == 'Darwin':
+            subprocess.call(['open', '-R', initial_target_dir])
+
+        # if we're on Windows, open the user data dir in Explorer
+        elif platform.system() == 'Windows':
+            subprocess.call(['explorer', initial_target_dir])
+
+        # if we're on Linux, open the user data dir in the file manager
+        elif platform.system() == 'Linux':
+            subprocess.call(['xdg-open', initial_target_dir])
 
     def open_userdata_dir(self):
         # if we're on a Mac, open the user data dir in Finder

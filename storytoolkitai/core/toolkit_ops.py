@@ -3021,7 +3021,7 @@ class ToolkitOps:
         """
 
         # don't do anything if there are no segments
-        if 'segments' not in result:
+        if not isinstance(result, dict) or 'segments' not in result:
             return result
 
         # split segments if necessary (by punctuation marks or by word/character limits)
@@ -3152,7 +3152,7 @@ class ToolkitOps:
             # to each transcript segment start and end times
 
             # if there are segments in the result
-            if 'segments' in result and result['segments']:
+            if isinstance(result, dict) and 'segments' in result and result['segments']:
 
                 # take each segment and add the offset to the start and end time
                 for i, transcript_segment in enumerate(result['segments']):
@@ -3493,6 +3493,9 @@ class ToolkitOps:
 
             # update the status of the item in the transcription log
             self.update_transcription_log(unique_id=queue_id, **{'status': 'failed', 'progress': ''})
+
+        # post process transcription data
+        #result = self.post_process_transcription_data(result, time_intervals, sr)
 
         # update the transcription data with the new segments
         # but first remove all the segments between the time intervals that were passed
