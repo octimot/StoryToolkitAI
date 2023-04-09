@@ -854,7 +854,7 @@ class toolkit_UI:
 
                 # close the transcription window
                 # @todo (temporary solution until we work on a better way to update transcription windows
-                self.toolkit_UI_obj.destroy_window_(self.toolkit_UI_obj.windows, window_id=window_id)
+                self.toolkit_UI_obj.destroy_transcription_window(window_id)
 
                 # remove the selection references too
                 # self.clear_selection(window_id=window_id)
@@ -5141,6 +5141,43 @@ class toolkit_UI:
         # remove all the ids from the transcription_segments dict
         if window_id in self.t_edit_obj.transcript_segments_ids:
             del self.t_edit_obj.transcript_segments_ids[window_id]
+
+        # remove all other references to the transcription window
+        if window_id in self.t_edit_obj.typing:
+            del self.t_edit_obj.typing[window_id]
+
+        if window_id in self.t_edit_obj.typing:
+            del self.t_edit_obj.transcript_editing[window_id]
+
+        if window_id in self.t_edit_obj.transcription_file_paths:
+            del self.t_edit_obj.transcription_file_paths[window_id]
+
+        if window_id in self.t_edit_obj.transcription_data:
+            del self.t_edit_obj.transcription_data[window_id]
+
+        if window_id in self.t_edit_obj.transcript_groups:
+            del self.t_edit_obj.transcript_groups[window_id]
+
+        if window_id in self.t_edit_obj.selected_groups:
+            del self.t_edit_obj.selected_groups[window_id]
+
+        if window_id in self.t_edit_obj.selected_segments:
+            del self.t_edit_obj.selected_segments[window_id]
+
+        if window_id in self.t_edit_obj.transcript_modified:
+            del self.t_edit_obj.transcript_modified[window_id]
+
+        if window_id in self.t_edit_obj.active_segment:
+            del self.t_edit_obj.active_segment[window_id]
+
+        if window_id in self.t_edit_obj.last_active_segment:
+            del self.t_edit_obj.last_active_segment[window_id]
+
+        if window_id in self.t_edit_obj.current_window_tc:
+            del self.t_edit_obj.current_window_tc[window_id]
+
+        if window_id in self.t_edit_obj.typing:
+            del self.t_edit_obj.sync_with_playhead[window_id]
 
         # call the default destroy window function
         self.destroy_window_(parent_element=self.windows, window_id=window_id)

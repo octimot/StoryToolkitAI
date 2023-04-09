@@ -128,7 +128,7 @@ normal wav files too. Simply press the transcribe or translate buttons and follo
 #### That's it!
 Inside the virtual environment, you should now be able to start the tool:
 
-    python StoryToolkitAI-dev/app.py
+    python StoryToolkitAI-dev/storytoolkitai
 
 _Note: After restart of the machine or your terminal window, never forget to activate the virtual environment before
 starting the app. In the folder where you created venv, run:_
@@ -227,7 +227,7 @@ normal wav files too. Simply press the transcribe or translate buttons and follo
 #### That's it!
 Inside the virtual environment, you should now be able to start the tool:
 
-    py StoryToolkitAI-dev\app.py
+    py StoryToolkitAI-dev\storytoolkitai
 
 _Note: After restart of the machine or your terminal window, never forget to activate the virtual environment before
 starting the app. In the folder where you created venv, run:_
@@ -237,17 +237,17 @@ starting the app. In the folder where you created venv, run:_
 
 ## Running the non-standalone tool
 
-If you haven't downloaded the app in a binary format, simply activate the virtual environment and run the app.py file.
+If you haven't downloaded the app in a binary format, simply activate the virtual environment and start the tool:
 
 ### On windows:
 
     venv\Scripts\activate.bat
-    py StoryToolkitAI-dev\app.py
+    py StoryToolkitAI-dev\storytoolkitai
 
 ### On Mac OS:
 
     source venv/bin/activate
-    python StoryToolkitAI-dev/app.py
+    python StoryToolkitAI-dev/storytoolkitai
 
 A simple GUI with a mind-bending mid-2000s inspired design should appear on the screen.
 Don't worry, that's intentional:

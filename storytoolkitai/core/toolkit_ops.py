@@ -3015,6 +3015,7 @@ class ToolkitOps:
     def post_process_whisper_result(self, audio, result, **kwargs):
         """
         Post processes the result of a whisper transcribe call
+        This should be applied for each segment in part to ensure that we're re-merging the entire result correctly
         :param audio:
         :param result:
         :return:
@@ -3152,6 +3153,8 @@ class ToolkitOps:
             # to each transcript segment start and end times
 
             # if there are segments in the result
+            # re-calibrate the start and end times of each segment according to the offset
+            # and calculate the segment id
             if isinstance(result, dict) and 'segments' in result and result['segments']:
 
                 # take each segment and add the offset to the start and end time
