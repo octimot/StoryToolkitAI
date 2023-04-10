@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file, starting wi
 ## [0.17.19] - 2023-04-07
 
 ### Info
-Update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+Early update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
 
 ### Added
 - Split On Punctuation setting in the Transcription Settings window - more info in  [Transcription Settings](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#transcription-settings)
@@ -24,7 +24,7 @@ Update available for Patreon Frequent Users and Producers only - more info on [p
 
 This update allows you to use ChatGPT for whatever section of your transcripts you want and leverage state-of-the-art AI in your process.
 More ChatGPT-related optimizations will be added in the future!
-Update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+Early update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
 
 ### Added
 
