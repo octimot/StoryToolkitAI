@@ -5960,6 +5960,11 @@ class toolkit_UI:
             # create a frame for the log items
             log_frame = tk.Frame(log_canvas)
 
+            # create a footer frame for additional functions
+            log_footer = tk.Frame(self.windows['t_log'], **self.paddings)
+
+            log_footer.pack(side=BOTTOM, fill=X)
+
             # create a scrollbar to use with the canvas
             scrollbar = Scrollbar(self.windows['t_log'], command=log_canvas.yview, **self.scrollbar_settings)
 
@@ -6009,6 +6014,16 @@ class toolkit_UI:
                 label_status = Label(log_frame, text=t_item['status'] + progress, anchor='w', width=15)
                 label_status.grid(row=num, column=2, **self.list_paddings, sticky='w')
 
+                # unless the transcription is already done, cancelled or failed
+                if t_item['status'] not in ['cancelling', 'cancelled', 'done', 'failed']:
+                    # add a button to cancel the transcription
+                    button_cancel = Button(log_frame, text='x', width=1)
+                    button_cancel.grid(row=num, column=3, **self.list_paddings, sticky='w')
+
+                    # bind the button to the cancel_transcription function
+                    button_cancel.bind("<Button-1>", lambda e, t_item_id=t_item_id, button_cancel=button_cancel:
+                        self.on_button_cancel_transcription(t_item_id, button_cancel))
+
                 # make the label clickable as soon as we have a file path for it in the log
                 if 'json_file_path' in t_item and t_item['json_file_path'] != '':
                     # first assign variables to pass it easily to lambda
@@ -6027,6 +6042,48 @@ class toolkit_UI:
                                     self.open_transcription_window(title=name,
                                                                    transcription_file_path=json_file_path)
                                     )
+
+
+            # add a cancel all button in the footer
+            button_cancel_all = Button(log_footer, text='Cancel all', width=10)
+            button_cancel_all.pack(side=LEFT, **self.list_paddings)
+
+            # bind the button to the cancel_all_transcriptions function
+            button_cancel_all.bind("<Button-1>", lambda e: self.on_button_cancel_all_transcriptions())
+
+
+
+    def on_button_cancel_transcription(self, queue_id, button_cancel):
+
+        # is the queue id in the transcription log?
+        if queue_id in self.toolkit_ops_obj.transcription_log:
+
+            # ask the user if they're sure they want to cancel the transcription
+            if not messagebox.askyesno('Cancel transcription',
+                                       'Are you sure you want to cancel this transcription?'):
+                return
+
+            # cancel via toolkit_ops
+            self.toolkit_ops_obj.cancel_queue_item(queue_id=queue_id)
+
+    def on_button_cancel_all_transcriptions(self):
+
+        if len(self.toolkit_ops_obj.transcription_log) == 0:
+            return
+
+        # ask the user if they're sure they want to cancel all transcriptions
+        if not messagebox.askyesno('Cancel all transcriptions',
+                                   'Are you sure you want to cancel all transcriptions from queue?'):
+            return
+
+        # take each transcription item in the log
+        for queue_id, t_item in self.toolkit_ops_obj.transcription_log.items():
+
+            # if the transcription is not already done, cancelled or failed
+            if t_item['status'] not in ['cancelling', 'cancelled', 'done', 'failed']:
+
+                # cancel via toolkit_ops
+                self.toolkit_ops_obj.cancel_queue_item(queue_id=queue_id)
 
     def open_transcription_log_window(self):
 

@@ -265,9 +265,16 @@ def transcribe(
             total=content_frames, unit="frames", disable=verbose is not False
     ) as pbar:
         while seek < content_frames:
-            # cancel the transcription if it's queue status is canceled or False
-            # print('Queue Info:')
-            # print(toolkit_ops_obj.in_transcription_log(unique_id=queue_id, return_status=True))
+
+            # gracefully cancel the transcription if it's queue status is canceled or False
+            if toolkit_ops_obj.in_transcription_log(unique_id=queue_id, return_status=True) \
+                    in [False, 'cancelling', 'canceled']:
+                return dict(
+                    text=tokenizer.decode(all_tokens[len(initial_prompt_tokens):]),
+                    segments=all_segments,
+                    language=language,
+                    status='canceled'
+                )
 
             time_offset = float(seek * HOP_LENGTH / SAMPLE_RATE)
             mel_segment = mel[:, seek: seek + N_FRAMES]

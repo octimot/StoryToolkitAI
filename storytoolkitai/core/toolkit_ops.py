@@ -2466,6 +2466,56 @@ class ToolkitOps:
 
         return False
 
+    def cancel_queue_item_if_cancelled(self, queue_id):
+        '''
+        Checks if the status of the item in the transcription log is 'cancelling' and cancels it if it is
+        '''
+
+        # if the status is 'cancelling', cancel the item
+        if self.in_transcription_log(unique_id=queue_id, return_status=True) in [False, 'cancelling', 'cancelled']:
+            self.cancel_queue_item(queue_id, ignore_current=True)
+            return True
+
+        return False
+
+    def cancel_queue_item(self, queue_id, ignore_current=False):
+        '''
+        Cancels a queue item by deleting it from the queue and updating the transcription log
+        :param queue_id:
+        :param ignore_current: if True, will ignore the item if it is currently being transcribed
+        :return:
+        '''
+
+        # if the item is currently being transcribed, signal the transcription thread to stop using the cancelling flag
+        # - for eg. mots_whisper should see that we've cancelled the transcription and stop it
+        # there's no other way to force this to stop, since the transcription is running in a separate thread
+        if queue_id in self.transcription_queue_current_item:
+
+            # update the status of the item in the transcription log
+            self.update_transcription_log(unique_id=queue_id, **{'status': 'cancelling', 'progress': ''})
+
+        # is the item still in the queue?
+        if self.transcription_queue and queue_id in self.transcription_queue:
+
+            # delete the item from the queue
+            del self.transcription_queue[queue_id]
+
+            # re-write the transcription queue to file
+            self.save_transcription_queue()
+
+            # then ping the queue again
+            self.ping_transcription_queue()
+
+            # also update the status of the item in the transcription log
+            if queue_id not in self.transcription_queue_current_item or ignore_current:
+                self.update_transcription_log(unique_id=queue_id, **{'status': 'cancelled', 'progress': ''})
+
+            return True
+
+        if ignore_current:
+            # also update the status of the item in the transcription log
+            self.update_transcription_log(unique_id=queue_id, **{'status': 'cancelled', 'progress': ''})
+
     def split_audio_by_intervals(self, audio_array, time_intervals=None, sr=16_000):
         """
         Splits the audio_array according to the time_intervals
@@ -3196,6 +3246,11 @@ class ToolkitOps:
                     # add the transcription of the audio segment to the results list
                     results['segments'].append(transcript_segment)
 
+        # copy the status from the result to the results (if any)
+        # normally we should only get a status if the transcription was cancelled or it failed
+        if isinstance(result, dict) and 'status' in result:
+            results['status'] = result['status']
+
         return results
 
     def exclude_segments_by_intervals(self, audio_array, time_intervals, excluded_time_intervals, sr):
@@ -3316,6 +3371,10 @@ class ToolkitOps:
             if 'model' in other_whisper_options and other_whisper_options['model']:
                 self.whisper_model_name = other_whisper_options['model']
 
+            # cancel transcription if user requested it
+            if self.cancel_queue_item_if_cancelled(queue_id=queue_id):
+                return None
+
             # if the Whisper transformer model was never downloaded, log that we're downloading it
             model_downloaded_before = True
             if self.stAI.get_app_setting(setting_name='whisper_model_downloaded_{}'
@@ -3331,6 +3390,10 @@ class ToolkitOps:
                 self.update_transcription_log(unique_id=queue_id, **{'status': 'downloading model'})
 
                 model_downloaded_before = False
+
+            # cancel transcription if user requested it
+            if self.cancel_queue_item_if_cancelled(queue_id=queue_id):
+                return None
 
             logger.info('Loading Whisper {} model.'.format(self.whisper_model_name))
             try:
@@ -3357,6 +3420,10 @@ class ToolkitOps:
         if 'model' in other_whisper_options:
             del other_whisper_options['model']
 
+        # cancel transcription if user requested it
+        if self.cancel_queue_item_if_cancelled(queue_id=queue_id):
+            return None
+
         # load audio file as array using librosa
         # this should work for most audio formats (so ffmpeg might not be needed at all)
         audio_array, sr = librosa.load(audio_file_path, sr=16_000)
@@ -3366,6 +3433,10 @@ class ToolkitOps:
             long_audio_msg = "The audio is long... This might take a while."
         else:
             long_audio_msg = ""
+
+        # cancel transcription if user requested it
+        if self.cancel_queue_item_if_cancelled(queue_id=queue_id):
+            return None
 
         # technically the transcription process starts here, so start a timer for statistics
         transcription_start_time = time.time()
@@ -3422,6 +3493,10 @@ class ToolkitOps:
         # in case no time intervals were passed, this will just return one audio segment with the whole audio
         audio_segments, time_intervals = self.split_audio_by_intervals(audio_array, time_intervals, sr)
 
+        # cancel transcription if user requested it
+        if self.cancel_queue_item_if_cancelled(queue_id=queue_id):
+            return None
+
         # exclude time intervals that need to be excluded
         if 'excluded_time_intervals' in other_whisper_options:
             audio_segments, time_intervals = self.exclude_segments_by_intervals(
@@ -3476,6 +3551,11 @@ class ToolkitOps:
         else:
             logger.info(notification_msg)
 
+        # last chance to cancel if user requested it
+        # before the transcription process starts
+        if self.cancel_queue_item_if_cancelled(queue_id=queue_id):
+            return None
+
         # transcribe the audio segments
         # (or just one audio segment with the whole audio if no time intervals were passed)
         try:
@@ -3497,8 +3577,20 @@ class ToolkitOps:
             # update the status of the item in the transcription log
             self.update_transcription_log(unique_id=queue_id, **{'status': 'failed', 'progress': ''})
 
-        # post process transcription data
-        #result = self.post_process_transcription_data(result, time_intervals, sr)
+        # was the transcription canceled or failed?
+        # if whisper returned None or a dict with status failed or canceled
+        if result is None \
+            or (type(result) is dict and 'status' in result
+                and (result['status'] == 'failed' or result['status'] == 'canceled')
+                ):
+
+            # copy the status from the result to the log status
+            # or simply set it to failed if the result is None
+            log_status = result['status'] if type(result) is dict and 'status' in result else 'failed'
+
+            self.update_transcription_log(unique_id=queue_id, **{'status': log_status, 'progress': ''})
+
+            return None
 
         # update the transcription data with the new segments
         # but first remove all the segments between the time intervals that were passed
@@ -3586,14 +3678,16 @@ class ToolkitOps:
                                                          transcription_data=transcription_data)
 
         # only save the filename without the absolute path to the transcript json
-        transcription_data['txt_file_path'] = os.path.basename(txt_file_path)
+        if txt_file_path:
+            transcription_data['txt_file_path'] = os.path.basename(txt_file_path)
 
         # save the SRT file next to the transcription file
         srt_file_path = self.save_srt_from_transcription(file_name=file_name, target_dir=target_dir,
                                                          transcription_data=transcription_data)
 
         # only the basename is needed here too
-        transcription_data['srt_file_path'] = os.path.basename(srt_file_path)
+        if srt_file_path:
+            transcription_data['srt_file_path'] = os.path.basename(srt_file_path)
 
         # remember the audio_file_path this transcription is based on too
         transcription_data['audio_file_path'] = os.path.basename(audio_file_path)
@@ -3642,15 +3736,18 @@ class ToolkitOps:
         # when done, change the status in the transcription log, clear the progress
         # and also add the file paths to the transcription log
         self.update_transcription_log(unique_id=queue_id, status='done', progress='',
-                                      srt_file_path=transcription_data['srt_file_path'],
-                                      txt_file_path=transcription_data['txt_file_path'],
+                                      srt_file_path=transcription_data['srt_file_path']
+                                        if 'srt_file_path' in transcription_data else '',
+                                      txt_file_path=transcription_data['txt_file_path']
+                                        if 'txt_file_path' in transcription_data else '',
                                       json_file_path=transcription_json_file_path)
 
         # why not open the transcription in a transcription window if the UI is available?
         if self.is_UI_obj_available():
             self.toolkit_UI_obj.open_transcription_window(title=name,
                                                           transcription_file_path=transcription_json_file_path,
-                                                          srt_file_path=srt_file_path)
+                                                          srt_file_path=srt_file_path
+                                                            if srt_file_path in transcription_data else '')
 
         return True
 
