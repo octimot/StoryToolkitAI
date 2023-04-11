@@ -392,7 +392,7 @@ from your currently opened Resolve timeline.
 
     Shift+V         - deselect all active segments
 
-    CMD/CTRL+A      - select all transcript segments
+    CMD/CTRL+A      - select all transcript segments (or deselects segments, if a selection exists)
 
     Shift+A         - create selection between the previously active and the currently active segment
                       also works to create a selection for the last played segments in Resolve (if sync is active):

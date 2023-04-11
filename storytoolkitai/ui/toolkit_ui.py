@@ -473,8 +473,21 @@ class toolkit_UI:
                 # clear selection
                 self.clear_selection(window_id, text_element)
 
-            # CMD+A key events (select all)
+            # CMD+A key events (select/deselect all)
             if event.keysym == 'a' and special_key == 'cmd':
+
+                # if this window contains a selection, just clear it
+                # since we're expecting the user to want to deselect first
+                if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0:
+                    self.clear_selection(window_id, text_element)
+
+                    # and clear any selection on the text element
+                    text_element.tag_remove("sel", "1.0", "end")
+
+                    return 'break'
+
+                # but if no selection exists, select all segments:
+
                 # get the number of segments in the transcript
                 num_segments = len(self.transcript_segments[window_id])
 
