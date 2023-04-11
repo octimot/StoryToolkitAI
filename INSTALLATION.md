@@ -77,7 +77,7 @@ _Note: if the pip command above doesn't work, try to use pip3 (and use pip3 for 
 First, go to the Folder you want to install StoryToolkit in via Finder. Right-click on it and select "New Terminal at Folder".
 Once you get another terminal window open, run:
 
-    git clone https://github.com/octimot/StoryToolkitAI.git
+    git clone https://github.com/octimot/StoryToolkitAI-dev.git
 
 This should download the app in the folder that you chose.
 
@@ -89,7 +89,7 @@ Now create a virtual environment (to prevent messing up with other python packag
 Right now, your installation folder should contain 2 other folders, and the tree should look like this:
 
     YOUR_INSTALLATION_FOLDER
-    +- StoryToolkitAI
+    +- StoryToolkitAI-dev
     +- venv
 
 #### 6. Activate virtual environment
@@ -183,7 +183,7 @@ simply run:
 
 Open the Command Prompt and navigate to the folder where you want to install StoryToolkitAI. Then run:
 
-    git clone https://github.com/octimot/StoryToolkitAI.git
+    git clone https://github.com/octimot/StoryToolkitAI-dev.git
 
 #### 6. Set up a virtual environment
 Now create a virtual environment (to prevent messing up with other python packages you may have installed on your OS
@@ -194,7 +194,7 @@ for other stuff):
 Right now, your installation folder should contain 2 other folders, and the tree should look like this:
     
     YOUR_INSTALLATION_FOLDER
-    +- StoryToolkitAI
+    +- StoryToolkitAI-dev
     +- venv
 
 #### 7. Activate virtual environment
@@ -269,10 +269,10 @@ tool:
 Also make sure to always check for package updates after pulling a new version of the tool: 
 
      # on Windows
-    pip install -r StoryToolkitAI\requirements.txt
+    pip install -r StoryToolkitAI-dev\requirements.txt
 
     # on MacOS
-    pip install -r StoryToolkitAI/requirements.txt
+    pip install -r StoryToolkitAI-dev/requirements.txt
 
 ## Feedback
 
