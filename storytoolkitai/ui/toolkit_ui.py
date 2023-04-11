@@ -89,6 +89,9 @@ class toolkit_UI:
             # (multiple selections allowed)
             self.selected_groups = {}
 
+            # keep track if we're auto adding selected segments to selected groups
+            self.auto_add_to_group = self.stAI.get_app_setting('transcript_auto_add_to_group', default_if_none=False)
+
             # all the selected transcript segments of each window
             # the selected segments dict will use the text element line number as an index, for eg:
             # self.selected_segments[window_id][line] = transcript_segment
@@ -454,11 +457,16 @@ class toolkit_UI:
             # POST- CURSOR MOVE EVENTS
             # these are the events that might require the new line and segment numbers
 
+
+
             # v key events
             if event.keysym == 'v':
                 # add/remove active segment to selection
                 # if it's not in the selection
                 self.segment_to_selection(window_id, text_element, line)
+
+                # call auto add to group function
+                self.auto_add_selection_to_group(window_id)
 
             # Shift+V key events
             if event.keysym == 'V':
@@ -476,15 +484,19 @@ class toolkit_UI:
                 # select all segments by passing all the line numbers
                 self.segment_to_selection(window_id, text_element, segment_list)
 
+                # call auto add to group function
+                self.auto_add_selection_to_group(window_id,
+                                                 confirm=True if len(segment_list) > 10 else False)
+
                 return 'break'
 
             # Shift+A key events
             if event.keysym == 'A':
 
-                # first, try to see if there is a text selection
+                # first, try to see if there is a text selection (i.e. drag and select type selection)
                 selection = text_element.tag_ranges("sel")
 
-                # if there is a selection
+                # if there is such a selection
                 if len(selection) > 0:
 
                     # get the first and last segment numbers of the selection
@@ -494,9 +506,11 @@ class toolkit_UI:
                     # clear the selection
                     text_element.tag_delete("sel")
 
+                # if there is no such selection
                 else:
 
-                    # select all segments between the active_segment and the last_active_segment
+                    # get the active_segment and the last_active_segment
+                    # to use them as the start and end of the selection
                     start_segment = self.last_active_segment[window_id]
                     max_segment = self.active_segment[window_id]
 
@@ -504,14 +518,24 @@ class toolkit_UI:
                 if start_segment > max_segment:
                     start_segment, max_segment = max_segment, start_segment
 
-                # first clear the entire selection
+                # clear the existing selection
                 self.clear_selection(window_id, text_element)
 
-                # then take each segment, starting with the lowest and select them
+                # how many segments are we selecting?
+                num_segments = max_segment - start_segment + 1
+
+                # then take each segment, from the first to the last
                 n = start_segment
                 while n <= max_segment:
+
+                    # and add it to the selection
                     self.segment_to_selection(window_id, text_element, n)
                     n = n + 1
+
+                # and also call auto add to group function
+                self.auto_add_selection_to_group(window_id,
+                                                 confirm=True if num_segments > 10 else False)
+
 
             # Shift+C key event (copy segments with timecodes to clipboard)
             if event.keysym == 'C':
@@ -1638,28 +1662,30 @@ class toolkit_UI:
                 # lowercase all dictionary keys for non-case sensitive comparison
                 transcript_groups_lower = {k.lower(): v for k, v in transcript_groups.items()}
 
+                group_name_lower = group_name.strip().lower()
+
                 # if this is an add operation and
                 # if the group name was passed and it exists in the groups of this transcription,
                 # add the selected segments to that group instead of creating a new one
                 # (so keep the old segments in the group too)
-                if add is True and group_name is not None and group_name.lower() in transcript_groups_lower \
-                        and len(transcript_groups[group_name]) > 0 \
-                        and 'time_intervals' in transcript_groups[group_name] \
-                        and len(transcript_groups[group_name]['time_intervals']) > 0:
+                if add is True and group_name is not None and group_name_lower in transcript_groups_lower \
+                        and len(transcript_groups[group_name_lower]) > 0 \
+                        and 'time_intervals' in transcript_groups[group_name_lower] \
+                        and len(transcript_groups[group_name_lower]['time_intervals']) > 0:
 
                     # keep the notes if they exist and we're supposed to keep them
-                    if 'notes' in transcript_groups[group_name] and kwargs.get('keep_notes', False):
-                        group_notes = transcript_groups[group_name]['notes']
+                    if 'notes' in transcript_groups[group_name_lower] and kwargs.get('keep_notes', False):
+                        group_notes = transcript_groups[group_name_lower]['notes']
 
                     # keep the name if we're supposed to keep it
                     if kwargs.get('keep_name', False):
-                        group_name = transcript_groups[group_name]['name']
+                        group_name = transcript_groups[group_name_lower]['name']
 
                     # but we first need to get the existing segments in the group
                     # by going through the time intervals of the group and getting the corresponding segments
                     existing_group_segments = \
                         self.toolkit_ops_obj.time_intervals_to_transcript_segments(
-                            transcript_groups[group_name]['time_intervals'],
+                            transcript_groups[group_name_lower]['time_intervals'],
                             self.transcript_segments[window_id]
                         )
 
@@ -1673,7 +1699,7 @@ class toolkit_UI:
                 # but if this is not an add operation, yet the group exists in the groups of this transcription
                 # make sure the user understands that we're overwriting the existing group
                 # BTW to simplify things we're now using the lower case version of the group name as a group_id
-                elif add is False and group_name is not None and group_name.strip().lower() in transcript_groups_lower:
+                elif add is False and group_name is not None and group_name_lower in transcript_groups_lower:
 
                     # ask the user if they're sure they want to overwrite the existing group
                     overwrite = messagebox.askyesno(message='Group already exists\nDo you want to overwrite it?\n\n'
@@ -1717,6 +1743,40 @@ class toolkit_UI:
                 self.toolkit_UI_obj.update_transcript_groups_window(t_window_id=window_id)
 
                 return True
+
+        def auto_add_selection_to_group(self, t_window_id: str, confirm=False, auto_add_button=None) -> None:
+            '''
+            This function checks if the auto add to group option is enabled in the UI
+            and if it is, it will add the selected segments to the group that is selected in the UI
+            '''
+
+            # is the auto add to group option enabled?
+            if self.auto_add_to_group:
+
+                # get the group id that is selected right now
+                if t_window_id in self.selected_groups and len(self.selected_groups[t_window_id]) > 0:
+
+                    # get the group id
+                    group_id = self.toolkit_UI_obj._get_selected_group_id(t_window_id=t_window_id)
+
+                    if confirm:
+                        # ask the user if they're sure they want to add the segments to the group
+                        if not messagebox.askyesno(message='You\'re about to select many segments '
+                                                           'and auto-add them to the group.\n\n'
+                                                           'Are you sure you want to do this?'):
+
+                            logger.debug('User cancelled auto-add segments to group. Aborting.')
+
+                            return
+
+                    # create a reference to this function so we can use for select events below
+                    self.group_selected(window_id=t_window_id, group_name=group_id, add=True,
+                                        keep_name=True, keep_notes=True)
+
+                else:
+                    logger.debug('No group is selected. Aborting auto-add segments to group.')
+
+            return
 
         def delete_group(self, t_window_id: str, group_id: str, no_confirmation: bool = False, **kwargs) -> bool:
             '''
@@ -7126,8 +7186,8 @@ class toolkit_UI:
             for group_name in group_names:
                 groups_listbox.insert(END, group_name)
 
+        # if no group or more than a group is selected
         # clear all the group form inputs
-        # but only if no group or more than a group is selected
         if t_window_id not in self.t_edit_obj.selected_groups \
                 or len(self.t_edit_obj.selected_groups[t_window_id]) != 1:
 
@@ -7138,9 +7198,12 @@ class toolkit_UI:
 
             self._hide_group_details_frame(t_group_window_id, group_details_frame)
 
+        # if a single group is selected
+        # populate the group form with the group data
         elif t_window_id in self.t_edit_obj.selected_groups \
                 and len(self.t_edit_obj.selected_groups[t_window_id]) == 1:
 
+            # show the group details frame (form)
             self._show_group_details_frame(t_group_window_id, group_details_frame)
 
         # now, if there are any selected groups for this window
@@ -7148,7 +7211,16 @@ class toolkit_UI:
 
             # select the groups in the listbox
             for group_name in self.t_edit_obj.selected_groups[t_window_id]:
-                groups_listbox.selection_set(group_names.index(group_name))
+                #groups_listbox.selection_set(group_names.index(group_name))
+
+                # select the group in the listbox, but using a case-insensitive search
+                # - this is because the listbox is case-sensitive, but the group names are not
+                group_name_lower = group_name.lower()
+                for i, item in enumerate(groups_listbox.get(0, tk.END)):
+                    if item.lower() == group_name_lower:
+                        groups_listbox.selection_set(i)
+                        groups_listbox.see(i)
+                        break
 
                 # select the segments in the transcription window
                 # - if multiple groups are selected, this will select the segments from the last group
@@ -7238,6 +7310,10 @@ class toolkit_UI:
 
             elements_width = 30
 
+            # add a header frame for future buttons
+            header_frame = tk.Frame(current_transcript_groups_window)
+            header_frame.pack(side=tk.TOP, expand=True, fill=tk.X, **self.paddings)
+
             # add the frame to hold the transcript groups
             transcript_groups_frame = tk.Frame(self.windows[transcript_groups_window_id])
             transcript_groups_frame.pack(expand=True, fill=tk.BOTH, **self.paddings)
@@ -7294,7 +7370,19 @@ class toolkit_UI:
                                                 ))
             transcript_group_update.pack(side=tk.LEFT)
 
-            # the transcript group delete button
+
+            # AUTO ADD BUTTON
+            transcript_group_auto_add = tk.Button(transcript_group_buttons_frame, text='Auto Add')
+
+            self.button_group_auto_add_state(transcript_group_auto_add)
+
+            # bind the auto add button to the auto add function
+            transcript_group_auto_add.bind('<Button-1>', lambda e,transcript_group_auto_add=transcript_group_auto_add:
+                                                        self.on_group_auto_add_press(button=transcript_group_auto_add))
+
+            transcript_group_auto_add.pack(side=tk.LEFT)
+
+            # GROUP DELETE BUTTON
             transcript_group_delete = tk.Button(transcript_group_buttons_frame, text="Delete",
                                                 command=lambda
                                                     transcription_window_id=transcription_window_id,
@@ -7324,6 +7412,25 @@ class toolkit_UI:
             self.update_transcript_groups_window(t_window_id=transcription_window_id,
                                                  t_group_window_id=transcript_groups_window_id,
                                                  groups_listbox=groups_listbox)
+
+    def on_group_auto_add_press(self, button):
+        '''
+        This function is called when the user clicks the auto add button in the transcript groups window
+        '''
+
+        # update the auto add to group setting to the opposite of what it is currently
+        self.t_edit_obj.auto_add_to_group = not self.t_edit_obj.auto_add_to_group
+
+        self.button_group_auto_add_state(button)
+
+    def button_group_auto_add_state(self, button):
+
+        # update the button text
+        if self.t_edit_obj.auto_add_to_group:
+            button.config(text='Don\'t Auto Add')
+        else:
+            button.config(text='Auto Add')
+
 
     def open_file_in_os(self, file_path):
         '''

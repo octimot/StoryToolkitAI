@@ -187,10 +187,15 @@ phrase will move the Resolve playhead to the respective timecode (if connected t
 
 Starting with v0.17.5, you can group transcript segments together so that you can easily select them later if you need
 to. To add segments to groups, select them with V (or CMD/CTRL+Click, or other selection shortcuts) and then press 
-CMD/CTR+G. To see the group list for each transcript, click CMD/CTRL+G while in the transcription window. From there,
+CMD/CTRL+G. To see the group list for each transcript, click CMD/CTRL+G while in the transcription window. From there,
 you can also add group notes for each group. For eg. if you group certain segments on a certain topic, you can add
 your notes on that particular topic in the group notes field. You can also use the groups to select all the segments
 of a certain character and so on.
+
+Starting with v0.18.0, the Auto Add button seen in the Groups window allows the user to automatically add segments to
+groups when they select the segments in the Transcription Window. _Note: This will not remove any segments from the 
+group, when they're unselected in the Transcription Window! In order to remove segments from the group, you need to 
+update the group (for eg. using CMD/CTRL+G while the group is selected)_
 
 _Note: the groups are based on time intervals, so if you change the start or end times of segments, they might drift
 outside of certain groups that they're in. Simply click on the group, select the segments and press CMD/CTR+G again to

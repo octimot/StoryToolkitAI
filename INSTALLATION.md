@@ -134,6 +134,8 @@ _Note: After restart of the machine or your terminal window, never forget to act
 starting the app. In the folder where you created venv, run:_
 
     source venv/bin/activate
+
+_Note: if you're using a version earlier than 0.18.0, the old run command was: `python StoryToolkitAI-dev/app.py`_
     
 ## Windows
 
@@ -234,6 +236,7 @@ starting the app. In the folder where you created venv, run:_
 
     venv\Scripts\activate.bat
 
+_Note: if you're using a version earlier than 0.18.0, the old run command was: `python StoryToolkitAI-dev/app.py`_
 
 ## Running the non-standalone tool
 
@@ -253,6 +256,9 @@ A simple GUI with a mind-bending mid-2000s inspired design should appear on the 
 Don't worry, that's intentional:
 
 <img src="help/StoryToolkitAI_GUI.png" width="300">
+
+_Note: if you're using a version earlier than 0.18.0, the old run commands were: 
+`python StoryToolkitAI-dev/app.py`_ (macOS), or `py StoryToolkitAI-dev\app.py` (Windows)
 
 ## Updates on the non-standalone tool
 To update the tool, simply pull the latest changes from the repository while inside the folder where you installed the 
