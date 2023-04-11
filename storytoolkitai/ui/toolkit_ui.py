@@ -1486,6 +1486,37 @@ class toolkit_UI:
             if text_element is not None:
                 text_element.tag_delete("l_selected")
 
+        def text_indices_to_selection(self, window_id=None, text_element=None, text_indices: int or list = None):
+            '''
+            Given a list of text indices (for eg. ['16.8', '18.52', '20.11']),
+            this function takes each indices and selects the corresponding segment
+            '''
+
+            if window_id is None or text_element is None:
+                logger.warning('Unable to select segments based on text indices '
+                               'because no window id or text element was passed.')
+                return False
+
+            if text_indices is None:
+                logger.warning('Unable to select segments based on text indices '
+                                 'because no text indices were passed.')
+                return False
+
+            if isinstance(text_indices, int):
+                text_indices = [text_indices]
+
+            # first clear the selection
+            self.clear_selection(window_id=window_id, text_element=text_element)
+
+            for text_index in text_indices:
+
+                # get the line number from the text index
+                line = int(text_index.split('.')[0])
+
+                # select the segment
+                self.segment_to_selection(window_id=window_id, text_element=text_element, line=line)
+
+
         def segment_to_selection(self, window_id=None, text_element=None, line: int or list = None):
             '''
             This either adds or removes a segment to a selection,
@@ -1508,6 +1539,7 @@ class toolkit_UI:
                 text_element = self.get_transcription_window_text_element(window_id=window_id)
 
             if window_id is None or text_element is None or line is None:
+                logger.warning('Unable to select segment because no window id, text element or line was passed.')
                 return False
 
             # if there is no selected_segments dict for the current window, create one
@@ -4229,7 +4261,8 @@ class toolkit_UI:
     def open_find_replace_window(self, window_id=None, title: str = 'Find and Replace',
                                  parent_window_id: str = None, text_widget=None,
                                  replace_field: bool = False, find_text: str = None, replace_text: str = None,
-                                 post_replace_action: str = None, post_replace_action_args: list = None
+                                 post_replace_action: str = None, post_replace_action_args: list = None,
+                                 **kwargs
                                  ):
         '''
         This window is used to find (and replace) text in a text widget of another window
@@ -4269,10 +4302,17 @@ class toolkit_UI:
 
             parent_text_widget = self.text_windows[parent_window_id]['text_widget']
 
+            # create the select all button
+            if kwargs.get('select_all_action', False):
+
+                # only create the button here and add the lambda function later in the _find_text_in_widget function
+                kwargs['select_all_button'] = \
+                    tk.Button(find_frame, text='Select All', name='select_all_button')
+
             # if the user presses a key in the find input,
             # call the _find_text_in_widget function
             find_str.trace("w", lambda name, index, mode, find_str=find_str, parent_window_id=parent_window_id:
-            self._find_text_in_widget(find_str, parent_window_id, text_widget=parent_text_widget))
+            self._find_text_in_widget(find_str, parent_window_id, text_widget=parent_text_widget, **kwargs))
 
             # return key cycles through the results
             find_input.bind('<Return>',
@@ -4327,7 +4367,8 @@ class toolkit_UI:
             # add the status label to the find_windows dict so we can update it later
             self.find_windows[window_id]['status_label'] = status_label
 
-    def _find_text_in_widget(self, search_str: str = None, window_id: str = None, text_widget: tk.Text = None):
+    def _find_text_in_widget(self, search_str: str = None, window_id: str = None, text_widget: tk.Text = None,
+                             **kwargs):
         '''
         This function finds and highlights found matches in a text widget
 
@@ -4360,8 +4401,10 @@ class toolkit_UI:
 
             self.find_strings[window_id] = search_str
 
-            # do not search if the search string shorter than 3 characters
-            if len(search_str) > 2:
+            # do not search if the search string shorter than 0 characters
+            # - this limit is a bad idea in general, considering that there are languages that use single characters...
+            #   so we'll just keep it to 0 for now
+            if len(search_str) >= 1:
 
                 while 1:
 
@@ -4383,7 +4426,8 @@ class toolkit_UI:
                     text_widget.tag_add('found', idx, lastidx)
                     idx = lastidx
 
-                #  take the viewer to the first occurrence
+                # if we have results,
+                # take the viewer to the first occurrence
                 if self.find_result_indexes[window_id] and len(self.find_result_indexes[window_id]) > 0 \
                         and self.find_result_indexes[window_id][0] != '':
                     text_widget.see(self.find_result_indexes[window_id][0])
@@ -4391,20 +4435,50 @@ class toolkit_UI:
                     # and visually tag the results
                     self._tag_find_results(text_widget, self.find_result_indexes[window_id][0], window_id)
 
+                    # if there is a select_all_action, show the select all button
+                    if kwargs.get('select_all_action', False) and kwargs.get('select_all_button', False):
+
+                        select_all_action = kwargs.get('select_all_action')
+
+                        # add the select_all_action to the select_all_button
+                        # but also send the transcription window id, the text widget and the result indexes
+                        kwargs.get('select_all_button') \
+                            .config(command=lambda window_id=window_id, text_widget=text_widget:
+                        select_all_action(
+                                window_id=window_id,
+                                text_element=text_widget,
+                                text_indices=self.find_result_indexes[window_id])
+                                    )
+
+                        kwargs.get('select_all_button').pack(side=tk.LEFT, padx=5)
+
+                # if we don't have results, hide the select all button (if there is any)
+                else:
+                    if kwargs.get('select_all_button', False):
+                        kwargs.get('select_all_button').pack_forget()
+
                 # mark located string with red
                 text_widget.tag_config('found', foreground=self.resolve_theme_colors['red'])
 
                 # update the status label in the find window
+
                 if 'find_window_id' in self.text_windows[window_id]:
                     find_window_id = self.text_windows[window_id]['find_window_id']
                     self.find_windows[find_window_id]['status_label'] \
                         .config(text=f'{len(self.find_result_indexes[window_id])} results found')
 
-            # update the status label in the find window
-            elif 'find_window_id' in self.text_windows[window_id]:
-                find_window_id = self.text_windows[window_id]['find_window_id']
-                self.find_windows[find_window_id]['status_label'] \
-                    .config(text='')
+                return
+
+
+        # clear the status label in the find window and hide the select all button
+        if 'find_window_id' in self.text_windows[window_id]:
+
+            find_window_id = self.text_windows[window_id]['find_window_id']
+            self.find_windows[find_window_id]['status_label'] \
+                .config(text='')
+
+            if kwargs.get('select_all_button', False):
+                kwargs.get('select_all_button').pack_forget()
 
     def _tag_find_results(self, text_widget: tk.Text = None, text_index: str = None, window_id: str = None):
         '''
@@ -5646,7 +5720,8 @@ class toolkit_UI:
                 find_button = tk.Button(header_frame, text='Find', name='find_replace_button',
                                         command=lambda:
                                         self.open_find_replace_window(parent_window_id=t_window_id,
-                                                                      title="Find in {}".format(title)
+                                                                      title="Find in {}".format(title),
+                                                                      select_all_action=self.t_edit_obj.text_indices_to_selection
                                                                       ))
 
                 find_button.pack(side=tk.LEFT, **self.paddings)
@@ -5654,7 +5729,8 @@ class toolkit_UI:
                 # bind CMD/CTRL + f to open find and replace window
                 self.windows[t_window_id].bind("<" + self.ctrl_cmd_bind + "-f>", lambda e:
                 self.open_find_replace_window(parent_window_id=t_window_id,
-                                              title="Find in {}".format(title)
+                                              title="Find in {}".format(title),
+                                              select_all_action=self.t_edit_obj.text_indices_to_selection
                                               ))
 
                 # ADVANCED SEARCH
