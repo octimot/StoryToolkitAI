@@ -2,16 +2,40 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
-## [0.17.19] - 2023-03-07
+## [0.18.0] - 2023-04-11
 
-## Info
-Update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+### Info
+Early update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+Please backup your StoryToolkitAI configuration folder before updating to this version.
+
+### Added
+- Ability to cancel transcriptions from the queue
+- Auto Add button in Transcription Groups allows adding of segments to group when they're selected 
+- Select All button to Find feature in Transcription Window allows selecting all segments that match the search results
+- Ability to Open Transcriptions and Transcribe via menu click
+- Added Search and Assistant menus
+
+### Changed
+- Major restructuring of code and files, please backup StoryToolkit configuration folder before updating!
+- New start command - see [here](https://github.com/octimot/StoryToolkitAI/blob/main/INSTALLATION.md#running-the-non-standalone-tool) 
+- CMD/CTRL+A now also deselects segments in Transcription Window
+
+### Bugfixes
+- Resolve-related buttons now refresh correctly in the Transcription window on resolve connection status change
+- Re-transcribing a re-transcribed transcription in the same session now works correctly
+- Closing of transcription windows is now handled correctly
+- Fixed a bug that prevented adding selected segments to groups with non-lowercase names 
+
+## [0.17.19] - 2023-04-07
+
+### Info
+Early update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
 
 ### Added
 - Split On Punctuation setting in the Transcription Settings window - more info in  [Transcription Settings](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#transcription-settings)
 - Prevent Gaps Shorter Than setting in the Transcription Settings window - more info in [Transcription Settings](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#transcription-settings)
 - CMD+SHIFT+G in transcription window adds the selected segments to the currently selected group without clearing the group 
-- Assistant [calc] function to get the minimum number of tokens you're sending with each to OpenAI
+- Assistant [calc] function to get the minimum number of tokens you're sending with each message to OpenAI
 
 ### Bugfixes
 - Fixed API token check default value
@@ -24,7 +48,7 @@ Update available for Patreon Frequent Users and Producers only - more info on [p
 
 This update allows you to use ChatGPT for whatever section of your transcripts you want and leverage state-of-the-art AI in your process.
 More ChatGPT-related optimizations will be added in the future!
-Update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+Early update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
 
 ### Added
 
