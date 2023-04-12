@@ -6734,84 +6734,89 @@ class toolkit_UI:
                 logger.error('Cannot run assistant query. No assistant item found.')
                 return False
 
-        # is the user asking for help?
-        if prompt.lower() == '[help]':
+        # try to run the assistant query
+        try:
+            # is the user asking for help?
+            if prompt.lower() == '[help]':
 
-            help_reply = "StoryToolkitAI Assistant uses gpt-3.5-turbo.\n" \
-                         "You might be billed by OpenAI around $0.002 for every 1000 tokens. " \
-                         "See openai https://openai.com/pricing for more info. \n\n" \
-                         "Every time you ask something, the OpenAI will receive the entire conversation. " \
-                         "The longer the conversation, the more tokens you are using on each request.\n" \
-                         "Use [usage] to keep track of your usage in this Assistant window.\n\n" \
-                         "Use [calc] to get the minimum number of tokens you're sending with each request.\n\n" \
-                         "Use [reset] to reset the conversation, while preserving any contexts. " \
-                         "This will make the Assistant forget the entire conversation," \
-                         "but also reduce the tokens you're sending to OpenAI.\n" \
-                         "Use [resetall] to reset the conversation and any context. " \
-                         "But also reduce the amount of information you're sending on each request.\n\n" \
-                         "Use [context] to see the context text.\n\n" \
-                         "Use [exit] to exit the Assistant.\n\n" \
-                         "Now, just ask something..."
+                help_reply = "StoryToolkitAI Assistant uses gpt-3.5-turbo.\n" \
+                             "You might be billed by OpenAI around $0.002 for every 1000 tokens. " \
+                             "See openai https://openai.com/pricing for more info. \n\n" \
+                             "Every time you ask something, the OpenAI will receive the entire conversation. " \
+                             "The longer the conversation, the more tokens you are using on each request.\n" \
+                             "Use [usage] to keep track of your usage in this Assistant window.\n\n" \
+                             "Use [calc] to get the minimum number of tokens you're sending with each request.\n\n" \
+                             "Use [reset] to reset the conversation, while preserving any contexts. " \
+                             "This will make the Assistant forget the entire conversation," \
+                             "but also reduce the tokens you're sending to OpenAI.\n" \
+                             "Use [resetall] to reset the conversation and any context. " \
+                             "But also reduce the amount of information you're sending on each request.\n\n" \
+                             "Use [context] to see the context text.\n\n" \
+                             "Use [exit] to exit the Assistant.\n\n" \
+                             "Now, just ask something..."
 
-            # use this to make sure we have a new prompt prefix for the next search
-            self._text_window_update(assistant_window_id, help_reply)
-            return
+                # use this to make sure we have a new prompt prefix for the next search
+                self._text_window_update(assistant_window_id, help_reply)
+                return
 
-        # if the user is asking for usage
-        elif prompt.lower() == '[usage]' or prompt.lower() == '[calc]':
+            # if the user is asking for usage
+            elif prompt.lower() == '[usage]' or prompt.lower() == '[calc]':
 
-            if prompt.lower() == '[calc]':
-                num_tokens = assistant_item.calculate_history()
-                calc_reply = "The stored conversation, including context totals cca. {} tokens.\n".format(num_tokens)
-                calc_reply += "That's probably ${:.6f}\n" \
-                              "(might not be accurate, check OpenAI pricing)\n" \
-                    .format(num_tokens * assistant_item.price / 1000)
-                calc_reply += "This is the minimum amount of tokens you send on each request, " \
-                              "plus your message, unless you reset."
-                self._text_window_update(assistant_window_id, calc_reply)
+                if prompt.lower() == '[calc]':
+                    num_tokens = assistant_item.calculate_history()
+                    calc_reply = "The stored conversation, including context totals cca. {} tokens.\n".format(num_tokens)
+                    calc_reply += "That's probably ${:.6f}\n" \
+                                  "(might not be accurate, check OpenAI pricing)\n" \
+                        .format(num_tokens * assistant_item.price / 1000)
+                    calc_reply += "This is the minimum amount of tokens you send on each request, " \
+                                  "plus your message, unless you reset."
+                    self._text_window_update(assistant_window_id, calc_reply)
 
-            usage_reply = "You have used {} tokens in this Assistant window.\n".format(assistant_item.usage)
-            usage_reply += "That's probably ${:.6f}\n" \
-                           "(might not be accurate, check OpenAI pricing)" \
-                .format(assistant_item.usage * assistant_item.price / 1000)
-            self._text_window_update(assistant_window_id, usage_reply)
-            return
+                usage_reply = "You have used {} tokens in this Assistant window.\n".format(assistant_item.usage)
+                usage_reply += "That's probably ${:.6f}\n" \
+                               "(might not be accurate, check OpenAI pricing)" \
+                    .format(assistant_item.usage * assistant_item.price / 1000)
+                self._text_window_update(assistant_window_id, usage_reply)
+                return
 
-        elif prompt.lower() == '[reset]':
-            assistant_item.reset()
-            self._text_window_update(assistant_window_id, 'Conversation reset. Context preserved.')
-            return
+            elif prompt.lower() == '[reset]':
+                assistant_item.reset()
+                self._text_window_update(assistant_window_id, 'Conversation reset. Context preserved.')
+                return
 
-        elif prompt.lower() == '[resetall]':
-            assistant_item.reset()
-            assistant_item.add_context(context='')
-            self._text_window_update(assistant_window_id, 'Conversation reset. Context removed.')
-            return
+            elif prompt.lower() == '[resetall]':
+                assistant_item.reset()
+                assistant_item.add_context(context='')
+                self._text_window_update(assistant_window_id, 'Conversation reset. Context removed.')
+                return
 
-        elif prompt.lower() == '[context]':
-            if assistant_item.context is None:
-                self._text_window_update(assistant_window_id, 'No context used for this conversation.')
+            elif prompt.lower() == '[context]':
+                if assistant_item.context is None:
+                    self._text_window_update(assistant_window_id, 'No context used for this conversation.')
 
-            else:
-                self._text_window_update(assistant_window_id,
-                                         "The context used for this conversation is:\n\n{}\n"
-                                         .format(assistant_item.context))
+                else:
+                    self._text_window_update(assistant_window_id,
+                                             "The context used for this conversation is:\n\n{}\n"
+                                             .format(assistant_item.context))
 
-            return
+                return
 
-        # is the user trying to quit?
-        elif prompt.lower() == '[quit]':
-            self.destroy_assistant_window(assistant_window_id)
-            return
+            # is the user trying to quit?
+            elif prompt.lower() == '[quit]':
+                self.destroy_assistant_window(assistant_window_id)
+                return
 
-        # get the assistant response
-        assistant_response = assistant_item.send_query(prompt)
+            # get the assistant response
+            assistant_response = assistant_item.send_query(prompt)
 
-        # update the assistant window
-        self._text_window_update(assistant_window_id, "A > " + assistant_response)
+            # update the assistant window
+            self._text_window_update(assistant_window_id, "A > " + assistant_response)
 
-        # update the assistant window prompt
-        # self._text_window_update_prompt(assistant_window_id, ' > ')
+        except:
+            logger.error('Error while running assistant query.', exc_info=True)
+
+            # update the assistant window
+            self._text_window_update(assistant_window_id, 'An error occurred :-(')
 
     def destroy_assistant_window(self, assistant_window_id: str):
         '''
