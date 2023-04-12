@@ -24,13 +24,20 @@ logger.debug('\n--------------\n'
 
 # this makes sure that the user has all the required packages installed
 try:
-    # the requirements file is one directory up from this file
+    # the path of this file
     file_path = os.path.abspath(__file__)
+
+    # the requirements file is either one directory up from this file
+    requirements_file_path = os.path.join(os.path.dirname(file_path), '..', 'requirements.txt')
+
+    # or in this directory (valid for the standalone app)
+    if not os.path.exists(os.path.join(os.path.dirname(file_path), '..', 'requirements.txt')):
+        requirements_file_path = os.path.join(os.path.dirname(file_path), 'requirements.txt')
 
     # check if all the requirements are met
     import pkg_resources
 
-    pkg_resources.require(open(os.path.join(os.path.dirname(file_path), '..', 'requirements.txt'), mode='r'))
+    pkg_resources.require(open(requirements_file_path, mode='r'))
 
     logger.debug('All package requirements met.')
 

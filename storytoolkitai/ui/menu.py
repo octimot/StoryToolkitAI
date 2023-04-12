@@ -62,6 +62,25 @@ class UImenus:
         assistantmenu.add_command(label="Open Assistant...", command=self.toolkit_UI_obj.open_assistant_window)
         self.main_menubar.add_cascade(label="Assistant", menu=assistantmenu)
 
+        # INTEGRATIONS MENU
+        self.main_menubar.integrationsmenu = integrationsmenu = Menu(self.main_menubar, tearoff=0)
+
+        # add a title in the menu
+        integrationsmenu.add_command(label="Connect to Resolve API",
+                                     command=self.toolkit_UI_obj.on_connect_resolve_api_press)
+        integrationsmenu.add_command(label="Disable Resolve API",
+                                     command=self.toolkit_UI_obj.on_disable_resolve_api_press)
+
+        # determine the state of the two menu items depending whether Resolve API is disabled or not
+        if not self.toolkit_ops_obj.disable_resolve_api:
+            integrationsmenu.entryconfig("Connect to Resolve API", state="disabled")
+            integrationsmenu.entryconfig("Disable Resolve API", state="normal")
+        else:
+            integrationsmenu.entryconfig("Connect to Resolve API", state="normal")
+            integrationsmenu.entryconfig("Disable Resolve API", state="disabled")
+
+        self.main_menubar.add_cascade(label="Integrations", menu=integrationsmenu)
+
 
         # HELP MENU
         helpmenu = Menu(self.main_menubar, tearoff=0)

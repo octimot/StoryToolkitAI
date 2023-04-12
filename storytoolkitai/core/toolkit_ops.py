@@ -162,26 +162,72 @@ class ToolkitOps:
         # it's very likely that the model will not be loaded here, but in the SearchItem, for each search
         self.s_semantic_search_model = None
 
-        # init Resolve (if resolve API isn't disabled via config or parameter)
-        if not self.stAI.get_app_setting('disable_resolve_api', default_if_none=False) \
-                and not disable_resolve_api \
-                and '--noresolve' not in sys.argv:
-            self.resolve_api = MotsResolve(logger=logger)
+        # use this to know whether the resolve API is disabled or not for this session
+        self.disable_resolve_api = disable_resolve_api
 
-            # start the resolve thread
-            # with this, resolve should be constantly polled for data
-            self.poll_resolve_thread()
+        # if this is True, it means that there is a polling thread running
+        self.polling_resolve = False
 
-        else:
+        # to hold the resolve API object
+        self.resolve_api = None
+
+        # init Resolve but if...
+
+        # ... if --noresolve was passed as an argument, disable the resolve API
+        if '--noresolve' in sys.argv:
             self.resolve_api = None
-            if '--noresolve' in sys.argv:
-                logger.debug('Resolve API disabled via --noresolve argument.')
-            else:
-                logger.debug('Resolve API disabled via config.')
+            self.disable_resolve_api = True
+            logger.debug('Resolve API disabled via --noresolve argument.')
+
+        # ... and if the resolve API is disabled via config, disable the resolve API
+        elif self.stAI.get_app_setting('disable_resolve_api', default_if_none=True):
+            self.resolve_api = None
+            self.disable_resolve_api = True
+            logger.debug('Resolve API disabled via config.')
+
+        # ... then, init Resolve
+        if not self.disable_resolve_api:
+            self.resolve_enable()
 
         # resume the transcription queue if there's anything in it
         if self.resume_transcription_queue_from_file():
             logger.info('Resuming transcription queue from file')
+
+    def resolve_disable(self):
+        '''
+        This function is used to disable the resolve API
+        The polling thread will continue to run, but will not poll for data until the resolve API is re-enabled
+        '''
+
+        # set the resolve object to None
+        self.resolve_api = None
+
+        # set the disable resolve API flag to True
+        self.disable_resolve_api = True
+
+        # force the NLE object to None
+        NLE.resolve = None
+
+        # trigger resolve changed
+        self.on_resolve('resolve_changed')
+
+    def resolve_enable(self):
+        '''
+        This function is used to enable the resolve API
+        '''
+
+        # initialize a resolve object
+        if not self.resolve_api or self.resolve_api is None:
+            self.resolve_api = MotsResolve(logger=logger)
+
+        self.disable_resolve_api = False
+
+        if not self.polling_resolve:
+            logger.debug('Resolve polling thread not detected, starting one now')
+
+            # start the resolve thread
+            # with this, resolve should be constantly polled for data
+            self.poll_resolve_thread()
 
     class ToolkitAssistant:
         '''
@@ -4507,6 +4553,11 @@ class ToolkitOps:
         This keeps resolve polling in a separate thread
         '''
 
+        # don't start this if another thread is already running
+        if self.polling_resolve:
+            logger.debug('Resolve polling thread already running')
+            return
+
         # wrap poll_resolve_data into a thread
         poll_resolve_thread = Thread(target=self.poll_resolve_data)
 
@@ -4522,6 +4573,11 @@ class ToolkitOps:
         :return:
         '''
 
+        # don't start this if another thread is already running
+        if self.polling_resolve:
+            logger.debug('Resolve polling thread already running')
+            return
+
         # do this continuously
         while True:
 
@@ -4530,13 +4586,28 @@ class ToolkitOps:
 
             polling_start_time = time.time()
 
+            # make sure everyone knows that this loop is still running
+            # (and implicitly the thread too)
+            self.polling_resolve = True
+
             # try to poll resolve
             try:
 
-                # first, check if the API module is available on this machine
+                # check if the resolve api is not disabled
+                if self.disable_resolve_api:
+                    logger.debug('Resolve API disabled. Aborting Resolve API polling until re-enabled.')
+                    self.polling_resolve = False
+
+                    # execute this one more time to make sure all variables are set correctly
+                    self.resolve_disable()
+
+                    return None
+
+                # also, check if the API module is available on this machine
                 if not self.resolve_api.api_module_available:
                     logger.debug('Resolve API module not available on this machine. '
                                  'Aborting Resolve API polling until StoryToolkitAI restart.')
+                    self.polling_resolve = False
                     return None
 
                 # actual polling happens here
@@ -4790,6 +4861,7 @@ class ToolkitOps:
                 # logger.debug('Polling time: {} seconds'.format(round(time.time() - polling_start_time), 2))
 
             if polling_interval is None:
+                self.polling_resolve = False
                 return False
 
             # take a short break before continuing the loop

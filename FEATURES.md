@@ -117,7 +117,7 @@ For best results, we recommend using the large model with this option enabled.
 **Max. Characters per Line** and **Max. Words per Line** make the tool split the transcript segments at the specified
 number of characters or words. This is useful if you want to make sure that the transcript segments are not too long,
 but since there's no AI involved in this process (yet), the tool might split sentences in the weirdest places.
-When both options are set, the Max. Characters per Line takes precedence. 
+When both options are set, the Max. Words per Line is ignored. 
 Only works if Increased Time Precision is enabled.
 
 **Split on Punctuation** (version 0.17.19) splits the transcript lines at punctuation marks (. ! ? …)
@@ -329,6 +329,12 @@ over and over again, unless you're trying to follow something relevant from the 
 
 _Note: The Resolve API integration is not available on the Free version of Resolve, you need to have a working Studio 
 license installed on your machine to use this feature._
+
+### Connecting to the Resolve API
+Starting with version 0.18.1, the tool starts with the Resolve API connection disabled since many folks don't have
+are not using the tool in connection to Resolve.
+To enable the connection, use the top menu bar: `Integrations -> Connect to Resolve API`
+You can disable the connection at any point from the same menu.
 
 ### Linking Transcriptions to Timelines
 In the transcription window, the "Link" button will attach the transcription to the currently opened timeline in

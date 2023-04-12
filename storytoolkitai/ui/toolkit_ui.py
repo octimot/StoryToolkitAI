@@ -4591,6 +4591,50 @@ class toolkit_UI:
                 # scroll to the tag
                 text_widget.see(f'{tag_index}')
 
+    def on_connect_resolve_api_press(self):
+        self.UI_menus.main_menubar.integrationsmenu.entryconfig('Connect to Resolve API', state='disabled')
+        self.toolkit_ops_obj.resolve_enable()
+
+        # now wait for resolve to connect
+        while self.toolkit_ops_obj.resolve_api is None:
+            time.sleep(0.01)
+
+        # now that resolve is connected, we can enable the Disable Resolve API menu item
+        self.UI_menus.main_menubar.integrationsmenu.entryconfig('Disable Resolve API', state='normal')
+
+        # if the app config says that we should connect, ask the user if they still want that
+        if self.toolkit_ops_obj.stAI.get_app_setting('disable_resolve_api', default_if_none=False) is True:
+
+            # and ask the user if they want to always connect to Resolve API on startup
+            always_connect = messagebox.askyesno(title='Always Connect?',
+                                                 message='We\'re now connected to Resolve.\n\n'
+                                                         'Do you want to always connect to the Resolve API on tool startup?'
+                                                 )
+
+            if always_connect:
+                self.toolkit_ops_obj.stAI.save_config('disable_resolve_api', False)
+
+    def on_disable_resolve_api_press(self):
+
+        # update menus
+        self.UI_menus.main_menubar.integrationsmenu.entryconfig('Connect to Resolve API', state='normal')
+        self.UI_menus.main_menubar.integrationsmenu.entryconfig('Disable Resolve API', state='disabled')
+
+        # disable resolve api
+        self.toolkit_ops_obj.resolve_disable()
+
+        # if the app config says that we should connect, ask the user if they still want that
+        if self.toolkit_ops_obj.stAI.get_app_setting('disable_resolve_api', default_if_none=False) is False:
+
+            # and ask the user if they want to connect to Resolve API on startup
+            always_connect = messagebox.askyesno(title='Connect back at startup?',
+                                                 message='Resolve API connection disabled.\n\n'
+                                                         'Do you want to still reconnect to the Resolve API at tool startup?'
+                                                 )
+
+            if not always_connect:
+                self.toolkit_ops_obj.stAI.save_config('disable_resolve_api', True)
+
     class AskDialog(tk.Toplevel):
         '''
         This is a simple dialogue window that asks the user for input before continuing with the task
