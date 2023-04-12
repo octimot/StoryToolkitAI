@@ -2022,7 +2022,7 @@ class ToolkitOps:
                 # also, assume that the user wants to transcribe an existing file if the messagebox fails
                 # this is a hack until we move all UI stuff to the UI class
                 except:
-                    logger.warning('A Resolve Timeline is not available. Switching to file selection mode.')
+                    logger.debug('A Resolve Timeline is not available. Switching to file selection mode.')
 
             # don't show the settings window and simply use the default settings (selected from Preferences window)
             if self.stAI.get_app_setting('transcripts_skip_settings', default_if_none=False):
