@@ -7595,6 +7595,8 @@ class toolkit_UI:
 
     def ask_for_target_dir(self, title=None, target_dir=None):
 
+        global initial_target_dir
+        
         # if an initial target dir was passed
         if target_dir is not None:
             # assign it as the initial_target_dir
