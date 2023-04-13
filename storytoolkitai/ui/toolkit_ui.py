@@ -2488,7 +2488,7 @@ class toolkit_UI:
 
                 api_token_var \
                     = tk.StringVar(pref_form_frame,
-                                   value=self.stAI.get_app_setting('api_token', default_if_none=''))
+                                   value=self.stAI.get_app_setting('api_token', default_if_none=None))
 
                 openai_api_key_var \
                     = tk.StringVar(pref_form_frame,

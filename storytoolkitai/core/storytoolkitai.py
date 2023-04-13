@@ -427,13 +427,16 @@ class StoryToolkitAI:
         :return:
         '''
 
-        if api_token is None:
+        # if the user token is empty, False or '0' ('0' needed for backwards compatibility)
+        if api_token is None or api_token == '' or not api_token or api_token == '0':
+
+            # get the user token from the settings
             self.api_token = self.get_app_setting(setting_name='api_token', default_if_none=None)
         else:
             self.api_token = api_token
 
         # if the user token is not empty
-        if self.api_token and self.api_token != '':
+        if self.api_token and self.api_token != '' and not self.api_token:
             check_path = 'https://api.storytoolkit.ai/check_token?token={}'.format(self.api_token)
 
             # check if the user token is valid on the server
