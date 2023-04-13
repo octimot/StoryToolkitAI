@@ -5,6 +5,7 @@ import platform
 import subprocess
 import webbrowser
 
+from storytoolkitai.core.logger import *
 
 class UImenus:
 
@@ -17,11 +18,66 @@ class UImenus:
 
         self.app_items_obj = toolkit_UI_obj.app_items_obj
 
+        # this is the main window
+        self.root = self.toolkit_UI_obj.root
+
         # this is the main menubar (it's been declared in the main UI class to clear it before init)
-        self.main_menubar = Menu(self.toolkit_UI_obj.root)
+        self.main_menubar = Menu(self.root)
 
         # reset it for now so we don't see weird menus before it is populated
         self.toolkit_UI_obj.root.config(menu=self.main_menubar)
+
+        # keep track of the current window id
+        self.current_window_id = None
+
+        # create a variable to store the keep_on_top state of the current window
+        self.keep_on_top_state = BooleanVar()
+
+        # set the initial state to False
+        self.keep_on_top_state.set(False)
+
+        # keep track if the main window is kept on top
+        self.keep_main_window_on_top_state = BooleanVar()
+
+        # set the initial state to whatever the config says
+        self.keep_main_window_on_top_state.set(self.root.attributes('-topmost'))
+
+    def update_current_window_references(self):
+
+        # for Windows, we use the self.last_focused_window,
+        # considering that the menu bar is part of the main window
+        # and whenever we click on the menu bar, the main window is focused
+        if platform.system() == "Windows":
+            self.current_window_id = self.toolkit_UI_obj.last_focused_window
+
+        # for macOS, we use the self.current_focused_window variable
+        elif platform.system() == 'Darwin':
+            self.current_window_id = self.toolkit_UI_obj.current_focused_window
+
+        # we should also check for Linux at some point...
+        else:
+            self.current_window_id = None
+
+        # stop here if we don't have a window id
+        if self.current_window_id is None:
+            logger.debug('No window id found. Not updating the menu bar.')
+            return
+
+        # if this is the main window
+        if self.current_window_id == 'main':
+
+            # do not show the keep on top menu item
+            self.main_menubar.windowsmenu.entryconfig('Keep window on top', state=DISABLED)
+
+        # if this is any other window
+        else:
+            # show the keep on top menu item
+            self.main_menubar.windowsmenu.entryconfig('Keep window on top', state=NORMAL)
+
+
+        # also update the state of the keep on top menu item
+        self.keep_on_top_state.set(self.toolkit_UI_obj.get_window_on_top_state(self.current_window_id))
+
 
     def load_menubar(self):
 
@@ -82,6 +138,22 @@ class UImenus:
         self.main_menubar.add_cascade(label="Integrations", menu=integrationsmenu)
 
 
+        # ADD WINDOWS MENU
+        self.main_menubar.windowsmenu = windowsmenu = Menu(self.main_menubar, tearoff=0)
+
+        # add a keep main on top menu item
+        windowsmenu.add_checkbutton(label="Keep main window on top",
+                                    variable=self.keep_main_window_on_top_state,
+                                    command=self.keep_main_window_on_top)
+
+        # add a keep on top menu item
+        windowsmenu.add_checkbutton(label="Keep window on top",
+                                    variable=self.keep_on_top_state,
+                                    command=self.keep_current_window_on_top)
+
+        # add cascade
+        self.main_menubar.add_cascade(label="Window", menu=windowsmenu)
+
         # HELP MENU
         helpmenu = Menu(self.main_menubar, tearoff=0)
 
@@ -130,6 +202,27 @@ class UImenus:
         helpmenu.add_command(label="Made by mots", command=self.open_mots)
 
         self.toolkit_UI_obj.root.config(menu=self.main_menubar)
+
+    def keep_current_window_on_top(self):
+
+        if self.current_window_id is None:
+            logger.debug('Unable to determine current window id.')
+            return
+
+        # simply toggle the state of the window using the window_on_top function
+        keep_on_top = self.toolkit_UI_obj.window_on_top(self.current_window_id)
+
+        # and update the checkbutton state
+        self.keep_on_top_state.set(keep_on_top)
+
+    def keep_main_window_on_top(self):
+
+        # toggle the state of the main window using the window_on_top function
+        keep_on_top = self.toolkit_UI_obj.window_on_top('main')
+
+        # and update the checkbutton state
+        self.keep_main_window_on_top_state.set(keep_on_top)
+
 
     def transcribe_audio_files(self):
 
