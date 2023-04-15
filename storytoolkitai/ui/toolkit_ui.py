@@ -136,7 +136,7 @@ class toolkit_UI:
 
             # if no button was passed, try to get it from the window
             if button is None or button is not tk.Button:
-                button = self.toolkit_UI_obj.windows[window_id].nametowidget('footer_frame.link_button')
+                button = self.toolkit_UI_obj.windows[window_id].nametowidget('left_frame.r_buttons_frame.link_button')
 
             link_result = self.toolkit_ops_obj.link_transcription_to_timeline(
                 transcription_file_path=transcription_file_path,
@@ -887,6 +887,32 @@ class toolkit_UI:
             # if no text_element is provided, try to get it from the window
             if text_element is None:
                 text_element = self.toolkit_UI_obj.windows[window_id].nametowidget('text_form_frame.transcript_text')
+
+            # check if the user is trying to add markers
+            # to a timeline that is not connected to the transcription in this window
+            is_linked, transcription_path = self.toolkit_ops_obj.get_transcription_to_timeline_link(
+                    transcription_file_path=self.transcription_file_paths[window_id],
+                    timeline_name=NLE.current_timeline['name'],
+                    project_name=NLE.current_project)
+
+            # if the transcription is not linked to the timeline
+            if not is_linked:
+
+                # warn the user that the transcription is not linked to the timeline
+                user_response = messagebox.askyesnocancel(title='Transcription not linked to timeline',
+                    message='The transcription is not linked to the current timeline.\n\n'
+                                                'Do you want to link it before adding the markers?')
+
+                # if the user wants to link the transcription to the timeline
+                if user_response:
+
+                    # link the transcription to the current timeline
+                    self.link_to_timeline_button(window_id=window_id, link=True)
+
+                # if the user cancels the linking
+                elif user_response is None:
+                    logger.debug('User cancelled selection to marker operation.')
+                    return
 
             # first get the selected (or active) text from the transcript
             # this should return a list of all the text chunks, the full text
