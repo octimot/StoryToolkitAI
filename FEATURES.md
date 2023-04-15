@@ -396,8 +396,6 @@ from your currently opened Resolve timeline.
 
     V               - add active segment to selection
 
-    Shift+V         - deselect all active segments
-
     CMD/CTRL+A      - select all transcript segments (or deselects segments, if a selection exists)
 
     Shift+A         - create selection between the previously active and the currently active segment
@@ -424,7 +422,7 @@ from your currently opened Resolve timeline.
 
     CMD/CTRL+M      - select all segments under markers filtered by color or name from the current Resolve timeline
 
-    q               - close transcript window
+    CMD/CTRL+Shift+W- close window
 
     Shift+L         - link transcription to the current timeline (if available)
     

@@ -15,7 +15,7 @@ from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_N
 from storytoolkitai.core.toolkit_ops import *
 
 import tkinter as tk
-from tkinter import filedialog, simpledialog, messagebox, font
+from tkinter import filedialog, simpledialog, messagebox, font, ttk
 from tkinter import *
 
 from whisper import available_models as whisper_available_models
@@ -304,6 +304,7 @@ class toolkit_UI:
             :return:
             '''
             if text_element is None:
+                logger.debug('No text element passed to tag_results')
                 return False
 
             # remove previous position tags
@@ -372,7 +373,7 @@ class toolkit_UI:
                 return
 
             # for now, simply pass to select text lines if it matches one of these keys
-            if event.keysym in ['Up', 'Down', 'v', 'V', 'A', 'i', 'o', 'O', 'm', 'M', 'C', 'q', 's', 'L',
+            if event.keysym in ['Up', 'Down', 'v', 'V', 'A', 'i', 'o', 'O', 'm', 'M', 'C', 's', 'L',
                                 'g', 'G', 'BackSpace', 't', 'a',
                                 'apostrophe', 'semicolon', 'colon', 'quotedbl']:
                 self.segment_actions(event, **attributes)
@@ -469,12 +470,136 @@ class toolkit_UI:
                 self.auto_add_selection_to_group(window_id)
 
             # Shift+V key events
-            if event.keysym == 'V':
-                # clear selection
-                self.clear_selection(window_id, text_element)
+            #if event.keysym == 'V':
+            #    # clear selection
+            #    self.clear_selection(window_id, text_element)
 
-            # CMD+A key events (select/deselect all)
+            # CMD+A key (select/deselect all)
             if event.keysym == 'a' and special_key == 'cmd':
+                return self.button_select_deselect_all(window_id, text_element)
+
+            # Shift+A key (select between current and last active segment)
+            if event.keysym == 'A':
+                self.button_select_between_segments(window_id, text_element)
+
+            # Shift+C and CMD/CTRL+Shift+C key event (copy segments with timecodes to clipboard)
+            if event.keysym == 'C':
+
+                # copy the text content to clipboard
+                # but if CMD/CTRL is also pressed - then add timecodes to each line
+                # otherwise add timecodes to each new chunk of text
+                self.button_copy_segments_to_clipboard(window_id,
+                                                       with_timecodes=True,
+                                                       per_line=True if special_key == 'cmd' else False
+                                                       )
+
+            # m key event (quick add duration markers)
+            # and Shift+M key event (add duration markers with name input)
+            # CMD/CTRL+M key event (select all segments between markers)
+            if event.keysym == 'm' or event.keysym == 'M':
+
+                # this only works if resolve is connected
+                if self.toolkit_ops_obj.resolve_exists() and 'name' in NLE.current_timeline:
+
+                    # if CMD/CTRL+M was pressed
+                    # select segments based on current timeline markers
+                    # (from Resolve to tool)
+                    if special_key == 'cmd':
+                        self.button_markers_to_segments(window_id=window_id, text_element=text_element)
+
+                    # otherwise (if cmd wasn't pressed)
+                    # add segment based markers
+                    # (from tool to Resolve)
+                    else:
+
+                        # if Shift+M was pressed, prompt the user for the marker name
+                        if event.keysym == 'M':
+                            self.button_segments_to_markers(window_id=window_id, text_element=text_element, prompt=True)
+
+                        else:
+                            # otherwise, just add the marker with the default name
+                            self.button_segments_to_markers(window_id=window_id, text_element=text_element)
+
+
+
+            # Shift+L key event (link current timeline to this transcription)
+            if event.keysym == 'L':
+                # link transcription to file
+                # self.toolkit_ops_obj.link_transcription_to_timeline(self.transcription_file_paths[window_id])
+                self.link_to_timeline_button(window_id=window_id)
+
+            # s key event (sync transcript cursor with playhead)
+            if event.keysym == 's':
+                # self.sync_with_playhead_update(window_id=window_id)
+                self.sync_with_playhead_button(window_id=window_id)
+
+            # CMD+G and CMD+SHIFT+G key events
+            # (group selected - adds new group or updates segments of existing group)
+            if (event.keysym == 'g' or event.keysym == 'G') and special_key == 'cmd':
+
+                # if the user pressed CMD+G, replace the current segments with the selected ones
+                if event.keysym == 'g':
+                    self.button_add_to_group(window_id=window_id, only_add=False)
+
+                elif event.keysym == 'G':
+                    self.button_add_to_group(window_id=window_id, only_add=True)
+
+
+            # SHIFT+G opens group window
+            elif event.keysym == 'G':
+                self.toolkit_UI_obj.open_transcript_groups_window(transcription_window_id=window_id)
+
+            # colon key event (align current segment start to playhead)
+            if event.keysym == 'colon':
+                self.align_line_to_playhead(window_id=window_id, line_index=line, position='start')
+
+            # double quote key event (align current segment end to playhead)
+            if event.keysym == 'quotedbl':
+                self.align_line_to_playhead(window_id=window_id, line_index=line, position='end')
+
+            # 't' key event (re-transcribe selected segments)
+            if event.keysym == 't':
+                self.button_retranscribe(window_id=window_id)
+
+            # 'o' key sends active segment as context to the Assistant window
+            # Shift+O also includes a time column
+            if event.keysym == 'o' or event.keysym == 'O':
+
+                # Shift+O includes a time column
+                if event.keysym == 'O':
+                    self.button_send_to_assistant(window_id=window_id, with_timecodes=True)
+                else:
+                    self.button_send_to_assistant(window_id=window_id, with_timecodes=False)
+
+            # BackSpace key event (delete selected)
+            if event.keysym == 'BackSpace':
+                self.delete_line(window_id=window_id, text_element=text_element,
+                                 line_no=line, status_label=status_label)
+
+
+            # final step, update the window
+            self.toolkit_UI_obj.update_transcription_window(window_id=window_id)
+
+
+        def button_select_deselect_all(self, window_id, text_element=None):
+                '''
+                Selects or deselects all the text in the transcript text element
+                :param window_id:
+                :param text_element:
+                :param status_label:
+                :return:
+                '''
+
+                # if the text element hasn't been sent
+                if text_element is None and window_id in self.toolkit_UI_obj.windows:
+
+                    # try to find it in the transcript text elements
+                    text_element = self.toolkit_UI_obj.windows[window_id]\
+                        .nametowidget('text_form_frame.transcript_text')
+
+                if text_element is None:
+                    logger.error('Could not find transcript text element in window {}'.format(window_id))
+                    return 'break'
 
                 # if this window contains a selection, just clear it
                 # since we're expecting the user to want to deselect first
@@ -503,420 +628,398 @@ class toolkit_UI:
 
                 return 'break'
 
-            # Shift+A key events
-            if event.keysym == 'A':
+        def button_select_between_segments(self, window_id, text_element):
+            '''
+            Selects all segments between the active segment and the last active segment
+            '''
 
-                # first, try to see if there is a text selection (i.e. drag and select type selection)
-                selection = text_element.tag_ranges("sel")
+            # first, try to see if there is a text selection (i.e. drag and select type selection)
+            selection = text_element.tag_ranges("sel")
 
-                # if there is such a selection
-                if len(selection) > 0:
+            # if there is such a selection
+            if len(selection) > 0:
 
-                    # get the first and last segment numbers of the selection
-                    start_segment = int(str(selection[0]).split(".")[0])
-                    max_segment = int(str(selection[1]).split(".")[0])
+                # get the first and last segment numbers of the selection
+                start_segment = int(str(selection[0]).split(".")[0])
+                max_segment = int(str(selection[1]).split(".")[0])
 
-                    # clear the selection
-                    text_element.tag_delete("sel")
+                # clear the selection
+                text_element.tag_delete("sel")
 
-                # if there is no such selection
-                else:
+            # if there is no such selection
+            else:
 
-                    # get the active_segment and the last_active_segment
-                    # to use them as the start and end of the selection
-                    start_segment = self.last_active_segment[window_id]
-                    max_segment = self.active_segment[window_id]
+                # get the active_segment and the last_active_segment
+                # to use them as the start and end of the selection
+                start_segment = self.last_active_segment[window_id]
+                max_segment = self.active_segment[window_id]
 
-                # make sure that we're counting in the right direction
-                if start_segment > max_segment:
-                    start_segment, max_segment = max_segment, start_segment
+            # make sure that we're counting in the right direction
+            if start_segment > max_segment:
+                start_segment, max_segment = max_segment, start_segment
 
-                # clear the existing selection
-                self.clear_selection(window_id, text_element)
+            # clear the existing selection
+            self.clear_selection(window_id, text_element)
 
-                # how many segments are we selecting?
-                num_segments = max_segment - start_segment + 1
+            # how many segments are we selecting?
+            num_segments = max_segment - start_segment + 1
 
-                # then take each segment, from the first to the last
-                n = start_segment
-                while n <= max_segment:
+            # then take each segment, from the first to the last
+            n = start_segment
+            while n <= max_segment:
+                # and add it to the selection
+                self.segment_to_selection(window_id, text_element, n)
+                n = n + 1
 
-                    # and add it to the selection
-                    self.segment_to_selection(window_id, text_element, n)
-                    n = n + 1
+            # and also call auto add to group function
+            self.auto_add_selection_to_group(window_id,
+                                             confirm=True if num_segments > 10 else False)
 
-                # and also call auto add to group function
-                self.auto_add_selection_to_group(window_id,
-                                                 confirm=True if num_segments > 10 else False)
+        def button_send_to_assistant(self, window_id, with_timecodes=False):
+            '''
+            Sends the selected segments to the Assistant window
+            '''
 
+            if with_timecodes:
+                text, full_text, _, _ \
+                    = self.get_segments_or_selection(window_id, split_by='line', add_time_column=True)
 
-            # Shift+C key event (copy segments with timecodes to clipboard)
-            if event.keysym == 'C':
+            else:
+                text, full_text, _, _ \
+                    = self.get_segments_or_selection(window_id, split_by='line',
+                                                     add_time_column=False, timecodes=False)
 
-                # is control also pressed?
-                if special_key == 'cmd':
-                    # copy segment with timecodes
-                    # self.copy_segment_timecodes(window_id, text_element, line)
+            self.toolkit_UI_obj.open_assistant_window(assistant_window_id='assistant',
+                                                      transcript_text=full_text.strip())
+
+        def button_add_to_group(self, window_id, only_add=True):
+            '''
+            Adds the selected segments to a group
+            '''
+
+            # if a group is selected, just update it
+            if window_id in self.selected_groups and len(self.selected_groups[window_id]) == 1:
+
+                # use the selected group id
+                group_id = self.selected_groups[window_id][0]
+
+                # completely replace all current segments with the selected ones
+                if only_add == False:
+
+                    # update group
+                    self.toolkit_UI_obj.on_group_update_press(t_window_id=window_id,
+                                                              t_group_window_id=window_id + '_transcript_groups',
+                                                              group_id=group_id)
+
+                    logger.debug('Segments added to group {}.'.format(group_id))
+
+                # if the user pressed CMD+SHIFT+G,
+                # add selected segments to the group, without removing any existing one
+                elif only_add == True:
+
+                    # add selected segments to the group, but keep the name and the notes
+                    self.group_selected(window_id=window_id, group_name=group_id, add=True,
+                                        keep_name=True, keep_notes=True)
+
+                    logger.debug('Only new segments added to group {}.'.format(group_id))
+
+                    # update group
+                    # self.toolkit_UI_obj.on_group_update_press(t_window_id=window_id,
+                    #                                           t_group_window_id=window_id+'_transcript_groups',
+                    #                                           group_id=group_id)
+
+            # otherwise create a new group
+            else:
+                if self.group_selected(window_id=window_id):
+                    logger.info('Group added')
+
+        def button_copy_segments_to_clipboard(self, window_id, with_timecodes=False, per_line=False):
+            '''
+            Copies the selected segments to clipboard
+            :param window_id:
+            :param with_timecodes: Adds timecodes
+            :param per_line: If true, the timecodes are added to each line, otherwise to each block of text
+            '''
+
+            if with_timecodes:
+
+                # if per_line is true, then add timecodes to each line
+                if per_line:
                     text, _, _, _ \
                         = self.get_segments_or_selection(window_id, split_by='line',
                                                          add_to_clipboard=True, add_time_column=True)
 
+                # otherwise add timecodes to each block of text
                 else:
-                    # copy the text content to clipboard
                     self.get_segments_or_selection(window_id, add_to_clipboard=True, split_by='index')
 
-            # m key event (quick add duration markers)
-            # and Shift+M key event (add duration markers with name input)
-            # CMD/CTRL+M key event (select all segments between markers)
-            if event.keysym == 'm' or event.keysym == 'M':
+            else:
+                logger.debug('Not possible to copy segments to clipboard without timecodes using this function.')
+                return
 
-                # this only works if resolve is connected
-                if self.toolkit_ops_obj.resolve_exists() and 'name' in NLE.current_timeline:
+        def button_retranscribe(self, window_id):
+            '''
+            Retranscribes the selected segments
+            '''
+            # first get the selected (or active) text from the transcript
+            text, full_text, start_sec, end_sec = \
+                self.get_segments_or_selection(window_id, add_to_clipboard=False,
+                                               split_by='index', timecodes=True, allow_active_segment=False)
 
-                    # select segments based on current timeline markers
-                    # (from Resolve to tool)
-                    if special_key == 'cmd':
+            # now turn the text blocks into time intervals
+            time_intervals = ''
+            retranscribe = False
+            ask_message = "Do you want to re-transcribe the entire transcript?"
+            if text is not None and text and len(text) > 0:
 
-                        # first, see if there are any markers on the timeline
-                        if 'markers' not in NLE.current_timeline:
-                            return
+                # get all the time intervals based on the text blocks
+                for text_block in text:
+                    time_intervals = time_intervals + "{}-{}\n".format(text_block['start'], text_block['end'])
 
-                        # get the marker colors from all the markers in the current_timeline['markers'] dict
-                        marker_colors = [' '] + sorted(list(set([NLE.current_timeline['markers'][marker]['color']
-                                                                 for marker in NLE.current_timeline['markers']])))
+                ask_message = "Do you want to re-transcribe the selected segments?"
 
-                        # create a list of widgets for the input dialogue
-                        input_widgets = [
-                            {'name': 'starts_with', 'label': 'Starts With:', 'type': 'entry', 'default_value': ''},
-                            {'name': 'color', 'label': 'Color:', 'type': 'option_menu', 'default_value': 'Blue',
-                             'options': marker_colors}
-                        ]
+            # ask the user if they want to re-transcribe
+            retranscribe = messagebox.askyesno(title='Re-transcribe',
+                                               message=ask_message)
 
-                        # then we call the ask_dialogue function
-                        user_input = self.toolkit_UI_obj.AskDialog(title='Markers to Selection',
-                                                                   input_widgets=input_widgets,
-                                                                   parent=self.toolkit_UI_obj.windows[window_id]
-                                                                   ).value()
+            # if the user cancels re-transcribe or no segments were selected, cancel
+            if not retranscribe:
+                return False
 
-                        # if the user didn't cancel add the group
-                        if user_input != None:
+            # and start the transcription config process
+            self.toolkit_ops_obj \
+                .prepare_transcription_file(toolkit_UI_obj=self.toolkit_UI_obj,
+                                            task='transcribe',
+                                            retranscribe=self.transcription_file_paths[window_id],
+                                            time_intervals=time_intervals)
 
-                            # get the user input
-                            starts_with = user_input['starts_with']
-                            color = user_input['color']
+            # close the transcription window
+            self.toolkit_UI_obj.destroy_transcription_window(window_id)
 
-                            selected_markers = {}
+            # remove the selection references too
+            # self.clear_selection(window_id=window_id)
 
-                            # go through the markers on the timeline
-                            for marker in NLE.current_timeline['markers']:
+        def button_markers_to_segments(self, window_id, text_element=None):
+            '''
+            This function selects all the segments between certain markers
+            '''
 
-                                # if the marker starts with the text the user entered (if not empty)
-                                # and the marker color matches the color the user selected (if not empty)
-                                if (starts_with == ''
-                                    or NLE.current_timeline['markers'][marker]['name'].startswith(starts_with)) \
-                                        and (color == ' ' or NLE.current_timeline['markers'][marker]['color'] == color):
-                                    # add the marker to the marker_groups dictionary
-                                    selected_markers[marker] = NLE.current_timeline['markers'][marker]
+            # first, see if there are any markers on the timeline
+            if not NLE.is_connected() or 'markers' not in NLE.current_timeline:
+                return
 
-                            # if there are markers in the selection
-                            if len(selected_markers) > 0:
+            # if no text_element is provided, try to get it from the window
+            if text_element is None:
+                text_element = self.toolkit_UI_obj.windows[window_id].nametowidget('text_form_frame.transcript_text')
 
-                                time_intervals = []
+            # get the marker colors from all the markers in the current_timeline['markers'] dict
+            marker_colors = [' '] + sorted(list(set([NLE.current_timeline['markers'][marker]['color']
+                                                     for marker in NLE.current_timeline['markers']])))
 
-                                # add them to the transcript group, based on their start time and duration
-                                # the start time (marker) and duration are in frames
-                                for marker in selected_markers:
-                                    # convert the frames to seconds
-                                    start_time = int(marker) / NLE.current_timeline_fps
-                                    duration = int(
-                                        NLE.current_timeline['markers'][marker]['duration']) / NLE.current_timeline_fps
-                                    end_time = start_time + duration
+            # create a list of widgets for the input dialogue
+            input_widgets = [
+                {'name': 'starts_with', 'label': 'Starts With:', 'type': 'entry', 'default_value': ''},
+                {'name': 'color', 'label': 'Color:', 'type': 'option_menu', 'default_value': 'Blue',
+                 'options': marker_colors}
+            ]
 
-                                    # add the time interval to the list of time intervals
-                                    time_intervals.append({'start': start_time, 'end': end_time})
+            # then we call the ask_dialogue function
+            user_input = self.toolkit_UI_obj.AskDialog(title='Markers to Selection',
+                                                       input_widgets=input_widgets,
+                                                       parent=self.toolkit_UI_obj.windows[window_id]
+                                                       ).value()
 
-                                # the transcript segments:
+            # if the user didn't cancel add the group
+            if user_input != None:
 
-                                # convert the time intervals to segments
-                                segment_list = \
-                                    self.toolkit_ops_obj \
-                                        .time_intervals_to_transcript_segments(time_intervals=time_intervals,
-                                                                               segments=self.transcript_segments[
-                                                                                   window_id],
-                                                                               )
-                                # now select the segments
-                                self.segment_to_selection(window_id, text_element, segment_list)
+                # get the user input
+                starts_with = user_input['starts_with']
+                color = user_input['color']
 
-                    # otherwise (if cmd wasn't pressed)
-                    # add segment based markers
-                    # (from tool to Resolve)
-                    else:
+                selected_markers = {}
 
-                        # first get the selected (or active) text from the transcript
-                        # this should return a list of all the text chunks, the full text
-                        #   and the start and end times of the entire text
-                        text, full_text, start_sec, end_sec = \
-                            self.get_segments_or_selection(window_id, add_to_clipboard=False,
-                                                           split_by='index', timecodes=True)
+                # go through the markers on the timeline
+                for marker in NLE.current_timeline['markers']:
 
-                        # now, take care of the marker name
-                        marker_name = False
-                        marker_color = self.stAI.get_app_setting('default_marker_color', default_if_none='Blue')
+                    # if the marker starts with the text the user entered (if not empty)
+                    # and the marker color matches the color the user selected (if not empty)
+                    if (starts_with == ''
+                        or NLE.current_timeline['markers'][marker]['name'].startswith(starts_with)) \
+                            and (color == ' ' or NLE.current_timeline['markers'][marker]['color'] == color):
+                        # add the marker to the marker_groups dictionary
+                        selected_markers[marker] = NLE.current_timeline['markers'][marker]
 
-                        # if Shift+M was pressed, prompt the user for the marker name
-                        if event.keysym == 'M':
+                # if there are markers in the selection
+                if len(selected_markers) > 0:
 
-                            # create a list of widgets for the input dialogue
-                            input_widgets = [
-                                {'name': 'name', 'label': 'Name:', 'type': 'entry', 'default_value': ''},
-                                {'name': 'color', 'label': 'Color:', 'type': 'option_menu',
-                                 'default_value': self.stAI.get_app_setting('default_marker_color',
-                                                                            default_if_none='Blue'),
-                                 'options': self.toolkit_UI_obj.resolve_marker_colors.keys()}
-                            ]
+                    time_intervals = []
 
-                            # then we call the ask_dialogue function
-                            user_input = self.toolkit_UI_obj.AskDialog(title='Add Markers from Selection',
-                                                                       input_widgets=input_widgets,
-                                                                       parent=self.toolkit_UI_obj.windows[window_id]
-                                                                       ).value()
+                    # add them to the transcript group, based on their start time and duration
+                    # the start time (marker) and duration are in frames
+                    for marker in selected_markers:
+                        # convert the frames to seconds
+                        start_time = int(marker) / NLE.current_timeline_fps
+                        duration = int(
+                            NLE.current_timeline['markers'][marker]['duration']) / NLE.current_timeline_fps
+                        end_time = start_time + duration
 
-                            # if the user didn't cancel add the group
-                            if user_input == None:
-                                return False
+                        # add the time interval to the list of time intervals
+                        time_intervals.append({'start': start_time, 'end': end_time})
 
-                            marker_name = user_input['name']
-                            marker_color = user_input['color']
+                    # the transcript segments:
 
-                            # if the user pressed cancel, return
-                            if not marker_name or marker_name == '':
-                                return False
-
-                        # if we still don't have a marker name
-                        if not marker_name or marker_name == '':
-                            # use a generic name which the user will most likely change afterwards
-                            marker_name = 'Transcript Marker'
-
-                        # calculate the start timecode of the timeline (simply use second 0 for the conversion)
-                        # we will use this to calculate the text_chunk durations
-                        timeline_start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(0)
-
-                        # now take all the text chunks
-                        for text_chunk in text:
-
-                            # calculate the end timecodes for each text chunk
-                            end_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(text_chunk['end'])
-
-                            # get the start_tc from the text_chunk but place it back into a Timecode object
-                            # using the timeline framerate
-                            start_tc = Timecode(timeline_start_tc.framerate, text_chunk['start_tc'])
-
-                            # and subtract the end timecode from the start_tc of the text_chunk
-                            # to get the marker duration (still timecode object for now)
-                            # the start_tc of the text_chunk should be already in the text list
-                            marker_duration_tc = end_tc - start_tc
-
-                            # in Resolve, marker indexes are the number of frames from the beginning of the timeline
-                            # so in order to get the marker index, we need to subtract the timeline_start_tc from start_tc
-
-                            # but only if the start_tc is larger than the timeline_start_tc so we don't get a
-                            # Timecode class error
-                            if start_tc > timeline_start_tc:
-                                start_tc_zero = start_tc - timeline_start_tc
-                                marker_index = start_tc_zero.frames
-
-                            # if not consider that we are at frame 1
-                            else:
-                                marker_index = 1
-
-                            # check if there's another marker at the exact same index
-                            index_blocked = True
-                            while index_blocked:
-
-                                if 'markers' in NLE.current_timeline and marker_index in NLE.current_timeline['markers']:
-
-                                    # give up if the duration is under a frame:
-                                    if marker_duration_tc.frames <= 1:
-                                        self.notify_via_messagebox(title='Cannot add marker',
-                                                                   message='Not enough space to add marker on timeline.',
-                                                                   type='warning'
+                    # convert the time intervals to segments
+                    segment_list = \
+                        self.toolkit_ops_obj \
+                            .time_intervals_to_transcript_segments(time_intervals=time_intervals,
+                                                                   segments=self.transcript_segments[
+                                                                       window_id],
                                                                    )
-                                        return False
+                    # now select the segments
+                    self.segment_to_selection(window_id, text_element, segment_list)
 
-                                    # notify the user that the index is blocked by another marker
-                                    add_frame = messagebox.askyesno(title='Cannot add marker',
-                                                                    message="Another marker exists at {}.\n\n"
-                                                                            "Do you want to place the new marker one frame later?"
-                                                                    .format(start_tc))
+        def button_segments_to_markers(self, window_id, text_element=None, prompt=False):
 
-                                    # if the user wants to move this marker one frame to the right, be it
-                                    if add_frame:
-                                        start_tc.frames = start_tc.frames + 1
-                                        marker_index = marker_index + 1
+            # first, see if there are any markers on the timeline
+            if not NLE.is_connected() or NLE.current_timeline is None:
+                return
 
-                                        # but this means that the duration should be one frame shorter
-                                        marker_duration_tc.frames = marker_duration_tc.frames - 1
-                                    else:
-                                        return False
+            # if no text_element is provided, try to get it from the window
+            if text_element is None:
+                text_element = self.toolkit_UI_obj.windows[window_id].nametowidget('text_form_frame.transcript_text')
 
-                                else:
-                                    index_blocked = False
+            # first get the selected (or active) text from the transcript
+            # this should return a list of all the text chunks, the full text
+            #   and the start and end times of the entire text
+            text, full_text, start_sec, end_sec = \
+                self.get_segments_or_selection(window_id, add_to_clipboard=False,
+                                               split_by='index', timecodes=True)
 
-                            marker_data = {}
-                            marker_data[marker_index] = {}
+            # now, take care of the marker name
+            marker_name = False
+            marker_color = self.stAI.get_app_setting('default_marker_color', default_if_none='Blue')
 
-                            # the name of the marker
-                            marker_data[marker_index]['name'] = marker_name
+            # ask the user for the marker name if prompt is true
+            if prompt:
 
-                            # choose the marker color from Resolve
-                            marker_data[marker_index]['color'] = marker_color
+                # create a list of widgets for the input dialogue
+                input_widgets = [
+                    {'name': 'name', 'label': 'Name:', 'type': 'entry', 'default_value': ''},
+                    {'name': 'color', 'label': 'Color:', 'type': 'option_menu',
+                     'default_value': self.stAI.get_app_setting('default_marker_color',
+                                                                default_if_none='Blue'),
+                     'options': self.toolkit_UI_obj.resolve_marker_colors.keys()}
+                ]
 
-                            # add the text to the marker data
-                            marker_data[marker_index]['note'] = text_chunk['text']
+                # then we call the ask_dialogue function
+                user_input = self.toolkit_UI_obj.AskDialog(title='Add Markers from Selection',
+                                                           input_widgets=input_widgets,
+                                                           parent=self.toolkit_UI_obj.windows[window_id]
+                                                           ).value()
 
-                            # the marker duration needs to be in frames
-                            marker_data[marker_index]['duration'] = marker_duration_tc.frames
-
-                            # no need for custom data
-                            marker_data[marker_index]['customData'] = ''
-
-                            # pass the marker add request to resolve
-                            self.toolkit_ops_obj.resolve_api.add_timeline_markers(NLE.current_timeline['name'],
-                                                                                  marker_data,
-                                                                                  False)
-
-            # q key event (close transcription window)
-            if event.keysym == 'q':
-                # close transcription window
-                self.toolkit_UI_obj.destroy_transcription_window(window_id)
-
-            # Shift+L key event (link current timeline to this transcription)
-            if event.keysym == 'L':
-                # link transcription to file
-                # self.toolkit_ops_obj.link_transcription_to_timeline(self.transcription_file_paths[window_id])
-                self.link_to_timeline_button(window_id=window_id)
-
-            # s key event (sync transcript cursor with playhead)
-            if event.keysym == 's':
-                # self.sync_with_playhead_update(window_id=window_id)
-                self.sync_with_playhead_button(window_id=window_id)
-
-            # CMD+G and CMD+SHIFT+G key events
-            # (group selected - adds new group or updates segments of existing group)
-            if (event.keysym == 'g' or event.keysym == 'G') and special_key == 'cmd':
-
-                # if a group is selected, just update it
-                if window_id in self.selected_groups and len(self.selected_groups[window_id]) == 1:
-
-                    # use the selected group id
-                    group_id = self.selected_groups[window_id][0]
-
-                    # if the user pressed CMD+G, replace the current segments with the selected ones
-                    if event.keysym == 'g':
-
-                        # update group
-                        self.toolkit_UI_obj.on_group_update_press(t_window_id=window_id,
-                                                                  t_group_window_id=window_id + '_transcript_groups',
-                                                                  group_id=group_id)
-
-                        logger.debug('Segments added to group {}.'.format(group_id))
-
-                    # if the user pressed CMD+SHIFT+G,
-                    # add selected segments to the group, without removing any existing one
-                    elif event.keysym == 'G':
-
-                        # add selected segments to the group, but keep the name and the notes
-                        self.group_selected(window_id=window_id, group_name=group_id, add=True,
-                                            keep_name=True, keep_notes=True)
-
-                        logger.debug('Only new segments added to group {}.'.format(group_id))
-
-                        # update group
-                        # self.toolkit_UI_obj.on_group_update_press(t_window_id=window_id,
-                        #                                           t_group_window_id=window_id+'_transcript_groups',
-                        #                                           group_id=group_id)
-
-                # otherwise create a new group
-                else:
-                    if self.group_selected(window_id=window_id):
-                        logger.info('Group added')
-
-
-            # SHIFT+G opens group window
-            elif event.keysym == 'G':
-                self.toolkit_UI_obj.open_transcript_groups_window(transcription_window_id=window_id)
-
-            # colon key event (align current line start to playhead)
-            if event.keysym == 'colon':
-                self.align_line_to_playhead(window_id=window_id, line_index=line, position='start')
-
-            # double quote key event (align current line end to playhead)
-            if event.keysym == 'quotedbl':
-                self.align_line_to_playhead(window_id=window_id, line_index=line, position='end')
-
-            # 't' key event (re-transcribe selected segments)
-            if event.keysym == 't':
-
-                # first get the selected (or active) text from the transcript
-                text, full_text, start_sec, end_sec = \
-                    self.get_segments_or_selection(window_id, add_to_clipboard=False,
-                                                   split_by='index', timecodes=True, allow_active_segment=False)
-
-                # now turn the text blocks into time intervals
-                time_intervals = ''
-                retranscribe = False
-                ask_message = "Do you want to re-transcribe the entire transcript?"
-                if text is not None and text and len(text) > 0:
-
-                    # get all the time intervals based on the text blocks
-                    for text_block in text:
-                        time_intervals = time_intervals + "{}-{}\n".format(text_block['start'], text_block['end'])
-
-                    ask_message = "Do you want to re-transcribe the selected segments?"
-
-                # ask the user if they want to re-transcribe
-                retranscribe = messagebox.askyesno(title='Re-transcribe',
-                                                   message=ask_message)
-
-                # if the user cancels re-transcribe or no segments were selected, cancel
-                if not retranscribe:
+                # if the user didn't cancel add the group
+                if user_input == None:
                     return False
 
-                # and start the transcription config process
-                self.toolkit_ops_obj \
-                    .prepare_transcription_file(toolkit_UI_obj=self.toolkit_UI_obj,
-                                                task='transcribe',
-                                                retranscribe=self.transcription_file_paths[window_id],
-                                                time_intervals=time_intervals)
+                marker_name = user_input['name']
+                marker_color = user_input['color']
 
-                # close the transcription window
-                # @todo (temporary solution until we work on a better way to update transcription windows
-                self.toolkit_UI_obj.destroy_transcription_window(window_id)
+                # if the user pressed cancel, return
+                if not marker_name or marker_name == '':
+                    return False
 
-                # remove the selection references too
-                # self.clear_selection(window_id=window_id)
+            # if we still don't have a marker name
+            if not marker_name or marker_name == '':
+                # use a generic name which the user will most likely change afterwards
+                marker_name = 'Transcript Marker'
 
-            # 'o' key sends active segment as context to the Assistant window
-            # Shift+O also includes a time column
-            if event.keysym == 'o' or event.keysym == 'O':
+            # calculate the start timecode of the timeline (simply use second 0 for the conversion)
+            # we will use this to calculate the text_chunk durations
+            timeline_start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(0)
 
-                # Shift+O includes a time column
-                if event.keysym == 'O':
-                    text, full_text, _, _ \
-                        = self.get_segments_or_selection(window_id, split_by='line', add_time_column=True)
+            # now take all the text chunks
+            for text_chunk in text:
 
+                # calculate the end timecodes for each text chunk
+                end_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(text_chunk['end'])
+
+                # get the start_tc from the text_chunk but place it back into a Timecode object
+                # using the timeline framerate
+                start_tc = Timecode(timeline_start_tc.framerate, text_chunk['start_tc'])
+
+                # and subtract the end timecode from the start_tc of the text_chunk
+                # to get the marker duration (still timecode object for now)
+                # the start_tc of the text_chunk should be already in the text list
+                marker_duration_tc = end_tc - start_tc
+
+                # in Resolve, marker indexes are the number of frames from the beginning of the timeline
+                # so in order to get the marker index, we need to subtract the timeline_start_tc from start_tc
+
+                # but only if the start_tc is larger than the timeline_start_tc so we don't get a
+                # Timecode class error
+                if start_tc > timeline_start_tc:
+                    start_tc_zero = start_tc - timeline_start_tc
+                    marker_index = start_tc_zero.frames
+
+                # if not consider that we are at frame 1
                 else:
-                    text, full_text, _, _ \
-                        = self.get_segments_or_selection(window_id, split_by='line',
-                                                         add_time_column=False, timecodes=False)
+                    marker_index = 1
 
-                self.toolkit_UI_obj.open_assistant_window(assistant_window_id='assistant',
-                                                          transcript_text=full_text.strip())
+                # check if there's another marker at the exact same index
+                index_blocked = True
+                while index_blocked:
 
-            # BackSpace key event (delete selected)
-            if event.keysym == 'BackSpace':
-                self.delete_line(window_id=window_id, text_element=text_element,
-                                 line_no=line, status_label=status_label)
+                    if 'markers' in NLE.current_timeline and marker_index in NLE.current_timeline['markers']:
+
+                        # give up if the duration is under a frame:
+                        if marker_duration_tc.frames <= 1:
+                            self.notify_via_messagebox(title='Cannot add marker',
+                                                       message='Not enough space to add marker on timeline.',
+                                                       type='warning'
+                                                       )
+                            return False
+
+                        # notify the user that the index is blocked by another marker
+                        add_frame = messagebox.askyesno(title='Cannot add marker',
+                                                        message="Another marker exists at {}.\n\n"
+                                                                "Do you want to place the new marker one frame later?"
+                                                        .format(start_tc))
+
+                        # if the user wants to move this marker one frame to the right, be it
+                        if add_frame:
+                            start_tc.frames = start_tc.frames + 1
+                            marker_index = marker_index + 1
+
+                            # but this means that the duration should be one frame shorter
+                            marker_duration_tc.frames = marker_duration_tc.frames - 1
+                        else:
+                            return False
+
+                    else:
+                        index_blocked = False
+
+                marker_data = {}
+                marker_data[marker_index] = {}
+
+                # the name of the marker
+                marker_data[marker_index]['name'] = marker_name
+
+                # choose the marker color from Resolve
+                marker_data[marker_index]['color'] = marker_color
+
+                # add the text to the marker data
+                marker_data[marker_index]['note'] = text_chunk['text']
+
+                # the marker duration needs to be in frames
+                marker_data[marker_index]['duration'] = marker_duration_tc.frames
+
+                # no need for custom data
+                marker_data[marker_index]['customData'] = ''
+
+                # pass the marker add request to resolve
+                self.toolkit_ops_obj.resolve_api.add_timeline_markers(NLE.current_timeline['name'],
+                                                                      marker_data,
+                                                                      False)
 
         def delete_line(self, window_id, text_element, line_no, status_label):
             '''
@@ -2455,6 +2558,7 @@ class toolkit_UI:
             if pref_window := self.toolkit_UI_obj.create_or_open_window(parent_element=self.root,
                                                                         window_id='preferences',
                                                                         title='Preferences', resizable=True,
+                                                                        type='preferences',
                                                                         return_window=True):
 
                 form_grid_and_paddings = {**self.toolkit_UI_obj.input_grid_settings,
@@ -2827,7 +2931,7 @@ class toolkit_UI:
             if self.stAI.save_config():
 
                 # close the window
-                self.toolkit_UI_obj.destroy_window_(self.toolkit_UI_obj.windows, 'preferences')
+                self.toolkit_UI_obj.destroy_window_(windows_dict=self.toolkit_UI_obj.windows, window_id='preferences')
 
                 # let the user know it worked
                 self.toolkit_UI_obj.notify_via_messagebox(type='info', title='Preferences Saved',
@@ -2968,6 +3072,9 @@ class toolkit_UI:
         # keep all the window references here to find them easy by window_id
         self.windows = {}
 
+        # keep track of which window is what type by window_id
+        self.window_types = {}
+
         # use this to keep the text_windows
         # this doesn't apply only to windows opened with the open_text_window method, but can be used for any window
         # that has a text widget which needs to be accessed externally
@@ -3010,6 +3117,7 @@ class toolkit_UI:
 
         # set some UI styling here
         self.paddings = {'padx': 10, 'pady': 10}
+        self.left_frame_button_paddings = {'padx': 5, 'pady': 5}
         self.form_paddings = {'padx': 10, 'pady': 5}
         self.button_size = {'width': 150, 'height': 50}
         self.list_paddings = {'padx': 3, 'pady': 3}
@@ -3397,6 +3505,7 @@ class toolkit_UI:
 
     def create_or_open_window(self, parent_element: tk.Toplevel or tk = None, window_id: str = None,
                               title: str = None, resizable: bool = False,
+                              type: str = None,
                               close_action=None,
                               open_multiple: bool = False, return_window: bool = False) \
             -> tk.Toplevel or str or bool:
@@ -3441,7 +3550,12 @@ class toolkit_UI:
             if parent_element is None:
                 parent_element = self.root
 
+            # add the window to the toolkit UI windows dictionary
             self.windows[window_id] = Toplevel(parent_element)
+
+            # keep track of the window type
+            if type is not None:
+                self.window_types[window_id] = type
 
             # bring the transcription window to top
             # self.windows[window_id].attributes('-topmost', 'true')
@@ -3455,7 +3569,13 @@ class toolkit_UI:
 
             # use the default destroy_window function in case something else wasn't passed
             if close_action is None:
-                close_action = lambda: self.destroy_window_(self.windows, window_id)
+                close_action = lambda: self.destroy_window_(window_id=window_id, windows_dict=self.windows)
+
+            # then add the close action to the window, so that we can call it from anywhere else
+            self.windows[window_id].close_action = close_action
+
+            # also bind the close action to cmd+shift+w
+            self.windows[window_id].bind("<"+self.ctrl_cmd_bind+"-Shift-W>", lambda event: close_action())
 
             # what happens when the user closes this window
             self.windows[window_id].protocol("WM_DELETE_WINDOW", close_action)
@@ -3469,6 +3589,19 @@ class toolkit_UI:
             else:
                 return window_id
 
+    def get_window_type(self, window_id: str) -> str:
+        '''
+        This function returns the type of a window based on the window_id
+        :param window_id:
+        :return:
+        '''
+
+        if window_id in self.window_types:
+            return self.window_types[window_id]
+        else:
+            logger.debug('Window type not found for window_id: ' + window_id)
+            return None
+
     def _focused_window(self, window_id):
         '''
         This function is called when a window is focused
@@ -3480,6 +3613,9 @@ class toolkit_UI:
         # if the previous focus trigger was on the same window, ignore
         if self.current_focused_window == window_id:
             return
+
+        # change the last focused window variable
+        self.last_focused_window = self.current_focused_window
 
         # change the focused window variable
         self.current_focused_window = window_id
@@ -3986,7 +4122,7 @@ class toolkit_UI:
     def open_text_window(self, window_id=None, title: str = 'Console', initial_text: str = None,
                          can_find: bool = False, user_prompt: bool = False, prompt_prefix: str = None,
                          prompt_callback: callable = None, prompt_callback_kwargs: dict = None,
-                         action_buttons: list = None, **kwargs):
+                         action_buttons: list = None, type: str = None, **kwargs):
         '''
         This window is to display any kind of text in a scrollable window.
         But is also capable of receiving commands from the user (optional)
@@ -4019,6 +4155,7 @@ class toolkit_UI:
 
         # open the text window
         if self.create_or_open_window(parent_element=self.root, window_id=window_id, title=title, resizable=True,
+                                      type=type if type else 'text',
                                       close_action=close_action,
                                       open_multiple=kwargs.get('open_multiple', True)
                                       ):
@@ -4301,7 +4438,7 @@ class toolkit_UI:
             window_id = 'find_' + parent_window_id.replace(' ', '_').replace('.', '')
 
         # open the find and replace window
-        if self.create_or_open_window(parent_element=self.root, window_id=window_id, title=title,
+        if self.create_or_open_window(parent_element=self.root, window_id=window_id, title=title, type='find',
                                       close_action=lambda window_id=window_id:
                                       self.destroy_find_replace_window(window_id, parent_window_id=parent_window_id)):
 
@@ -4889,6 +5026,7 @@ class toolkit_UI:
 
         # create a window for the transcription settings if one doesn't already exist
         if self.create_or_open_window(parent_element=self.root, window_id=ts_window_id, title=title,
+                                      type='transcription_settings',
                                       resizable=True, close_action=close_action):
 
             self.toolkit_ops_obj.update_transcription_log(unique_id=unique_id, **{'status': 'waiting user'})
@@ -5308,7 +5446,7 @@ class toolkit_UI:
         self.toolkit_ops_obj.add_to_transcription_queue(**transcription_config)
 
         # destroy transcription config window
-        self.destroy_window_(self.windows, window_id=transcription_settings_window_id)
+        self.destroy_window_(windows_dict=self.windows, window_id=transcription_settings_window_id)
 
     def destroy_transcription_settings_window(self, window_id, unique_id, parent_element=None):
 
@@ -5322,7 +5460,7 @@ class toolkit_UI:
             self.toolkit_ops_obj.update_transcription_log(unique_id=unique_id, status='canceled')
 
             # call the default destroy window function
-            self.destroy_window_(parent_element=self.windows, window_id=window_id)
+            self.destroy_window_(windows_dict=self.windows, window_id=window_id)
 
         return False
 
@@ -5342,7 +5480,7 @@ class toolkit_UI:
         # destroy the associated search window (if it exists)
         # - in the future, if were to have multiple search windows, we will need to do it differently
         if window_id + '_search' in self.windows:
-            self.destroy_window_(self.windows, window_id=window_id + '_search')
+            self.destroy_window_(windows_dict=self.windows, window_id=window_id + '_search')
 
         # also destroy the associated groups window (if it exists)
         # - in the future, if were to have multiple search windows, we will need to do it differently
@@ -5395,7 +5533,7 @@ class toolkit_UI:
             del self.t_edit_obj.sync_with_playhead[window_id]
 
         # call the default destroy window function
-        self.destroy_window_(parent_element=self.windows, window_id=window_id)
+        self.destroy_window_(windows_dict=self.windows, window_id=window_id)
 
     def destroy_text_window(self, window_id):
         '''
@@ -5416,7 +5554,7 @@ class toolkit_UI:
             del self.text_windows[window_id]
 
         # call the default destroy window function
-        self.destroy_window_(parent_element=self.windows, window_id=window_id)
+        self.destroy_window_(windows_dict=self.windows, window_id=window_id)
 
     def destroy_find_replace_window(self, window_id, parent_window_id=None):
         '''
@@ -5445,22 +5583,31 @@ class toolkit_UI:
             del self.find_windows[window_id]
 
         # call the default destroy window function
-        self.destroy_window_(parent_element=self.windows, window_id=window_id)
+        self.destroy_window_(windows_dict=self.windows, window_id=window_id)
 
-    def destroy_window_(self, parent_element, window_id):
+    def destroy_window_(self, window_id, windows_dict=None):
         '''
         This makes sure that the window reference is deleted when a user closes a window
-        :param parent_element:
+        :param windows_dict: The dictionary that holds the window references
         :param window_id:
         :return:
         '''
+
+        # if no parent element is specified, use the windows dict
+        if windows_dict is None:
+            windows_dict = self.windows
+
+        if window_id not in windows_dict:
+            logger.debug('Unable to close window: ' + window_id + ' because it does not exist in the windows dict.')
+            return None
+
         # first destroy the window
-        parent_element[window_id].destroy()
+        windows_dict[window_id].destroy()
 
         logger.debug('Closing window: ' + window_id)
 
         # then remove its reference
-        del parent_element[window_id]
+        del windows_dict[window_id]
 
     def open_transcript(self, **options):
         '''
@@ -5601,9 +5748,10 @@ class toolkit_UI:
 
         # create a window for the transcript if one doesn't already exist
         if self.create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title, resizable=True,
-                                      close_action=lambda t_window_id=t_window_id: \
+                                        type='transcription',
+                                        close_action=lambda t_window_id=t_window_id: \
                                               self.destroy_transcription_window(t_window_id)
-                                      ):
+                                        ):
 
             # add the path to the transcription_file_paths dict in case we need it later
             self.t_edit_obj.transcription_file_paths[t_window_id] = transcription_file_path
@@ -5635,8 +5783,7 @@ class toolkit_UI:
             # THE THREE WINDOW COLUMN FRAMES
             current_tk_window = self.windows[t_window_id]
 
-            # Create frames
-            # start with the left frame
+            # create the left frame
             left_frame = Frame(current_tk_window, name='left_frame')
             left_frame.grid(row=0, column=0, sticky="ns")
 
@@ -5644,8 +5791,8 @@ class toolkit_UI:
             text_form_frame = tk.Frame(self.windows[t_window_id], name='text_form_frame')
             text_form_frame.grid(row=0, column=1, sticky="nsew")
 
-            # the right frame will hold other stuff, like transcript groups etc.
-            right_frame = Frame(current_tk_window, bg="red")
+            # create the right frame to hold other stuff, like transcript groups etc.
+            right_frame = Frame(current_tk_window)
             right_frame.grid(row=0, column=2, sticky="ns")
 
             # add a minimum size for the frame2 column
@@ -5653,6 +5800,70 @@ class toolkit_UI:
 
             # Add column and row configuration for resizing
             current_tk_window.grid_rowconfigure(0, weight=1)
+
+            background_color = self.resolve_theme_colors['black']
+            foreground_color = self.resolve_theme_colors['normal']
+
+            # LEFT FRAME SUB-FRAMES (with their respective labels)
+            left_t_buttons_frame = Frame(left_frame, name='t_buttons_frame',
+                                         highlightbackground=background_color, highlightthickness=1)
+            Label(left_t_buttons_frame, text='Transcript', anchor='n', fg=foreground_color)\
+                .pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
+
+            left_s_buttons_frame = Frame(left_frame, name='s_buttons_frame',
+                                         highlightbackground=background_color, highlightthickness=1)
+            Label(left_s_buttons_frame, text='Selection', anchor='n', fg=foreground_color)\
+                .pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
+
+            left_r_buttons_frame = Frame(left_frame, name='r_buttons_frame',
+                                         highlightbackground=background_color, highlightthickness=1)
+            Label(left_r_buttons_frame, text='Resolve', anchor='n', fg=foreground_color)\
+                .pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
+
+            left_t_buttons_frame.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
+
+            # add the segment buttons to the left frame
+            # SEND TO ASSISTANT BUTTON
+            send_to_assistant_button = Button(left_s_buttons_frame, text='Send to Assistant',
+                                                command=lambda: self.t_edit_obj.button_send_to_assistant(window_id=t_window_id),
+                                                name='send_to_assistant_button')
+            send_to_assistant_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
+
+            send_to_assistant_with_tc_button = Button(left_s_buttons_frame, text='Send to Assistant with TC',
+                    command=lambda: self.t_edit_obj.button_send_to_assistant(window_id=t_window_id, with_timecodes=True),
+                    name='send_to_assistant_button_with_tc')
+            send_to_assistant_with_tc_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
+
+            # ADD TO GROUP BUTTON
+            add_to_group_button = Button(left_s_buttons_frame, text='Add to Group',
+                                                command=lambda: self.t_edit_obj.button_add_to_group(window_id=t_window_id, only_add=True),
+                                                name='add_to_group_button')
+            add_to_group_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
+
+
+            # COPY TO BUTTONS
+
+            copy_to_clipboard_with_tc_button = Button(left_s_buttons_frame, text='Copy with TC',
+                                                command=lambda: self.t_edit_obj.button_copy_segments_to_clipboard(t_window_id, with_timecodes=True, per_line=True),
+                                                name='copy_to_clipboard_with_tc_button')
+
+            copy_to_clipboard_with_tc_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
+
+            copy_to_clipboard_with_block_tc_button = Button(left_s_buttons_frame, text='Copy with Block TC',
+                                                command=lambda: self.t_edit_obj.button_copy_segments_to_clipboard(t_window_id, with_timecodes=True, per_line=False),
+                                                name='copy_to_clipboard_with_block_tc_button')
+
+            copy_to_clipboard_with_block_tc_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
+
+
+            # RE-TRANSCRIBE BUTTON
+            retranscribe_button = Button(left_s_buttons_frame, text='Re-transcribe',
+                                                command=lambda: self.t_edit_obj.button_retranscribe(window_id=t_window_id),
+                                                name='retranscribe_button')
+
+            retranscribe_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
+
+
 
             # THE MAIN TEXT ELEMENT
 
@@ -5666,13 +5877,13 @@ class toolkit_UI:
                 # set up the text element where we'll add the actual transcript
                 text = Text(text_form_frame, name='transcript_text',
                             font=(self.transcript_font), width=45, height=30, padx=5, pady=5, wrap=tk.WORD,
-                            background=self.resolve_theme_colors['black'],
-                            foreground=self.resolve_theme_colors['normal'])
+                            background=background_color,
+                            foreground=foreground_color)
 
                 # add a scrollbar to the text element
                 text_scrollbar = Scrollbar(text_form_frame, **self.scrollbar_settings)
                 text_scrollbar.config(command=text.yview)
-                text_scrollbar.pack(side=RIGHT, fill=Y, pady=5)
+                text_scrollbar.pack(side=RIGHT, fill=Y)
 
                 # configure the text element to use the scrollbar
                 text.config(yscrollcommand=text_scrollbar.set)
@@ -5747,7 +5958,7 @@ class toolkit_UI:
                 text.config(spacing1=0, spacing2=0.2, spacing3=5)
 
                 # then show the text element
-                text.pack(anchor='w', expand=True, fill='both')
+                text.pack(anchor='w', pady=(0,42), expand=True, fill='both')
 
                 # create a footer frame that holds stuff on the bottom of the transcript window
                 footer_frame = tk.Frame(self.windows[t_window_id], name='footer_frame')
@@ -5804,14 +6015,14 @@ class toolkit_UI:
 
                 # FIND BUTTON
 
-                find_button = tk.Button(left_frame, text='Find', name='find_replace_button',
+                find_button = tk.Button(left_t_buttons_frame, text='Find', name='find_replace_button',
                                         command=lambda:
                                         self.open_find_replace_window(parent_window_id=t_window_id,
                                                                       title="Find in {}".format(title),
                                                                       select_all_action=self.t_edit_obj.text_indices_to_selection
                                                                       ))
 
-                find_button.pack(side=tk.TOP, fill='x', **self.paddings, anchor='nw')
+                find_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='nw')
 
                 # bind CMD/CTRL + f to open find and replace window
                 self.windows[t_window_id].bind("<" + self.ctrl_cmd_bind + "-f>", lambda e:
@@ -5822,38 +6033,41 @@ class toolkit_UI:
 
                 # ADVANCED SEARCH
                 # this button will open a new window with advanced search options
-                advanced_search_button = tk.Button(left_frame, text='Advanced Search', name='advanced_search_button',
+                advanced_search_button = tk.Button(left_t_buttons_frame, text='Advanced Search', name='advanced_search_button',
                                                    command=lambda:
                                                    self.open_advanced_search_window(transcription_window_id=t_window_id,
                                                                                     search_file_path= \
                                                                                         transcription_file_path))
 
-                advanced_search_button.pack(side=tk.TOP, fill='x', **self.paddings, anchor='nw')
+                advanced_search_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='nw')
 
                 # GROUPS BUTTON
-                groups_button = tk.Button(left_frame, text='Groups', name='groups_button',
+                groups_button = tk.Button(left_t_buttons_frame, text='Groups', name='groups_button',
                                           command=lambda:
                                           self.open_transcript_groups_window(transcription_window_id=t_window_id)
                                           )
-                groups_button.pack(side=tk.TOP, fill='x', **self.paddings, anchor='nw')
+                groups_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='nw')
 
                 # IMPORT SRT BUTTON
                 if srt_file_path:
-                    import_srt_button = tk.Button(left_frame,
+                    import_srt_button = tk.Button(left_r_buttons_frame,
                                                   name='import_srt_button',
                                                   text="Import SRT into Bin",
                                                   takefocus=False,
                                                   command=lambda:
                                                   self.toolkit_ops_obj.resolve_api.import_media(srt_file_path)
                                                   )
-                    import_srt_button.pack(side=tk.TOP, fill='x', **self.paddings, anchor='sw')
+                    import_srt_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='sw')
+
+                    if not NLE.is_connected():
+                        import_srt_button.pack_forget()
 
                 else:
                     import_srt_button = None
 
                 # SYNC BUTTON
 
-                sync_button = tk.Button(left_frame, name='sync_button', takefocus=False)
+                sync_button = tk.Button(left_r_buttons_frame, name='sync_button', takefocus=False)
                 sync_button.config(command=lambda sync_button=sync_button, window_id=t_window_id:
                 self.t_edit_obj.sync_with_playhead_button(
                     button=sync_button,
@@ -5865,13 +6079,35 @@ class toolkit_UI:
                 # is this transcript linked to the current timeline?
 
                 # prepare an empty link button for now, and only show it when/if resolve starts
-                link_button = tk.Button(left_frame, name='link_button')
+                link_button = tk.Button(left_r_buttons_frame, name='link_button')
                 link_button.config(command=lambda link_button=link_button,
                                                   transcription_file_path=transcription_file_path:
                 self.t_edit_obj.link_to_timeline_button(
                     button=link_button,
                     transcription_file_path=transcription_file_path)
                                    )
+
+
+                # RESOLVE SEGMENTS + MARKERS BUTTONS
+
+                selection_to_markers_button = tk.Button(left_r_buttons_frame, text='Selection to Markers',
+                                                         name='selection_to_markers_button')
+
+                selection_to_markers_button.config(command=lambda:
+                        self.t_edit_obj.button_segments_to_markers(window_id=t_window_id, prompt=True)
+                                                                )
+
+                selection_to_markers_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='sw')
+
+                markers_to_selection_button = tk.Button(left_r_buttons_frame, text='Markers to Selection',
+                                                            name='markers_to_selection_button')
+
+                markers_to_selection_button.config(command=lambda:
+                        self.t_edit_obj.button_markers_to_segments(window_id=t_window_id))
+
+                markers_to_selection_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='sw')
+
+                # END RESOLVE SEGMENTS + MARKERS BUTTONS
 
                 # start update the transcription window with some stuff
                 # here we send the update transcription window function a few items that need to be updated
@@ -5898,7 +6134,7 @@ class toolkit_UI:
                                            message=not_a_transcription_message,
                                            type='warning'
                                            )
-                self.destroy_window_(self.windows, t_window_id)
+                self.destroy_window_(windows_dict=self.windows, window_id=t_window_id)
 
             # keep this window on top if the user has that config option enabled
             if self.stAI.get_app_setting('transcripts_always_on_top', default_if_none=False):
@@ -5952,19 +6188,19 @@ class toolkit_UI:
             if 'link_button' not in update_attr or type(update_attr['link_button']) is not tk.Button:
                 # so get the link button from the window by using the hard-coded name
                 update_attr['link_button'] \
-                    = self.windows[window_id].nametowidget('left_frame.link_button')
+                    = self.windows[window_id].nametowidget('left_frame.r_buttons_frame.link_button')
 
             # if the sync button was not passed or is not tkinter button
             if 'sync_button' not in update_attr or type(update_attr['link_button']) is not tk.Button:
                 # so get the link button from the window by using the hard-coded name
                 update_attr['sync_button'] \
-                    = self.windows[window_id].nametowidget('left_frame.sync_button')
+                    = self.windows[window_id].nametowidget('left_frame.r_buttons_frame.sync_button')
 
             # if the import srt button was not passed or is not tkinter button
             if 'import_srt_button' not in update_attr or type(update_attr['import_srt_button']) is not tk.Button:
                 # so get the import srt button from the window by using the hard-coded name
                 update_attr['import_srt_button'] \
-                    = self.windows[window_id].nametowidget('left_frame.import_srt_button')
+                    = self.windows[window_id].nametowidget('left_frame.r_buttons_frame.import_srt_button')
 
             # if the text item was not passed or is not tkinter text
             if 'text' not in update_attr or type(update_attr['text']) is not tk.Text:
@@ -5972,7 +6208,44 @@ class toolkit_UI:
                 update_attr['text'] \
                     = self.windows[window_id].nametowidget('text_form_frame.transcript_text')
 
+            # if the resolve buttons frame was not passed
+            if 'r_buttons_frame' not in update_attr or type(update_attr['r_buttons_frame']) is not tk.Frame:
+                # get the resolve buttons frame from the window by using the hard-coded name
+                update_attr['r_buttons_frame'] \
+                    = self.windows[window_id].nametowidget('left_frame.r_buttons_frame')
+
+            # if the resolve buttons frame was not passed
+            if 's_buttons_frame' not in update_attr or type(update_attr['s_buttons_frame']) is not tk.LabelFrame:
+                # get the resolve buttons frame from the window by using the hard-coded name
+                update_attr['s_buttons_frame'] \
+                    = self.windows[window_id].nametowidget('left_frame.s_buttons_frame')
+
+            # if the segment to marker button was not passed
+            if 'selection_to_markers_button' not in update_attr or type(update_attr['selection_to_markers_button']) is not tk.Button:
+                # get the segment to marker button from the window by using the hard-coded name
+                update_attr['selection_to_markers_button'] \
+                    = self.windows[window_id].nametowidget('left_frame.r_buttons_frame.selection_to_markers_button')
+
+            # if the segment to marker button was not passed
+            if 'markers_to_selection_button' not in update_attr or type(update_attr['markers_to_selection_button']) is not tk.Button:
+                # get the segment to marker button from the window by using the hard-coded name
+                update_attr['markers_to_selection_button'] \
+                    = self.windows[window_id].nametowidget('left_frame.r_buttons_frame.markers_to_selection_button')
+
+        # if we're dealing with segments
+
+        show_selection_buttons = False
+        if 's_buttons_frame' in update_attr:
+
+            # and segments are selected
+            if window_id in self.t_edit_obj.selected_segments \
+                    and len(self.t_edit_obj.selected_segments[window_id]) > 0:
+
+                # show the segment buttons
+                show_selection_buttons = True
+
         # if NLE is connected and there is a current timeline
+        show_resolve_buttons = False
         if NLE.is_connected() and NLE.current_timeline is not None:
 
             # if we still don't have a transcription file path by now,
@@ -5992,7 +6265,8 @@ class toolkit_UI:
             if update_attr.get('import_srt_button', None) is not None:
 
                 # update the import srt button on the transcription window
-                update_attr['import_srt_button'].pack(side=tk.BOTTOM, fill='x', **self.paddings, anchor='sw')
+                update_attr['import_srt_button']\
+                    .pack(side=tk.BOTTOM, fill='x', **self.left_frame_button_paddings, anchor='sw')
 
             # update the link button text if it was passed in the call
             if update_attr.get('link_button', None) is not None:
@@ -6009,7 +6283,8 @@ class toolkit_UI:
 
                 # update the link button on the transcription window
                 update_attr['link_button'].config(text=link_button_text)
-                update_attr['link_button'].pack(side=tk.BOTTOM, fill='x', **self.paddings, anchor='sw')
+                update_attr['link_button']\
+                    .pack(side=tk.BOTTOM, fill='x', **self.left_frame_button_paddings, anchor='sw')
 
             if window_id not in self.t_edit_obj.sync_with_playhead:
                 self.t_edit_obj.sync_with_playhead[window_id] = False
@@ -6020,11 +6295,12 @@ class toolkit_UI:
                 if self.t_edit_obj.sync_with_playhead[window_id]:
                     sync_button_text = "Don't sync"
                 else:
-                    sync_button_text = "Sync"
+                    sync_button_text = "Sync with Playhead"
 
                 # update the sync button on the transcription window
                 update_attr['sync_button'].config(text=sync_button_text)
-                update_attr['sync_button'].pack(side=tk.BOTTOM, fill='x', **self.paddings, anchor='sw')
+                update_attr['sync_button']\
+                    .pack(side=tk.BOTTOM, fill='x', **self.left_frame_button_paddings, anchor='sw')
 
             # how many segments / lines does the transcript on this window contain?
             max_lines = len(self.t_edit_obj.transcript_segments[window_id])
@@ -6041,18 +6317,35 @@ class toolkit_UI:
                     and self.t_edit_obj.current_window_tc[window_id] != NLE.current_tc:
                 update_attr = self.sync_current_tc_to_transcript(window_id=window_id, **update_attr)
 
-        # hide some stuff if resolve isn't connected
+            # update the resolve buttons frame if it was passed in the call
+            if update_attr.get('r_buttons_frame', None) is not None:
+                show_resolve_buttons = True
+
+        # finally, start showing the frames that need to be shown
+        #if show_selection_buttons:
+        #    # but also make sure that the s_buttons_frame is right after the t_buttons_frame
+        update_attr['s_buttons_frame'].pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
+
+        # if there are no segments selected, disable the buttons in the s_buttons_frame
+        for button in update_attr['s_buttons_frame'].winfo_children():
+            if not show_selection_buttons:
+                button.config(state=tk.DISABLED)
+            else:
+                button.config(state=tk.NORMAL)
+
+        # also disable the segments-related buttons in the r_buttons_frame
+        for button in [update_attr['selection_to_markers_button']]:
+            if not show_selection_buttons:
+                button.config(state=tk.DISABLED)
+            else:
+                button.config(state=tk.NORMAL)
+
+
+        if show_resolve_buttons:
+            update_attr['r_buttons_frame'].pack(fill='x', expand=True, padx=5, pady=42, anchor='sw')
         else:
-            # @TODO: check why this doesn't happen when resolve is closed - why do the buttons still stay in the window?
+            update_attr['r_buttons_frame'].pack_forget()
 
-            if update_attr.get('import_srt_button', None) is not None:
-                update_attr['import_srt_button'].pack_forget()
-
-            if update_attr.get('link_button', None) is not None:
-                update_attr['link_button'].pack_forget()
-
-            if update_attr.get('sync_button', None) is not None:
-                update_attr['sync_button'].pack_forget()
 
     def sync_current_tc_to_transcript(self, window_id, **update_attr):
 
@@ -6312,7 +6605,7 @@ class toolkit_UI:
     def open_transcription_log_window(self):
 
         # create a window for the transcription log if one doesn't already exist
-        if self.create_or_open_window(parent_element=self.root,
+        if self.create_or_open_window(parent_element=self.root, type='transcription_log',
                                       window_id='t_log', title='Transcription Log', resizable=True):
             # and then call the update function to fill the window up
             self.update_transcription_log_window()
@@ -6450,7 +6743,9 @@ class toolkit_UI:
                               prompt_prefix='SEARCH > ',
                               prompt_callback=self.advanced_search,
                               prompt_callback_kwargs={'search_item': search_item,
-                                                      'search_window_id': search_window_id})
+                                                      'search_window_id': search_window_id},
+                              type='search'
+                              )
 
         # add text to the search window
         # self._text_window_update(search_window_id, 'Reading {} file{}.'
@@ -6741,7 +7036,8 @@ class toolkit_UI:
                                   'assistant_window_id': assistant_window_id
                               },
                               window_width=60,
-                              open_multiple=False
+                              open_multiple=False,
+                              type='assistant'
                               )
 
         # show the initial message if the window didn't exist before
@@ -7429,7 +7725,7 @@ class toolkit_UI:
     def destroy_transcript_groups_window(self, window_id: str = None):
 
         # call the default destroy window function
-        self.destroy_window_(parent_element=self.windows, window_id=window_id)
+        self.destroy_window_(windows_dict=self.windows, window_id=window_id)
 
     def destroy_advanced_search_window(self, window_id: str = None):
 
@@ -7458,11 +7754,12 @@ class toolkit_UI:
 
         # create a window for the transcript groups if one doesn't already exist
         if self.create_or_open_window(parent_element=self.windows[transcription_window_id],
-                                      window_id=transcript_groups_window_id,
-                                      title=transcript_groups_window_title, resizable=True,
-                                      close_action=
-                                      lambda: self.destroy_transcript_groups_window(transcript_groups_window_id)
-                                      ):
+                                        window_id=transcript_groups_window_id,
+                                        title=transcript_groups_window_title, resizable=True,
+                                        type='transcript_groups',
+                                        close_action=
+                                            lambda: self.destroy_transcript_groups_window(transcript_groups_window_id)
+                                        ):
 
             # the current transcript groups window object
             current_transcript_groups_window = self.windows[transcript_groups_window_id]
@@ -7742,7 +8039,6 @@ class toolkit_UI:
                                                     osascript -e 'display notification "{}" with title "{}"'
                                                     """.format(text, title))
 
-        # @todo OS notifications on other platforms
         elif platform.system() == 'Windows':  # Windows
             return
         else:  # linux variants

@@ -65,51 +65,126 @@ class UImenus:
 
         # if this is the main window
         if self.current_window_id == 'main':
-
-            # do not show the keep on top menu item
-            self.main_menubar.windowsmenu.entryconfig('Keep window on top', state=DISABLED)
+            self.load_menu_for_main()
 
         # if this is any other window
         else:
-            # show the keep on top menu item
-            self.main_menubar.windowsmenu.entryconfig('Keep window on top', state=NORMAL)
+            self.load_menu_for_other(window_id=self.current_window_id,
+                                     window_type=self.toolkit_UI_obj.get_window_type(self.current_window_id))
 
 
         # also update the state of the keep on top menu item
         self.keep_on_top_state.set(self.toolkit_UI_obj.get_window_on_top_state(self.current_window_id))
 
+    def load_menu_for_main(self):
+        '''
+        This function loads the menu bar considering that we're now in the main window.
+        '''
+
+        # disable show the keep on top menu item
+        self.main_menubar.windowsmenu.entryconfig('Keep window on top', state=DISABLED)
+
+        # disable the close window menu item
+        self.main_menubar.windowsmenu.entryconfig('Close window', state=DISABLED)
+
+    def load_menu_for_other(self, window_id=None, window_type=None):
+        '''
+        This function loads the menu bar considering that we're now in any other window.
+        '''
+
+        # enable the keep on top menu item
+        self.main_menubar.windowsmenu.entryconfig('Keep window on top', state=NORMAL)
+
+        # enable the close window menu item (if a close_action exists)
+        # (if the window has a close_action, it means that it can be closed)
+        if hasattr(self.toolkit_UI_obj.windows[window_id], 'close_action') \
+            and self.toolkit_UI_obj.windows[window_id].close_action is not None:
+            self.main_menubar.windowsmenu.entryconfig('Close window', state=NORMAL)
+
+        # if the window doesn't have a close_action, disable the menu item
+        else:
+            self.main_menubar.windowsmenu.entryconfig('Close window', state=DISABLED)
+
+
+        # EDIT MENU FUNCTIONS
+
+        # enable find menu item if the window has a find function
+        if hasattr(self.toolkit_UI_obj.windows[window_id], 'find') \
+            and self.toolkit_UI_obj.windows[window_id].find is not None:
+
+            self.editmenu.entryconfig('Find...', state=NORMAL, command=self.toolkit_UI_obj.windows[window_id].find)
+
+        # enable select all menu item depending on the window type
+        if window_type == 'transcription':
+            self.editmenu.entryconfig('Select All',
+                                      state=NORMAL,
+                                      command=lambda: self.toolkit_UI_obj.t_edit_obj.button_select_deselect_all(window_id))
+
+        else:
+            self.editmenu.entryconfig('Select All',
+                                      state=NORMAL,
+                                      command=lambda: self.pass_key_event(window_id, '<'+self.toolkit_UI_obj.ctrl_cmd_bind+'-a>'))
+
+    def pass_key_event(self, window_id, key_event):
+        '''
+        This function passes a key event to the current window.
+        '''
+
+        if window_id is None or key_event is None or window_id not in self.toolkit_UI_obj.windows:
+            return
+
+        self.toolkit_UI_obj.windows[window_id].event_generate(key_event)
 
     def load_menubar(self):
+        '''
+        This loads all the items in the menu bar.
+        Using update_current_window_references()
+        we can then update the menu bar depending on which window is currently focused.
+        '''
 
         # FILE MENU
-        filemenu = Menu(self.main_menubar, tearoff=0)
+        self.filemenu = Menu(self.main_menubar, tearoff=0)
 
         # add open transcription file menu item
-        filemenu.add_command(label="Open transcription file...", command=self.toolkit_UI_obj.open_transcript)
-        filemenu.add_separator()
+        self.filemenu.add_command(label="Open transcription file...", command=self.toolkit_UI_obj.open_transcript)
+        self.filemenu.add_separator()
 
-        filemenu.add_command(label="Transcribe audio file...", command=self.transcribe_audio_files)
-        filemenu.add_command(label="Translate audio file...", command=self.translate_audio_files)
+        self.filemenu.add_command(label="Transcribe audio file...", command=self.transcribe_audio_files)
+        self.filemenu.add_command(label="Translate audio file...", command=self.translate_audio_files)
 
-        filemenu.add_separator()
-        filemenu.add_command(label="Open configuration folder", command=self.open_userdata_dir)
+        self.filemenu.add_separator()
+        self.filemenu.add_command(label="Open configuration folder", command=self.open_userdata_dir)
         #filemenu.add_command(label="Open last folder", command=self.open_last_dir)
 
-        self.main_menubar.add_cascade(label="File", menu=filemenu)
+        self.main_menubar.add_cascade(label="File", menu=self.filemenu)
+
+
+        # EDIT MENU
+        self.editmenu = Menu(self.main_menubar, tearoff=0)
+
+        self.editmenu.add_command(label="Find...", command=self.donothing,
+                             accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+f")
+
+        self.editmenu.add_command(label="Select All", command=self.donothing,
+                             accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+a")
+
+        self.editmenu.entryconfig('Find...', state=DISABLED)
+
+        self.main_menubar.add_cascade(label="Edit", menu=self.editmenu)
+
 
         # ADVANCED SEARCH MENU
         searchmenu = Menu(self.main_menubar, tearoff=0)
 
-
-        #searchmenu.add_command(label="Search current transcription...", command=lambda: self.toolkit_UI_obj.open_advanced_search_window())
-
-        #searchmenu.add_separator()
         searchmenu.add_command(label="Advanced Search in files...",
                                command=lambda: self.toolkit_UI_obj.open_advanced_search_window())
         searchmenu.add_command(label="Advanced Search in folders...",
                                command= lambda: self.toolkit_UI_obj.open_advanced_search_window(select_dir=True))
         #searchmenu.add_command(label="Search entire project...",
         #                       command=self.toolkit_UI_obj.open_advanced_search_window)
+
+        #searchmenu.add_separator()
+        #searchmenu.add_command(label="Search current transcription...", command=lambda: self.toolkit_UI_obj.open_advanced_search_window())
 
         self.main_menubar.add_cascade(label="Search", menu=searchmenu)
 
@@ -151,6 +226,11 @@ class UImenus:
                                     variable=self.keep_on_top_state,
                                     command=self.keep_current_window_on_top)
 
+        # add a close window menu item
+        windowsmenu.add_command(label="Close window",
+                                command=self.close_current_window,
+                                accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+Shift+W")
+
         # add cascade
         self.main_menubar.add_cascade(label="Window", menu=windowsmenu)
 
@@ -168,6 +248,7 @@ class UImenus:
             helpmenu.add_separator()
 
         # otherwise show stuff in MacOS specific menu places
+        # see https://tkdocs.com/tutorial/menus.html#platformmenus
         else:
 
             # change the link in the about dialogue
@@ -178,13 +259,6 @@ class UImenus:
 
             # also bind to the cmd+q key combination
             self.toolkit_UI_obj.root.createcommand("tk::mac::Quit", lambda: self.toolkit_UI_obj.on_exit())
-
-            # see https://tkdocs.com/tutorial/menus.html#platformmenus
-            # menubar = Menu(self.toolkit_UI_obj.root)
-            # appmenu = Menu(menubar, name='apple')
-            # menubar.add_cascade(menu=appmenu)
-            # appmenu.add_command(label='About My Application')
-            # appmenu.add_separator()
 
             system_menu = tk.Menu(self.main_menubar, name='apple')
             # system_menu.add_command(command=lambda: self.w.call('tk::mac::standardAboutPanel'))
@@ -202,6 +276,10 @@ class UImenus:
         helpmenu.add_command(label="Made by mots", command=self.open_mots)
 
         self.toolkit_UI_obj.root.config(menu=self.main_menubar)
+
+        # this is probably initialized in the main window,
+        # but do a first update nevertheless
+        self.update_current_window_references()
 
     def keep_current_window_on_top(self):
 
@@ -223,6 +301,14 @@ class UImenus:
         # and update the checkbutton state
         self.keep_main_window_on_top_state.set(keep_on_top)
 
+    def close_current_window(self):
+
+        if self.current_window_id is None:
+            logger.debug('Unable to determine current window id.')
+            return
+
+        # close the window
+        self.toolkit_UI_obj.windows[self.current_window_id].close_action()
 
     def transcribe_audio_files(self):
 

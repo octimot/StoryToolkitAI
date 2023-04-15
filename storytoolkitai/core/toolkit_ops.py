@@ -21,7 +21,7 @@ import soundfile
 import numpy as np
 
 from storytoolkitai.core.logger import *
-from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_NAME, initial_target_dir
+from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_NAME
 
 from storytoolkitai.integrations.mots_resolve import MotsResolve
 
@@ -29,18 +29,6 @@ import re
 from sentence_transformers import SentenceTransformer, util
 
 from timecode import Timecode
-
-
-# @todo change these to None when empty
-# todo: migrate all references to these to the NLE_comms class
-#current_project = ''
-#current_timeline = ''
-#current_timeline_markers = None
-#current_tc = '00:00:00:00'
-#current_timeline_fps = ''
-#current_bin = ''
-#resolve_error = 0
-#resolve = None
 
 class NLE:
     '''
@@ -192,42 +180,6 @@ class ToolkitOps:
         # resume the transcription queue if there's anything in it
         if self.resume_transcription_queue_from_file():
             logger.info('Resuming transcription queue from file')
-
-    def resolve_disable(self):
-        '''
-        This function is used to disable the resolve API
-        The polling thread will continue to run, but will not poll for data until the resolve API is re-enabled
-        '''
-
-        # set the resolve object to None
-        self.resolve_api = None
-
-        # set the disable resolve API flag to True
-        self.disable_resolve_api = True
-
-        # force the NLE object to None
-        NLE.resolve = None
-
-        # trigger resolve changed
-        self.on_resolve('resolve_changed')
-
-    def resolve_enable(self):
-        '''
-        This function is used to enable the resolve API
-        '''
-
-        # initialize a resolve object
-        if not self.resolve_api or self.resolve_api is None:
-            self.resolve_api = MotsResolve(logger=logger)
-
-        self.disable_resolve_api = False
-
-        if not self.polling_resolve:
-            logger.debug('Resolve polling thread not detected, starting one now')
-
-            # start the resolve thread
-            # with this, resolve should be constantly polled for data
-            self.poll_resolve_thread()
 
     class ToolkitAssistant:
         '''
@@ -1699,125 +1651,6 @@ class ToolkitOps:
                          .format(list(transcript_group.keys()), transcription_file_path))
             return saved
 
-    def time_intervals_to_transcript_segments(self, time_intervals: list, segments: list) -> list or None:
-        '''
-        This function converts a list of time intervals to a list of transcript segments
-
-        :param time_intervals: a list of time intervals
-        :param segments: a dict of transcript segments
-        :return: a list of transcript segments
-        '''
-
-        # if the time intervals or segments are empty or not a list/dict, return None
-        if time_intervals is None or type(time_intervals) is not list \
-                or segments is None or type(segments) is not list:
-            return None
-
-        # if the time intervals are empty, return None
-        if len(time_intervals) == 0:
-            return []
-
-        # take all time intervals and check if they overlap with any of the segments
-        # if they do, add the segment to the list of segments to return
-        segments_to_return = []
-
-        # first sort the time intervals by start time
-        time_intervals = sorted(time_intervals, key=lambda x: x['start'])
-
-        # then sort the segments by start time
-        segments = sorted(segments, key=lambda x: x['start'])
-
-        # now take all the time intervals and check if they overlap with any of the segments
-        for current_time_interval in time_intervals:
-
-            # test this time interval against all segments
-            for current_segment in segments:
-
-                # if the current time interval overlaps with the current segment, add it to the list of segments
-                if current_segment['start'] >= current_time_interval['start'] \
-                        and current_segment['end'] <= current_time_interval['end']:
-
-                    segments_to_return.append(current_segment)
-
-                # otherwise, if the current segment is after the current time interval, break
-                # this only works if the segments and time intervals have been sorted
-                elif current_segment['start'] > current_time_interval['end']:
-                    break
-
-        return segments_to_return
-
-    def transcript_segments_to_time_intervals(self, segments: list) -> list or None:
-        '''
-        This function takes a list of transcript segments, groups them together if they don't have
-        any gaps between them.
-        :param segments:
-        :return: the list of time intervals or None if something went wrong
-        '''
-
-        # if the segments are not empty or not a dict, return None
-        if segments is None or type(segments) is not list or len(segments) == 0:
-            logger.debug('Could not convert transcript segments to time intervals '
-                         'because the segments are empty or not a list')
-            return None
-
-        # these are the group time intervals that we'll return eventually
-        # this group will consist of multiple time intervals taken from transcript segments that
-        # are next to each other (end_time of previous segment matches the start_time of current segment)
-        time_intervals = [{}]
-
-        time_interval_num = 0
-
-        # remove duplicates from segments
-        # this is important because if there are duplicates, the time intervals might repeat
-        segments_unique = []
-        [segments_unique.append(x) for x in segments if x not in segments_unique]
-
-        # place the unique segments back into the original list
-        segments = segments_unique
-
-        # sort the segments by start time
-        segments = sorted(segments, key=lambda x: x['start'])
-
-        # loop through the segments
-        for current_segment in segments:
-
-            # print('current segment {}-{}: {}'
-            #       .format(current_segment['start'], current_segment['end'], current_segment['text']))
-
-            # if the current time interval doesn't have a start time, add it
-            # (i.e. this segment is the first in this time interval)
-            if 'start' not in time_intervals[time_interval_num]:
-                time_intervals[time_interval_num]['start'] = current_segment['start']
-
-            # if the end time of the current time_interval matches the start time of the current segment,
-            # it means that there's no gap between the current time_interval and the current segment,
-            # so add the current segment to the current time interval, by simply updating the end time
-            # this extends the time interval to include the current segment too
-            if 'end' not in time_intervals[time_interval_num] or \
-                    time_intervals[time_interval_num]['end'] == current_segment['start']:
-
-                time_intervals[time_interval_num]['end'] = current_segment['end']
-
-            # otherwise, it means that the current segment is not next to the current time interval,
-            # so start a new time interval containing the current segment
-            else:
-                time_interval_num += 1
-                time_intervals.append({
-                    'start': current_segment['start'],
-                    'end': current_segment['end']
-                })
-
-        return time_intervals
-
-    def get_whisper_available_languages(self) -> list or None:
-
-        available_languages = whisper_tokenizer.LANGUAGES.values()
-
-        if not available_languages or available_languages is None:
-            available_languages = []
-
-        return sorted(available_languages)
-
     def get_torch_available_devices(self) -> list or None:
 
         # prepare a list of available devices
@@ -1829,33 +1662,7 @@ class ToolkitOps:
 
         return available_devices
 
-    def whisper_device_select(self, device):
-        '''
-        A standardized way of selecting the right whisper device
-        :param device:
-        :return:
-        '''
-
-        # if the whisper device is set to cuda
-        if self.whisper_device in ['cuda', 'CUDA', 'gpu', 'GPU']:
-            # use CUDA if available
-            if torch.cuda.is_available():
-                self.whisper_device = device = torch.device('cuda')
-            # or let the user know that cuda is not available and switch to cpu
-            else:
-                logger.error('CUDA not available. Switching to cpu.')
-                self.whisper_device = device = torch.device('cpu')
-        # if the whisper device is set to cpu
-        elif self.whisper_device in ['cpu', 'CPU']:
-            self.whisper_device = device = torch.device('cpu')
-        # any other setting, defaults to automatic selection
-        else:
-            # use CUDA if available
-            self.whisper_device = device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-        logger.info('Using {} for Torch / Whisper.'.format(device))
-
-        return self.whisper_device
+    # TRANSCRIPTION MANAGEMENT/QUEUE/LOG METHODS
 
     def prepare_transcription_file(self, toolkit_UI_obj=None, task=None, unique_id=None,
                                    retranscribe=False, time_intervals=None, select_files=False, **kwargs):
@@ -2562,6 +2369,155 @@ class ToolkitOps:
             # also update the status of the item in the transcription log
             self.update_transcription_log(unique_id=queue_id, **{'status': 'cancelled', 'progress': ''})
 
+    # TRANSCRIPTION METHODS
+
+    def time_intervals_to_transcript_segments(self, time_intervals: list, segments: list) -> list or None:
+        '''
+        This function converts a list of time intervals to a list of transcript segments
+
+        :param time_intervals: a list of time intervals
+        :param segments: a dict of transcript segments
+        :return: a list of transcript segments
+        '''
+
+        # if the time intervals or segments are empty or not a list/dict, return None
+        if time_intervals is None or type(time_intervals) is not list \
+                or segments is None or type(segments) is not list:
+            return None
+
+        # if the time intervals are empty, return None
+        if len(time_intervals) == 0:
+            return []
+
+        # take all time intervals and check if they overlap with any of the segments
+        # if they do, add the segment to the list of segments to return
+        segments_to_return = []
+
+        # first sort the time intervals by start time
+        time_intervals = sorted(time_intervals, key=lambda x: x['start'])
+
+        # then sort the segments by start time
+        segments = sorted(segments, key=lambda x: x['start'])
+
+        # now take all the time intervals and check if they overlap with any of the segments
+        for current_time_interval in time_intervals:
+
+            # test this time interval against all segments
+            for current_segment in segments:
+
+                # if the current time interval overlaps with the current segment, add it to the list of segments
+                if current_segment['start'] >= current_time_interval['start'] \
+                        and current_segment['end'] <= current_time_interval['end']:
+
+                    segments_to_return.append(current_segment)
+
+                # otherwise, if the current segment is after the current time interval, break
+                # this only works if the segments and time intervals have been sorted
+                elif current_segment['start'] > current_time_interval['end']:
+                    break
+
+        return segments_to_return
+
+    def transcript_segments_to_time_intervals(self, segments: list) -> list or None:
+        '''
+        This function takes a list of transcript segments, groups them together if they don't have
+        any gaps between them.
+        :param segments:
+        :return: the list of time intervals or None if something went wrong
+        '''
+
+        # if the segments are not empty or not a dict, return None
+        if segments is None or type(segments) is not list or len(segments) == 0:
+            logger.debug('Could not convert transcript segments to time intervals '
+                         'because the segments are empty or not a list')
+            return None
+
+        # these are the group time intervals that we'll return eventually
+        # this group will consist of multiple time intervals taken from transcript segments that
+        # are next to each other (end_time of previous segment matches the start_time of current segment)
+        time_intervals = [{}]
+
+        time_interval_num = 0
+
+        # remove duplicates from segments
+        # this is important because if there are duplicates, the time intervals might repeat
+        segments_unique = []
+        [segments_unique.append(x) for x in segments if x not in segments_unique]
+
+        # place the unique segments back into the original list
+        segments = segments_unique
+
+        # sort the segments by start time
+        segments = sorted(segments, key=lambda x: x['start'])
+
+        # loop through the segments
+        for current_segment in segments:
+
+            # print('current segment {}-{}: {}'
+            #       .format(current_segment['start'], current_segment['end'], current_segment['text']))
+
+            # if the current time interval doesn't have a start time, add it
+            # (i.e. this segment is the first in this time interval)
+            if 'start' not in time_intervals[time_interval_num]:
+                time_intervals[time_interval_num]['start'] = current_segment['start']
+
+            # if the end time of the current time_interval matches the start time of the current segment,
+            # it means that there's no gap between the current time_interval and the current segment,
+            # so add the current segment to the current time interval, by simply updating the end time
+            # this extends the time interval to include the current segment too
+            if 'end' not in time_intervals[time_interval_num] or \
+                    time_intervals[time_interval_num]['end'] == current_segment['start']:
+
+                time_intervals[time_interval_num]['end'] = current_segment['end']
+
+            # otherwise, it means that the current segment is not next to the current time interval,
+            # so start a new time interval containing the current segment
+            else:
+                time_interval_num += 1
+                time_intervals.append({
+                    'start': current_segment['start'],
+                    'end': current_segment['end']
+                })
+
+        return time_intervals
+
+    def get_whisper_available_languages(self) -> list or None:
+
+        available_languages = whisper_tokenizer.LANGUAGES.values()
+
+        if not available_languages or available_languages is None:
+            available_languages = []
+
+        return sorted(available_languages)
+
+    def whisper_device_select(self, device):
+        '''
+        A standardized way of selecting the right whisper device
+        :param device:
+        :return:
+        '''
+
+        # if the whisper device is set to cuda
+        if self.whisper_device in ['cuda', 'CUDA', 'gpu', 'GPU']:
+            # use CUDA if available
+            if torch.cuda.is_available():
+                self.whisper_device = device = torch.device('cuda')
+            # or let the user know that cuda is not available and switch to cpu
+            else:
+                logger.error('CUDA not available. Switching to cpu.')
+                self.whisper_device = device = torch.device('cpu')
+        # if the whisper device is set to cpu
+        elif self.whisper_device in ['cpu', 'CPU']:
+            self.whisper_device = device = torch.device('cpu')
+        # any other setting, defaults to automatic selection
+        else:
+            # use CUDA if available
+            self.whisper_device = device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        logger.info('Using {} for Torch / Whisper.'.format(device))
+
+        return self.whisper_device
+
     def split_audio_by_intervals(self, audio_array, time_intervals=None, sr=16_000):
         """
         Splits the audio_array according to the time_intervals
@@ -3186,6 +3142,22 @@ class ToolkitOps:
         result['segments'] = new_result_segments
 
         return result
+
+    def speaker_diarization(self, audio_path, add_speakers_to_segments):
+
+        # WORK IN PROGRESS
+        # print("Detecting speakers.")
+
+        # from pyannote.audio import Pipeline
+        # pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization")
+
+        # apply pretrained pipeline
+        # diarization = pipeline(audio_path)
+
+        # print the result
+        # for turn, _, speaker in diarization.itertracks(yield_label=True):
+        #    print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
+        return False
 
     def whisper_transcribe_segments(self, audio_segments, task, next_segment_id, other_whisper_options, queue_id=None):
         """
@@ -4169,6 +4141,8 @@ class ToolkitOps:
 
         return False
 
+    # TIMELINE METHODS
+
     def get_timeline_transcriptions(self, timeline_name=None, project_name=None):
         '''
         Gets a list of all the transcriptions associated with a timeline
@@ -4329,6 +4303,44 @@ class ToolkitOps:
         # if there simply is a self.toolkit_UI_obj just return True
         else:
             return True
+
+    # RESOLVE SPECIFIC METHODS
+
+    def resolve_disable(self):
+        '''
+        This function is used to disable the resolve API
+        The polling thread will continue to run, but will not poll for data until the resolve API is re-enabled
+        '''
+
+        # set the resolve object to None
+        self.resolve_api = None
+
+        # set the disable resolve API flag to True
+        self.disable_resolve_api = True
+
+        # force the NLE object to None
+        NLE.resolve = None
+
+        # trigger resolve changed
+        self.on_resolve('resolve_changed')
+
+    def resolve_enable(self):
+        '''
+        This function is used to enable the resolve API
+        '''
+
+        # initialize a resolve object
+        if not self.resolve_api or self.resolve_api is None:
+            self.resolve_api = MotsResolve(logger=logger)
+
+        self.disable_resolve_api = False
+
+        if not self.polling_resolve:
+            logger.debug('Resolve polling thread not detected, starting one now')
+
+            # start the resolve thread
+            # with this, resolve should be constantly polled for data
+            self.poll_resolve_thread()
 
     def calculate_sec_to_resolve_timecode(self, seconds=0):
         #global resolve
@@ -5005,20 +5017,4 @@ class ToolkitOps:
             self.resolve_api.render_markers(marker_color, render_target_dir, False, stills, render, render_preset,
                                             starts_with=starts_with)
 
-        return False
-
-    def speaker_diarization(self, audio_path, add_speakers_to_segments):
-
-        # WORK IN PROGRESS
-        # print("Detecting speakers.")
-
-        # from pyannote.audio import Pipeline
-        # pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization")
-
-        # apply pretrained pipeline
-        # diarization = pipeline(audio_path)
-
-        # print the result
-        # for turn, _, speaker in diarization.itertracks(yield_label=True):
-        #    print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
         return False
