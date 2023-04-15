@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import *
+from tkinter import messagebox
 
 import platform
 import subprocess
@@ -154,7 +155,7 @@ class UImenus:
 
         self.filemenu.add_separator()
         self.filemenu.add_command(label="Open configuration folder", command=self.open_userdata_dir)
-        #filemenu.add_command(label="Open last folder", command=self.open_last_dir)
+        self.filemenu.add_command(label="Open last used folder", command=self.open_last_dir)
 
         self.main_menubar.add_cascade(label="File", menu=self.filemenu)
 
@@ -325,19 +326,24 @@ class UImenus:
 
     def open_last_dir(self):
 
-        global initial_target_dir
+        if self.stAI.initial_target_dir is None or not os.path.exists(self.stAI.initial_target_dir):
+            # notify the user
+            messagebox.showinfo("No last folder to open", "No last folder to open.")
+
+            logger.debug('No last folder to open.')
+            return
 
         # if we're on a Mac, open the user data dir in Finder
         if platform.system() == 'Darwin':
-            subprocess.call(['open', '-R', initial_target_dir])
+            subprocess.call(['open', '-R', self.stAI.initial_target_dir])
 
         # if we're on Windows, open the user data dir in Explorer
         elif platform.system() == 'Windows':
-            subprocess.call(['explorer', initial_target_dir])
+            subprocess.call(['explorer', self.stAI.initial_target_dir])
 
         # if we're on Linux, open the user data dir in the file manager
         elif platform.system() == 'Linux':
-            subprocess.call(['xdg-open', initial_target_dir])
+            subprocess.call(['xdg-open', self.stAI.initial_target_dir])
 
     def open_userdata_dir(self):
         # if we're on a Mac, open the user data dir in Finder
