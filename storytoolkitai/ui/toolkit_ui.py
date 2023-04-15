@@ -10,7 +10,7 @@ import hashlib
 from timecode import Timecode
 
 from storytoolkitai.core.logger import *
-from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_NAME, initial_target_dir
+from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_NAME
 
 from storytoolkitai.core.toolkit_ops import *
 
@@ -7923,12 +7923,10 @@ class toolkit_UI:
 
     def ask_for_target_dir(self, title=None, target_dir=None):
 
-        global initial_target_dir
-
         # if an initial target dir was passed
         if target_dir is not None:
             # assign it as the initial_target_dir
-            initial_target_dir = target_dir
+            self.stAI.initial_target_dir = target_dir
 
         # put the UI on top
         # self.root.wm_attributes('-topmost', True)
@@ -7937,24 +7935,23 @@ class toolkit_UI:
         # ask the user via os dialog where can we find the directory
         if title == None:
             title = "Where should we save the files?"
-        target_dir = filedialog.askdirectory(title=title, initialdir=initial_target_dir)
+        target_dir = filedialog.askdirectory(title=title, initialdir=self.stAI.initial_target_dir)
 
         # what happens if the user cancels
         if not target_dir:
             return False
 
         # remember which directory the user selected for next time
-        initial_target_dir = target_dir
+        self.stAI.initial_target_dir = target_dir
 
         return target_dir
 
     def ask_for_target_file(self, filetypes=[("Audio files", ".mov .mp4 .wav .mp3")], target_dir=None, multiple=False):
-        global initial_target_dir
 
         # if an initial target_dir was passed
         if target_dir is not None:
             # assign it as the initial_target_dir
-            initial_target_dir = target_dir
+            self.stAI.initial_target_dir = target_dir
 
         # put the UI on top
         # self.root.wm_attributes('-topmost', True)
@@ -7962,10 +7959,10 @@ class toolkit_UI:
 
         # ask the user via os dialog which file to use
         if not multiple:
-            target_file = filedialog.askopenfilename(title="Choose a file", initialdir=initial_target_dir,
+            target_file = filedialog.askopenfilename(title="Choose a file", initialdir=self.stAI.initial_target_dir,
                                                      filetypes=filetypes)
         else:
-            target_file = filedialog.askopenfilenames(title="Choose the files", initialdir=initial_target_dir,
+            target_file = filedialog.askopenfilenames(title="Choose the files", initialdir=self.stAI.initial_target_dir,
                                                       filetypes=filetypes)
 
         # what happens if the user cancels
@@ -7973,7 +7970,7 @@ class toolkit_UI:
             return False
 
         # remember what the user selected for next time
-        initial_target_dir = os.path.dirname(target_file if isinstance(target_file, str) else target_file[0])
+        self.stAI.initial_target_dir = os.path.dirname(target_file if isinstance(target_file, str) else target_file[0])
 
         return target_file
 

@@ -61,6 +61,10 @@ class StoryToolkitAI:
         # this is only preserved until the app is closed
         self.statistics = {}
 
+        # keep track of the initial_target_dir for this session
+        # this is the directory that the user has last used in the file dialogs
+        self.initial_target_dir = initial_target_dir
+
         # check if a new version of the app exists on GitHub
         # but use either the release version number or version.py,
         # depending on standalone is True or False
