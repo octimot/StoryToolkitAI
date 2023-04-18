@@ -4046,10 +4046,25 @@ class ToolkitOps:
                 )
                 i += 1
 
+    def write_txt(self, transcript_segments: dict, txt_file_path: str):
+        """
+        Write the transcript segments to a file in SRT format.
+        Each segment is written on a new line.
+        """
+
+        with open(txt_file_path, "w", encoding="utf-8") as txt_file:
+            for segment in transcript_segments:
+                # write txt lines
+                print(
+                    f"{segment['text'].strip()}",
+                    file=txt_file,
+                    flush=True,
+                )
+
     def save_srt_from_transcription(self, srt_file_path=None, transcription_segments=None,
                                     file_name=None, target_dir=None, transcription_data=None):
         '''
-        Saves an SRT file next to the transcription file.
+        Saves an SRT file based on a transcription file.
 
         You can either pass the transcription segments or the full transcription data. When both are passed,
         the transcription_segments will be used.
@@ -4084,6 +4099,7 @@ class ToolkitOps:
 
             # otherwise, stop the process
             else:
+                logger.debug('No transcription segments were passed.')
                 return False
 
             if transcription_segments:
@@ -4095,7 +4111,7 @@ class ToolkitOps:
     def save_txt_from_transcription(self, txt_file_path=None, transcription_text=None,
                                     file_name=None, target_dir=None, transcription_data=None):
         '''
-        Saves an txt file next to the transcription file.
+        Saves an txt file based on the transcription file.
 
         You can either pass the transcription text or the full transcription data. When both are passed,
         the transcription_text will be used.
@@ -4130,6 +4146,7 @@ class ToolkitOps:
 
             # otherwise, stop the process
             else:
+                logger.debug('No transcription text was passed.')
                 return False
 
             # save the text in the txt file

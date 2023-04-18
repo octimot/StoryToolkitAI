@@ -130,6 +130,11 @@ class UImenus:
 
     def load_menu_for_transcriptions(self, window_id):
 
+        # enable the Export as SRT menu item
+        self.filemenu.entryconfig('Export transcript as...', state=NORMAL,
+                                    command=lambda: self.toolkit_UI_obj.t_edit_obj.button_export_as(window_id)
+                                  )
+
         # enable the advanced search menu items relevant for transcriptions
         self.searchmenu.entryconfig("Advanced Search in current transcript...", state=NORMAL,
                                     command=lambda:
@@ -328,6 +333,9 @@ class UImenus:
         # disable transcription resolve menu items
         self.disable_menu_for_resolve_transcription()
 
+        # disable Export as
+        self.filemenu.entryconfig("Export transcript as...", state=DISABLED)
+
         # disable other transcription menu items
         #self.searchmenu.entryconfig("Advanced Search in current transcription...", state=DISABLED)
 
@@ -363,6 +371,13 @@ class UImenus:
         self.filemenu.add_command(label="Transcribe audio file...", command=self.transcribe_audio_files)
         self.filemenu.add_command(label="Translate audio file...", command=self.translate_audio_files)
 
+        # FILE MENU - export items
+        self.filemenu.add_separator()
+        # add Export as... menu item, but keep it disabled until a relevant window is focused
+        self.filemenu.add_command(label="Export transcript as...", state=DISABLED,
+                                  accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+Shift+s")
+
+        # FILE MENU - other app related items
         self.filemenu.add_separator()
         self.filemenu.add_command(label="Open configuration folder", command=self.open_userdata_dir)
         self.filemenu.add_command(label="Open last used folder", command=self.open_last_dir)

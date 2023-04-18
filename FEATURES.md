@@ -446,6 +446,8 @@ from your currently opened Resolve timeline.
 
     Shift+O         - send selection with timecodes to the Assistant
 
+    CMD/CTRL+Shift+S- export transcription as...
+
 
 Other shortcuts etc.
 

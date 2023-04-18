@@ -373,7 +373,7 @@ class toolkit_UI:
                 return
 
             # for now, simply pass to select text lines if it matches one of these keys
-            if event.keysym in ['Up', 'Down', 'v', 'V', 'A', 'i', 'o', 'O', 'm', 'M', 'C', 's', 'L',
+            if event.keysym in ['Up', 'Down', 'v', 'V', 'A', 'i', 'o', 'O', 'm', 'M', 'C', 's', 'S', 'L',
                                 'g', 'G', 'BackSpace', 't', 'a',
                                 'apostrophe', 'semicolon', 'colon', 'quotedbl']:
                 self.segment_actions(event, **attributes)
@@ -575,6 +575,10 @@ class toolkit_UI:
             if event.keysym == 'BackSpace':
                 self.delete_line(window_id=window_id, text_element=text_element,
                                  line_no=line, status_label=status_label)
+
+            # CMD/CTRL+Shift+s key event (Export transcription as...)
+            if event.keysym == 'S' and special_key == 'cmd':
+                self.button_export_as(window_id=window_id)
 
 
             # final step, update the window
@@ -1048,6 +1052,192 @@ class toolkit_UI:
                 self.toolkit_ops_obj.resolve_api.add_timeline_markers(NLE.current_timeline['name'],
                                                                       marker_data,
                                                                       False)
+
+        def button_export_as(self, window_id, transcription_file_path=None, export_file_path=None):
+            '''
+            Exports the transcript to a file.
+            For now, only SRT and TXT is supported.
+            '''
+            # get the transcription file path
+            if transcription_file_path is None and window_id in self.transcription_file_paths:
+                transcription_file_path = self.transcription_file_paths[window_id]
+
+            # if we still don't have a transcription file path, return
+            if transcription_file_path is None:
+                logger.debug('No transcription file path found.')
+                return False
+
+            # if we don't have a save file path, ask the user for it
+            if export_file_path is None:
+                # ask the user where to save the file
+                export_file_path = filedialog.asksaveasfilename(title='Export as...',
+                                                              initialdir=os.path.dirname(transcription_file_path),
+                                                              initialfile=os.path.basename(transcription_file_path)
+                                                              .replace('.transcription.json', ''),
+                                                              filetypes=[('SRT files', '*.srt'),
+                                                                         ('TXT files', '*.txt')
+                                                                         ],
+                                                              defaultextension='.srt')
+
+                # if the user pressed cancel, return
+                if export_file_path is None or export_file_path == '':
+                    logger.debug('User cancelled Export As process.')
+                    return False
+
+            # pass this to the relevant export function
+            if export_file_path.endswith('.srt'):
+                return self.button_export_as_srt(window_id, transcription_file_path, export_file_path)
+            elif export_file_path.endswith('.txt'):
+                return self.button_export_as_txt(window_id, transcription_file_path, export_file_path)
+            else:
+                # notify the user
+                self.toolkit_UI_obj.notify_via_messagebox(title='Not supported',
+                                            message='Export as {} is not supported.'
+                                                          .format(export_file_path.split('.')[-1]),
+                                            type='warning'
+                                            )
+                return False
+
+        def button_export_as_srt(self, window_id, transcription_file_path=None, export_file_path=None):
+            '''
+            Exports the transcript as an SRT file
+            '''
+
+            # get the transcription file path
+            if transcription_file_path is None and window_id in self.transcription_file_paths:
+                transcription_file_path = self.transcription_file_paths[window_id]
+
+            # if we still don't have a transcription file path, return
+            if transcription_file_path is None:
+                logger.debug('No transcription file path found.')
+                return False
+
+            # get the transcription data
+            transcription_data = self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path)
+
+            # if we don't have any transcription data, return
+            if transcription_data is None or 'segments' not in transcription_data:
+                logger.debug('No transcription data found.')
+                return False
+
+            # if we don't have a save file path, ask the user for it
+            if export_file_path is None:
+                # ask the user where to save the file
+                export_file_path = filedialog.asksaveasfilename(title='Save as SRT',
+                                                                initialdir=os.path.dirname(transcription_file_path),
+                                                                initialfile=os.path.basename(transcription_file_path)
+                                                                    .replace('.transcription.json', '.srt'),
+                                                                filetypes=[('SRT files', '*.srt')],
+                                                                defaultextension='.srt')
+
+                # if the user pressed cancel, return
+                if export_file_path is None or export_file_path == '':
+                    logger.debug('User cancelled save as SRT.')
+                    return False
+
+            # get the transcription segments
+            transcription_segments = transcription_data['segments']
+
+            # write the SRT file
+            if transcription_segments is not None or transcription_segments != [] or len(transcription_segments) > 0:
+
+                # use the toolkit ops function to write the SRT file
+                self.toolkit_ops_obj.write_srt(transcript_segments=transcription_segments,
+                                               srt_file_path=export_file_path)
+
+                # notify the user
+                self.toolkit_UI_obj.notify_via_messagebox(title='SRT file export',
+                                            message='The SRT file was exported successfully.',
+                                            type='info'
+                                            )
+
+                # focus back on the transcription window
+                self.toolkit_UI_obj.focus_window(window_id)
+
+                return True
+
+            else:
+                # notify the user
+                self.toolkit_UI_obj.notify_via_messagebox(title='No transcription data',
+                                            message='No transcription data was found.',
+                                            type='warning'
+                                            )
+
+                # focus back on the transcription window
+                self.toolkit_UI_obj.focus_window(window_id)
+
+                return False
+
+        def button_export_as_txt(self, window_id, transcription_file_path=None, export_file_path=None):
+            '''
+            Exports the transcript as a TXT file
+            '''
+
+            # get the transcription file path
+            if transcription_file_path is None and window_id in self.transcription_file_paths:
+                transcription_file_path = self.transcription_file_paths[window_id]
+
+            # if we still don't have a transcription file path, return
+            if transcription_file_path is None:
+                logger.debug('No transcription file path found.')
+                return False
+
+            # get the transcription data
+            transcription_data = self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path)
+
+            # if we don't have any transcription data, return
+            if transcription_data is None or 'segments' not in transcription_data:
+                logger.debug('No transcription data found.')
+                return False
+
+            # if we don't have a save file path, ask the user for it
+            if export_file_path is None:
+                # ask the user where to save the file
+                export_file_path = filedialog.asksaveasfilename(title='Save as Text',
+                                                                initialdir=os.path.dirname(transcription_file_path),
+                                                                initialfile=os.path.basename(transcription_file_path)
+                                                                    .replace('.transcription.json', '.txt'),
+                                                                filetypes=[('TXT files', '*.txt')],
+                                                                defaultextension='.txt')
+
+                # if the user pressed cancel, return
+                if export_file_path is None or export_file_path == '':
+                    logger.debug('User cancelled save as TXT.')
+                    return False
+
+            # get the transcription segments
+            transcription_segments = transcription_data['segments']
+
+            # write the TXT file
+            if transcription_segments is not None or transcription_segments != [] or len(transcription_segments) > 0:
+
+                # use the toolkit ops function to write the TXT file
+                self.toolkit_ops_obj.write_txt(transcript_segments=transcription_segments,
+                                                  txt_file_path=export_file_path)
+
+                # notify the user
+                self.toolkit_UI_obj.notify_via_messagebox(title='Text file export',
+                                            message='The text file was exported successfully.',
+                                            type='info'
+                                            )
+
+                # focus back on the window
+                self.toolkit_UI_obj.focus_window(window_id)
+
+                return True
+
+            else:
+                # notify the user
+                self.toolkit_UI_obj.notify_via_messagebox(title='No transcription data',
+                                            message='No transcription data was found.',
+                                            type='warning'
+                                            )
+
+                # focus back on the window
+                self.toolkit_UI_obj.focus_window(window_id)
+
+                return False
+
 
         def delete_line(self, window_id, text_element, line_no, status_label):
             '''
@@ -3555,6 +3745,22 @@ class toolkit_UI:
 
         # and finally, exit the program
         sys.exit()
+
+    def focus_window(self, window_id):
+        '''
+        This function focuses a window.
+        '''
+
+        # if the window id is not available in the window list, return
+        if window_id not in self.windows:
+            logger.debug('Window not found: ' + window_id)
+            return False
+
+        # bring the window to the top
+        self.windows[window_id].lift()
+
+        # then focus on it
+        self.windows[window_id].focus_set()
 
     def create_or_open_window(self, parent_element: tk.Toplevel or tk = None, window_id: str = None,
                               title: str = None, resizable: bool = False,
