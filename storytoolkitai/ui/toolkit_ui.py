@@ -409,7 +409,7 @@ class toolkit_UI:
             # initialize the active segment number
             self.active_segment[window_id] = self.get_active_segment(window_id, 1)
 
-            # PRE- CURSOR MOVE EVENTS:
+            # PRE-CURSOR MOVE EVENTS:
             # below we have the events that should happen prior to moving the cursor
 
             # UP key events
@@ -455,7 +455,7 @@ class toolkit_UI:
             # what is the currently selected line number again?
             line = self.get_active_segment(window_id)
 
-            # POST- CURSOR MOVE EVENTS
+            # POST-CURSOR MOVE EVENTS
             # these are the events that might require the new line and segment numbers
 
 
@@ -516,8 +516,8 @@ class toolkit_UI:
                         if event.keysym == 'M':
                             self.button_segments_to_markers(window_id=window_id, text_element=text_element, prompt=True)
 
+                        # otherwise, just add the marker with the default name (quick add)
                         else:
-                            # otherwise, just add the marker with the default name
                             self.button_segments_to_markers(window_id=window_id, text_element=text_element)
 
 
@@ -551,11 +551,11 @@ class toolkit_UI:
 
             # colon key event (align current segment start to playhead)
             if event.keysym == 'colon':
-                self.align_line_to_playhead(window_id=window_id, line_index=line, position='start')
+                self.align_line_to_playhead(window_id=window_id, position='start', line_index=line)
 
             # double quote key event (align current segment end to playhead)
             if event.keysym == 'quotedbl':
-                self.align_line_to_playhead(window_id=window_id, line_index=line, position='end')
+                self.align_line_to_playhead(window_id=window_id, position='end', line_index=line)
 
             # 't' key event (re-transcribe selected segments)
             if event.keysym == 't':
@@ -806,6 +806,7 @@ class toolkit_UI:
 
             # first, see if there are any markers on the timeline
             if not NLE.is_connected() or 'markers' not in NLE.current_timeline:
+                logger.debug('No markers found on the timeline.')
                 return
 
             # if no text_element is provided, try to get it from the window
@@ -882,6 +883,7 @@ class toolkit_UI:
 
             # first, see if there are any markers on the timeline
             if not NLE.is_connected() or NLE.current_timeline is None:
+                logger.debug('No timeline available.')
                 return
 
             # if no text_element is provided, try to get it from the window
@@ -1096,7 +1098,7 @@ class toolkit_UI:
 
             return False
 
-        def align_line_to_playhead(self, window_id, line_index, position=None):
+        def align_line_to_playhead(self, window_id, position, line_index=None):
             """
             Aligns a transcript line to the playhead (only works if Resolve is connected)
             by setting the start time or end time of the line to the playhead position.
@@ -1107,9 +1109,9 @@ class toolkit_UI:
             :return: None
             """
 
-            if position is None:
-                logger.error('No position specified for align_line_to_playhead()')
-                return False
+            if line_index is None:
+                # try to get the line from the active segment
+                line_index = self.get_active_segment(window_id)
 
             if NLE.is_connected() is None:
                 logger.error('Resolve is not connected.')
@@ -1198,6 +1200,16 @@ class toolkit_UI:
             self.save_transcript(window_id=window_id, text=False, skip_verification=True)
 
             return True
+
+        def has_selected_segments(self, window_id):
+            """
+            Checks if any segments are selected in the transcript
+            """
+
+            if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0:
+                return True
+
+            return False
 
         def get_segments_or_selection(self, window_id, add_to_clipboard=False, split_by=None, timecodes=True,
                                       allow_active_segment=True, add_time_column=False):
@@ -1705,6 +1717,9 @@ class toolkit_UI:
                     text_element.tag_config('l_selected', foreground='blue',
                                             background=self.toolkit_UI_obj.resolve_theme_colors['superblack'])
 
+                # trigger the on_selection function
+                self.on_selection(window_id=window_id)
+
                 return True
 
             # if a single line was passed, add or remove it from the selection
@@ -1735,7 +1750,19 @@ class toolkit_UI:
                     text_element.tag_config('l_selected', foreground='blue',
                                             background=self.toolkit_UI_obj.resolve_theme_colors['superblack'])
 
+            # trigger the on_selection function
+            self.on_selection(window_id=window_id)
+
             return True
+
+        def on_selection(self, window_id):
+            '''
+            This is trigger when something is happening with the selection in the transcription window
+            - must be called from said function
+            '''
+
+            # update the menu bar
+            self.toolkit_UI_obj.UI_menus.toggle_menu_for_transcription_selections(window_id=window_id)
 
         def segment_line_to_id(self, window_id, line):
 
@@ -4779,7 +4806,7 @@ class toolkit_UI:
                 text_widget.see(f'{tag_index}')
 
     def on_connect_resolve_api_press(self):
-        self.UI_menus.main_menubar.integrationsmenu.entryconfig('Connect to Resolve API', state='disabled')
+        self.UI_menus.integrationsmenu.entryconfig('Connect to Resolve API', state='disabled')
         self.toolkit_ops_obj.resolve_enable()
 
         # now wait for resolve to connect
@@ -4787,7 +4814,7 @@ class toolkit_UI:
             time.sleep(0.01)
 
         # now that resolve is connected, we can enable the Disable Resolve API menu item
-        self.UI_menus.main_menubar.integrationsmenu.entryconfig('Disable Resolve API', state='normal')
+        self.UI_menus.integrationsmenu.entryconfig('Disable Resolve API', state='normal')
 
         # if the app config says that we should connect, ask the user if they still want that
         if self.toolkit_ops_obj.stAI.get_app_setting('disable_resolve_api', default_if_none=False) is True:
@@ -4804,8 +4831,8 @@ class toolkit_UI:
     def on_disable_resolve_api_press(self):
 
         # update menus
-        self.UI_menus.main_menubar.integrationsmenu.entryconfig('Connect to Resolve API', state='normal')
-        self.UI_menus.main_menubar.integrationsmenu.entryconfig('Disable Resolve API', state='disabled')
+        self.UI_menus.integrationsmenu.entryconfig('Connect to Resolve API', state='normal')
+        self.UI_menus.integrationsmenu.entryconfig('Disable Resolve API', state='disabled')
 
         # disable resolve api
         self.toolkit_ops_obj.resolve_disable()

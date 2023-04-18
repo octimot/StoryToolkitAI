@@ -442,6 +442,10 @@ from your currently opened Resolve timeline.
 
     CMD/CTRL+F      - open find window
 
+    o               - send selection to the Assistant
+
+    Shift+O         - send selection with timecodes to the Assistant
+
 
 Other shortcuts etc.
 
