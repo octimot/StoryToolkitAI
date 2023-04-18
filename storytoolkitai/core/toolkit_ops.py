@@ -4402,12 +4402,13 @@ class ToolkitOps:
         '''
         Calculates the seconds from a timecode or frames based on the current timeline's framerate
 
-        :param timecode:
-        :param frames:
+        :param timecode: The timecode to calculate the seconds from
+        :param frames: The number of frames to calculate the seconds from
+        :param frame rate: The framerate of the timeline in FPS
+        :param start_tc: The start timecode of the timeline
         :return:
         '''
 
-        #global resolve
         if NLE.resolve:
 
             # poll resolve for some info
@@ -4416,10 +4417,13 @@ class ToolkitOps:
             resolve_data = self.resolve_api.get_resolve_data()
 
             # get the framerate of the current timeline
+            # either from Resolve...
             if 'currentTimelineFPS' in resolve_data:
                 timeline_fps = resolve_data['currentTimelineFPS']
+            # ...from the passed framerate
             elif framerate is not None:
                 timeline_fps = framerate
+            # ...or abort
             else:
                 logger.debug('No timeline framerate found. Aborting.')
                 return None
@@ -4435,8 +4439,8 @@ class ToolkitOps:
             # initialize the timecode object for the start tc
             timeline_start_tc = Timecode(timeline_fps, timeline_start_tc)
 
-            # if no timecode was passed, get it from the variable
-            if timecode is None and frames is not None:
+            # if no timecode was passed, try to get it from the NLE object
+            if timecode is None and frames is None:
                 timecode = NLE.current_tc
 
             # calculate the timecode from the passed frames
@@ -4445,6 +4449,7 @@ class ToolkitOps:
 
             # if we still don't have a timecode, abort and return None
             if timecode is None:
+                logger.debug('No timecode was passed. Aborting.')
                 return None
 
             # initialize the timecode object for the passed timecode
