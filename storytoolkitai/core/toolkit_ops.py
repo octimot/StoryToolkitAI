@@ -4341,6 +4341,7 @@ class ToolkitOps:
 
         # force the NLE object to None
         NLE.resolve = None
+        NLE.reset_all()
 
         # trigger resolve changed
         self.on_resolve('resolve_changed')

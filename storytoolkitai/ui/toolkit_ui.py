@@ -5089,6 +5089,8 @@ class toolkit_UI:
                 text_widget.see(f'{tag_index}')
 
     def on_connect_resolve_api_press(self):
+
+        # update menu references
         self.UI_menus.integrationsmenu.entryconfig('Connect to Resolve API', state='disabled')
         self.toolkit_ops_obj.resolve_enable()
 
@@ -5098,6 +5100,9 @@ class toolkit_UI:
 
         # now that resolve is connected, we can enable the Disable Resolve API menu item
         self.UI_menus.integrationsmenu.entryconfig('Disable Resolve API', state='normal')
+
+        # update other menu references
+        self.UI_menus.update_current_window_references()
 
         # if the app config says that we should connect, ask the user if they still want that
         if self.toolkit_ops_obj.stAI.get_app_setting('disable_resolve_api', default_if_none=False) is True:
@@ -5119,6 +5124,9 @@ class toolkit_UI:
 
         # disable resolve api
         self.toolkit_ops_obj.resolve_disable()
+
+        # update other menu references
+        self.UI_menus.update_current_window_references()
 
         # if the app config says that we should connect, ask the user if they still want that
         if self.toolkit_ops_obj.stAI.get_app_setting('disable_resolve_api', default_if_none=False) is False:
