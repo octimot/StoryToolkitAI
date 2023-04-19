@@ -1683,6 +1683,7 @@ class ToolkitOps:
             return False
 
         # get info from resolve
+        # todo: this needs to be done using the NLE object in the future
         try:
             resolve_data = self.resolve_api.get_resolve_data()
         # in case of exception still create a dict with an empty resolve object
@@ -1774,6 +1775,14 @@ class ToolkitOps:
 
             # get the current timeline from Resolve
             currentTimelineName = resolve_data['currentTimeline']['name']
+
+            # send the timeline name via kwargs
+            kwargs['timeline_name'] = currentTimelineName
+
+            # get the current project name from Resolve
+            if 'currentProject' in resolve_data and resolve_data['currentProject'] is not None:
+                # get the project name from Resolve
+                kwargs['project_name'] = resolve_data['currentProject']
 
             # generate a unique id to keep track of this file in the queue and transcription log
             if unique_id is None:
@@ -2096,6 +2105,8 @@ class ToolkitOps:
                              'time_intervals': time_intervals,
                              'excluded_time_intervals': excluded_time_intervals,
                              'transcription_file_path': transcription_file_path,
+                             'timeline_name': kwargs.get('timeline_name', None),
+                             'project_name': kwargs.get('project_name', None),
                              'progress': kwargs.get('progress', 0),
                              'status': 'waiting', 'info': None}
 
@@ -2243,22 +2254,24 @@ class ToolkitOps:
 
         # get file info from queue
         queue_attr['name'], \
-            queue_attr['audio_file_path'], \
-            queue_attr['task'], \
-            queue_attr['language'], \
-            queue_attr['model'], \
-            queue_attr['device'], \
-            queue_attr['initial_prompt'], \
-            queue_attr['pre_detect_speech'], \
-            queue_attr['word_timestamps'], \
-            queue_attr['max_chars_per_segment'], \
-            queue_attr['max_words_per_segment'], \
-            queue_attr['split_on_punctuation_marks'], \
-            queue_attr['prevent_short_gaps'], \
-            queue_attr['time_intervals'], \
-            queue_attr['excluded_time_intervals'], \
-            queue_attr['transcription_file_path'], \
-            info \
+        queue_attr['audio_file_path'], \
+        queue_attr['task'], \
+        queue_attr['language'], \
+        queue_attr['model'], \
+        queue_attr['device'], \
+        queue_attr['initial_prompt'], \
+        queue_attr['pre_detect_speech'], \
+        queue_attr['word_timestamps'], \
+        queue_attr['max_chars_per_segment'], \
+        queue_attr['max_words_per_segment'], \
+        queue_attr['split_on_punctuation_marks'], \
+        queue_attr['prevent_short_gaps'], \
+        queue_attr['time_intervals'], \
+        queue_attr['excluded_time_intervals'], \
+        queue_attr['transcription_file_path'], \
+        queue_attr['timeline_name'], \
+        queue_attr['project_name'], \
+        info \
             = self.get_queue_file_info(queue_id)
 
         logger.info("Starting to transcribe {}".format(queue_attr['name']))
@@ -2315,6 +2328,8 @@ class ToolkitOps:
                     queue_file['time_intervals'],
                     queue_file['excluded_time_intervals'],
                     queue_file['transcription_file_path'],
+                    queue_file['timeline_name'],
+                    queue_file['project_name'],
                     queue_file['info']]
 
         return False
@@ -3376,6 +3391,18 @@ class ToolkitOps:
         # what is the name of the audio file
         audio_file_name = os.path.basename(audio_file_path)
 
+        # if a timeline_name was sent, remember it for later
+        timeline_name = None
+        if 'timeline_name' in other_whisper_options:
+            timeline_name = other_whisper_options['timeline_name']
+            del other_whisper_options['timeline_name']
+
+        # if a project_name was sent, remember it for later
+        project_name = None
+        if 'project_name' in other_whisper_options:
+            project_name = other_whisper_options['project_name']
+            del other_whisper_options['project_name']
+
         # select the device that was passed (if any)
         if 'device' in other_whisper_options:
             # select the new whisper device
@@ -3579,6 +3606,9 @@ class ToolkitOps:
         if self.cancel_queue_item_if_cancelled(queue_id=queue_id):
             return None
 
+        # initialize empty result
+        result = None
+
         # transcribe the audio segments
         # (or just one audio segment with the whole audio if no time intervals were passed)
         try:
@@ -3589,13 +3619,7 @@ class ToolkitOps:
                                                       queue_id=queue_id
                                                       )
         except Exception as e:
-            logger.error('Error transcribing audio using Whisper.')
-
-            # let the user know that the packages are wrong
-            import traceback
-            traceback_str = traceback.format_exc()
-
-            logger.error(traceback_str)
+            logger.error('Error transcribing audio using Whisper.', exc_info=True)
 
             # update the status of the item in the transcription log
             self.update_transcription_log(unique_id=queue_id, **{'status': 'failed', 'progress': ''})
@@ -3686,6 +3710,14 @@ class ToolkitOps:
             # also create the transcription data dictionary
             transcription_data = result
 
+            # add the timeline name to the transcription data, if there is one
+            if timeline_name is not None:
+                transcription_data['timeline_name'] = timeline_name
+
+            # add the project name to the transcription data, if there is one
+            if project_name is not None:
+                transcription_data['project_name'] = project_name
+
         else:
             # for the file name we'll use the name of the existing transcription file,
             # but remove '.transcription.json' from the end
@@ -3755,6 +3787,14 @@ class ToolkitOps:
         # save the transcription file with all the added data
         transcription_json_file_path = self.save_transcription_file(file_name=file_name, target_dir=target_dir,
                                                                     transcription_data=transcription_data)
+
+        # if there's a project_name and a timeline_name
+        # link the transcription to the project and timeline
+        if project_name is not None and timeline_name is not None:
+            self.link_transcription_to_timeline(transcription_file_path=transcription_json_file_path,
+                                                project_name=project_name,
+                                                timeline_name=timeline_name,
+                                                link=True)
 
         # when done, change the status in the transcription log, clear the progress
         # and also add the file paths to the transcription log
@@ -4221,7 +4261,7 @@ class ToolkitOps:
 
         :param transcription_file_path:
         :param timeline_name:
-        :param link:
+        :param link: If no link is passed, it will toggle the link
         :return:
         '''
 

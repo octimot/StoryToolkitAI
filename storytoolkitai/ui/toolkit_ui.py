@@ -5649,7 +5649,9 @@ class toolkit_UI:
                                             prevent_short_gaps=prevent_short_gaps_var.get(),
                                             time_intervals=time_intervals_input.get(1.0, END),
                                             excluded_time_intervals=excluded_time_intervals_input.get(1.0, END),
-                                            transcription_file_path=transcription_file_path_var.get()
+                                            transcription_file_path=transcription_file_path_var.get(),
+                                            timeline_name=kwargs.get('timeline_name', None),
+                                            project_name=kwargs.get('project_name', None)
                                             )
                                 )
 
@@ -5672,7 +5674,9 @@ class toolkit_UI:
                                                 prevent_short_gaps=prevent_short_gaps_var.get(),
                                                 time_intervals=time_intervals_input.get(1.0, END),
                                                 excluded_time_intervals=excluded_time_intervals_input.get(1.0, END),
-                                                transcription_file_path=transcription_file_path_var.get()
+                                                transcription_file_path=transcription_file_path_var.get(),
+                                                timeline_name=kwargs.get('timeline_name', None),
+                                                project_name=kwargs.get('project_name', None)
                                                 )
 
     def convert_text_to_time_intervals(self, text):
