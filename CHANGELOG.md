@@ -2,11 +2,35 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.18.1] - 2023-04-19
+
+### Info
+This update improves the usability of the Transcription Window and adds more menu buttons for easier access to features.
+
+Early update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+Please back up your StoryToolkitAI configuration folder before updating to this version if updating from 0.17
+
+### Added
+- Ability to export transcripts as SRT and Text files via menu buttons
+- Most transcription related features are now available via menu buttons
+- Connect and Disable Resolve API menu buttons
+- Open Last Used Folder button in File menu 
+- Custom Punctuation Marks via Preferences Window to be used for splitting segments on punctuation
+- Warning when trying to add markers to non-linked timeline in Resolve
+
+### Changed
+- Resolve API connection is disabled by default on new tool installations - see [Connecting to the Resolve API](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#connecting-to-the-resolve-api)
+- Additional buttons on the Transcription Window for easier access to features
+
+### Bugfixes
+- Fixed a bug that prevented the tool from using some Resolve API features introduced in version 0.18.0
+- Fixed a bug that didn't allow aligning and splitting segments according to Resolve playhead position
+
 ## [0.18.0] - 2023-04-11
 
 ### Info
 Early update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
-Please backup your StoryToolkitAI configuration folder before updating to this version.
+Please back up your StoryToolkitAI configuration folder before updating to this version.
 
 ### Added
 - Ability to cancel transcriptions from the queue
