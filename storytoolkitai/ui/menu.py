@@ -118,6 +118,9 @@ class UImenus:
 
             self.editmenu.entryconfig('Find...', state=NORMAL, command=self.toolkit_UI_obj.windows[window_id].find)
 
+        else:
+            self.editmenu.entryconfig('Find...', command=self.donothing, state=DISABLED)
+
         # enable select all menu item depending on the window type
         if window_type == 'transcription':
             self.load_menu_for_transcriptions(window_id)

@@ -4526,6 +4526,12 @@ class toolkit_UI:
                                              )
                                              )
 
+                # let's add the .find attribute to the window, so that the UI_menu can use it
+                self.windows[window_id].find = lambda: self.open_find_replace_window(
+                    parent_window_id=window_id,
+                    title="Find in {}".format(title)
+                )
+
             # THE MAIN TEXT ELEMENT
             # create a frame for the text element
             text_form_frame = tk.Frame(self.windows[window_id], name='text_form_frame')
@@ -6374,6 +6380,13 @@ class toolkit_UI:
                                               title="Find in {}".format(title),
                                               select_all_action=self.t_edit_obj.text_indices_to_selection
                                               ))
+
+                # let's add the .find attribute to the window, so that the UI_menu can use it
+                self.windows[t_window_id].find = lambda: self.open_find_replace_window(
+                                                parent_window_id=t_window_id,
+                                                title="Find in {}".format(title),
+                                              select_all_action=self.t_edit_obj.text_indices_to_selection
+                                            )
 
                 # ADVANCED SEARCH
                 # this button will open a new window with advanced search options
