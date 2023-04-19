@@ -120,7 +120,8 @@ but since there's no AI involved in this process (yet), the tool might split sen
 When both options are set, the Max. Words per Line is ignored. 
 Only works if Increased Time Precision is enabled.
 
-**Split on Punctuation** (version 0.17.19) splits the transcript lines at punctuation marks (. ! ? …)
+**Split on Punctuation** (version 0.17.19) splits the transcript lines at the punctuation marks set in the Preferences 
+window - the default punctuation marks are: `. ! ? …`
 This might not always be the best option, for eg. if your text contains many abbreviations (Dr., Mr. etc.),
 but you could still activate it and then manually fix the transcript afterwards. We're looking for ways to improve this 
 using AI. 
