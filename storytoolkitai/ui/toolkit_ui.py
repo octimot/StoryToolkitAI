@@ -2818,8 +2818,36 @@ class toolkit_UI:
                 h1_font = {'font': self.toolkit_UI_obj.default_font_h1, 'justify': 'center',
                            'pady': self.toolkit_UI_obj.form_paddings['pady']}
 
-                pref_form_frame = tk.Frame(pref_window)
+                # add a canvas that will hold the form which has a scrollbar
+                pref_form_frame_canvas = tk.Canvas(pref_window, borderwidth=0, width=600, height=980)
+                pref_form_frame_canvas.pack(side='left', fill='both', expand=True)
+
+                # make the canvas as large as possible, without it going off the screen
+                pref_form_frame_canvas.pack_propagate(False)
+
+                # add a scrollbar to the canvas
+                pref_form_frame_scrollbar = tk.Scrollbar(pref_window, orient='vertical',
+                                                         ** self.toolkit_UI_obj.scrollbar_settings,
+                                                            command=pref_form_frame_canvas.yview)
+                pref_form_frame_scrollbar.pack(side='right', fill='y')
+
+                # configure the canvas to use the scrollbar
+                pref_form_frame_canvas.configure(yscrollcommand=pref_form_frame_scrollbar.set)
+
+                # update the canvas to allow scrolling
+                pref_form_frame_canvas.bind('<Configure>', lambda e, pref_form_frame_canvas=pref_form_frame_canvas:
+                    pref_form_frame_canvas.configure(scrollregion=pref_form_frame_canvas.bbox('all')))
+
+                # scroll when the mouse wheel is used or the pad is dragged
+                pref_form_frame_canvas.bind_all('<MouseWheel>', lambda e, pref_form_frame_canvas=pref_form_frame_canvas:
+                    pref_form_frame_canvas.yview_scroll(int(-1 * (e.delta / 120)), 'units'))
+
+                # add a frame to the canvas
+                pref_form_frame = tk.Frame(pref_form_frame_canvas)
                 pref_form_frame.pack()
+
+                # the frame needs to be added to the canvas
+                pref_form_frame_canvas.create_window((0, 0), window=pref_form_frame, anchor='nw')
 
                 # these are the app settings that can be changed
 
@@ -2894,6 +2922,18 @@ class toolkit_UI:
                     = tk.StringVar(pref_form_frame,
                                    value=self.stAI.get_app_setting('transcription_split_on_punctuation_marks',
                                                                    default_if_none=False))
+
+                # the custom punctuation marks are stored as list in the app settings
+                custom_punctuation_marks_str \
+                    = self.stAI.get_app_setting('transcription_custom_punctuation_marks',
+                                                                        default_if_none=['.', '!', '?', '…'])
+
+                # convert the list to a string with spaces between the punctuation marks
+                custom_punctuation_marks_str = ' '.join(custom_punctuation_marks_str)
+
+                transcription_custom_punctuation_marks_var \
+                    = tk.StringVar(pref_form_frame,
+                                      value=custom_punctuation_marks_str)
 
                 transcription_prevent_short_gaps_var \
                     = tk.StringVar(pref_form_frame,
@@ -3079,12 +3119,20 @@ class toolkit_UI:
                                                                   variable=transcription_split_on_punctuation_marks_var)
                 split_on_punctuation_marks_input.grid(row=29, column=1, **form_grid_and_paddings)
 
+                # custom punctuation marks
+                tk.Label(pref_form_frame, text='Punctuation Marks', **label_settings).grid(row=30, column=0,
+                                                                                                    **form_grid_and_paddings)
+                custom_punctuation_marks_input = tk.Entry(pref_form_frame,
+                                                            textvariable=transcription_custom_punctuation_marks_var,
+                                                            **entry_settings_quarter)
+                custom_punctuation_marks_input.grid(row=30, column=1, **form_grid_and_paddings)
+
                 # prevent short gaps between segments
                 tk.Label(pref_form_frame, text='Prevent Gaps Shorter Than', **label_settings)\
-                    .grid(row=30, column=0, **form_grid_and_paddings)
+                    .grid(row=31, column=0, **form_grid_and_paddings)
                 prevent_short_gaps_input = tk.Entry(pref_form_frame, textvariable=transcription_prevent_short_gaps_var,
                                                     **entry_settings_quarter)
-                prevent_short_gaps_input.grid(row=30, column=1, **form_grid_and_paddings)
+                prevent_short_gaps_input.grid(row=31, column=1, **form_grid_and_paddings)
 
                 # only allow floats
                 prevent_short_gaps_input.config(validate="key",
@@ -3093,30 +3141,25 @@ class toolkit_UI:
                                                     self.toolkit_UI_obj.only_allow_floats), '%P'))
 
                 # the transcript font size
-                tk.Label(pref_form_frame, text='Transcript Font Size', **label_settings).grid(row=31, column=0,
+                tk.Label(pref_form_frame, text='Transcript Font Size', **label_settings).grid(row=40, column=0,
                                                                                               **form_grid_and_paddings)
                 transcript_font_size_input = tk.Entry(pref_form_frame, textvariable=transcript_font_size_var,
                                                       **entry_settings_quarter)
-                transcript_font_size_input.grid(row=31, column=1, **form_grid_and_paddings)
+                transcript_font_size_input.grid(row=40, column=1, **form_grid_and_paddings)
 
                 # transcripts always on top
-                tk.Label(pref_form_frame, text='Transcript Always On Top', **label_settings).grid(row=32, column=0,
+                tk.Label(pref_form_frame, text='Transcript Always On Top', **label_settings).grid(row=41, column=0,
                                                                                                   **form_grid_and_paddings)
                 transcripts_always_on_top_input = tk.Checkbutton(pref_form_frame,
                                                                  variable=transcripts_always_on_top_var)
-                transcripts_always_on_top_input.grid(row=32, column=1, **form_grid_and_paddings)
+                transcripts_always_on_top_input.grid(row=41, column=1, **form_grid_and_paddings)
 
                 # skip transcription settings
-                tk.Label(pref_form_frame, text='Skip Transcription Settings', **label_settings).grid(row=33, column=0,
+                tk.Label(pref_form_frame, text='Skip Transcription Settings', **label_settings).grid(row=42, column=0,
                                                                                                      **form_grid_and_paddings)
                 transcripts_skip_settings_input = tk.Checkbutton(pref_form_frame,
                                                                  variable=transcripts_skip_settings_var)
-                transcripts_skip_settings_input.grid(row=33, column=1, **form_grid_and_paddings)
-
-                # ffmpeg path
-                # tk.Label(pref_form_frame, text='FFmpeg Path', **label_settings).grid(row=14, column=0, **form_grid_and_paddings)
-                # ffmpeg_path_input = tk.Entry(pref_form_frame, textvariable=ffmpeg_path_var, **entry_settings)
-                # ffmpeg_path_input.grid(row=14, column=1, **form_grid_and_paddings)
+                transcripts_skip_settings_input.grid(row=42, column=1, **form_grid_and_paddings)
 
                 # SAVE BUTTON
 
@@ -3138,6 +3181,7 @@ class toolkit_UI:
                     'transcription_max_chars_per_segment': transcription_max_chars_per_segment_var,
                     'transcription_max_words_per_segment': transcription_max_words_per_segment_var,
                     'transcription_split_on_punctuation_marks': transcription_split_on_punctuation_marks_var,
+                    'transcription_custom_punctuation_marks': transcription_custom_punctuation_marks_var,
                     'transcription_prevent_short_gaps': transcription_prevent_short_gaps_var,
                     'transcription_render_preset': transcription_render_preset_var,
                     'transcript_font_size': transcript_font_size_var,
@@ -3148,7 +3192,7 @@ class toolkit_UI:
 
                 Label(pref_form_frame, text="", **label_settings).grid(row=50, column=0, **form_grid_and_paddings)
                 start_button = tk.Button(pref_form_frame, text='Save')
-                start_button.grid(row=40, column=1, **form_grid_and_paddings)
+                start_button.grid(row=60, column=1, **form_grid_and_paddings)
                 start_button.config(command=lambda: self.save_preferences(input_variables))
 
         def save_preferences(self, input_variables: dict) -> bool:
@@ -3165,6 +3209,39 @@ class toolkit_UI:
                 if not self.stAI.check_api_token(input_variables['api_token'].get()):
                     self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Error', message='Invalid API token.')
                     return False
+
+            # if the user has entered transcription_custom_punctuation_marks,
+            if input_variables['transcription_custom_punctuation_marks'].get() != '':
+
+                # convert the string to a list, but use each space as a delimiter
+                # but make sure it's a list
+                transcription_custom_punctuation_marks = \
+                    list(input_variables['transcription_custom_punctuation_marks'].get().strip().split(' '))
+
+                # remove any empty strings
+                transcription_custom_punctuation_marks = [x for x in transcription_custom_punctuation_marks if x != '']
+
+                # only single, non-empty strings are allowed
+                for punctuation_mark in transcription_custom_punctuation_marks:
+                    if len(punctuation_mark) != 1:
+                        self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Error',
+                                                                    message='Invalid punctuation mark: {}\n'
+                                                                            'Please use only single characters '
+                                                                            'divided by an empty space.'
+                                                                  .format(punctuation_mark))
+                        return False
+
+
+                # set the config variable to save it later
+                self.stAI.config['transcription_custom_punctuation_marks'] = transcription_custom_punctuation_marks
+
+                # and remove it from the input_variables dict so we don't iterate over it later
+                del input_variables['transcription_custom_punctuation_marks']
+
+            # if the transcription_custom_punctuation_marks is empty, set it as an empty list
+            else:
+                del input_variables['transcription_custom_punctuation_marks']
+                self.stAI.config['transcription_custom_punctuation_marks'] = []
 
             # save all the variables to the config file
             for key, value in input_variables.items():
@@ -6431,6 +6508,10 @@ class toolkit_UI:
         :param update_attr:
         :return:
         '''
+
+        # ignore if the window doesn't exist
+        if window_id not in self.windows:
+            return
 
         # if the update_all attribute is True
         # try to get the following GUI elements from the window, if they were not passed in the update_attr dict

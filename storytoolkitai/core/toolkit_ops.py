@@ -387,7 +387,7 @@ class ToolkitOps:
             self.stAI.update_statistics('assistant_usage_{}_{}'.format(self.model_provider, self.model_name),
                                         self.usage)
 
-            print(self.stAI.statistics)
+            #print(self.stAI.statistics)
 
         def send_query(self, content):
             '''
@@ -3009,13 +3009,18 @@ class ToolkitOps:
         # split the result on punctuation marks if the option is set
         if split_on_punctuation_marks:
 
+            # get the custom punctuation marks from the config
+            custom_punctuation_marks = self.stAI.get_app_setting('transcription_custom_punctuation_marks',
+                                                                        default_if_none=['.', '!', '?', '…'])
+
             # the resulting segments
             new_segments = []
 
             # take each segment
             for segment in segments:
                 # split the segment into multiple segments
-                resulting_segment = self.split_segment_on_punctuation_marks(segment)
+                resulting_segment = self.split_segment_on_punctuation_marks(segment,
+                                                                            punctuation_marks=custom_punctuation_marks)
 
                 # add the resulting segments to the new segments list
                 new_segments.extend(resulting_segment)
@@ -4001,7 +4006,6 @@ class ToolkitOps:
             transcription_data['text'] = ''
 
             for segment in transcription_segments:
-                print(segment)
 
                 # take each segment and insert it into the text variable
                 transcription_data['text'] = segment + ' '
