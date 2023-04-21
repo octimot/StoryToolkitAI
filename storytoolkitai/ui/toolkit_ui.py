@@ -1391,6 +1391,187 @@ class toolkit_UI:
 
             return True
 
+        def save_timecode_data_to_transcription(self, window_id=None, timeline_fps=None, timeline_start_tc=None):
+
+            if window_id is None or window_id not in self.transcription_file_paths:
+                logger.error('Cannot save timecode data to transcription: '
+                             'no window id specified or transcription file path unknown.')
+                return False
+
+            if timeline_fps is None and timeline_start_tc is None:
+                logger.debug('No timecode data passed to save to transcription file.')
+                return False
+
+            #  we need to get the file path from the window
+            transcription_file_path = self.transcription_file_paths[window_id]
+
+            # get the contents of the transcription file
+            transcription_file_data = \
+                self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path=transcription_file_path)
+
+            if not transcription_file_data:
+                logger.error('Failed to get transcription file data from file: {}.'.format(transcription_file_path))
+                return False
+
+            # replace the timeline_fps, if it was passed
+            if timeline_fps is not None:
+                transcription_file_data['timeline_fps'] = timeline_fps
+
+            # replace the timeline_start_tc, if it was passed
+            if timeline_start_tc is not None:
+                transcription_file_data['timeline_start_tc'] = timeline_start_tc
+
+            # finally, save the transcription file
+            if self.toolkit_ops_obj.save_transcription_file(transcription_file_path=transcription_file_path,
+                                                         transcription_data=transcription_file_data,
+                                                         backup='backup'):
+                logger.debug('Saved timecode data to transcription file: {}'.format(transcription_file_path))
+
+            # or return false if the saving failed
+            else:
+                logger.error('Failed to save timecode data to transcription file: {}'.format(transcription_file_path))
+                return False
+
+        def ask_for_transcription_timecode_data(self, window_id, default_start_tc='', default_fps=''):
+            """
+            Opens a dialog to ask the user for timeline framerate and start time.
+            And then saves the data to the transcription data dict.
+            :param window_id: the window id
+            :param default_start_tc: the default start timecode
+            :param default_fps: the default framerate
+            :return: timeline_fps, timeline_start_tc or None, None
+            """
+
+            # do we have any transcription data for this window?
+            if window_id not in self.transcription_data:
+                logger.warn('No transcription data found for window id: {}'.format(window_id))
+                return None, None
+
+            # try to get the default start timecode from the transcription data, if the passed default is empty
+            if (default_start_tc == '' or not default_start_tc) \
+                and 'timeline_start_tc' in self.transcription_data[window_id]:
+
+                default_start_tc = self.transcription_data[window_id]['timeline_start_tc']
+
+            # try to get the default framerate from the transcription data, if the passed default is empty
+            if (default_fps == '' or not default_fps) \
+                and 'timeline_fps' in self.transcription_data[window_id]:
+
+                default_fps = self.transcription_data[window_id]['timeline_fps']
+
+            # create a list of widgets for the input dialogue
+            input_widgets = [
+                {'name': 'timeline_start_tc', 'label': 'Start Timecode:', 'type': 'entry',
+                 'default_value': default_start_tc},
+                {'name': 'timeline_fps', 'label': 'Frame Rate:', 'type': 'entry',
+                 'default_value': default_fps}
+            ]
+
+            start_tc = None
+            fps = None
+
+            while start_tc is None or fps is None:
+
+                # then we call the ask_dialogue function
+                user_input = self.toolkit_UI_obj.AskDialog(title='Timeline Timecode Info',
+                                                           input_widgets=input_widgets,
+                                                           parent=self.toolkit_UI_obj.windows[window_id],
+                                                           cancel_return=None
+                                                           ).value()
+
+                # if the user clicked cancel, stop the loop
+                if user_input is None:
+                    return None, None
+
+                # validate the user input
+                try:
+                    # try to see if the timecode is valid
+                    start_tc = Timecode(user_input['timeline_fps'], user_input['timeline_start_tc'])
+
+                    # set the start_tc in the transcription data to the user input
+                    self.transcription_data[window_id]['timeline_fps'] \
+                        = user_input['timeline_fps']
+
+                    # set the start_tc in the transcription data to the user input
+                    self.transcription_data[window_id]['timeline_start_tc'] \
+                        = user_input['timeline_start_tc']
+
+                    # now try to save the transcription data to the file
+                    self.save_timecode_data_to_transcription(window_id=window_id,
+                                                             timeline_fps=user_input['timeline_fps'],
+                                                             timeline_start_tc=user_input['timeline_start_tc']
+                                                            )
+
+                    # if we reached this point, return the fps and start_tc
+                    return user_input['timeline_fps'], user_input['timeline_start_tc']
+
+                except:
+
+                    logger.error('Invalid Timecode or Frame Rate: {} @ {}'
+                                 .format(user_input['timeline_start_tc'], user_input['timeline_fps']),
+                                 exc_info=True
+                                 )
+
+                    # notify user
+                    self.toolkit_UI_obj.notify_via_messagebox(title='Timecode or Frame Rate error',
+                                                              message="The Start Timecode or Frame Rate "
+                                                                      "you entered is invalid. Please try again.",
+                                                              message_log="Invalid Timecode or Frame Rate.",
+                                                              type='warning')
+
+        def get_timecode_data_from_transcription(self, window_id):
+            """
+            Gets the timecode data from the transcription data dict.
+            :param window_id: the window id
+            :return: tuple of timeline_fps, timeline_start_tc, or None, None if no timecode data was found
+            """
+
+            timecode_data = None
+
+            # get timecode data from the transcription data dict
+            if window_id in self.transcription_data:
+                timecode_data = \
+                    self.toolkit_ops_obj.transcription_has_timecode_data(
+                        transcription_data=self.transcription_data[window_id])
+
+            # if the transcription data is None, it means that the transcription data is invalid
+            # there's not much to do, so notify the user
+            if timecode_data is None:
+
+                # show error message
+                self.toolkit_UI_obj.notify_via_messagebox(title='Cannot get timecode data',
+                                                          message='Cannot get timecode data: '
+                                                                  'Transcription data invalid or not found',
+                                                          message_log='Transcription data invalid or not found.',
+                                                          type='error')
+                return None, None
+
+            # if the transcription data is False, it means that the data is valid,
+            # but the transcription doesn't contain timecode data
+            # so the user will be asked if they want to enter the timecode data manually
+            if timecode_data is False:
+
+                # ask the user if they want to enter the timecode data manually
+                if messagebox.askyesno('Timecode data not found',
+                                       'Frame rate or start timecode not found in transcription.\n\n'
+                                       'Would you like to enter the timecode data manually?\n\n'
+                                       'This would save it to the transcription for future use.'):
+
+                    # ask the user for the timecode data
+                    timecode_data = self.ask_for_transcription_timecode_data(window_id=window_id)
+
+            # if the timecode data is valid, set the fps and start timecode
+            if timecode_data is not None and timecode_data is not False \
+                and isinstance(timecode_data, tuple) and len(timecode_data) == 2:
+
+                timeline_fps = timecode_data[0] if timecode_data[0] else None
+                timeline_start_tc = Timecode(timeline_fps, timecode_data[1]) if timecode_data[1] else None
+
+                return timeline_fps, timeline_start_tc
+
+            # last resort, just return None, None
+            return None, None
+
         def has_selected_segments(self, window_id):
             """
             Checks if any segments are selected in the transcript
@@ -1435,32 +1616,40 @@ class toolkit_UI:
             start_sec = None
             end_sec = None
 
-            # get the start timecode from Resolve
+            # if timecodes is True,
+            # get the timecode data from the transcription data
             if timecodes:
-                timeline_start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(0)
 
-                if type(timeline_start_tc) is Timecode:
-                    timeline_fps = timeline_start_tc.framerate
+                timeline_fps, timeline_start_tc = self.get_timecode_data_from_transcription(window_id=window_id)
 
-                # try to get the start timecode, fps and timeline name from the transcription data dict
-                if not timeline_start_tc and window_id in self.transcription_data:
 
-                    logger.debug('Timeline timecode not available, trying transcription data instead')
+                '''
+                OLD WAY HERE:
+                    timeline_start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(0)
+                    
+                    if type(timeline_start_tc) is Timecode:
+                        timeline_fps = timeline_start_tc.framerate
+    
+                    # try to get the start timecode, fps and timeline name from the transcription data dict
+                    if not timeline_start_tc and window_id in self.transcription_data:
+    
+                        logger.debug('Timeline timecode not available, trying transcription data instead')
+    
+                        timeline_start_tc = self.transcription_data[window_id]['timeline_start_tc'] \
+                            if 'timeline_start_tc' in self.transcription_data[window_id] else None
+    
+                        timeline_fps = self.transcription_data[window_id]['timeline_fps'] \
+                            if 'timeline_fps' in self.transcription_data[window_id] else None
+    
+                        # convert the timeline_start_tc to a Timecode object but only if the fps is also known
+                        if timeline_start_tc is not None and timeline_fps is not None:
+                            timeline_start_tc = Timecode(timeline_fps, timeline_start_tc)
+                        else:
+                            timeline_start_tc = None
+                            logger.debug('Timeline timecode not available in transcription data either')
+                '''
 
-                    timeline_start_tc = self.transcription_data[window_id]['timeline_start_tc'] \
-                        if 'timeline_start_tc' in self.transcription_data[window_id] else None
-
-                    timeline_fps = self.transcription_data[window_id]['timeline_fps'] \
-                        if 'timeline_fps' in self.transcription_data[window_id] else None
-
-                    # convert the timeline_start_tc to a Timecode object but only if the fps is also known
-                    if timeline_start_tc is not None and timeline_fps is not None:
-                        timeline_start_tc = Timecode(timeline_fps, timeline_start_tc)
-                    else:
-                        timeline_start_tc = None
-                        logger.debug('Timeline timecode not available in transcription data either')
-
-                # if no timecode was received it probably means Resolve is disconnected so disable timecodes
+                # if no timecode was received disconnected so disable timecodes
                 if not timeline_start_tc or timeline_start_tc is None:
                     timecodes = False
 

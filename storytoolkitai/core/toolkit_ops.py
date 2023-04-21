@@ -4443,6 +4443,156 @@ class ToolkitOps:
         else:
             return False
 
+    def transcription_has_timecode_data(self, transcription_data=None, transcription_path=None):
+        '''
+        This function checks if the passed transcription data or path has timecode data
+        :param transcription_data: The transcription data to check
+        :param transcription_path: The path to the transcription file to check
+        :return: [timeline_fps, timeline_start_tc] if the transcription data has timecode data,
+                False if it doesn't, None if the transcription data or path is invalid
+        '''
+
+        # if the transcription data isn't passed, try to get it from the path
+        if transcription_data is None and transcription_path is not None:
+            transcription_data = self.get_transcription_file_data(transcription_path=transcription_path)
+
+        # if the transcription data is still None, return False
+        if transcription_data is None:
+            logger.debug('Transcription not found or invalid.')
+            return None
+
+        # if the transcription data has a timeline_fps and start_tc, return True
+        if 'timeline_fps' in transcription_data and 'timeline_start_tc' in transcription_data:
+            return transcription_data['timeline_fps'], transcription_data['timeline_start_tc']
+
+        # otherwise return False
+        logger.debug('Transcription does not contain timeline_fps or timeline_start_tc')
+        return False
+
+    def convert_sec_to_transcription_timecode(self, seconds=0, transcription_data=None, transcription_path=None,
+                                              offset_with_start_tc=True, return_timecode_data=False):
+        '''
+        This function converts the passed number of seconds to timecode,
+        using the framerate and start_tc found in the transcription file/data
+
+        :param seconds: The number of seconds to convert
+        :param transcription_data: The transcription data to use (ignored if transcription_path is passed)
+        :param transcription_path: The path to the transcription file to use
+        :param offset_with_start_tc: Whether or not to offset the timecode with the transcription file's start_tc
+        :param return_timecode_data: Whether or not to return the timecode data as well as the timecode string
+        :return: The timecode string, a list with the timecode string and timecode data (timecode, fps, start_tc),
+                False if the transcription data contains no timeline_fps,
+                or None if something else went wrong
+        '''
+
+        # get the timecode data from the transcription
+        timecode_data = self.transcription_has_timecode_data(transcription_data=transcription_data,
+                                                            transcription_path=transcription_path)
+
+        # if False or None was returned, pass them
+        if timecode_data is False or timecode_data is None:
+            return timecode_data
+
+        if isinstance(timecode_data, list) and len(timecode_data) == 2:
+
+            # use try for the timecode conversion,
+            # in case the framerate or timeline_start_tc are invalid
+            try:
+                # get the framerate timecode_data
+                timeline_fps = timecode_data[0]
+
+                # convert the seconds to timecode
+                timecode = Timecode(timeline_fps, start_seconds=float(seconds))
+
+                # get the start timecode from the transcription file
+                timeline_start_tc = Timecode(timeline_fps, timecode_data[1])
+
+                # if we need to offset the timecode with the transcription file's start_tc
+                if offset_with_start_tc:
+
+                    # only offset if timecode is different than 00:00:00:00
+                    if timeline_start_tc != '00:00:00:00':
+
+                        # calculate the new timecode
+                        timecode = timeline_start_tc + timecode
+
+                # if we need to return the timecode data as well
+                if return_timecode_data:
+                    return timecode, timeline_fps, timeline_start_tc
+
+                return timecode
+
+            except:
+                logger.debug('Something went wrong converting the seconds to timecode', exc_info=True)
+                return None
+
+        # if all fails, return None
+        return None
+
+    def convert_transcription_timecode_to_sec(self, timecode: str,
+                                              transcription_data=None, transcription_path=None,
+                                              offset_with_start_tc=True, return_timecode_data=False):
+        '''
+        This function converts the passed timecode to seconds,
+        using the framerate and start_tc found in the transcription file/data
+
+        :param timecode: The timecode to convert (must be a string)
+        :param transcription_data: The transcription data to use (ignored if transcription_path is passed)
+        :param transcription_path: The path to the transcription file to use
+        :param offset_with_start_tc: Whether or not to offset the timecode with the transcription file's start_tc
+        :param return_timecode_data: Whether or not to return the timecode data as well as the timecode string
+        :return: The number of seconds, a list with the number of seconds and timecode data (seconds, fps, start_tc),
+                False if the transcription data contains no timeline_fps, or None if something else went wrong
+        '''
+
+        # get the timecode data from the transcription
+        timecode_data = self.transcription_has_timecode_data(transcription_data=transcription_data,
+                                                             transcription_path=transcription_path)
+
+        # if False or None was returned, pass them
+        if timecode_data is False or timecode_data is None:
+            return timecode_data
+
+        if isinstance(timecode_data, list) and len(timecode_data) == 2:
+
+            # use try for the timecode conversion,
+            # in case the framerate or timeline_start_tc are invalid
+            try:
+                # get the framerate timecode_data
+                timeline_fps = timecode_data[0]
+
+                # initialize the timecode object
+                timecode = Timecode(timeline_fps, timecode)
+
+                # get the start timecode from the transcription file
+                timeline_start_tc = timecode_data[1]
+
+                # initialize the timecode object for the start tc
+                timeline_start_tc = Timecode(timeline_fps, timeline_start_tc)
+
+                # if we need to offset the timecode with the transcription file's start_tc
+                if offset_with_start_tc:
+
+                    # only offset if timecode is different than 00:00:00:00
+                    if timeline_start_tc != '00:00:00:00':
+
+                        # calculate the new timecode
+                        timecode = timecode - timeline_start_tc
+
+                # convert the timecode to seconds by dividing the frames by the framerate
+                seconds = timecode.frames / timeline_fps
+
+                # if we need to return the timecode data as well
+                if return_timecode_data:
+                    return seconds, timeline_fps, timeline_start_tc
+
+                return seconds
+
+            except:
+                logger.debug('Something went wrong converting the timecode to seconds', exc_info=True)
+                return None
+
+
     def calculate_resolve_timecode_to_sec(self, timecode=None, frames=None, framerate=None, start_tc=None):
         '''
         Calculates the seconds from a timecode or frames based on the current timeline's framerate
