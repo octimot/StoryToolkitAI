@@ -440,7 +440,7 @@ class StoryToolkitAI:
             self.api_token = api_token
 
         # if the user token is not empty
-        if self.api_token and self.api_token != '' and not self.api_token:
+        if self.api_token and self.api_token != '':
             check_path = 'https://api.storytoolkit.ai/check_token?token={}'.format(self.api_token)
 
             # check if the user token is valid on the server
