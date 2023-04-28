@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.18.2] - 2023-04-28
+
+### Info
+
+Early update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+Please back up your StoryToolkitAI configuration folder before updating to this version if updating from 0.17
+
+### Added
+- Ability to use timecodes for copying transcript segments even without Resolve API connection
+- Export to Avid DS format via menu button
+- Transcriptions of audio rendered from Resolve are now auto-linked to their respective timelines
+
+### Fixes
+- The Find menu button now works correctly for all windows
+- Disable Resolve API menu button now disables all Resolve-related menu buttons
+- API Token is now validated correctly
+
+
 ## [0.18.1] - 2023-04-19
 
 ### Info
