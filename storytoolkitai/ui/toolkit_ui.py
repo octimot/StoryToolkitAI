@@ -1238,6 +1238,85 @@ class toolkit_UI:
 
                 return False
 
+        def button_export_as_avid_ds(self, window_id, transcription_file_path=None, export_file_path=None):
+            '''
+            Exports the transcript as an Avid DS file
+            '''
+
+            # get the transcription file path
+            if transcription_file_path is None and window_id in self.transcription_file_paths:
+                transcription_file_path = self.transcription_file_paths[window_id]
+
+            # if we still don't have a transcription file path, return
+            if transcription_file_path is None:
+                logger.debug('No transcription file path found.')
+                return False
+
+            # get the transcription data
+            transcription_data = self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path)
+
+            # if we don't have any transcription data, return
+            if transcription_data is None or 'segments' not in transcription_data:
+                logger.debug('No transcription data found.')
+                return False
+
+            # if we don't have a save file path, ask the user for it
+            if export_file_path is None:
+                # ask the user where to save the file
+                export_file_path = filedialog.asksaveasfilename(title='Save as AVID DS',
+                                                                initialdir=os.path.dirname(transcription_file_path),
+                                                                initialfile=os.path.basename(transcription_file_path)
+                                                                .replace('.transcription.json', '.txt'),
+                                                                filetypes=[('AVID DS files', '*.txt')],
+                                                                defaultextension='.txt')
+
+                # if the user pressed cancel, return
+                if export_file_path is None or export_file_path == '':
+                    logger.debug('User cancelled save as AVID DS.')
+                    return False
+
+            # get the transcription segments
+            transcription_segments = transcription_data['segments']
+
+            # get the timecode data
+            timecode_data = self.get_timecode_data_from_transcription(window_id=window_id)
+
+            if not timecode_data or not isinstance(timecode_data, tuple) or len(timecode_data) != 2:
+                logger.error('No timecode data found. Aborting AVID DS export.')
+                return False
+
+            # write the AVID DS file
+            if transcription_segments is not None or transcription_segments != [] or len(transcription_segments) > 0:
+
+                # use the toolkit ops function to write the AVID DS file
+                self.toolkit_ops_obj.write_avid_ds(transcript_segments=transcription_segments,
+                                                avid_ds_file_path=export_file_path,
+                                               timeline_fps=timecode_data[0],
+                                                timeline_start_tc=timecode_data[1])
+
+                # notify the user
+                self.toolkit_UI_obj.notify_via_messagebox(title='AVID DS file export',
+                                                          message='The AVID DS file was exported successfully.',
+                                                          type='info'
+                                                          )
+
+                # focus back on the window
+                self.toolkit_UI_obj.focus_window(window_id)
+
+                return True
+
+            else:
+                # notify the user
+                self.toolkit_UI_obj.notify_via_messagebox(title='No transcription data',
+                                                          message='No transcription data was found.',
+                                                          type='warning'
+                                                          )
+
+                # focus back on the window
+                self.toolkit_UI_obj.focus_window(window_id)
+
+                return False
+
 
         def delete_line(self, window_id, text_element, line_no, status_label):
             '''

@@ -138,6 +138,11 @@ class UImenus:
                                     command=lambda: self.toolkit_UI_obj.t_edit_obj.button_export_as(window_id)
                                   )
 
+
+        self.filemenu.entryconfig('Export transcript as AVID DS...', state=NORMAL,
+                                    command=lambda: self.toolkit_UI_obj.t_edit_obj.button_export_as_avid_ds(window_id)
+                                  )
+
         # enable the advanced search menu items relevant for transcriptions
         self.searchmenu.entryconfig("Advanced Search in current transcript...", state=NORMAL,
                                     command=lambda:
@@ -338,6 +343,7 @@ class UImenus:
 
         # disable Export as
         self.filemenu.entryconfig("Export transcript as...", state=DISABLED)
+        self.filemenu.entryconfig("Export transcript as AVID DS...", state=DISABLED)
 
         # disable other transcription menu items
         #self.searchmenu.entryconfig("Advanced Search in current transcription...", state=DISABLED)
@@ -379,6 +385,9 @@ class UImenus:
         # add Export as... menu item, but keep it disabled until a relevant window is focused
         self.filemenu.add_command(label="Export transcript as...", state=DISABLED,
                                   accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+Shift+s")
+
+        # add Export as... menu item, but keep it disabled until a relevant window is focused
+        self.filemenu.add_command(label="Export transcript as AVID DS...", state=DISABLED)
 
         # FILE MENU - other app related items
         self.filemenu.add_separator()

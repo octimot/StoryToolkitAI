@@ -4105,6 +4105,77 @@ class ToolkitOps:
                     flush=True,
                 )
 
+    def write_avid_ds(self, transcript_segments: dict, avid_ds_file_path: str, timeline_fps, timeline_start_tc):
+        """
+        Write the transcript segments to a file in Avid DS format.
+        """
+
+        # this is an example format for Avid DS
+        # @ This file written with StoryToolkitAI, version x.x.x
+        #
+        # <begin subtitles>
+        #
+        # 12:03:46:05 12:03:48:05
+        # This is a test.
+        #
+        # 12:03:48:05 12:03:50:05
+        # This is another test.
+        #
+        # <end subtitles>
+
+        # convert the timeline_start_tc to a Timecode object
+        timeline_start_tc = Timecode(timeline_fps, timeline_start_tc)
+
+        def format_timecode_line(start_time, end_time, timeline_fps, timeline_start_tc):
+
+            # convert the start to a timecode
+            start_tc = Timecode(timeline_fps, start_seconds=start_time)
+
+            # add the timeline_start_tc to the start_tc
+            start_tc = start_tc + timeline_start_tc
+
+            # convert the end to a timecode
+            end_tc = Timecode(timeline_fps, start_seconds=end_time)
+
+            # add the timeline_start_tc to the start_tc
+            end_tc = end_tc + timeline_start_tc
+
+            return f"{start_tc} {end_tc}"
+
+        with open(avid_ds_file_path, "w", encoding="utf-8") as avid_ds_file:
+            # write header
+            print(
+                f"@ This file written with StoryToolkitAI version {self.stAI.version}\n",
+                file=avid_ds_file,
+                flush=True
+            )
+
+            # write subtitle start
+            print(
+                f"<begin subtitles>\n",
+                file=avid_ds_file,
+                flush=True
+            )
+
+            # write subtitle lines
+            for segment in transcript_segments:
+                print(
+                    f"{format_timecode_line(segment['start'], segment['end'], timeline_fps, timeline_start_tc)}\n"
+                    f"{segment['text'].strip()}\n",
+                    file=avid_ds_file,
+                    flush=True,
+                )
+
+            # write subtitle end
+            print(
+                f"<end subtitles>",
+                file=avid_ds_file,
+                flush=True
+            )
+
+
+
+
     def save_srt_from_transcription(self, srt_file_path=None, transcription_segments=None,
                                     file_name=None, target_dir=None, transcription_data=None):
         '''
