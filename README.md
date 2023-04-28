@@ -22,7 +22,7 @@ https://vimeo.com/759962195/dee07a067a
 - [x] **Advanced Search** - allows you to search transcripts or even text files semantically using AI
 - [X] **Transcript Groups** allow the grouping of transcription segments for easier access
 - [X] Editing and Advanced Search of **existing SRT files**
-- [x] Export of transcripts to multiple formats, including SRT and TXT
+- [x] Export of transcripts to multiple formats, including SRT, TXT and AVID DS
 - [x] Batch transcriptions using transcription queuing
 - [x] Partial re-transcribing of timelines/videos/audio files
 
