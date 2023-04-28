@@ -2817,6 +2817,7 @@ class ToolkitOps:
             first_part_words = []
             first_part_start = None
             first_part_end = None
+            words_to_remove = []
             for word in current_segment_words:
 
                 # if the character length of the words in the first part is longer than the first part
@@ -2838,7 +2839,12 @@ class ToolkitOps:
                 # keep updating the first part end time
                 first_part_end = word['end']
 
-                # remove the words from the current segment words
+                # keep track of the words to remove
+                # - we can't remove them directly here because we're iterating over the same words list
+                words_to_remove.append(word)
+
+            # remove the words that we've kept in the first part
+            for word in words_to_remove:
                 current_segment_words.remove(word)
 
             # create a new segment
@@ -2924,24 +2930,31 @@ class ToolkitOps:
                                                for punctuation_mark in punctuation_marks if
                                                punctuation_mark in current_segment_text)
 
-            # split the segment into two parts
+            # is the next character a punctuation mark?
+            while first_punctuation_mark_index + 1 < len(current_segment_text) and \
+                    current_segment_text[first_punctuation_mark_index + 1] in punctuation_marks:
+                first_punctuation_mark_index += 1
+
+            # split the segment into two parts, but keep the punctuation mark in the first part
             segment_first_part = current_segment_text[:first_punctuation_mark_index + 1]
 
             # the words list is a list of dictionaries,
             # each dictionary containing the word and its start time, end time and probability
-            # considering that the word list is ordered and the words have to have the same order in the resulting segments
-            # and also that the words have the exact same length as the text in the segment
+            # considering that the word list is ordered
+            # and the words have are in the same order in the resulting segments,
+            # but also that the words have the exact same length as the text in the segment
             # we can use the length of the first part to determine which words to keep in the first part
             # and which words to keep in the second part
 
-            # keep the character length of the words in the first part
+            # keep track of the character length of the words in the first part
             first_part_words_character_length = 0
             first_part_words = []
 
-            # keep the start and end times of the first part
             first_part_start = None
             first_part_end = None
+            words_to_remove = []
 
+            # keep track of the start and end times of the first part
             for word in current_segment_words:
 
                 # if the character length of the words in the first part is longer than the first part
@@ -2951,10 +2964,13 @@ class ToolkitOps:
                 if first_part_words_character_length + len(word['word']) > len(' ' + segment_first_part):
                     break
 
-                # if the first part start is None, then set it to the current word start time
+                # if the first part start is None, it means that we just started working on the first part
+                # so set it to the current word start time
                 if first_part_start is None:
                     first_part_start = word['start']
 
+                # add the word length, this should also include the space at the beginning,
+                # considering that each word contains a space at the beginning when it comes from Whisper
                 first_part_words_character_length += len(word['word'])
 
                 # keep the words in the first part
@@ -2963,7 +2979,12 @@ class ToolkitOps:
                 # keep updating the first part end time
                 first_part_end = word['end']
 
-                # remove the words from the current segment words
+                # keep track of the words to remove
+                # - we can't remove them here directly because we're iterating over the same list
+                words_to_remove.append(word)
+
+            # remove the words from the current segment words
+            for word in words_to_remove:
                 current_segment_words.remove(word)
 
             # create a new segment
@@ -3115,6 +3136,7 @@ class ToolkitOps:
         new_result_segments = []
         for n, segment in enumerate(result['segments']):
 
+            # do not allow segments that are not dictionaries
             if not isinstance(segment, dict):
                 logger.debug('Segment {} is not a dictionary: {}\nRemoving from results.'.format(n, segment))
 
@@ -3131,6 +3153,16 @@ class ToolkitOps:
 
                 # continue to the next segment
                 continue
+
+            # is the segment's start time greater than the end time of the previous segment?
+            #if previous_segment_end_time is not None and segment['start'] < previous_segment_end_time:
+
+            #    logger.error('Segment overlap: {} -----  '
+            #                 'previous segment end time: {} < {} this segment start time'
+            #                 .format(segment['text'], previous_segment_end_time, segment['start']))
+            #
+            #    # if so, set the segment's start time to the end time of the previous segment
+            #    #segment['start'] = previous_segment_end_time
 
             # remove word timestamps from the result to avoid confusion,
             # until the word-based transcript editing is implemented
