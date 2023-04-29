@@ -4206,6 +4206,116 @@ class ToolkitOps:
             )
 
 
+    def write_fusion_text_comp(self, transcript_segments: dict, comp_file_path: str, timeline_fps):
+        '''
+        Write the transcript segments into a Fusion Text+ comp file
+        '''
+
+        keyframes = []
+
+        # take each transcription segment
+        for segment in transcript_segments:
+
+            #frame = int(segment["start"] * fps)
+
+            # calculate frame based on segment start and timeline fps
+            # we'll ignore the timeline_start_tc considering that we're in a comp file that starts at 0
+            keyframe_tc = Timecode(timeline_fps, start_seconds=segment["start"])
+            frame = keyframe_tc.frames
+
+            text = segment["text"].replace('"', '\\"')
+
+            # create the segment keyframe
+            keyframe = '['+str(frame)+'] = { Value = Text { Value = "'+str(text)+'" } }'
+
+            # if the next segment doesn't start exactly when this one ends, add a keyframe with an empty string
+            # but only if this isn't the last segment
+            if segment != transcript_segments[-1]:
+
+                # get the next segment
+                next_segment = transcript_segments[transcript_segments.index(segment)+1]
+
+                # if the next segment doesn't start exactly when this one ends, add a keyframe with an empty string
+                if next_segment["start"] != segment["end"]:
+
+                    # calculate frame based on segment end and timeline fps
+                    # we'll ignore the timeline_start_tc considering that we're in a comp file that starts at 0
+                    keyframe_tc = Timecode(timeline_fps, start_seconds=segment["end"])
+                    frame = keyframe_tc.frames
+                    keyframe += ',\n['+str(frame)+'] = { Value = Text { Value = "" } }'
+
+            keyframes.append(keyframe)
+
+        # if there are no keyframes, return False
+        if len(keyframes) == 0:
+            return False
+
+        # turn the keyframes into a string with newlines and indentation
+        keyframes_str = ",\n            ".join(keyframes)
+
+        # place the above keyframes in the fusion template
+        fusion_template = '''
+        {
+            Tools = ordered() {
+                TranscriptText = TextPlus {
+                    Inputs = {
+                        Width = Input { Value = 1920, },
+                        Height = Input { Value = 1080, },
+                        Font = Input { Value = "Open Sans", },
+                        Style = Input { Value = "Bold", },
+                        VerticalJustificationNew = Input { Value = 3, },
+                        HorizontalJustificationNew = Input { Value = 3, },
+                        StyledText = Input {
+                            SourceOp = "TranscriptTextStyledText",
+                            Source = "Value",
+                        },
+                    },
+                    ViewInfo = OperatorInfo { Pos = { 311.26, 124.0282 } },
+                },
+                TranscriptTextStyledText = BezierSpline {
+                    SplineColor = { Red = 237, Green = 142, Blue = 243 },
+                    KeyFrames = {
+                        '''+keyframes_str+''',
+                    }
+                },
+                MergeText = Merge {
+                    CtrlWZoom = false,
+                    NameSet = true,
+                    Inputs = {
+                        Foreground = Input {
+                            SourceOp = "TranscriptText",
+                            Source = "Output",
+                        },
+                        PerformDepthMerge = Input { Value = 0, },
+                    },
+                    ViewInfo = OperatorInfo { Pos = { 311.26, 50.0282 } },
+                },
+                StoryToolkitAI_Transcript = Underlay {
+                    CtrlWZoom = false,
+                    NameSet = true,
+                    Inputs = {
+                        Comments = Input { Value = "Exported using StoryToolkitAI version '''+self.stAI.version+'''", }
+                    },
+                    ViewInfo = UnderlayInfo {
+                        Pos = { 307.152, 15.0243 },
+                        Size = { 172, 164.121 }
+                    },
+                }
+            },
+            ActiveTool = "Text1"
+        }
+        '''
+
+        # write the comp file
+        with open(comp_file_path, "w", encoding="utf-8") as comp_file:
+            print(
+                f'{fusion_template}',
+                file=comp_file,
+                flush=True
+            )
+
+        # return the comp file path
+        return comp_file_path
 
 
     def save_srt_from_transcription(self, srt_file_path=None, transcription_segments=None,

@@ -1317,6 +1317,85 @@ class toolkit_UI:
 
                 return False
 
+        def button_export_as_fusion_text_comp(self, window_id, transcription_file_path=None, export_file_path=None):
+            '''
+            Exports the transcript as an Fusion comp file with a text node
+            '''
+
+            # get the transcription file path
+            if transcription_file_path is None and window_id in self.transcription_file_paths:
+                transcription_file_path = self.transcription_file_paths[window_id]
+
+            # if we still don't have a transcription file path, return
+            if transcription_file_path is None:
+                logger.debug('No transcription file path found.')
+                return False
+
+            # get the transcription data
+            transcription_data = self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path)
+
+            # if we don't have any transcription data, return
+            if transcription_data is None or 'segments' not in transcription_data:
+                logger.debug('No transcription data found.')
+                return False
+
+            # if we don't have a save file path, ask the user for it
+            if export_file_path is None:
+                # ask the user where to save the file
+                export_file_path = filedialog.asksaveasfilename(title='Save as Fusion Comp',
+                                                                initialdir=os.path.dirname(transcription_file_path),
+                                                                initialfile=os.path.basename(transcription_file_path)
+                                                                .replace('.transcription.json', '.comp'),
+                                                                filetypes=[('Fusion Comp files', '*.comp')],
+                                                                defaultextension='.comp')
+
+                # if the user pressed cancel, return
+                if export_file_path is None or export_file_path == '':
+                    logger.debug('User cancelled save as Fusion Comp.')
+                    return False
+
+            # get the transcription segments
+            transcription_segments = transcription_data['segments']
+
+            # get the timecode data
+            timecode_data = self.get_timecode_data_from_transcription(window_id=window_id)
+
+            if not timecode_data or not isinstance(timecode_data, tuple) or len(timecode_data) != 2:
+                logger.error('No timecode data found. Aborting Fusion Comp export.')
+                return False
+
+            # write the Fusion Comp file
+            if transcription_segments is not None or transcription_segments != [] or len(transcription_segments) > 0:
+
+                # use the toolkit ops function to write the Fusion Comp file
+                self.toolkit_ops_obj.write_fusion_text_comp(
+                    transcript_segments=transcription_segments,
+                    comp_file_path=export_file_path,
+                    timeline_fps=timecode_data[0])
+
+                # notify the user
+                self.toolkit_UI_obj.notify_via_messagebox(title='Fusion Comp file export',
+                                                          message='The Fusion Comp file was exported successfully.',
+                                                          type='info'
+                                                          )
+
+                # focus back on the window
+                self.toolkit_UI_obj.focus_window(window_id)
+
+                return True
+
+            else:
+                # notify the user
+                self.toolkit_UI_obj.notify_via_messagebox(title='No transcription data',
+                                                          message='No transcription data was found.',
+                                                          type='warning'
+                                                          )
+
+                # focus back on the window
+                self.toolkit_UI_obj.focus_window(window_id)
+
+                return False
+
 
         def delete_line(self, window_id, text_element, line_no, status_label):
             '''
