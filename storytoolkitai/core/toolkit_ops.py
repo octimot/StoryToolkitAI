@@ -19,6 +19,7 @@ import librosa
 import soundfile
 
 import numpy as np
+import tqdm
 
 from storytoolkitai.core.logger import *
 from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_NAME
@@ -3164,7 +3165,10 @@ class ToolkitOps:
 
         # go through each segment and classify it
         classified_segments = {}
-        for segment in segments:
+        #for segment in segments:
+
+        # instead of for use tqdm to also show a progress bar
+        for segment in tqdm.tqdm(segments, desc='Classifying segments'):
 
             # skip segments that don't have any text or words
             if 'text' not in segment and 'words' not in segment:
@@ -3283,6 +3287,50 @@ class ToolkitOps:
         logger.debug('Classification complete.')
 
         return classified_segments
+
+    def group_questions(self, segments, transcription_json_file_path):
+        """
+        This uses the classify_segments() method to detect questions and add them to a transcription group
+        :param segments: the segments to classify
+        :param transcription_json_file_path: the path to the transcription json file
+        :return: the questions_group
+        """
+
+        questions_group = None
+        # classify the segments as questions or statements
+        # but use the existing transcription data if we have it
+        classified_question_segments = self.classify_segments(
+            segments,
+            labels=[
+                ['interrogative sentence', 'declarative sentence'],
+                ['question', 'statement'],
+                ['asking', 'telling'],
+                ['ask', 'tell'],
+            ],
+            multi_label_pass=['interrogative sentence', 'question', 'asking', 'ask'],
+            min_confidence=[0.5, 0.5, 0.7, 0.7]
+        )
+
+        # if we have question segments, create a group with them
+        # but save it later, after the transcription is saved
+        if isinstance(classified_question_segments, dict) \
+                and '_multi_label_pass_' in classified_question_segments \
+                and len(classified_question_segments['_multi_label_pass_']) > 0:
+            questions_group = self.t_groups_obj.segments_to_groups(
+                segments=classified_question_segments['_multi_label_pass_'],
+                group_name='Questions'
+            )
+
+        # if this was successful, save the questions group to the transcription json file
+        if questions_group is not None:
+            self.t_groups_obj.save_transcript_groups(transcription_json_file_path,
+                                                     questions_group,
+                                                     group_id='questions')
+
+            return questions_group
+
+        # if we couldn't find any questions, return None
+        return None
 
     def post_process_whisper_result(self, audio, result, **kwargs):
         """
@@ -4005,46 +4053,16 @@ class ToolkitOps:
             return None
 
         # perform question grouping if requested
-        questions_group = None
         if 'group_questions' in other_whisper_options and other_whisper_options['group_questions']:
 
             logger.info('Grouping questions.')
             self.update_transcription_log(unique_id=queue_id, **{'status': 'grouping', 'progress': ''})
 
-            # classify the segments as questions or statements
-            # but use the existing transcription data if we have it
-            classified_question_segments \
-                = self.classify_segments(result['segments']
-                                         if not existing_transcription else transcription_data['segments'],
-                                         labels=[
-                                             ['interrogative sentence', 'declarative sentence'],
-                                             ['question', 'statement'],
-                                             ['asking', 'telling'],
-                                             ['ask', 'tell'],
-                                         ],
-                                         multi_label_pass=['interrogative sentence', 'question', 'asking', 'ask'],
-                                         min_confidence=[0.5, 0.5, 0.7, 0.7]
-                                         )
-
-            # if we have question segments, create a group with them
-            # but save it later, after the transcription is saved
-            if isinstance(classified_question_segments, dict) \
-                    and '_multi_label_pass_' in classified_question_segments \
-                    and len(classified_question_segments['_multi_label_pass_']) > 0:
-
-                questions_group = \
-                    self.t_groups_obj.segments_to_groups(classified_question_segments['_multi_label_pass_'],
-                                                         'Questions')
-
-
-        # if group questions option was checked, add the questions group if we have questions
-        #if 'group_questions' in other_whisper_options \
-        #    and other_whisper_options['group_questions'] \
-        #    and questions_group is not None:
-            if questions_group is not None:
-                self.t_groups_obj.save_transcript_groups(transcription_json_file_path,
-                                                         questions_group,
-                                                         group_id='questions')
+            # detect and group questions
+            self.group_questions(
+                segments=result['segments'] if not existing_transcription else transcription_data['segments'],
+                transcription_json_file_path=transcription_json_file_path
+            )
 
         # if there's a project_name and a timeline_name
         # link the transcription to the project and timeline

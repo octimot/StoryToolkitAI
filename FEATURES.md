@@ -159,6 +159,23 @@ take longer.
 Another important thing to note is that your **audio channels are best left as Mono on your timeline and/or renders**, 
 since the algorithm may ignore one channel or the other, and therefore only give you a partial transcription.
 
+## Group Questions
+Starting with version 0.18.3, you can click and wait for AI to detect and create a group with all the transcription
+segments that look like questions. This is useful if you want to see all the questions in your transcript, for
+instance if you're transcribing interviews. 
+
+Detecting questions seems like a trivial task, but our speech is sometimes so complex, that, while a human can easily
+detect if somebody is asking something, a machine might not be able to do that. Think about all the languages that
+don't actually use a question mark, but more importantly, think about all the times we're asking for information,
+but not using a question at all...
+
+Of course, because we're using AI, this might give out false positives or negatives, but in our tests we find it to be 
+pretty accurate... even with sentences that are asking for stuff, but don't sound like questions.
+
+_Note: When not using this with a CUDA enabled GPU, it might take a while for the classification process to finish.
+Nevertheless, just have a bit of patience and eventually the process will finish. BTW, if you're using the git version
+of the tool, you can check the progress of the classification process in the terminal._
+
 ### Re-transcribing Transcripts
 
 In some instances you might want to re-transcribe a transcript, for example if you want to change the Whisper model,

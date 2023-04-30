@@ -155,6 +155,12 @@ class UImenus:
                                         transcription_window_id=window_id)
                                     )
 
+        # enable the group questions menu item
+        self.editmenu.entryconfig('Group questions', state=NORMAL,
+                                    command=lambda:
+                                    self.toolkit_UI_obj.t_edit_obj.button_group_questions(window_id)
+                                  )
+
         # enable this when group search is implemented
         # self.searchmenu.entryconfig("Advanced Search in current transcription...", state=NORMAL)
 
@@ -351,6 +357,9 @@ class UImenus:
         self.filemenu.entryconfig("Export transcript as AVID DS...", state=DISABLED)
         self.filemenu.entryconfig("Export transcript as Fusion Text...", state=DISABLED)
 
+        # disable group questions
+        self.editmenu.entryconfig("Group questions", state=DISABLED)
+
         # disable other transcription menu items
         #self.searchmenu.entryconfig("Advanced Search in current transcription...", state=DISABLED)
 
@@ -429,6 +438,8 @@ class UImenus:
                                   accelerator='t')
         #self.editmenu.add_command(label="Delete segment", command=self.donothing, state=DISABLED,
         #                          accelerator="BackSpace")
+        self.editmenu.add_separator()
+        self.editmenu.add_command(label="Group questions", command=self.donothing, state=DISABLED)
 
         # show the edit menu
         self.main_menubar.add_cascade(label="Edit", menu=self.editmenu)

@@ -1396,6 +1396,70 @@ class toolkit_UI:
 
                 return False
 
+        def button_group_questions(self, window_id, transcription_file_path=None) -> bool:
+            '''
+            Groups the questions in the transcript
+            '''
+
+            # get the transcription file path
+            if transcription_file_path is None and window_id in self.transcription_file_paths:
+                transcription_file_path = self.transcription_file_paths[window_id]
+
+            # if we still don't have a transcription file path, return
+            if transcription_file_path is None:
+                logger.debug('No transcription file path found.')
+                return False
+
+            # get the transcription data
+            transcription_data = self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path)
+
+            # warn user that this might take a while
+            if len(transcription_data['segments']) > 15:
+
+                if messagebox.askyesno(title='Group Questions',
+                                           message='Detecting questions might take a while.\n'
+                                                   'Are you sure you want to continue?'
+                                           ):
+
+                    # wait for a second after the user has confirmed to allow the message box to close
+                    time.sleep(1)
+                else:
+                    return False
+
+            # open transcription groups window
+            self.toolkit_UI_obj.open_transcript_groups_window(window_id)
+
+            # group questions in another thread
+            save_return = self.toolkit_ops_obj.group_questions(transcription_data['segments'], transcription_file_path)
+
+            if not save_return:
+                return False
+
+            # if the group add was successful, update the transcript groups dictionary
+            if type(save_return) is dict:
+
+                # initialize the empty group if it doesn't exist
+                if window_id not in self.transcript_groups:
+                    self.transcript_groups[window_id] = {}
+
+                # if the returned value is a dictionary, it means that the window groups have been updated
+                # so we need to update the groups of this window
+                self.transcript_groups[window_id] = save_return
+
+            else:
+                logger.debug('Something may have went wrong while saving the group to the transcription file')
+                return False
+
+            # update the list of groups in the transcript groups window
+            self.toolkit_UI_obj.update_transcript_groups_window(t_window_id=window_id)
+
+            # select the group and the segments in the transcript window
+            self.toolkit_UI_obj.on_group_press(None, t_window_id=window_id, group_id='questions')
+
+            # update the list of groups in the transcript groups window
+            self.toolkit_UI_obj.update_transcript_groups_window(t_window_id=window_id)
+
+            return True
 
         def delete_line(self, window_id, text_element, line_no, status_label):
             '''
@@ -6782,6 +6846,14 @@ class toolkit_UI:
                                           )
                 groups_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='nw')
 
+                # GROUP QUESTIONS BUTTON
+                group_questions_button = \
+                    tk.Button(left_t_buttons_frame, text='Group Questions', name='group_questions_button',
+                              command=lambda:
+                              self.t_edit_obj.button_group_questions(window_id=t_window_id)
+                              )
+                group_questions_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='nw')
+
                 # IMPORT SRT BUTTON
                 if srt_file_path:
                     import_srt_button = tk.Button(left_r_buttons_frame,
@@ -8059,7 +8131,7 @@ class toolkit_UI:
         self.t_edit_obj.delete_group(t_window_id, group_id,
                                      t_group_window_id=t_group_window_id, groups_listbox=groups_listbox)
 
-    def on_group_press(self, e, t_window_id: str, t_group_window_id: str, group_id: str = None,
+    def on_group_press(self, e, t_window_id: str, t_group_window_id: str = None, group_id: str = None,
                        groups_listbox: tk.Listbox = None):
         '''
         Do stuff when the user presses a group somewhere
@@ -8070,10 +8142,20 @@ class toolkit_UI:
         :return:
         '''
 
+        # get the group window id if it's not provided
+        if t_group_window_id is None:
+            t_group_window_id = t_window_id+'_transcript_groups'
+
         # if group_id is None, get it from the listbox
         if group_id is None and groups_listbox is not None:
-
             group_id = self._get_group_id_from_listbox(groups_listbox=groups_listbox)
+
+        # if we have a group id but no groups_listbox
+        elif group_id is not None and groups_listbox is None:
+
+            # get the groups listbox from the tk window
+            groups_listbox = \
+                self.windows[t_group_window_id].nametowidget('transcript_groups_frame.groups_listbox')
 
         else:
             logger.debug('No group id or group listbox was provided')
@@ -8519,7 +8601,8 @@ class toolkit_UI:
             header_frame.pack(side=tk.TOP, expand=True, fill=tk.X, **self.paddings)
 
             # add the frame to hold the transcript groups
-            transcript_groups_frame = tk.Frame(self.windows[transcript_groups_window_id])
+            transcript_groups_frame = tk.Frame(self.windows[transcript_groups_window_id],
+                                               name="transcript_groups_frame")
             transcript_groups_frame.pack(expand=True, fill=tk.BOTH, **self.paddings)
 
             # add a listbox that holds all the transcript groups
