@@ -1664,22 +1664,27 @@ class toolkit_UI:
             :return: timeline_fps, timeline_start_tc or None, None
             """
 
-            # do we have any transcription data for this window?
-            if window_id not in self.transcription_data:
-                logger.warn('No transcription data found for window id: {}'.format(window_id))
-                return None, None
+            # if we have a window id and it's a transcription,
+            # try to get the default start timecode and framerate from the transcription data
+            if window_id in self.toolkit_UI_obj.window_types \
+                    and self.toolkit_UI_obj.window_types[window_id] == 'transcription':
 
-            # try to get the default start timecode from the transcription data, if the passed default is empty
-            if (default_start_tc == '' or not default_start_tc) \
-                and 'timeline_start_tc' in self.transcription_data[window_id]:
+                # do we have any transcription data for this window?
+                if window_id not in self.transcription_data:
+                    logger.warn('No transcription data found for window id: {}'.format(window_id))
+                    return None, None
 
-                default_start_tc = self.transcription_data[window_id]['timeline_start_tc']
+                # try to get the default start timecode from the transcription data, if the passed default is empty
+                if (default_start_tc == '' or not default_start_tc) \
+                    and 'timeline_start_tc' in self.transcription_data[window_id]:
 
-            # try to get the default framerate from the transcription data, if the passed default is empty
-            if (default_fps == '' or not default_fps) \
-                and 'timeline_fps' in self.transcription_data[window_id]:
+                    default_start_tc = self.transcription_data[window_id]['timeline_start_tc']
 
-                default_fps = self.transcription_data[window_id]['timeline_fps']
+                # try to get the default framerate from the transcription data, if the passed default is empty
+                if (default_fps == '' or not default_fps) \
+                    and 'timeline_fps' in self.transcription_data[window_id]:
+
+                    default_fps = self.transcription_data[window_id]['timeline_fps']
 
             # create a list of widgets for the input dialogue
             input_widgets = [
@@ -1692,6 +1697,7 @@ class toolkit_UI:
             start_tc = None
             fps = None
 
+            # loop this until we return something
             while start_tc is None or fps is None:
 
                 # then we call the ask_dialogue function
@@ -1710,7 +1716,9 @@ class toolkit_UI:
                     # try to see if the timecode is valid
                     start_tc = Timecode(user_input['timeline_fps'], user_input['timeline_start_tc'])
 
-                    if window_id is not None:
+                    # update transcription data only if window id represents a transcription window
+                    if window_id in self.toolkit_UI_obj.window_types \
+                            and self.toolkit_UI_obj.window_types[window_id] == 'transcription':
 
                         # set the start_tc in the transcription data to the user input
                         self.transcription_data[window_id]['timeline_fps'] \
@@ -6117,7 +6125,19 @@ class toolkit_UI:
 
                 # convert the start and end times to seconds
                 start_seconds = self.convert_time_to_seconds(start, **kwargs)
+
+                # if the start time is a tuple, it means that we have a timecode with timecode data,
+                # so let's unpack it and use the timecode data later
+                if isinstance(start_seconds, tuple) and len(start_seconds) == 2:
+                    kwargs['timecode_data'] = start_seconds[1]
+                    start_seconds = start_seconds[0]
+
                 end_seconds = self.convert_time_to_seconds(end, **kwargs)
+
+                # now unpack the end time
+                if isinstance(end_seconds, tuple) and len(end_seconds) == 2:
+                    kwargs['timecode_data'] = end_seconds[1]
+                    end_seconds = end_seconds[0]
 
                 # if both start and end times are valid
                 if start_seconds is not None and end_seconds is not None:
@@ -6167,29 +6187,51 @@ class toolkit_UI:
                     return None
 
                 time_converted = None
-                timecode_data = None
 
-                # if we have the time in timecode, convert it to seconds using the toolkit ops object
-                time_converted = self.toolkit_ops_obj.convert_transcription_timecode_to_sec(
-                    time,
-                    transcription_path=kwargs.get('transcription_file_path', None),
-                    transcription_data=kwargs.get('transcription_data', None),
-                    timecode_data=timecode_data
-                )
+                # use this function to convert the timecode to seconds using timecode data
+                def convert_from_timecode_using_tc_data(timecode_data, **kwargs):
+
+                    # if we have the time in timecode, convert it to seconds using the toolkit ops object
+                    time_converted = self.toolkit_ops_obj.convert_transcription_timecode_to_sec(
+                        time,
+                        transcription_path=kwargs.get('transcription_file_path', None),
+                        transcription_data=kwargs.get('transcription_data', None),
+                        timecode_data=timecode_data
+                    )
+
+                    return time_converted
+
+                # use the passed timecode data if it exists
+                timecode_data = None if kwargs.get('timecode_data', None) is None else kwargs.get('timecode_data')
+
+                # remove the timecode data from the kwargs
+                if timecode_data is not None:
+                    del kwargs['timecode_data']
+
+                time_converted = convert_from_timecode_using_tc_data(timecode_data, **kwargs)
 
                 # if False was returned, it means that the transcription data has no timecode information
                 if time_converted is False:
-                    logger.error("You're using timecodes, "
+                    logger.warning("You're using timecodes, "
                                  "but we don't have transcription data to determine the start timecode")
 
-                    self.notify_via_messagebox(type="error",
-                                               message="You're using timecodes, "
-                                                "but we don't have any transcription timecode data "
-                                                       "to determine the start timecode or the framerate.",)
+                    if messagebox.askokcancel("Error", "You're using timecodes, "
+                                                       "but we don't have any transcription timecode data "
+                                                        "to determine the start timecode or the framerate.\n"
+                                              "Please enter the timecode information."):
 
-                    return None
+                        timecode_data = self.t_edit_obj.ask_for_transcription_timecode_data(
+                            window_id=kwargs.get('transcription_settings_window_id', None),
+                            default_start_tc='01:00:00:00'
+                        )
 
-                return time_converted
+                        # try the conversion again
+                        time_converted = convert_from_timecode_using_tc_data(timecode_data, **kwargs)
+
+                    # if user cancels, return None
+                    else:
+                        return None
+                return time_converted, timecode_data
 
             elif len(time_array) == 3:
                 # hours, minutes, seconds
@@ -6234,7 +6276,8 @@ class toolkit_UI:
         transcription_config['time_intervals'] = \
             self.convert_text_to_time_intervals(transcription_config['time_intervals'],
                                                 transcription_file_path= \
-                                                    transcription_config.get('transcription_file_path', None)
+                                                    transcription_config.get('transcription_file_path', None),
+                                                transcription_settings_window_id=transcription_settings_window_id
                                                 )
 
         if not transcription_config['time_intervals']:
@@ -6244,7 +6287,8 @@ class toolkit_UI:
         transcription_config['excluded_time_intervals'] = \
             self.convert_text_to_time_intervals(transcription_config['excluded_time_intervals'],
                                                 transcription_file_path= \
-                                                    transcription_config.get('transcription_file_path', None)
+                                                    transcription_config.get('transcription_file_path', None),
+                                                transcription_settings_window_id=transcription_settings_window_id
                                                 )
 
         if not transcription_config['excluded_time_intervals']:
