@@ -3166,7 +3166,7 @@ class toolkit_UI:
                            'pady': self.toolkit_UI_obj.form_paddings['pady']}
 
                 # add a canvas that will hold the form which has a scrollbar
-                pref_form_frame_canvas = tk.Canvas(pref_window, borderwidth=0, width=600, height=980)
+                pref_form_frame_canvas = tk.Canvas(pref_window, borderwidth=0, width=600, height=600)
                 pref_form_frame_canvas.pack(side='left', fill='both', expand=True)
 
                 # make the canvas as large as possible, without it going off the screen
@@ -3281,6 +3281,11 @@ class toolkit_UI:
                 transcription_custom_punctuation_marks_var \
                     = tk.StringVar(pref_form_frame,
                                       value=custom_punctuation_marks_str)
+
+                transcription_group_questions_var \
+                    = tk.BooleanVar(pref_form_frame,
+                                    value=self.stAI.get_app_setting('transcription_group_questions',
+                                                                    default_if_none=False))
 
                 transcription_prevent_short_gaps_var \
                     = tk.StringVar(pref_form_frame,
@@ -3474,6 +3479,13 @@ class toolkit_UI:
                                                             **entry_settings_quarter)
                 custom_punctuation_marks_input.grid(row=30, column=1, **form_grid_and_paddings)
 
+                # group questions
+                tk.Label(pref_form_frame, text='Group Questions', **label_settings).grid(row=32, column=0,
+                                                                                                    **form_grid_and_paddings)
+                group_questions_input = tk.Checkbutton(pref_form_frame,
+                                                                    variable=transcription_group_questions_var)
+                group_questions_input.grid(row=32, column=1, **form_grid_and_paddings)
+
                 # prevent short gaps between segments
                 tk.Label(pref_form_frame, text='Prevent Gaps Shorter Than', **label_settings)\
                     .grid(row=31, column=0, **form_grid_and_paddings)
@@ -3529,6 +3541,7 @@ class toolkit_UI:
                     'transcription_max_words_per_segment': transcription_max_words_per_segment_var,
                     'transcription_split_on_punctuation_marks': transcription_split_on_punctuation_marks_var,
                     'transcription_custom_punctuation_marks': transcription_custom_punctuation_marks_var,
+                    'transcription_group_questions': transcription_group_questions_var,
                     'transcription_prevent_short_gaps': transcription_prevent_short_gaps_var,
                     'transcription_render_preset': transcription_render_preset_var,
                     'transcript_font_size': transcript_font_size_var,
@@ -5966,15 +5979,26 @@ class toolkit_UI:
                                                  str(excluded_time_intervals) \
                                                      if excluded_time_intervals is not None else '')
 
+            # GROUP QUESTIONS
+            Label(ts_form_frame, text="Group Questions", **self.label_settings).grid(row=40, column=1,
+                                                                                        sticky='nw',
+                                                                                        # **self.input_grid_settings,
+                                                                                        **self.form_paddings)
+            group_questions_var = tk.BooleanVar(ts_form_frame,
+                                                value=self.stAI.get_app_setting('transcription_group_questions',
+                                                                                    default_if_none=False))
+            group_questions_input = tk.Checkbutton(ts_form_frame, variable=group_questions_var)
+            group_questions_input.grid(row=40, column=2, **self.input_grid_settings, **self.form_paddings)
+
             # START BUTTON
 
             # add all the settings entered by the use into a nice dictionary
             # transcription_config = dict(name=name_input.get(), language='English', beam_size=5, best_of=5)
 
-            Label(ts_form_frame, text="", **self.label_settings).grid(row=50, column=1,
+            Label(ts_form_frame, text="", **self.label_settings).grid(row=60, column=1,
                                                                       **self.input_grid_settings, **self.paddings)
             start_button = Button(ts_form_frame, text='Start')
-            start_button.grid(row=50, column=2, **self.input_grid_settings, **self.paddings)
+            start_button.grid(row=60, column=2, **self.input_grid_settings, **self.paddings)
             start_button.config(command=lambda audio_file_path=audio_file_path,
                                                transcription_file_path_var=transcription_file_path_var,
                                                unique_id=unique_id,
@@ -5996,6 +6020,7 @@ class toolkit_UI:
                                             prevent_short_gaps=prevent_short_gaps_var.get(),
                                             time_intervals=time_intervals_input.get(1.0, END),
                                             excluded_time_intervals=excluded_time_intervals_input.get(1.0, END),
+                                            group_questions=group_questions_var.get(),
                                             transcription_file_path=transcription_file_path_var.get(),
                                             timeline_name=kwargs.get('timeline_name', None),
                                             project_name=kwargs.get('project_name', None)
@@ -6021,6 +6046,7 @@ class toolkit_UI:
                                                 prevent_short_gaps=prevent_short_gaps_var.get(),
                                                 time_intervals=time_intervals_input.get(1.0, END),
                                                 excluded_time_intervals=excluded_time_intervals_input.get(1.0, END),
+                                                group_questions=group_questions_var.get(),
                                                 transcription_file_path=transcription_file_path_var.get(),
                                                 timeline_name=kwargs.get('timeline_name', None),
                                                 project_name=kwargs.get('project_name', None)

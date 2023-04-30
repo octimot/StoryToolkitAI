@@ -13,7 +13,7 @@ from whisper import tokenizer as whisper_tokenizer
 
 import openai
 import tiktoken
-from transformers import GPT2TokenizerFast
+from transformers import GPT2TokenizerFast, pipeline
 
 import librosa
 import soundfile
@@ -2015,6 +2015,7 @@ class ToolkitOps:
                                 'pre_detect_speech', 'word_timestamps',
                                 'max_chars_per_segment', 'max_words_per_segment',
                                 'split_on_punctuation_marks', 'prevent_short_gaps',
+                                'group_questions',
                                 'transcription_file_path', 'time_intervals', 'excluded_time_intervals', 'initial_prompt'
                                 ]
 
@@ -2104,6 +2105,7 @@ class ToolkitOps:
                              'prevent_short_gaps': kwargs.get('prevent_short_gaps', False),
                              'time_intervals': time_intervals,
                              'excluded_time_intervals': excluded_time_intervals,
+                             'group_questions': kwargs.get('group_questions', False),
                              'transcription_file_path': transcription_file_path,
                              'timeline_name': kwargs.get('timeline_name', None),
                              'project_name': kwargs.get('project_name', None),
@@ -2268,6 +2270,7 @@ class ToolkitOps:
         queue_attr['prevent_short_gaps'], \
         queue_attr['time_intervals'], \
         queue_attr['excluded_time_intervals'], \
+        queue_attr['group_questions'], \
         queue_attr['transcription_file_path'], \
         queue_attr['timeline_name'], \
         queue_attr['project_name'], \
@@ -2327,6 +2330,7 @@ class ToolkitOps:
                     queue_file['prevent_short_gaps'],
                     queue_file['time_intervals'],
                     queue_file['excluded_time_intervals'],
+                    queue_file['group_questions'],
                     queue_file['transcription_file_path'],
                     queue_file['timeline_name'],
                     queue_file['project_name'],
@@ -2716,7 +2720,7 @@ class ToolkitOps:
 
         return audio_segment
 
-    def split_segment(self, segment, segment_word_limit: int = None, segment_character_limit: int = None):
+    def split_segment_by_word_limits(self, segment, segment_word_limit: int = None, segment_character_limit: int = None):
         """
         Splits the segment into multiple segments by the given word limit or character limit.
         The word limit will be overridden by the character limit if both are specified.
@@ -2755,7 +2759,7 @@ class ToolkitOps:
         while (segment_character_limit and len(current_segment_text) > segment_character_limit) \
                 or (segment_word_limit and current_segment_words_count > segment_word_limit):
 
-            # if we're doing a character limit split
+            # CHARACTER LIMIT SPLIT
             if segment_character_limit:
                 # split the current segment text into two parts
                 # the first part is the first segment_character_limit characters
@@ -2773,7 +2777,7 @@ class ToolkitOps:
                 if last_space_index == -1:
                     break
 
-            # otherwise, if we're doing a word limit split
+            # OR WORD LIMIT SPLIT
             else:
 
                 # we preserve the number of words according to the word limit by finding the relevant space index
@@ -3012,7 +3016,7 @@ class ToolkitOps:
 
         # is there anything left in the current segment text?
         if current_segment_text:
-            # create a new segment
+            # create a new segment to hold the remaining text
 
             # add a space at the beginning to preserve Whisper's formatting
             if current_segment_text[0] != ' ':
@@ -3025,13 +3029,20 @@ class ToolkitOps:
                 'words': current_segment_words,
             }
 
-            # add the new segment to the resulting segments
+            # add the segment with the remaining text to the resulting segments
             resulting_segments.append(new_segment)
 
         # return the resulting segments
         return resulting_segments
 
-    def split_segments(self, segments, **kwargs):
+    def split_segments(self, segments:list, **kwargs):
+        '''
+        This splits transcription segments into smaller segments based on:
+        - punctuation marks (if the split_on_punctuation_marks option is set)
+        - the maximum number of characters per segment (if the max_characters_per_segment option is set)
+        - the maximum number of words per segment (if the max_words_per_segment option is set)
+        :param segments: the segments to split
+        '''
 
         # if there are no 'words' in the first segment it means that Whisper hasn't returned any word timings
         # in this case, we can't split the segments
@@ -3095,7 +3106,7 @@ class ToolkitOps:
             # take each segment in the result
             for segment in segments:
                 # split the segment into multiple segments
-                resulting_segment = self.split_segment(segment, segment_word_limit, segment_character_limit)
+                resulting_segment = self.split_segment_by_word_limits(segment, segment_word_limit, segment_character_limit)
 
                 # add the resulting segments to the new segments list
                 new_segments.extend(resulting_segment)
@@ -3104,6 +3115,174 @@ class ToolkitOps:
             segments = new_segments
 
         return segments
+
+    def classify_segments(self, segments:list, labels:list,
+                          min_confidence=0.55, multi_label_pass:list =None):
+        '''
+        Classifies segments into different types using the transformers zero-shot-classification pipeline
+        :param segments: the segments to classify
+        :param labels: the labels to use for classification, if a list of lists is provided,
+                        a multi-label classification is performed, taking into consideration each group of labels
+        :param min_confidence: the minimum confidence for a classification to be considered valid,
+                                if a list is provided, then the confidence is calculated for multi_label_pass label group
+        :param multi_label_pass: a list of groups of labels that need to be passed together,
+                                so that the segment stays in the result
+        '''
+
+        # make sure that if a list of lists of labels is provided,
+        # and also a list of minimum confidence values is provided,
+        # then the number of confidence values matches the number of label groups
+        # also don't allow a single label group and a list of confidence values
+        if (isinstance(labels[0], list) and isinstance(min_confidence, list) and len(labels) != len(min_confidence)
+            or (isinstance(labels[0], str) and isinstance(min_confidence, list))
+        ):
+            logger.error("The number of label groups doesn't match the number of minimum confidence values.")
+            raise Exception("The number of label groups doesn't match the number of minimum confidence values.")
+
+        if isinstance(labels[0], list) and len(labels) < len(multi_label_pass):
+            logger.warn("The number of label groups is less than the number of multi-label-pass groups. "
+                        "Disabling multi-label-pass.")
+            multi_label_pass = None
+
+        # using tensorflow but with another model,
+        # because facebook/bart-large-mnli is not available in tensorflow
+        #from transformers import TFAutoModelForSequenceClassification, AutoTokenizer
+        #tokenizer = AutoTokenizer.from_pretrained('roberta-large-mnli')
+        #model = TFAutoModelForSequenceClassification.from_pretrained('roberta-large-mnli')
+        #classifier = pipeline('zero-shot-classification', model=model, tokenizer=tokenizer)
+
+        # start classification process
+        model_name = self.stAI.get_app_setting('text_classifier_model', default_if_none='facebook/bart-large-mnli')
+
+        logger.debug('Loading text classifier model: {}'.format(model_name))
+        # get the zero-shot-classification pipeline
+        classifier = pipeline('zero-shot-classification',
+                              model=model_name,
+                              )
+
+        logger.debug('Classifying segments using the following labels: {}'.format(labels))
+
+        # go through each segment and classify it
+        classified_segments = {}
+        for segment in segments:
+
+            # skip segments that don't have any text or words
+            if 'text' not in segment and 'words' not in segment:
+                logger.debug('Skipping segment classification because it doesn\'t have any text or words: {}'
+                             .format(segment))
+                continue
+
+            # if the text is empty, try to get the text from the words
+            if not segment['text'] or segment['text'].strip() == '':
+                segment['text'] = ' '.join([word['word'] for word in segment['words']])
+
+            # if the text is still empty, skip the segment
+            if not segment['text'] or segment['text'].strip() == '':
+                logger.debug('Skipping segment classification because it doesn\'t have any text: {}'
+                                .format(segment))
+                continue
+
+            # classify the segment
+
+            # if labels is a list of strings, do a normal classification
+            if isinstance(labels, list) and isinstance(labels[0], str):
+                classification = classifier(segment['text'], labels)
+
+                # if the classification confidence is too low, skip the segment
+                if min_confidence and classification['scores'][0] < min_confidence:
+                    logger.debug('Skipping segment classification because the confidence is too low {}: {}'
+                                 .format(classification['scores'][0], segment))
+                    continue
+
+                # add it to the corresponding list, but first make sure the label exists
+                if classification['labels'][0] not in classified_segments:
+                    classified_segments[classification['labels'][0]] = []
+
+                classified_segments[classification['labels'][0]].append(segment)
+
+                # clear classification to free up memory
+                del classification
+
+            # if labels is a list of lists, do a multi-label classification
+            elif isinstance(labels, list) and isinstance(labels[0], list):
+
+                # reset the current_segment_passed_classification to True,
+                # until we find a label that doesn't pass
+                current_segment_passed_classification = True
+
+                # take each label groups, one by one and use them to classify the segment
+                for sub_labels in labels:
+
+                    # if the segment didn't pass the classification for the previous label check, skip it
+                    if not current_segment_passed_classification:
+                        continue
+
+                    # classify the segment using this label
+                    classification = classifier(segment['text'], sub_labels)
+
+                    # if the min_confidence is a list, use the index of the current label group
+                    # to get the corresponding min_confidence value
+                    if isinstance(min_confidence, list):
+                        min_confidence = min_confidence[labels.index(sub_labels)]
+
+                    # for a multi-label classification, we need to check if the confidence is high enough for each label
+                    # so if it isn't, we skip the segment - which means that all other remaining labels
+                    # will be skipped as well
+                    if classification['scores'][0] < min_confidence:
+                        current_segment_passed_classification = False
+                        logger.debug('Skipping segment classification for the following segment'
+                                     'because a confidence of {} is too low to classify it in any of the labels {}: \n{}\n\n'
+                                     .format(classification['scores'][0], sub_labels, segment['text']))
+                        continue
+
+                    # add it to the corresponding list, but first make sure the label exists
+                    if classification['labels'][0] not in classified_segments:
+                        classified_segments[classification['labels'][0]] = []
+
+                    classified_segments[classification['labels'][0]].append(segment)
+
+                    # clear classification to free up memory
+                    del classification
+
+            else:
+                logger.error('Invalid labels for classification: {}'.format(labels))
+                continue
+
+        # if there are no segments to classify, return
+        if not classified_segments:
+            return None
+
+        # if there are any multi-label passes, go through each segment and check if it's in the list of all the labels
+        # but make sure that sufficient number of label groups were provided
+        # - as a minimum check first, before matching the labels below
+        if multi_label_pass and len(labels) >= len(multi_label_pass):
+
+            classified_segments['_multi_label_pass_'] = []
+
+            # take each label from the multi-label pass list and use it to intersect the classified segments
+            for label in multi_label_pass:
+
+                # is this label in the classified segments keys?
+                if label not in classified_segments:
+                    # if not, skip it
+                    logger.warn("Label {} doesn't exist in classified segments: {}\n"
+                                "Multi-label pass failed for all segments, since none of them have this label."
+                                 .format(label, classified_segments.keys()))
+                    break
+
+                # simply add the first label to the multi-label pass list
+                # we're going to intersect the other labels with this one
+                if classified_segments['_multi_label_pass_'] == []:
+                    classified_segments['_multi_label_pass_'] = classified_segments[label]
+                    continue
+
+                # intersect the classified_segments['_multi_label_pass_'] with the current label
+                classified_segments['_multi_label_pass_'] = [item for item in classified_segments['_multi_label_pass_']
+                                                             if item in classified_segments[label]]
+        
+        logger.debug('Classification complete.')
+
+        return classified_segments
 
     def post_process_whisper_result(self, audio, result, **kwargs):
         """
@@ -3244,7 +3423,8 @@ class ToolkitOps:
             whisper_options = {}
             for key in other_whisper_options:
                 if key in ['max_chars_per_segment', 'max_words_per_segment',
-                           'split_on_punctuation_marks', 'prevent_short_gaps']:
+                           'split_on_punctuation_marks', 'prevent_short_gaps',
+                           'group_questions']:
                     post_processing_options[key] = other_whisper_options[key]
 
                 else:
@@ -3819,6 +3999,52 @@ class ToolkitOps:
         # save the transcription file with all the added data
         transcription_json_file_path = self.save_transcription_file(file_name=file_name, target_dir=target_dir,
                                                                     transcription_data=transcription_data)
+
+        # cancel transcription if user requested it
+        if self.cancel_queue_item_if_cancelled(queue_id=queue_id):
+            return None
+
+        # perform question grouping if requested
+        questions_group = None
+        if 'group_questions' in other_whisper_options and other_whisper_options['group_questions']:
+
+            logger.info('Grouping questions.')
+            self.update_transcription_log(unique_id=queue_id, **{'status': 'grouping', 'progress': ''})
+
+            # classify the segments as questions or statements
+            # but use the existing transcription data if we have it
+            classified_question_segments \
+                = self.classify_segments(result['segments']
+                                         if not existing_transcription else transcription_data['segments'],
+                                         labels=[
+                                             ['interrogative sentence', 'declarative sentence'],
+                                             ['question', 'statement'],
+                                             ['asking', 'telling'],
+                                             ['ask', 'tell'],
+                                         ],
+                                         multi_label_pass=['interrogative sentence', 'question', 'asking', 'ask'],
+                                         min_confidence=[0.5, 0.5, 0.7, 0.7]
+                                         )
+
+            # if we have question segments, create a group with them
+            # but save it later, after the transcription is saved
+            if isinstance(classified_question_segments, dict) \
+                    and '_multi_label_pass_' in classified_question_segments \
+                    and len(classified_question_segments['_multi_label_pass_']) > 0:
+
+                questions_group = \
+                    self.t_groups_obj.segments_to_groups(classified_question_segments['_multi_label_pass_'],
+                                                         'Questions')
+
+
+        # if group questions option was checked, add the questions group if we have questions
+        #if 'group_questions' in other_whisper_options \
+        #    and other_whisper_options['group_questions'] \
+        #    and questions_group is not None:
+            if questions_group is not None:
+                self.t_groups_obj.save_transcript_groups(transcription_json_file_path,
+                                                         questions_group,
+                                                         group_id='questions')
 
         # if there's a project_name and a timeline_name
         # link the transcription to the project and timeline
