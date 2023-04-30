@@ -4911,7 +4911,7 @@ class ToolkitOps:
 
         # if the transcription data isn't passed, try to get it from the path
         if transcription_data is None and transcription_path is not None:
-            transcription_data = self.get_transcription_file_data(transcription_path=transcription_path)
+            transcription_data = self.get_transcription_file_data(transcription_file_path=transcription_path)
 
         # if the transcription data is still None, return False
         if transcription_data is None:
@@ -4919,7 +4919,8 @@ class ToolkitOps:
             return None
 
         # if the transcription data has a timeline_fps and start_tc, return True
-        if 'timeline_fps' in transcription_data and 'timeline_start_tc' in transcription_data:
+        if isinstance(transcription_data, dict) and \
+                'timeline_fps' in transcription_data and 'timeline_start_tc' in transcription_data:
             return transcription_data['timeline_fps'], transcription_data['timeline_start_tc']
 
         # otherwise return False
@@ -4950,7 +4951,7 @@ class ToolkitOps:
         if timecode_data is False or timecode_data is None:
             return timecode_data
 
-        if isinstance(timecode_data, list) and len(timecode_data) == 2:
+        if (isinstance(timecode_data, list) or isinstance(timecode_data, tuple)) and len(timecode_data) == 2:
 
             # use try for the timecode conversion,
             # in case the framerate or timeline_start_tc are invalid
@@ -4988,7 +4989,8 @@ class ToolkitOps:
 
     def convert_transcription_timecode_to_sec(self, timecode: str,
                                               transcription_data=None, transcription_path=None,
-                                              offset_with_start_tc=True, return_timecode_data=False):
+                                              offset_with_start_tc=True, return_timecode_data=False,
+                                              timecode_data=None):
         '''
         This function converts the passed timecode to seconds,
         using the framerate and start_tc found in the transcription file/data
@@ -5003,14 +5005,17 @@ class ToolkitOps:
         '''
 
         # get the timecode data from the transcription
-        timecode_data = self.transcription_has_timecode_data(transcription_data=transcription_data,
-                                                             transcription_path=transcription_path)
+        if timecode_data is None:
+            timecode_data = self.transcription_has_timecode_data(transcription_data=transcription_data,
+                                                                transcription_path=transcription_path)
 
         # if False or None was returned, pass them
         if timecode_data is False or timecode_data is None:
             return timecode_data
 
-        if isinstance(timecode_data, list) and len(timecode_data) == 2:
+        if (isinstance(timecode_data, list) or isinstance(timecode_data, tuple)) and len(timecode_data) == 2:
+
+            seconds = None
 
             # use try for the timecode conversion,
             # in case the framerate or timeline_start_tc are invalid
@@ -5030,14 +5035,20 @@ class ToolkitOps:
                 # if we need to offset the timecode with the transcription file's start_tc
                 if offset_with_start_tc:
 
+                    # if the timecode is the same as the start timecode, return 0.0 to avoid errors
+                    if timeline_start_tc == timecode:
+                        seconds = 0
+
                     # only offset if timecode is different than 00:00:00:00
-                    if timeline_start_tc != '00:00:00:00':
+                    if timeline_start_tc != '00:00:00:00' and seconds is None:
 
                         # calculate the new timecode
                         timecode = timecode - timeline_start_tc
 
                 # convert the timecode to seconds by dividing the frames by the framerate
-                seconds = timecode.frames / timeline_fps
+                # if it hasn't been calculated yet
+                if seconds is None:
+                    seconds = float(timecode.frames) / float(timeline_fps)
 
                 # if we need to return the timecode data as well
                 if return_timecode_data:

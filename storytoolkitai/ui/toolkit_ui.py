@@ -1710,19 +1710,21 @@ class toolkit_UI:
                     # try to see if the timecode is valid
                     start_tc = Timecode(user_input['timeline_fps'], user_input['timeline_start_tc'])
 
-                    # set the start_tc in the transcription data to the user input
-                    self.transcription_data[window_id]['timeline_fps'] \
-                        = user_input['timeline_fps']
+                    if window_id is not None:
 
-                    # set the start_tc in the transcription data to the user input
-                    self.transcription_data[window_id]['timeline_start_tc'] \
-                        = user_input['timeline_start_tc']
+                        # set the start_tc in the transcription data to the user input
+                        self.transcription_data[window_id]['timeline_fps'] \
+                            = user_input['timeline_fps']
 
-                    # now try to save the transcription data to the file
-                    self.save_timecode_data_to_transcription(window_id=window_id,
-                                                             timeline_fps=user_input['timeline_fps'],
-                                                             timeline_start_tc=user_input['timeline_start_tc']
-                                                            )
+                        # set the start_tc in the transcription data to the user input
+                        self.transcription_data[window_id]['timeline_start_tc'] \
+                            = user_input['timeline_start_tc']
+
+                        # now try to save the transcription data to the file
+                        self.save_timecode_data_to_transcription(window_id=window_id,
+                                                                 timeline_fps=user_input['timeline_fps'],
+                                                                 timeline_start_tc=user_input['timeline_start_tc']
+                                                                )
 
                     # if we reached this point, return the fps and start_tc
                     return user_input['timeline_fps'], user_input['timeline_start_tc']
@@ -1843,33 +1845,6 @@ class toolkit_UI:
             if timecodes:
 
                 timeline_fps, timeline_start_tc = self.get_timecode_data_from_transcription(window_id=window_id)
-
-
-                '''
-                OLD WAY HERE:
-                    timeline_start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(0)
-                    
-                    if type(timeline_start_tc) is Timecode:
-                        timeline_fps = timeline_start_tc.framerate
-    
-                    # try to get the start timecode, fps and timeline name from the transcription data dict
-                    if not timeline_start_tc and window_id in self.transcription_data:
-    
-                        logger.debug('Timeline timecode not available, trying transcription data instead')
-    
-                        timeline_start_tc = self.transcription_data[window_id]['timeline_start_tc'] \
-                            if 'timeline_start_tc' in self.transcription_data[window_id] else None
-    
-                        timeline_fps = self.transcription_data[window_id]['timeline_fps'] \
-                            if 'timeline_fps' in self.transcription_data[window_id] else None
-    
-                        # convert the timeline_start_tc to a Timecode object but only if the fps is also known
-                        if timeline_start_tc is not None and timeline_fps is not None:
-                            timeline_start_tc = Timecode(timeline_fps, timeline_start_tc)
-                        else:
-                            timeline_start_tc = None
-                            logger.debug('Timeline timecode not available in transcription data either')
-                '''
 
                 # if no timecode was received disconnected so disable timecodes
                 if not timeline_start_tc or timeline_start_tc is None:
@@ -6116,7 +6091,13 @@ class toolkit_UI:
                                                 project_name=kwargs.get('project_name', None)
                                                 )
 
-    def convert_text_to_time_intervals(self, text):
+    def convert_text_to_time_intervals(self, text, **kwargs):
+        '''
+        Checks all lines in the text and converts them to time intervals.
+        If using timecodes, we need to have either a transcription_data or transcription_path in the kwargs,
+            and the transcription data must contain the framerate and the start time of the transcription.
+        '''
+
         time_intervals = []
 
         # split the text into lines
@@ -6127,15 +6108,16 @@ class toolkit_UI:
             # split the line into two parts, separated by a dash
             parts = line.split('-')
 
-            # if there are two parts
+            # if there are two parts,
+            # it means that we have a start and end time
             if len(parts) == 2:
                 # remove any spaces
                 start = parts[0].strip()
                 end = parts[1].strip()
 
                 # convert the start and end times to seconds
-                start_seconds = self.convert_time_to_seconds(start)
-                end_seconds = self.convert_time_to_seconds(end)
+                start_seconds = self.convert_time_to_seconds(start, **kwargs)
+                end_seconds = self.convert_time_to_seconds(end, **kwargs)
 
                 # if both start and end times are valid
                 if start_seconds is not None and end_seconds is not None:
@@ -6152,16 +6134,24 @@ class toolkit_UI:
 
         return time_intervals
 
-    def convert_time_to_seconds(self, time, fps=None):
+    def convert_time_to_seconds(self, time, **kwargs):
+        '''
+        Converts a time string to seconds
 
-        # the text is a string with lines like this:
-        # 0:00:00:00 - 0:00:00:00
+        # the time can be a string that looks like this
+        # 0:00:00:00 (timecode)
         # or like this:
-        # 0:00:00.000 - 0:00:01.000
+        # 0:00:00.000
         # or like this:
-        # 0,0 - 0,01
+        # 0,0
         # or like this:
-        # 0.0 - 0.01
+        # 0.0
+
+        If we're using timecode, we need to have either a transcription_data or transcription_path in the kwargs,
+        and the transcription data must contain the framerate and the start time of the transcription,
+        otherwise it's impossible to convert the timecode to seconds.
+
+        '''
 
         # if the format is 0:00:00.000 or 0:00:00:00
         if ':' in time:
@@ -6171,14 +6161,35 @@ class toolkit_UI:
             # if the format is 0:00:00:00 - assume a timecode was passed
             if len(time_array) == 4:
 
-                if fps is not None:
-                    # if the format is 0:00:00:00
-                    # convert the time to seconds
-                    return int(time_array[0]) * 3600 + int(time_array[1]) * 60 + int(time_array[2]) + \
-                        int(time_array[3]) / fps
+                if kwargs.get('transcription_file_path', None) is None and kwargs.get('transcription_data') is None:
+                    logger.error("You're using timecodes, "
+                                 "but we don't have transcription data to determine the start timecode")
+                    return None
 
-                else:
-                    logger.error('The time format is 0:00:00:00, but the fps is not specified.')
+                time_converted = None
+                timecode_data = None
+
+                # if we have the time in timecode, convert it to seconds using the toolkit ops object
+                time_converted = self.toolkit_ops_obj.convert_transcription_timecode_to_sec(
+                    time,
+                    transcription_path=kwargs.get('transcription_file_path', None),
+                    transcription_data=kwargs.get('transcription_data', None),
+                    timecode_data=timecode_data
+                )
+
+                # if False was returned, it means that the transcription data has no timecode information
+                if time_converted is False:
+                    logger.error("You're using timecodes, "
+                                 "but we don't have transcription data to determine the start timecode")
+
+                    self.notify_via_messagebox(type="error",
+                                               message="You're using timecodes, "
+                                                "but we don't have any transcription timecode data "
+                                                       "to determine the start timecode or the framerate.",)
+
+                    return None
+
+                return time_converted
 
             elif len(time_array) == 3:
                 # hours, minutes, seconds
@@ -6213,7 +6224,7 @@ class toolkit_UI:
     def start_transcription_button(self, transcription_settings_window_id=None, **transcription_config):
         '''
         This sends the transcription to the transcription queue via toolkit_ops object,
-        but also closes the trancription window forever
+        but also closes the transcription settings window
         :param transcription_settings_window_id:
         :param transcription_config:
         :return:
@@ -6221,14 +6232,20 @@ class toolkit_UI:
 
         # validate the transcription settings
         transcription_config['time_intervals'] = \
-            self.convert_text_to_time_intervals(transcription_config['time_intervals'])
+            self.convert_text_to_time_intervals(transcription_config['time_intervals'],
+                                                transcription_file_path= \
+                                                    transcription_config.get('transcription_file_path', None)
+                                                )
 
         if not transcription_config['time_intervals']:
             return False
 
         # validate the transcription settings
         transcription_config['excluded_time_intervals'] = \
-            self.convert_text_to_time_intervals(transcription_config['excluded_time_intervals'])
+            self.convert_text_to_time_intervals(transcription_config['excluded_time_intervals'],
+                                                transcription_file_path= \
+                                                    transcription_config.get('transcription_file_path', None)
+                                                )
 
         if not transcription_config['excluded_time_intervals']:
             return False
