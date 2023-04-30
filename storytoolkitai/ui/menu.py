@@ -44,6 +44,14 @@ class UImenus:
         # set the initial state to whatever the config says
         self.keep_main_window_on_top_state.set(self.root.attributes('-topmost'))
 
+        # what is the name of the file browser, depending on which OS we're on?
+        if platform.system() == 'Darwin':
+            self.file_browser_name = 'Finder'
+        elif platform.system() == 'Windows':
+            self.file_browser_name = 'Explorer'
+        else:
+            self.file_browser_name = 'File Browser'
+
     def update_current_window_references(self):
 
         # for Windows, we use the self.last_focused_window,
@@ -146,6 +154,11 @@ class UImenus:
         self.filemenu.entryconfig('Export transcript as Fusion Text...', state=NORMAL,
                                     command=lambda:
                                     self.toolkit_UI_obj.t_edit_obj.button_export_as_fusion_text_comp(window_id)
+                                  )
+
+        self.filemenu.entryconfig("Show transcription in "+self.file_browser_name, state=NORMAL,
+                                    command=lambda:
+                                    self.open_file_dir(self.toolkit_UI_obj.t_edit_obj.transcription_file_paths[window_id])
                                   )
 
         # enable the advanced search menu items relevant for transcriptions
@@ -356,6 +369,7 @@ class UImenus:
         self.filemenu.entryconfig("Export transcript as...", state=DISABLED)
         self.filemenu.entryconfig("Export transcript as AVID DS...", state=DISABLED)
         self.filemenu.entryconfig("Export transcript as Fusion Text...", state=DISABLED)
+        self.filemenu.entryconfig("Show transcription in " + self.file_browser_name, state=DISABLED)
 
         # disable group questions
         self.editmenu.entryconfig("Group questions", state=DISABLED)
@@ -407,6 +421,7 @@ class UImenus:
 
         # FILE MENU - other app related items
         self.filemenu.add_separator()
+        self.filemenu.add_command(label="Show transcription in "+self.file_browser_name, command=self.open_userdata_dir)
         self.filemenu.add_command(label="Open configuration folder", command=self.open_userdata_dir)
         self.filemenu.add_command(label="Open last used folder", command=self.open_last_dir)
 
@@ -666,6 +681,21 @@ class UImenus:
         # if we're on Linux, open the user data dir in the file manager
         elif platform.system() == 'Linux':
             subprocess.call(['xdg-open', self.stAI.user_data_path])
+
+    def open_file_dir(self, file_path):
+        '''
+        This takes the user to the directory of the file in question using the OS file manager.
+        '''
+        # if we're on a Mac, use Finder to show the file
+        if platform.system() == 'Darwin':
+            subprocess.call(['open', '-R', file_path])
+        elif platform.system() == 'Windows':
+            subprocess.call(['explorer', '/select,', file_path])
+        # if we're on Linux, open the user data dir in the file manager
+        elif platform.system() == 'Linux':
+            subprocess.call(['xdg-open', os.path.dirname(file_path)])
+
+
 
     def open_project_page(self):
         webbrowser.open_new("http://storytoolkit.ai")
