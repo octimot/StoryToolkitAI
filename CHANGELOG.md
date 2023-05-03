@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.18.3] - 2023-05-02
+
+### Info
+
+Early update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+
+### Added
+- Group Questions - use AI to automatically detect and group questions from transcripts
+- Ability to export transcript to Blackmagic Fusion Text+ via menu button
+- Time Intervals in the Transcription Settings Window can now be set using timecodes too
+- Show transcription in File Explorer menu button
+
+### Fixes
+- Fixed a bug that was preventing CUDA machines from using the CPU for transcriptions
+
 ## [0.18.2] - 2023-04-28
 
 ### Info

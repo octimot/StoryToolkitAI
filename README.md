@@ -18,11 +18,12 @@ https://vimeo.com/759962195/dee07a067a
 ## Key Features
 - [x] **Free Automatic Transcriptions in many languages** on your local machine using AI
 - [x] **Free Automatic Translation** to English on your local machine using AI
-- [x] **ChatGPT integration** - state-of-the-art AI to assist you in your work and chat about your transcripts (early update via Patreon only)
+- [x] **ChatGPT integration** - state-of-the-art AI to assist you in your work and chat about your transcripts
 - [x] **Advanced Search** - allows you to search transcripts or even text files semantically using AI
 - [X] **Transcript Groups** allow the grouping of transcription segments for easier access
+- [X] Automatic detection of Question-looking lines in transcripts
 - [X] Editing and Advanced Search of **existing SRT files**
-- [x] Export of transcripts to multiple formats, including SRT, TXT and AVID DS
+- [x] Export of transcripts to multiple formats, including SRT, TXT, AVID DS and as Fusion Text node
 - [x] Batch transcriptions using transcription queuing
 - [x] Partial re-transcribing of timelines/videos/audio files
 
