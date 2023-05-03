@@ -2517,6 +2517,12 @@ class ToolkitOps:
         :return:
         '''
 
+        allowed_devices = ['cuda', 'CUDA', 'gpu', 'GPU', 'cpu', 'CPU']
+
+        # change the whisper device if it was passed as a parameter
+        if device is not None and device in allowed_devices:
+            self.whisper_device = device
+
         # if the whisper device is set to cuda
         if self.whisper_device in ['cuda', 'CUDA', 'gpu', 'GPU']:
             # use CUDA if available
@@ -3663,6 +3669,10 @@ class ToolkitOps:
             project_name = other_whisper_options['project_name']
             del other_whisper_options['project_name']
 
+        whisper_device_changed = False
+        if 'device' in other_whisper_options and self.whisper_device != other_whisper_options['device']:
+            whisper_device_changed = True
+
         # select the device that was passed (if any)
         if 'device' in other_whisper_options:
             # select the new whisper device
@@ -3672,7 +3682,8 @@ class ToolkitOps:
         # load OpenAI Whisper model
         # and hold it loaded for future use (unless another model was passed via other_whisper_options)
         if self.whisper_model is None \
-                or ('model' in other_whisper_options and self.whisper_model_name != other_whisper_options['model']):
+                or ('model' in other_whisper_options and self.whisper_model_name != other_whisper_options['model'])\
+                or whisper_device_changed:
 
             # update the status of the item in the transcription log
             self.update_transcription_log(unique_id=queue_id, **{'status': 'loading model'})
@@ -3707,7 +3718,7 @@ class ToolkitOps:
 
             logger.info('Loading Whisper {} model.'.format(self.whisper_model_name))
             try:
-                self.whisper_model = whisper.load_model(self.whisper_model_name)
+                self.whisper_model = whisper.load_model(self.whisper_model_name, device=self.whisper_device)
             except Exception as e:
                 logger.error('Error loading Whisper {} model: {}'.format(self.whisper_model_name, e))
 
