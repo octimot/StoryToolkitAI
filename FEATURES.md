@@ -159,7 +159,7 @@ take longer.
 Another important thing to note is that your **audio channels are best left as Mono on your timeline and/or renders**, 
 since the algorithm may ignore one channel or the other, and therefore only give you a partial transcription.
 
-## Group Questions
+### Group Questions
 Starting with version 0.18.3, you can click and wait for AI to detect and create a group with all the transcription
 segments that look like questions. This is useful if you want to see all the questions in your transcript, for
 instance if you're transcribing interviews. 
