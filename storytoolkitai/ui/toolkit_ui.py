@@ -3760,14 +3760,16 @@ class toolkit_UI:
         # what happens when the user tries to close the main window
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
 
+        UI_folder = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', '..', 'UI')
+
         # add icon
         try:
-            photo = tk.PhotoImage(file='UI/StoryToolkitAI.png')
+            photo = tk.PhotoImage(file=os.path.join(UI_folder, 'StoryToolkitAI.png'))
             self.root.wm_iconphoto(False, photo)
 
             # set bar icon for windows
             if sys.platform == 'win32':
-                self.root.iconbitmap('UI/StoryToolkitAI.ico')
+                self.root.iconbitmap(os.path.join(UI_folder, 'StoryToolkitAI.ico'))
 
         except:
             logger.debug('Could not load StoryToolkitAI icon.')

@@ -7,7 +7,7 @@ import subprocess
 import os
 
 # add content root to sys.path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__+'../'))))
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 from storytoolkitai.core.logger import *
 from storytoolkitai.integrations.mots_resolve import MotsResolve
