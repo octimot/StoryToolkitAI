@@ -2736,6 +2736,11 @@ class ToolkitOps:
         if not segment_word_limit and not segment_character_limit:
             return segment
 
+        if not isinstance(segment, dict):
+            logger.warning('The segment is either empty or not a dictionary.'
+                           'Cannot split segment by word or character limit.')
+            return segment
+
         # if the segment contains no words, we can't perform the split
         # because we don't know the start and end times of the words
         if 'words' not in segment or not segment['words']:
@@ -4475,8 +4480,15 @@ class ToolkitOps:
 
             # calculate frame based on segment start and timeline fps
             # we'll ignore the timeline_start_tc considering that we're in a comp file that starts at 0
-            keyframe_tc = Timecode(timeline_fps, start_seconds=segment["start"])
-            frame = keyframe_tc.frames
+            if segment["start"] != 0:
+                keyframe_tc = Timecode(timeline_fps, start_seconds=segment["start"])
+                frame = keyframe_tc.frames
+
+            # if the segment starts at 0, we'll use frame 1 to form the timecode and frame 0 for the keyframe
+            # this is because Timecode objects can't start at 0
+            else:
+                keyframe_tc = Timecode(timeline_fps, 1)
+                frame = 0
 
             text = segment["text"].replace('"', '\\"')
 
