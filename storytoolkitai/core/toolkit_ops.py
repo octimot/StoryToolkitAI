@@ -633,7 +633,7 @@ class ToolkitOps:
 
                     # decide what to do based on the file extension
 
-                    # if it's transcription file
+                    # if it's TRANSCRIPTION FILE
                     if s_file_path.endswith('.transcription.json'):
 
                         # first get the transcription file data
@@ -653,14 +653,19 @@ class ToolkitOps:
 
                             logger.debug('Adding {} to the search corpus.'.format(transcription_file_path))
 
+                            # does this transcription file contain timecodes?
+                            timecode_data = \
+                                self.toolkit_ops_obj.transcription_has_timecode_data(transcription_file_data)
+
                             # group the segment texts into phrases using punctuation as dividers
                             # instead of how they're currently segmented
                             # once they are grouped, add them to the search corpus
                             # plus add them to the search corpus association list so we know
                             # from which transcription file and from which segment they came from originally
 
-                            # initialize the current phrase
+                            # initialize the current phrase and the previous phrase
                             current_phrase = ''
+                            previous_phrase = ''
 
                             # loop through the segments of this transcription file
                             for segment_index, segment in enumerate(transcription_file_data['segments']):
@@ -672,17 +677,23 @@ class ToolkitOps:
                                     # contains all the transcription file segments (not just the current transcription file)
                                     general_segment_index = len(search_corpus_phrases)
 
-                                    search_corpus_assoc[general_segment_index] = {'transcription_file_path':
-                                                                                      transcription_file_path,
-                                                                                  'segment': segment['text'],
-                                                                                  'segment_index':
-                                                                                      segment_index,
-                                                                                  'start':
-                                                                                      segment['start'],
-                                                                                  'all_lines':
-                                                                                      [int(segment_index) + 1],
-                                                                                  'type': 'transcription'
-                                                                                  }
+                                    timecode = None \
+                                        if not timecode_data \
+                                        else self.toolkit_ops_obj.convert_sec_to_transcription_timecode(
+                                            segment['start'], transcription_file_data
+                                    )
+
+                                    search_corpus_assoc[general_segment_index] = {
+                                        'transcription_file_path': transcription_file_path,
+                                        'name': transcription_file_data['name']
+                                            if 'name' in transcription_file_data else os.path.basename(transcription_file_path),
+                                        'segment': segment['text'],
+                                        'segment_index': segment_index,
+                                        'start': segment['start'],
+                                        'timecode': timecode,
+                                        'all_lines': [int(segment_index) + 1],
+                                        'type': 'transcription'
+                                    }
 
                                 # otherwise, if this is not a new phrase
                                 else:
@@ -709,9 +720,37 @@ class ToolkitOps:
                                         # "close" the current phrase by adding it to the search corpus
                                         search_corpus_phrases.append(current_phrase.strip())
 
+                                        # and remember it as the previous phrase
+                                        previous_phrase = current_phrase
+
                                         # then empty the current phrase
                                         current_phrase = ''
 
+                            if 'transcript_groups' in transcription_file_data:
+
+                                # take each transcript group
+                                for transcript_group in transcription_file_data['transcript_groups']:
+
+                                    general_segment_index = len(search_corpus_phrases)
+
+                                    # and add the transcript group name and group notes to the search corpus association
+                                    search_corpus_assoc[general_segment_index] = {
+                                        'file_path': transcription_file_path,
+                                        'transcription_name': transcription_file_data['name']
+                                            if 'name' in transcription_file_data else os.path.basename(transcription_file_path),
+                                        'type': 'transcript_group',
+                                        'group_name': transcript_group
+                                    }
+
+                                    # and add the transcript group name to the search corpus phrases
+                                    search_corpus_phrases.append(
+                                        transcription_file_data['transcript_groups'][transcript_group]['name']
+                                        + ': '
+                                        + transcription_file_data['transcript_groups'][transcript_group]['notes']
+                                                                 )
+
+
+                    # if it's a TEXT FILE
                     elif s_file_path.endswith('.txt'):
 
                         # if there is an exact file with the .transcription.json extension in the search file paths
@@ -754,7 +793,7 @@ class ToolkitOps:
                                                                               'type': 'text'
                                                                               }
 
-                    # if it's a project file
+                    # if it's a PROJECT FILE
                     elif s_file_path.endswith('project.json'):
 
                         # read it as a json file
@@ -829,117 +868,6 @@ class ToolkitOps:
                 self.search_file_paths = search_file_paths
                 self.search_corpus = search_corpus_phrases
                 self.search_corpus_assoc = search_corpus_assoc
-
-            return self.search_corpuses[search_id]['corpus'], self.search_corpuses[search_id]['assoc']
-
-        def prepare_search_corpus_from_transcriptions(self, search_transcriptions, search_id):
-
-            # re-organize the search corpus into a dictionary of phrases
-            # with the transcription file path as the key
-            # and the value being a list of phrases compiled from the transcription file text using
-            # the punctuation as dividers.
-            # this will make it easier to search for phrases in the transcription files
-            search_corpus_phrases = []
-
-            # use this to keep track of the transcription file path and the phrase index
-            search_corpus_assoc = {}
-
-            # and if the hasn't already been created, just create it
-            if search_id not in self.toolkit_ops_obj.t_search_obj.search_corpuses:
-
-                logger.info('Clustering search corpus by phrases.')
-
-                # loop through all the transcription files in the search_transcriptions dictionary
-                for transcription_file_path, transcription_file_data in search_transcriptions.items():
-
-                    # if the file extension is transcription.json, do this
-                    if transcription_file_path.endswith('.transcription.json'):
-
-                        logger.debug('Adding {} to the search corpus.'.format(transcription_file_path))
-
-                        if type(transcription_file_data) is not dict:
-                            logger.warning('Transcription file {} is not in the right format. Skipping.'
-                                           .format(transcription_file_path))
-
-                        elif type(transcription_file_data) is dict \
-                                and 'segments' in transcription_file_data \
-                                and type(transcription_file_data['segments']) is list:
-
-                            # group the segment texts into phrases using punctuation as dividers
-                            # instead of how they're currently segmented
-                            # once they are grouped, add them to the search corpus
-                            # plus add them to the search corpus association list so we know
-                            # from which transcription file and from which segment they came from originally
-
-                            # initialize the current phrase
-                            current_phrase = ''
-
-                            # loop through the segments of this transcription file
-                            for segment_index, segment in enumerate(transcription_file_data['segments']):
-
-                                # first remember the transcription file path and the segment index
-                                # if this is a new phrase (i.e. the current phrase is empty)
-                                if current_phrase == '':
-                                    # this is the segment index relative to the whole search corpus that
-                                    # contains all the transcription file segments (not just the current transcription file)
-                                    general_segment_index = len(search_corpus_phrases)
-
-                                    search_corpus_assoc[general_segment_index] = {'transcription_file_path':
-                                                                                      transcription_file_path,
-                                                                                  'segment': segment['text'],
-                                                                                  'segment_index':
-                                                                                      segment_index,
-                                                                                  'start':
-                                                                                      segment['start'],
-                                                                                  'all_lines':
-                                                                                      [int(segment_index) + 1],
-                                                                                  }
-
-                                # otherwise, if this is not a new phrase
-                                else:
-                                    # just append the current segment index to the list of all lines
-                                    search_corpus_assoc[general_segment_index]['all_lines'].append(
-                                        int(segment_index) + 1)
-
-                                # add the segment text to the current phrase
-                                # but only if it's longer than 2 characters to avoid adding stuff that is most likely meaningless
-                                # like punctuation marks
-                                # also ignore the words that are in the ignore list
-                                if 'text' in segment and type(segment['text']) is str:
-
-                                    # keep adding segments to the current phrase until we find a punctuation mark
-
-                                    # first get the segment text
-                                    segment_text = str(segment['text'])
-
-                                    # add the segment to the current phrase
-                                    current_phrase += segment_text.strip() + ' '
-
-                                    # if a punctuation mark exists in the last 5 characters of the segment text
-                                    # it means that the current phrase is complete
-                                    if re.search(r'[\.\?\!]{1}$', segment_text[-5:]):
-                                        # "close" the current phrase by adding it to the search corpus
-                                        search_corpus_phrases.append(current_phrase.strip())
-
-                                        # then empty the current phrase
-                                        current_phrase = ''
-
-                    # if the file extension is .txt, do this
-                    elif transcription_file_path.endswith('.txt'):
-                        logger.debug('Adding {} to the search corpus.'.format(transcription_file_path))
-
-                        # split the file contents into phrases using punctuation as dividers
-                        # and add them to the search corpus
-                        # plus add them to the search corpus association list so we know
-                        # from which transcription file and from which segment they came from originally
-
-                        # first get the file contents
-
-                # add the corpus to the search corpus dict, so we don't have to re-create it every time we search
-                # for eg. we could use the search window id as the key
-                self.search_corpuses[search_id] = {'corpus': {}, 'assoc': {}}
-                self.search_corpuses[search_id]['corpus'] = search_corpus_phrases
-                self.search_corpuses[search_id]['assoc'] = search_corpus_assoc
 
             return self.search_corpuses[search_id]['corpus'], self.search_corpuses[search_id]['assoc']
 
@@ -1173,13 +1101,13 @@ class ToolkitOps:
                 # save the embeddings in the cache
                 self.search_embeddings[search_id] = corpus_embeddings
 
+                logger.debug('Encoded search corpus.')
+
             else:
                 # load the embeddings from the cache
                 corpus_embeddings = self.search_embeddings[search_id]
 
                 logger.debug('Loaded search corpus embeddings from search embeddings cache.')
-
-            logger.debug('Encoded search corpus.')
 
             if start_search_time is not None:
                 logger.debug('Time: ' + str(time.time() - start_search_time))
@@ -1227,13 +1155,14 @@ class ToolkitOps:
                 for score, idx in zip(top_results[0], top_results[1]):
 
                     if str(search_corpus_phrases[idx]) != '':
-                        self.add_search_result(search_results=search_results,
-                                               query=query,
-                                               search_corpus_phrases=search_corpus_phrases,
-                                               search_corpus_assoc=search_corpus_assoc,
-                                               idx=idx,
-                                               score=score
-                                               )
+                        self.add_search_result(
+                            search_results=search_results,
+                            query=query,
+                            search_corpus_phrases=search_corpus_phrases,
+                            search_corpus_assoc=search_corpus_assoc,
+                            idx=idx,
+                            score=score
+                       )
 
             self.search_results = search_results
             self.top_k = top_k
@@ -1271,6 +1200,7 @@ class ToolkitOps:
             # in case the source file was a transcription
             elif search_corpus_assoc[int(idx)]['type'] == 'transcription':
                 transcription_file_path = search_corpus_assoc[int(idx)]['transcription_file_path']
+                transcription_name = search_corpus_assoc[int(idx)]['name']
                 segment_index = search_corpus_assoc[int(idx)]['segment_index']
                 transcript_time = search_corpus_assoc[int(idx)]['start']
                 line_no = int(segment_index) + 1
@@ -1281,11 +1211,13 @@ class ToolkitOps:
                 search_results.append({
                     'search_term': query,
                     'transcription_file_path': transcription_file_path,
+                    'name': transcription_name,
                     'idx': int(idx),
                     'segment_index': segment_index,
                     'line_no': line_no,
                     'all_lines': all_lines,
                     'transcript_time': transcript_time,
+                    'timecode': search_corpus_assoc[int(idx)]['timecode'],
                     'score': score,
                     'text': search_corpus_phrases[idx],
                     'type': type
@@ -1302,6 +1234,20 @@ class ToolkitOps:
                     'marker_index': search_corpus_assoc[int(idx)]['marker_index'],
                     'timeline': search_corpus_assoc[int(idx)]['timeline'],
                     'project': search_corpus_assoc[int(idx)]['project']
+                })
+
+            elif search_corpus_assoc[int(idx)]['type'] == 'transcript_group':
+                transcription_name = search_corpus_assoc[int(idx)]['transcription_name']
+
+                search_results.append({
+                    'idx': int(idx),
+                    'search_term': query,
+                    'file_path': search_corpus_assoc[int(idx)]['file_path'],
+                    'transcription_name': search_corpus_assoc[int(idx)]['transcription_name'],
+                    'type': search_corpus_assoc[int(idx)]['type'],
+                    'text': search_corpus_phrases[idx],
+                    'group_name': search_corpus_assoc[int(idx)]['group_name'],
+                    'score': score,
                 })
 
             else:

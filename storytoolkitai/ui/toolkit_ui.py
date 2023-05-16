@@ -6538,7 +6538,7 @@ class toolkit_UI:
         self.open_transcription_window(transcription_file_path=transcription_json_file_path, **options)
 
     def open_transcription_window(self, title=None, transcription_file_path=None, srt_file_path=None,
-                                  select_line_no=None, add_to_selection=None):
+                                  select_line_no=None, add_to_selection=None, select_group=None):
 
         if self.toolkit_ops_obj is None:
             logger.error('Cannot open transcription window. A toolkit operations object is needed to continue.')
@@ -6612,23 +6612,6 @@ class toolkit_UI:
 
             # initialize the transcript_segments_ids for this window
             self.t_edit_obj.transcript_segments_ids[t_window_id] = {}
-
-            # add the transcript groups to the transcript_groups dict
-            if 'transcript_groups' in transcription_json:
-
-                self.t_edit_obj.transcript_groups[t_window_id] = transcription_json['transcript_groups']
-
-                # if the transcript groups are not empty
-                if transcription_json['transcript_groups']:
-
-                    # open the transcript groups window
-                    if self.stAI.get_app_setting(setting_name='open_transcript_groups_window_on_open',
-                                                 default_if_none=False) is True:
-                        self.open_transcript_groups_window(transcription_window_id=t_window_id,
-                                                           transcription_name=title)
-
-            else:
-                self.t_edit_obj.transcript_groups[t_window_id] = {}
 
             # create a header frame to hold stuff above the transcript text
             #header_frame = tk.Frame(self.windows[t_window_id], name='header_frame')
@@ -7030,6 +7013,27 @@ class toolkit_UI:
 
                 # select the line in the text widget
                 self.t_edit_obj.segment_to_selection(window_id=t_window_id, line=selection_line_no)
+
+        # add the transcript groups to the transcript_groups dict
+        if 'transcript_groups' in transcription_json:
+
+            self.t_edit_obj.transcript_groups[t_window_id] = transcription_json['transcript_groups']
+
+            # if the transcript groups are not empty
+            if transcription_json['transcript_groups']:
+
+                # automatically open the transcript groups window if the setting is set to True
+                # or if a select_group was passed
+                if self.stAI.get_app_setting(setting_name='open_transcript_groups_window_on_open',
+                                             default_if_none=False) is True \
+                        or select_group is not None:
+                    # open the transcript groups window
+                    self.open_transcript_groups_window(transcription_window_id=t_window_id,
+                                                       transcription_name=title,
+                                                       select_group=select_group)
+
+        else:
+            self.t_edit_obj.transcript_groups[t_window_id] = {}
 
     def update_transcription_window(self, window_id, update_all: bool = True, **update_attr):
         '''
@@ -7617,7 +7621,8 @@ class toolkit_UI:
                               prompt_callback=self.advanced_search,
                               prompt_callback_kwargs={'search_item': search_item,
                                                       'search_window_id': search_window_id},
-                              type='search'
+                              type='search',
+                              open_multiple=open_multiple
                               )
 
         # add text to the search window
@@ -7751,7 +7756,7 @@ class toolkit_UI:
                 current_insert_position = results_text_element.index(tk.INSERT)
 
                 # shorten the result text if it's longer than 200 characters, but don't cut off words
-                if len(result['text']) < 200:
+                if len(result['text']) < 100:
                     text_result = result['text']
                 else:
                     text_result = result['text'][:200].rsplit(' ', 1)[0] + '...'
@@ -7764,15 +7769,20 @@ class toolkit_UI:
                 results_text_element.tag_config('white', foreground=self.resolve_theme_colors['supernormal'])
 
                 # add score to the result
-                results_text_element.insert(tk.END, ' -- Score: {:.4f}\n'.format(result['score']))
+                #results_text_element.insert(tk.END, ' -- Score: {:.4f}\n'.format(result['score']))
 
                 # if the type is a transcription
                 if result['type'] == 'transcription':
+
+                    time_str = "second {:.2f}".format(result['transcript_time']) \
+                        if result['timecode'] is None else result['timecode']
+
+                    results_text_element.insert(tk.END, ' -- Transcript Line {} ({}) \n'
+                                                .format(result['segment_index'], time_str))
+
                     # add the transcription file path and segment index to the result
                     results_text_element.insert(tk.END, ' -- Transcript: {}\n'
-                                                .format(os.path.basename(result['transcription_file_path'])))
-                    results_text_element.insert(tk.END, ' -- Line {} (second {:.2f}) \n'
-                                                .format(result['segment_index'], result['transcript_time']))
+                                                .format(result['name']))
 
                     # add a tag to the above text to make it clickable
                     tag_name = 'clickable_{}'.format(result['idx'])
@@ -7790,6 +7800,7 @@ class toolkit_UI:
 
                     # bind mouse clicks press events on the results text box
                     # bind CMD/CTRL + mouse Clicks to text
+                    # this adds the clicked line to the existing selection
                     results_text_element.tag_bind(tag_name, "<" + self.ctrl_cmd_bind + "-Button-1>",
                                                   lambda event,
                                                          transcription_file_path=result['transcription_file_path'],
@@ -7833,16 +7844,39 @@ class toolkit_UI:
                 # if the type is a marker
                 elif result['type'] == 'marker':
 
+                    # add the timeline name
+                    results_text_element.insert(tk.END, ' -- Marker at Frame: {}\n'.format(result['marker_index']))
+                    # results_text_element.insert(tk.END, ' -- Source: Timeline Marker\n')
+
                     # add the project name
                     results_text_element.insert(tk.END, ' -- Project: {}\n'.format(result['project']))
 
                     # add the timeline name
                     results_text_element.insert(tk.END, ' -- Timeline: {}\n'.format(result['timeline']))
 
+                elif result['type'] == 'transcript_group':
+
                     # add the timeline name
-                    results_text_element.insert(tk.END, ' -- Frame: {}\n'.format(result['marker_index']))
+                    results_text_element.insert(tk.END, ' -- Transcript Group\n')
                     # results_text_element.insert(tk.END, ' -- Source: Timeline Marker\n')
 
+                    # add the transcription file path
+                    results_text_element.insert(tk.END, ' -- Transcript: {}\n'
+                                                .format(result['transcription_name']))
+
+                    # add a tag to the above text to make it clickable
+                    tag_name = 'clickable_{}'.format(result['idx'])
+                    results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
+
+                    # add the transcription file path and segment index to the tag
+                    # so we can use it to open the transcription window with the transcription file and jump to the segment
+                    results_text_element.tag_bind(tag_name, '<Button-1>',
+                                                  lambda event,
+                                                         transcription_file_path=result['file_path'],
+                                                         group_name=result['group_name']:
+                                                  self.open_transcription_window(
+                                                      transcription_file_path=transcription_file_path,
+                                                      select_group=group_name))
 
                 else:
                     # mention that the result source is unknown
@@ -8040,6 +8074,49 @@ class toolkit_UI:
 
         return groups_listbox.get(tk.ANCHOR).strip().lower()
 
+    def _select_group_in_listbox(self, groups_listbox: tk.Listbox, transcript_window_id: str, group_id: str, deselect_before=True):
+        '''
+        Selects the group in the groups listbox based on its group id
+        '''
+
+        # groups are stored in self.t_edit_obj.transcript_groups
+        # we need to find the group with the given group id
+        if transcript_window_id not in self.t_edit_obj.transcript_groups:
+            logger.warning('No transcript groups found for transcript window {}'.format(transcript_window_id))
+            return False
+
+        # get the index of the group with the given group id
+        group_index = None
+        if group_id in self.t_edit_obj.transcript_groups[transcript_window_id]:
+
+            # deselect all groups from the listbox before selecting the new one
+            if deselect_before:
+                groups_listbox.selection_clear(0, tk.END)
+
+            # get the group index in the listbox by searching for the group id in the listbox items
+            for group_index, item in enumerate(groups_listbox.get(0, tk.END)):
+                if group_id == item.strip().lower():
+                    break
+
+            if group_index is not None:
+                # the group index + 1 is also the line index in the listbox
+                # so, use that to select the group in the listbox
+                groups_listbox.selection_set(group_index)
+                groups_listbox.activate(group_index)
+
+                # add the selected tag to the item in the listbox
+                #groups_listbox.itemconfig(group_index+1, {'bg': 'lightblue'})
+
+                # and scroll to the group
+                groups_listbox.see(group_index)
+
+                return True
+
+            else:
+                logger.warning('Group index not found for group id {}'.format(group_id))
+
+        return False
+
     def _get_selected_group_id(self, t_window_id: str = None, groups_listbox: tk.Listbox = None) \
             -> str or bool or None:
         '''
@@ -8205,6 +8282,8 @@ class toolkit_UI:
         :return:
         '''
 
+        passed_group = None if group_id is None else group_id
+
         # get the group window id if it's not provided
         if t_group_window_id is None:
             t_group_window_id = t_window_id+'_transcript_groups'
@@ -8227,8 +8306,10 @@ class toolkit_UI:
         # if the group id matches the group id in the selected group
         # it means that we are clicking on a group that was already selected
         # so, deselect the group and all the segments from the window
+        # (but only if the group was not passed as an argument)
         if t_window_id in self.t_edit_obj.selected_groups \
-                and group_id in self.t_edit_obj.selected_groups[t_window_id]:
+                and group_id in self.t_edit_obj.selected_groups[t_window_id]\
+                and passed_group is None:
 
             # empty the selected groups
             self.t_edit_obj.selected_groups[t_window_id] = []
@@ -8257,6 +8338,13 @@ class toolkit_UI:
 
             # add the group to the currently selected groups
             self.t_edit_obj.selected_groups[t_window_id].append(group_id)
+
+            # if the user did not press on the listbox, it means that the request came from some place else
+            # so, select the group in the listbox (this prevents simulating a second click on the listbox)
+            if e is None or e.widget != groups_listbox:
+                self._select_group_in_listbox(groups_listbox=groups_listbox,
+                                              transcript_window_id=t_window_id,
+                                              group_id=group_id)
 
             # select the segments in the transcription window
             self.select_group_segments(t_window_id, group_id)
@@ -8624,7 +8712,7 @@ class toolkit_UI:
         # call the default destroy window function
         self.destroy_text_window(window_id=window_id)
 
-    def open_transcript_groups_window(self, transcription_window_id, transcription_name=None):
+    def open_transcript_groups_window(self, transcription_window_id, transcription_name=None, select_group=None):
 
         # the transcript groups window id
         transcript_groups_window_id = '{}_transcript_groups'.format(transcription_window_id)
@@ -8762,6 +8850,12 @@ class toolkit_UI:
             self.update_transcript_groups_window(t_window_id=transcription_window_id,
                                                  t_group_window_id=transcript_groups_window_id,
                                                  groups_listbox=groups_listbox)
+
+        if select_group is not None:
+            self.on_group_press(None, t_window_id=transcription_window_id,
+                                t_group_window_id=transcript_groups_window_id,
+                                group_id=select_group
+                                )
 
     def on_group_auto_add_press(self, button):
         '''
