@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.18.4] - 2023-05-16
+
+### Added
+- Advanced Search on Transcript Group Notes
+- Go To Timecode function in Transcription Window via menu button or Equal Key
+
+### Fixes
+- Fixed a bug that prevented exporting to Fusion Text if the first segment was at frame 0
+
 ## [0.18.3] - 2023-05-02
 
 ### Info
