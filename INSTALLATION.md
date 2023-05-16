@@ -77,7 +77,7 @@ _Note: if the pip command above doesn't work, try to use pip3 (and use pip3 for 
 First, go to the Folder you want to install StoryToolkit in via Finder. Right-click on it and select "New Terminal at Folder".
 Once you get another terminal window open, run:
 
-    git clone https://github.com/octimot/StoryToolkitAI-dev.git
+    git clone https://github.com/octimot/StoryToolkitAI.git
 
 This should download the app in the folder that you chose.
 
@@ -89,7 +89,7 @@ Now create a virtual environment (to prevent messing up with other python packag
 Right now, your installation folder should contain 2 other folders, and the tree should look like this:
 
     YOUR_INSTALLATION_FOLDER
-    +- StoryToolkitAI-dev
+    +- StoryToolkitAI
     +- venv
 
 #### 6. Activate virtual environment
@@ -114,7 +114,7 @@ you might need to install rust first, see the instructions [here](https://www.ru
 _Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
 If you followed the previous steps, your terminal prompt should now have `(venv)` before everything else._
 
-    pip install -r StoryToolkitAI-dev/requirements.txt
+    pip install -r StoryToolkitAI/requirements.txt
 
 If you are running the tool on a machine with an NVIDIA CUDA GPU, make sure you install Torch with CUDA:
 
@@ -128,14 +128,14 @@ normal wav files too. Simply press the transcribe or translate buttons and follo
 #### That's it!
 Inside the virtual environment, you should now be able to start the tool:
 
-    python StoryToolkitAI-dev/storytoolkitai
+    python StoryToolkitAI/storytoolkitai
 
 _Note: After restart of the machine or your terminal window, never forget to activate the virtual environment before
 starting the app. In the folder where you created venv, run:_
 
     source venv/bin/activate
 
-_Note: if you're using a version earlier than 0.18.0, the old run command was: `python StoryToolkitAI-dev/app.py`_
+_Note: if you're using a version earlier than 0.18.0, the old run command was: `python StoryToolkitAI/app.py`_
     
 ## Windows
 
@@ -183,7 +183,7 @@ simply run:
 
 Open the Command Prompt and navigate to the folder where you want to install StoryToolkitAI. Then run:
 
-    git clone https://github.com/octimot/StoryToolkitAI-dev.git
+    git clone https://github.com/octimot/StoryToolkitAI.git
 
 #### 6. Set up a virtual environment
 Now create a virtual environment (to prevent messing up with other python packages you may have installed on your OS
@@ -194,7 +194,7 @@ for other stuff):
 Right now, your installation folder should contain 2 other folders, and the tree should look like this:
     
     YOUR_INSTALLATION_FOLDER
-    +- StoryToolkitAI-dev
+    +- StoryToolkitAI
     +- venv
 
 #### 7. Activate virtual environment
@@ -215,7 +215,7 @@ For more info regarding Whisper installation, please check https://github.com/op
 Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
 If you followed the previous steps, your terminal prompt should now have (venv) before everything else.
 
-    pip install -r StoryToolkitAI-dev\requirements.txt
+    pip install -r StoryToolkitAI\requirements.txt
 
 If you are running the tool on a machine with an NVIDIA CUDA GPU, make sure you install Torch with CUDA:
     
@@ -229,14 +229,14 @@ normal wav files too. Simply press the transcribe or translate buttons and follo
 #### That's it!
 Inside the virtual environment, you should now be able to start the tool:
 
-    py StoryToolkitAI-dev\storytoolkitai
+    py StoryToolkitAI\storytoolkitai
 
 _Note: After restart of the machine or your terminal window, never forget to activate the virtual environment before
 starting the app. In the folder where you created venv, run:_
 
     venv\Scripts\activate.bat
 
-_Note: if you're using a version earlier than 0.18.0, the old run command was: `python StoryToolkitAI-dev/app.py`_
+_Note: if you're using a version earlier than 0.18.0, the old run command was: `python StoryToolkitAI/app.py`_
 
 ## Running the non-standalone tool
 
@@ -245,12 +245,12 @@ If you haven't downloaded the app in a binary format, simply activate the virtua
 ### On windows:
 
     venv\Scripts\activate.bat
-    py StoryToolkitAI-dev\storytoolkitai
+    py StoryToolkitAI\storytoolkitai
 
 ### On Mac OS:
 
     source venv/bin/activate
-    python StoryToolkitAI-dev/storytoolkitai
+    python StoryToolkitAI/storytoolkitai
 
 A simple GUI with a mind-bending mid-2000s inspired design should appear on the screen.
 Don't worry, that's intentional:
@@ -258,7 +258,7 @@ Don't worry, that's intentional:
 <img src="help/StoryToolkitAI_GUI.png" width="300">
 
 _Note: if you're using a version earlier than 0.18.0, the old run commands were: 
-`python StoryToolkitAI-dev/app.py`_ (macOS), or `py StoryToolkitAI-dev\app.py` (Windows)
+`python StoryToolkitAI/app.py`_ (macOS), or `py StoryToolkitAI\app.py` (Windows)
 
 ## Updates on the non-standalone tool
 To update the tool, simply pull the latest changes from the repository while inside the folder where you installed the 
@@ -269,10 +269,10 @@ tool:
 Also make sure to always check for package updates after pulling a new version of the tool: 
 
      # on Windows
-    pip install -r StoryToolkitAI-dev\requirements.txt
+    pip install -r StoryToolkitAI\requirements.txt
 
     # on MacOS
-    pip install -r StoryToolkitAI-dev/requirements.txt
+    pip install -r StoryToolkitAI/requirements.txt
 
 ## Feedback
 
