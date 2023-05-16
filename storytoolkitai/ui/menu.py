@@ -168,14 +168,16 @@ class UImenus:
                                         transcription_window_id=window_id)
                                     )
 
+        self.editmenu.entryconfig("Go to timecode...", state=NORMAL,
+                                  command=lambda window_id=window_id:
+                                  self.toolkit_UI_obj.t_edit_obj.button_go_to_timecode(window_id=window_id)
+                                  )
+
         # enable the group questions menu item
         self.editmenu.entryconfig('Group questions', state=NORMAL,
                                     command=lambda:
                                     self.toolkit_UI_obj.t_edit_obj.button_group_questions(window_id)
                                   )
-
-        # enable this when group search is implemented
-        # self.searchmenu.entryconfig("Advanced Search in current transcription...", state=NORMAL)
 
         # enable this for project search
         # self.searchmenu.entryconfig("Advanced Search in current project...", state=NORMAL)
@@ -234,7 +236,7 @@ class UImenus:
         )
 
 
-        self.editmenu.entryconfig("Re-transcribe", state=NORMAL,
+        self.editmenu.entryconfig("Re-transcribe...", state=NORMAL,
                                   command=lambda window_id=window_id:
                                   self.toolkit_UI_obj.t_edit_obj.button_retranscribe(window_id=window_id)
                                   )
@@ -268,7 +270,7 @@ class UImenus:
         self.editmenu.entryconfig('Copy to Clipboard with TC', state=DISABLED)
         self.editmenu.entryconfig('Copy to Clipboard with Block TC', state=DISABLED)
         self.editmenu.entryconfig('Add to Group', state=DISABLED)
-        self.editmenu.entryconfig('Re-transcribe', state=DISABLED)
+        self.editmenu.entryconfig('Re-transcribe...', state=DISABLED)
         #self.editmenu.entryconfig('Delete segment', state=DISABLED)
 
         self.assistantmenu.entryconfig("Send to Assistant", state=DISABLED)
@@ -371,6 +373,9 @@ class UImenus:
         self.filemenu.entryconfig("Export transcript as Fusion Text...", state=DISABLED)
         self.filemenu.entryconfig("Show transcription in " + self.file_browser_name, state=DISABLED)
 
+        # disable go to timecode
+        self.editmenu.entryconfig("Go to timecode...", state=DISABLED)
+
         # disable group questions
         self.editmenu.entryconfig("Group questions", state=DISABLED)
 
@@ -449,8 +454,11 @@ class UImenus:
                                   accelerator="Shift+c")
         self.editmenu.add_command(label="Add to Group", command=self.donothing, state=DISABLED,
                                   accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+g")
-        self.editmenu.add_command(label="Re-transcribe", command=self.donothing, state=DISABLED,
+        self.editmenu.add_command(label="Re-transcribe...", command=self.donothing, state=DISABLED,
                                   accelerator='t')
+        self.editmenu.add_separator()
+        self.editmenu.add_command(label="Go to timecode...", command=self.donothing, state=DISABLED,
+                                  accelerator='=')
         #self.editmenu.add_command(label="Delete segment", command=self.donothing, state=DISABLED,
         #                          accelerator="BackSpace")
         self.editmenu.add_separator()

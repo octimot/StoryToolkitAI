@@ -374,7 +374,7 @@ class toolkit_UI:
 
             # for now, simply pass to select text lines if it matches one of these keys
             if event.keysym in ['Up', 'Down', 'v', 'V', 'A', 'i', 'o', 'O', 'm', 'M', 'C', 's', 'S', 'L',
-                                'g', 'G', 'BackSpace', 't', 'a',
+                                'g', 'G', 'BackSpace', 't', 'a', 'equal',
                                 'apostrophe', 'semicolon', 'colon', 'quotedbl']:
                 self.segment_actions(event, **attributes)
 
@@ -579,6 +579,10 @@ class toolkit_UI:
             # CMD/CTRL+Shift+s key event (Export transcription as...)
             if event.keysym == 'S' and special_key == 'cmd':
                 self.button_export_as(window_id=window_id)
+
+            # equal key event (go to timecode)
+            if event.keysym == 'equal':
+                self.button_go_to_timecode(window_id=window_id)
 
 
             # final step, update the window
@@ -1461,6 +1465,10 @@ class toolkit_UI:
 
             return True
 
+        def button_go_to_timecode(self, window_id, timecode=None):
+
+            self.go_to_timecode_dialog(window_id, timecode)
+
         def delete_line(self, window_id, text_element, line_no, status_label):
             '''
             Deletes a specific line of text from the transcript and saves the file
@@ -1654,6 +1662,88 @@ class toolkit_UI:
                 logger.error('Failed to save timecode data to transcription file: {}'.format(transcription_file_path))
                 return False
 
+        def go_to_timecode_dialog(self, window_id=None, default_timecode=None):
+            """
+            Opens a dialog to ask the user for a timecode to go to
+            """
+
+            goto_time = None
+            goto_timecode = None
+
+            # if we have a window id and it's a transcription,
+            # try to get the default timecode from the transcription data
+            if window_id in self.toolkit_UI_obj.window_types \
+                    and self.toolkit_UI_obj.window_types[window_id] == 'transcription':
+
+                # do we have any transcription data for this window?
+                if window_id not in self.transcription_data:
+                    logger.warn('No transcription data found for window id: {}'.format(window_id))
+                    return False
+
+                # do we have timecode data for this transcription?
+                timecode_data = self.toolkit_ops_obj.transcription_has_timecode_data\
+                    (transcription_data=self.transcription_data[window_id])
+
+                # if we don't have timecode data, we'll ask the user to enter it
+                if not timecode_data:
+                    logger.warn('No timecode data found for transcription: {}'.format(window_id))
+
+                    # ask the user for the timecode
+                    timecode_data = self.ask_for_transcription_timecode_data(window_id=window_id)
+
+                if timecode_data and isinstance(timecode_data, tuple) \
+                    and len(timecode_data) == 2 \
+                    and timecode_data[0] and timecode_data[1]:
+
+                    # use the timecode data
+                    fps = timecode_data[0]
+                    start_tc = timecode_data[1]
+                    default_timecode = start_tc
+
+                    # loop this until we return something
+                    while goto_time is None:
+
+                        # create a list of widgets for the input dialogue
+                        input_widgets = [
+                            {'name': 'goto_timecode', 'label': 'Timecode:', 'type': 'entry',
+                             'default_value': default_timecode}
+                        ]
+
+                        # then we call the ask_dialogue function
+                        user_input = self.toolkit_UI_obj.AskDialog(title='Go To Timecode',
+                                                                   input_widgets=input_widgets,
+                                                                   parent=self.toolkit_UI_obj.windows[window_id],
+                                                                   cancel_return=None
+                                                                   ).value()
+
+                        # if the user cancelled, return None
+                        if user_input is None:
+                            return None
+
+                        # validation happens here
+                        # if the user input is not a valid timecode, we'll ask them to try again
+                        try:
+                            goto_timecode = Timecode(fps, user_input['goto_timecode'])
+
+                            self.toolkit_UI_obj \
+                                .sync_current_tc_to_transcript(window_id=window_id,
+                                                              timecode=goto_timecode, fps=fps, start_tc=start_tc)
+
+                            goto_time = True
+
+                        except ValueError:
+                            default_timecode = user_input['goto_timecode']
+                            goto_time = None
+
+                            # notify the user that the timecode is invalid
+                            self.toolkit_UI_obj.notify_via_messagebox(title='Timecode error',
+                                                                      message="The Timecode you entered is invalid. "
+                                                                              "Please try again.",
+                                                                      message_log="Invalid Timecode.",
+                                                                      type='warning')
+
+
+
         def ask_for_transcription_timecode_data(self, window_id, default_start_tc='', default_fps=''):
             """
             Opens a dialog to ask the user for timeline framerate and start time.
@@ -1739,7 +1829,7 @@ class toolkit_UI:
 
                 except:
 
-                    logger.error('Invalid Timecode or Frame Rate: {} @ {}'
+                    logger.warning('Invalid Timecode or Frame Rate: {} @ {}'
                                  .format(user_input['timeline_start_tc'], user_input['timeline_fps']),
                                  exc_info=True
                                  )
@@ -5683,6 +5773,10 @@ class toolkit_UI:
                 # add the widget to the user_input dictionary
                 self.return_value[widget_name] = input_value
 
+                # focus on the first input widget
+                if row == 1:
+                    input_widget.focus_set()
+
             # if we have no input widgets, return
             if not have_input_widgets:
                 logger.error('No input widgets were added to the Ask Dialogue window. Aborting.')
@@ -7235,11 +7329,23 @@ class toolkit_UI:
         # how many segments / lines does the transcript on this window contain?
         max_lines = len(self.t_edit_obj.transcript_segments[window_id])
 
-        # initialize the timecode object for the current_tc
-        current_tc_obj = Timecode(NLE.current_timeline_fps, NLE.current_tc)
+        if 'timecode' in update_attr and 'fps' in update_attr and 'start_tc' in update_attr:
+            # initialize the timecode object for the current_tc
+            current_tc_obj = Timecode(update_attr['fps'], update_attr['timecode'])
 
-        # initialize the timecode object for the timeline start_tc
-        timeline_start_tc_obj = Timecode(NLE.current_timeline_fps, NLE.current_timeline['startTC'])
+            # initialize the timecode object for the timeline start_tc
+            timeline_start_tc_obj = Timecode(update_attr['fps'], update_attr['start_tc'])
+
+        elif NLE.current_timeline_fps is not None and NLE.current_tc is not None:
+            # initialize the timecode object for the current_tc
+            current_tc_obj = Timecode(NLE.current_timeline_fps, NLE.current_tc)
+
+            # initialize the timecode object for the timeline start_tc
+            timeline_start_tc_obj = Timecode(NLE.current_timeline_fps, NLE.current_timeline['startTC'])
+
+        else:
+            logger.warning('No timecode or fps passed to sync_current_tc_to_transcript()')
+            return None
 
         # subtract the two timecodes to get the corresponding transcript seconds
         if current_tc_obj > timeline_start_tc_obj:
