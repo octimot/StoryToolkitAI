@@ -7730,7 +7730,8 @@ class toolkit_UI:
                               prompt_callback_kwargs={'search_item': search_item,
                                                       'search_window_id': search_window_id},
                               type='search',
-                              open_multiple=open_multiple
+                              open_multiple=open_multiple,
+                              window_width=60,
                               )
 
         # add text to the search window

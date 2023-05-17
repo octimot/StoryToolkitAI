@@ -31,6 +31,9 @@ from sentence_transformers import SentenceTransformer, util
 
 from timecode import Timecode
 
+import hashlib
+import pickle
+
 class NLE:
     '''
     Use this class to store any data that is supposed to be shared with the NLE (for eg. Resolve)
@@ -506,6 +509,10 @@ class ToolkitOps:
 
             self.query = kwargs.get('query', None)
 
+            self.search_corpus_hash = None
+            self.search_corpus_cache_dir = kwargs.get('search_corpus_cache_dir', None)
+            self.corpus_cache_file_path = kwargs.get('corpus_cache_file_path', None)
+
         def is_file_searchable(self, file_path):
 
             return super().is_file_searchable(file_path)
@@ -525,12 +532,12 @@ class ToolkitOps:
             # if the search path contains only one file
             # which ends with .pkl we'll return it directly
             # to be used as a search corpus (search cache)
-            if search_paths is not None \
-                    and ((type(search_paths) is str and os.path.isfile(search_paths)) \
-                         or ((type(search_paths) is list or type(search_paths) is tuple)
-                             and len(search_paths) == 1 and os.path.isfile(search_paths[0]))) \
-                    and search_paths[0].endswith('.pkl'):
-                return search_paths[0]
+            #if search_paths is not None \
+            #        and ((type(search_paths) is str and os.path.isfile(search_paths)) \
+            #             or ((type(search_paths) is list or type(search_paths) is tuple)
+            #                 and len(search_paths) == 1 and os.path.isfile(search_paths[0]))) \
+            #        and search_paths[0].endswith('.pkl'):
+            #    return search_paths[0]
 
             # is this a search for a single file or a directory?
             # if it's a single file, we'll just add it to the search_file_paths list
@@ -612,6 +619,15 @@ class ToolkitOps:
             # if only one transcription file path is given, make it a list
             if type(search_file_paths) is str:
                 search_file_paths = [search_file_paths]
+
+            # if there is a search corpus cache directory set in the config
+            default_search_cache_dir = self.stAI.get_app_setting(setting_name='default_search_cache_dir', default_if_none='')
+            if default_search_cache_dir != '' and os.path.isdir(default_search_cache_dir):
+                self.search_corpus_cache_dir = default_search_cache_dir
+
+            # otherwise, just use the directory of the first file in the list
+            else:
+                self.search_corpus_cache_dir = os.path.join(os.path.dirname(search_file_paths[0]), 'cache')
 
             # re-organize the search corpus into a dictionary of phrases
             # with the transcription file path as the key
@@ -1048,6 +1064,60 @@ class ToolkitOps:
 
             return search_results, top_k
 
+        def get_corpus_cache_file_path(self, search_type=None):
+
+            # compute a hash of the search corpus + the search type + the search model
+            # we will use this to name the file where we will store the search corpus embeddings for later use
+            # this means that if anything changes in this search corpus, we will need to re-encode it
+            # it also means that we might have a lot of orphaned cache files if we don't clean them up...
+            if self.search_corpus_hash is None:
+                self.search_corpus_hash = hashlib.md5(
+                    str('{}--{}--{}'.format(str(self.search_corpus), search_type, self.model_name)).encode('utf-8')
+                ).hexdigest()
+
+            self.corpus_cache_file_path = os.path.join(self.search_corpus_cache_dir,
+                                                       'search_{}.pkl'.format(self.search_corpus_hash))
+
+            return self.corpus_cache_file_path
+
+        def save_corpus_embeddings_to_file(self, embeddings, file_path=None):
+
+            if file_path is None:
+                file_path = self.corpus_cache_file_path
+
+            if file_path is None:
+                logger.debug('Aborting. No cache file path specified.')
+                return
+
+            try:
+
+                # check if the directory exists
+                if not os.path.exists(os.path.dirname(file_path)):
+                    # otherwise, create it
+                    os.makedirs(os.path.dirname(file_path))
+
+                # save the corpus embeddings to a file
+                with open(file_path, 'wb') as f:
+                    pickle.dump(embeddings, f)
+
+                # save a json file next to the pickle file with the same name
+                # that contains the file list and full path of all the files in the corpus
+                # this is useful in case we want to clean up the corpus cache directory
+                with open('{}.json'.format(file_path), 'w') as f:
+                    json.dump(self.search_file_paths, f, indent=4)
+
+                logger.debug('Saved encoded search corpus to {}'.format(file_path))
+
+                return True
+
+            except Exception as e:
+
+                import traceback
+                traceback.print_exc()
+
+                logger.error('Could not save search embeddings to file {}'.format(file_path))
+                return False
+
         def search_semantic(self):
             '''
             This function searches for a search term in a search corpus and returns the results.
@@ -1066,6 +1136,7 @@ class ToolkitOps:
             search_id = self.search_id
             max_results = self.max_results
             start_search_time = self.start_search_time
+            corpus_cache_file_path = self.get_corpus_cache_file_path(search_type='semantic')
 
             if query is None or query == '':
                 logger.warning('Query empty.')
@@ -1091,23 +1162,46 @@ class ToolkitOps:
             if start_search_time is not None:
                 logger.debug('Time: ' + str(time.time() - start_search_time))
 
-            # check if the search corpus embeddings are in the cache
+            # if we haven't loaded the search corpus embeddings in the cache,
+            # check if we have them in a file
+            if (search_id is None or search_id not in self.search_embeddings) \
+                and os.path.exists(corpus_cache_file_path):
+
+                # load the corpus embeddings from the file
+                with open(corpus_cache_file_path, 'rb') as f:
+                    corpus_embeddings = pickle.load(f)
+
+                # touch the file to update the last modified time
+                # this will be useful if we want to ever clean up the cache
+                # (e.g. delete files unused for 90 days)
+                os.utime(corpus_cache_file_path, None)
+
+                # add the corpus embeddings to the memory cache
+                self.search_embeddings[search_id] = corpus_embeddings
+
+                logger.debug('Loaded encoded search corpus from {}'.format(corpus_cache_file_path))
+
+            # if we haven't found the search corpus embeddings in the cache or in a file
+            # then we need to encode it now
             if search_id is None or search_id not in self.search_embeddings:
 
                 # encode the search corpus
                 corpus_embeddings = embedder.encode(search_corpus_phrases, convert_to_tensor=True,
                                                     show_progress_bar=True)
 
-                # save the embeddings in the cache
+                logger.debug('Encoded search corpus.')
+
+                # add the embeddings to the memory cache
                 self.search_embeddings[search_id] = corpus_embeddings
 
-                logger.debug('Encoded search corpus.')
+                # save the embeddings to the file cache for later use
+                self.save_corpus_embeddings_to_file(corpus_embeddings)
 
             else:
                 # load the embeddings from the cache
                 corpus_embeddings = self.search_embeddings[search_id]
 
-                logger.debug('Loaded search corpus embeddings from search embeddings cache.')
+                logger.debug('Using search corpus embeddings from cache.')
 
             if start_search_time is not None:
                 logger.debug('Time: ' + str(time.time() - start_search_time))
@@ -1266,46 +1360,6 @@ class ToolkitOps:
                 })
 
             return True
-
-        def save_search_embeddings(self, embeddings, embedding_type, source_associations, file_path=None):
-            '''
-            This function saves the search embeddings to a file for later use.
-            :return:
-            '''
-
-            # todo: WORK IN PROGRESS
-            # before continuing, we need to find a way to save the embedding type and the model name
-
-            # if the file path is not provided, use the default one
-            if file_path is None:
-                logger.error('No file path provided for saving the search embeddings.')
-                return False
-
-            try:
-                import pickle
-
-                # save the embeddings to a file
-                with open(file_path, 'wb') as f:
-                    pickle.dump(embeddings, f)
-
-                # remove the all the 'segment' and 'text' keys from the source associations
-                # because they are not needed
-                for key in source_associations:
-                    if 'segment' in source_associations[key]:
-                        del source_associations[key]['segment']
-
-                    if 'text' in source_associations[key]:
-                        del source_associations[key]['text']
-
-                # save the source associations to a json file
-                with open(file_path + '.json', 'w') as f:
-                    json.dump(source_associations, f)
-
-                return True
-
-            except Exception as e:
-                logger.error('Could not save search embeddings to file {}: \n {}'.format(file_path, e))
-                return False
 
     class TranscriptGroups:
         '''
