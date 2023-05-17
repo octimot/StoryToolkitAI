@@ -1439,6 +1439,22 @@ class ToolkitOps:
             # return the saved transcript groups
             return transcription_file_data['transcript_groups']
 
+        def group_id_from_name(self, group_name):
+            '''
+            This function returns a group id from a group name.
+
+            For now, we're simply stripping and lowercasing the group name.
+
+            :param group_name:
+            :return: the group id
+            '''
+
+            # first, strip and lower the group name
+            group_name = group_name.strip().lower()
+
+            # and return the group name
+            return group_name
+
         def prepare_transcript_group(self, group_name: str, time_intervals: list,
                                      group_id: str = None, group_notes: str = '',
                                      existing_transcript_groups: list = None,
@@ -1467,8 +1483,9 @@ class ToolkitOps:
             # if the group id is not provided, use the group name
             if group_id is None:
                 # generate a group id
-                group_id = str(group_name).lower()
+                group_id = self.group_id_from_name(str(group_name))
 
+            # always lowercase the group id
             group_id = group_id.lower()
 
             # if we're not overwriting an existing group, see if the group id already exists in existing groups
@@ -1484,7 +1501,7 @@ class ToolkitOps:
                     # first try the group name as is
                     if group_name_suffix != 1:
                         # but after the first iteration, add a suffix (should start at 2)
-                        group_id = group_name.lower() + '_' + str(group_name_suffix)
+                        group_id = self.group_id_from_name(group_name + '_' + str(group_name_suffix))
 
                     # if the group id doesn't exist in the existing groups, break out of the loop
                     # (convert all to lowercase for comparison to avoid any sort of case sensitivity issues)
@@ -3245,15 +3262,17 @@ class ToolkitOps:
 
         return classified_segments
 
-    def group_questions(self, segments, transcription_json_file_path):
+    def group_questions(self, segments, transcription_json_file_path, group_name="Questions"):
         """
         This uses the classify_segments() method to detect questions and add them to a transcription group
         :param segments: the segments to classify
         :param transcription_json_file_path: the path to the transcription json file
+        :param group_name: the name of the group to save the questions in (default: Questions)
         :return: the questions_group
         """
 
         questions_group = None
+        transcript_groups = {}
         # classify the segments as questions or statements
         # but use the existing transcription data if we have it
         classified_question_segments = self.classify_segments(
@@ -3270,19 +3289,40 @@ class ToolkitOps:
 
         # if we have question segments, create a group with them
         # but save it later, after the transcription is saved
+        # since this is a multi_label_pass classification, we're going to use the '_multi_label_pass_' key
         if isinstance(classified_question_segments, dict) \
                 and '_multi_label_pass_' in classified_question_segments \
                 and len(classified_question_segments['_multi_label_pass_']) > 0:
+
+            # get all the current groups using get_all_transcript_groups
+            transcript_groups = self.t_groups_obj.get_all_transcript_groups(transcription_json_file_path)
+
+            # make sure we're not overwriting an existing group
+            n = 1
+            while self.t_groups_obj.group_id_from_name(group_name) in transcript_groups:
+
+                # remove any "_n" suffixes from the group name
+                if group_name.endswith('_' + str(n)):
+                    group_name = group_name[:-2]
+
+                n += 1
+
+                # now add the "_n" suffix
+                group_name = group_name + '_' + str(n)
+
             questions_group = self.t_groups_obj.segments_to_groups(
                 segments=classified_question_segments['_multi_label_pass_'],
-                group_name='Questions'
+                group_name=group_name
             )
 
         # if this was successful, save the questions group to the transcription json file
         if questions_group is not None:
+
+            # we're only passing the questions group to the save_transcript_groups method
+            # so this will only save the questions group and not touch any existing ones
             self.t_groups_obj.save_transcript_groups(transcription_json_file_path,
                                                      questions_group,
-                                                     group_id='questions')
+                                                     group_id=group_name)
 
             return questions_group
 

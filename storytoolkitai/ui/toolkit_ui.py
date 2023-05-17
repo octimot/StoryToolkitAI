@@ -1448,7 +1448,9 @@ class toolkit_UI:
 
                 # if the returned value is a dictionary, it means that the window groups have been updated
                 # so we need to update the groups of this window
-                self.transcript_groups[window_id] = save_return
+                # but get all the groups from the transcription again!
+                self.transcript_groups[window_id] = \
+                    self.toolkit_ops_obj.t_groups_obj.get_all_transcript_groups(transcription_file_path)
 
             else:
                 logger.debug('Something may have went wrong while saving the group to the transcription file')
