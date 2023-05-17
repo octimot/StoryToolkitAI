@@ -24,7 +24,7 @@ tqdm
 transformers>=4.19.0
 typing_extensions==4.3.0
 urllib3==1.26.12
-openai-whisper @ git+https://github.com/openai/whisper.git
+openai-whisper @ git+https://github.com/openai/whisper.git@248b6cb124225dd263bb9bd32d060b6517e067f8
 dtw-python
 resampy
 openai

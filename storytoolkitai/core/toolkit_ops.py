@@ -3208,7 +3208,7 @@ class ToolkitOps:
                     # will be skipped as well
                     if classification['scores'][0] < min_confidence:
                         current_segment_passed_classification = False
-                        logger.debug('Skipping segment classification for the following segment'
+                        logger.debug('Skipping segment classification for the following segment '
                                      'because a confidence of {} is too low to classify it in any of the labels {}: \n{}\n\n'
                                      .format(classification['scores'][0], sub_labels, segment['text']))
                         continue

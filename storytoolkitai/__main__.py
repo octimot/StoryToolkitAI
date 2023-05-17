@@ -10,12 +10,6 @@ import os
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 from storytoolkitai.core.logger import *
-from storytoolkitai.integrations.mots_resolve import MotsResolve
-
-from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_NAME, APP_LOG_FILE, initial_target_dir
-from storytoolkitai.core.toolkit_ops import ToolkitOps
-from storytoolkitai.ui.toolkit_ui import toolkit_UI
-from storytoolkitai.core.storytoolkitai import StoryToolkitAI
 
 # signal the start of the session in the log by adding some info about the machine
 logger.debug('\n--------------\n'
@@ -26,17 +20,21 @@ logger.debug('\n--------------\n'
     ' '.join(map(str, platform.win32_ver() + platform.mac_ver())),
     '.'.join(map(str, sys.version_info))))
 
+# get the current path of this file
+file_path = os.path.abspath(__file__)
+
+# the requirements file should be either one directory up from this file
+requirements_file_path = os.path.join(os.path.dirname(file_path), '..', 'requirements.txt')
+
+# or in this directory (valid for the standalone app)
+if not os.path.exists(requirements_file_path):
+    requirements_file_path = os.path.join(os.path.dirname(file_path), 'requirements.txt')
+
+if not os.path.exists(requirements_file_path):
+    logger.warning('Could not find the requirements.txt file.')
+
 # this makes sure that the user has all the required packages installed
 try:
-    # the path of this file
-    file_path = os.path.abspath(__file__)
-
-    # the requirements file is either one directory up from this file
-    requirements_file_path = os.path.join(os.path.dirname(file_path), '..', 'requirements.txt')
-
-    # or in this directory (valid for the standalone app)
-    if not os.path.exists(os.path.join(os.path.dirname(file_path), '..', 'requirements.txt')):
-        requirements_file_path = os.path.join(os.path.dirname(file_path), 'requirements.txt')
 
     # check if all the requirements are met
     import pkg_resources
@@ -52,9 +50,6 @@ except:
 
     traceback_str = traceback.format_exc()
 
-    # get the relative path of the requirements file
-    requirements_rel_path = os.path.relpath(os.path.join(os.path.dirname(__file__), 'requirements.txt'))
-
     logger.error(traceback_str)
 
     requirements_warning_msg = ('Some of the packages required to run StoryToolkitAI '
@@ -68,9 +63,14 @@ except:
         # try to install the requirements automatically
         logger.warning('Attempting to automatically install the required packages...')
 
+        # get the relative path to the requirements file
+        requirements_file_path_rel = os.path.relpath(requirements_file_path)
+
+        print(requirements_file_path_rel)
+
         # install the requirements
         # invoke pip as a subprocess:
-        pip_complete = subprocess.call([sys.executable, '-m', 'pip', 'install', '-r', requirements_rel_path])
+        pip_complete = subprocess.call([sys.executable, '-m', 'pip', 'install', '-r', requirements_file_path_rel])
 
         if pip_complete == 0:
             logger.warning('The required packages were installed. Restarting StoryToolkitAI...')
@@ -93,7 +93,7 @@ except:
                 'please close the tool and run:\n\n'
                 'pip install -r {} '
                 '\n\n'
-                .format(requirements_rel_path, APP_LOG_FILE))
+                .format(requirements_file_path_rel, APP_LOG_FILE))
 
     else:
         logger.warning('\n'
@@ -102,6 +102,13 @@ except:
 
     # keep this message in the console for a bit
     time.sleep(5)
+
+from storytoolkitai.integrations.mots_resolve import MotsResolve
+
+from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_NAME, APP_LOG_FILE, initial_target_dir
+from storytoolkitai.core.toolkit_ops import ToolkitOps
+from storytoolkitai.ui.toolkit_ui import toolkit_UI
+from storytoolkitai.core.storytoolkitai import StoryToolkitAI
 
 from storytoolkitai.ui.toolkit_ui import run_gui
 
