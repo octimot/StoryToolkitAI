@@ -235,6 +235,26 @@ If you click on "Open Transcript" and select an SRT file, the tool will automati
 file and open it in the transcription window. This is useful if you want to use transcripts made by other apps in the
 tool, for eg. to search through them, navigate and mark timelines in Resolve etc.
 
+### Exporting transcripts as Fusion Text
+Starting from version 0.18.3, you can export the transcription lines into a Fusion Text node.
+
+1. Open transcription file
+2. File -> Export as Fusion text...
+3. Save .comp file on your drive
+4. Open .comp file with notepad/text edit
+5. Select all and copy all contents to clipboard
+6. Open Resolve and/or Fusion (or Fusion page)
+7. CMD/CTRL+V to paste Fusion nodes into composition
+8. Then connect the new nodes wherever you want in your composition and modify the text styling
+
+_Note: if using the built-in Fusion page in Resolve, we recommend using an Adjustment Layer instead of a Fusion 
+Composition: drag and drop an Adjustment Layer into a new video track, over your entire timeline, right click and Open 
+in Fusion. This way you can see the footage/effects/etc. underneath, plus you can hear the audio in case you want to 
+adjust the text to sound further._
+
+_Note 2: You can also open the resulting .comp file in Fusion instead of using the copy-paste method, but you will have 
+to manually add whatever Input or Output nodes you need to make it work._
+
 ## Advanced Transcript Search
 Transcription windows have an "Advanced Search" button that will open up a separate search window. The system is now
 quite experimental and very raw, but it will allow you to search transcripts almost like you search something on Google.
