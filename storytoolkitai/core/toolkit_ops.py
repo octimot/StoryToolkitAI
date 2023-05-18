@@ -148,7 +148,7 @@ class ToolkitOps:
         # this is the transformer model name that we will use to search semantically
         self.s_semantic_search_model_name \
             = self.stAI.get_app_setting(setting_name='s_semantic_search_model_name',
-                                        default_if_none='all-MiniLM-L6-v2')
+                                        default_if_none='msmarco-distilbert-base-v4')
 
         # for now define an empty model here which should be loaded the first time it's needed
         # it's very likely that the model will not be loaded here, but in the SearchItem, for each search
@@ -503,7 +503,7 @@ class ToolkitOps:
             self.model_name = kwargs.get('model_name', self.toolkit_ops_obj.s_semantic_search_model_name)
             self.search_model = None
 
-            self.max_results = kwargs.get('max_results', 10)
+            self.max_results = kwargs.get('max_results', 5)
 
             self.start_search_time = kwargs.get('start_search_time', None)
 
@@ -887,7 +887,7 @@ class ToolkitOps:
 
             return self.search_corpuses[search_id]['corpus'], self.search_corpuses[search_id]['assoc']
 
-        def prepare_search_query(self, query, max_results: int = 10, search_type='semantic'):
+        def prepare_search_query(self, query, max_results: int = 5, search_type='semantic'):
             '''
             This interprets the query and prepares it for searching.
             With this, we can filter out and use certain arguments to perform the search
@@ -973,8 +973,13 @@ class ToolkitOps:
                 if self.search_id is not None and self.search_id in self.search_embeddings:
                     del self.search_embeddings[self.search_id]
 
+                # clear other search corpus data to force it to be re-created
+                self.search_corpus_hash = None
+                self.corpus_cache_file_path = None
+
                 # assign the new model name
                 self.model_name = model_name
+
 
             # load the sentence transformer model if it hasn't been loaded yet
             if self.search_model is None:
@@ -1201,7 +1206,7 @@ class ToolkitOps:
                 # load the embeddings from the cache
                 corpus_embeddings = self.search_embeddings[search_id]
 
-                logger.debug('Using search corpus embeddings from cache.')
+                logger.info('Using search corpus embeddings from cache.')
 
             if start_search_time is not None:
                 logger.debug('Time: ' + str(time.time() - start_search_time))

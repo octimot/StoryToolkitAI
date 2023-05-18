@@ -130,14 +130,39 @@ class UImenus:
             self.editmenu.entryconfig('Find...', command=self.donothing, state=DISABLED)
 
         # enable select all menu item depending on the window type
+        self.disable_menu_for_non_transcriptions()
+        self.disable_menu_for_non_search()
+
         if window_type == 'transcription':
             self.load_menu_for_transcriptions(window_id)
 
+        elif window_type == 'search':
+            self.load_menu_for_search(window_id)
+
+            self.revert_to_selectall(window_id)
         else:
-            self.disable_menu_for_non_transcriptions()
-            self.editmenu.entryconfig('Select All',
-                                      state=NORMAL,
-                                      command=lambda: self.pass_key_event(window_id, '<'+self.toolkit_UI_obj.ctrl_cmd_bind+'-a>'))
+            self.revert_to_selectall(window_id)
+
+    def revert_to_selectall(self, window_id):
+        '''
+        This is used for basically everything except transcriptions
+        '''
+
+        self.editmenu.entryconfig('Select All',
+                                  state=NORMAL,
+                                  command=lambda: self.pass_key_event(window_id,
+                                                                      '<' + self.toolkit_UI_obj.ctrl_cmd_bind + '-a>'))
+
+    def disable_menu_for_non_search(self):
+        self.searchmenu.entryconfig("Change search model...", command=self.donothing, state=DISABLED)
+        self.searchmenu.entryconfig("List files used for search...", command=self.donothing, state=DISABLED)
+
+    def load_menu_for_search(self, window_id):
+        self.searchmenu.entryconfig("Change search model...", state=NORMAL,
+                                    command= lambda: self.toolkit_UI_obj.button_search_change_model(window_id))
+        self.searchmenu.entryconfig("List files used for search...",  state=NORMAL,
+                                    command= lambda: self.toolkit_UI_obj.button_search_list_files(window_id))
+
 
     def load_menu_for_transcriptions(self, window_id):
 
@@ -477,6 +502,10 @@ class UImenus:
                                command= lambda: self.toolkit_UI_obj.open_advanced_search_window(select_dir=True))
         #searchmenu.add_command(label="Search entire project...",
         #                       command=self.toolkit_UI_obj.open_advanced_search_window)
+
+        self.searchmenu.add_separator()
+        self.searchmenu.add_command(label="Change search model...", command=self.donothing, state=DISABLED)
+        self.searchmenu.add_command(label="List files used for search...", command=self.donothing, state=DISABLED)
 
         # ADVANCED SEARCH - TRANSCRIPT related menu items
         # but disabled for now

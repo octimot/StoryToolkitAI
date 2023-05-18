@@ -5033,10 +5033,32 @@ class toolkit_UI:
                     title="Find in {}".format(title)
                 )
 
-            # THE MAIN TEXT ELEMENT
+            # THE THREE WINDOW COLUMN FRAMES
+            current_tk_window = self.windows[window_id]
+
+            # create the left frame
+            # (but don't add it - this needs to be added outside of this function, only if needed)
+            self.windows[window_id].left_frame = \
+                left_frame = Frame(current_tk_window, name='left_frame')
+            #left_frame.grid(row=0, column=0, sticky="ns")
+
             # create a frame for the text element
-            text_form_frame = tk.Frame(self.windows[window_id], name='text_form_frame')
-            text_form_frame.pack(expand=True, fill='both')
+            text_form_frame = tk.Frame(current_tk_window, name='text_form_frame')
+            text_form_frame.grid(row=0, column=1, sticky="nsew")
+
+            # create the right frame to hold other stuff, like transcript groups etc.
+            # (but don't add it - this needs to be added outside of this function, only if needed)
+            self.windows[window_id].right_frame = \
+                right_frame = Frame(current_tk_window, name="right_frame")
+            #right_frame.grid(row=0, column=2, sticky="ns")
+
+            # add a minimum size for the frame2 column
+            current_tk_window.grid_columnconfigure(1, weight=1, minsize=200)
+
+            # make sure the grid also extends to the bottom of the window
+            current_tk_window.grid_rowconfigure(0, weight=1)
+
+            # THE MAIN TEXT ELEMENT
 
             # create the text widget
             # set up the text element where we'll add the actual transcript
@@ -5098,7 +5120,8 @@ class toolkit_UI:
 
                 # create a frame for the action buttons
                 action_buttons_frame = tk.Frame(self.windows[window_id], name='action_buttons_frame')
-                action_buttons_frame.pack(side=tk.BOTTOM, fill='x', pady=5)
+                #action_buttons_frame.place(relwidth=1, anchor='sw', rely=1)
+                action_buttons_frame.grid(row=2, columnspan=3, sticky="sew")
 
                 # add the action buttons to the frame
                 for button in action_buttons:
@@ -5261,6 +5284,36 @@ class toolkit_UI:
 
         text_widget.tag_bind('url-color', '<Enter>', lambda event: text_widget.config(cursor='hand2'))
         text_widget.tag_bind('url-color', '<Leave>', lambda event: text_widget.config(cursor=''))
+
+    def inject_prompt(self, window_id: str, prompt: str, execute=True, clear_line=True):
+        '''
+        This function injects a prompt into the text window and hits Return (if execute is True).
+        '''
+
+        # get the text widget
+        if window_id not in self.windows:
+            logger.error('Window {} does not exist.'.format(window_id))
+            return False
+
+        if window_id not in self.text_windows or 'text_widget' not in self.text_windows[window_id]:
+            logger.error('Window {} does not have a main text widget.'.format(window_id))
+            return False
+
+        text_widget = self.text_windows[window_id]['text_widget']
+
+        # erase the current line
+        if clear_line:
+            text_widget.delete('insert linestart', 'insert lineend')
+
+        # insert the prompt
+        text_widget.insert(tk.END, prompt)
+
+        # move the cursor to the end
+        text_widget.see(tk.END)
+
+        # hit enter
+        if execute:
+            text_widget.event_generate('<Return>')
 
     def open_find_replace_window(self, window_id=None, title: str = 'Find and Replace',
                                  parent_window_id: str = None, text_widget=None,
@@ -5836,6 +5889,9 @@ class toolkit_UI:
 
             # destroy the window
             self.destroy()
+
+            # refocus on the parent element
+            self.parent.focus_set()
 
         def cancel(self, event=None):
             '''
@@ -7719,7 +7775,7 @@ class toolkit_UI:
         search_item.search_file_paths = search_file_paths
 
         # open a new console search window
-        self.open_text_window(window_id=search_window_id,
+        search_window_id = self.open_text_window(window_id=search_window_id,
                               title=search_window_title,
                               can_find=True,
                               user_prompt=True,
@@ -7731,8 +7787,50 @@ class toolkit_UI:
                                                       'search_window_id': search_window_id},
                               type='search',
                               open_multiple=open_multiple,
-                              window_width=60,
+                              window_width=60
                               )
+
+        if search_window_id not in self.windows:
+            logger.error('Search window {} was not created.'.format(search_window_id))
+            return False
+
+        # add the search item to the search window
+        self.windows[search_window_id].search_item = search_item
+
+        button_no_command = lambda search_window_id=search_window_id: print(search_window_id)
+
+        # add the button to the left frame of the search window
+
+        # SEARCH BUTTONS
+        self._add_button_to_side_frames_of_text_window(search_window_id, side='left',
+                                                       button_text='Change model',
+                                                       button_command=
+                                                       lambda search_window_id=search_window_id:
+                                                        self.button_search_change_model(search_window_id),
+                                                       sub_frame="Search")
+
+        self._add_button_to_side_frames_of_text_window(search_window_id, side='left',
+                                                       button_text='List files',
+                                                       button_command=
+                                                       lambda search_window_id=search_window_id:
+                                                        self.button_search_list_files(search_window_id),
+                                                       sub_frame="Search")
+
+        # TRANSCRIPT RESULTS BUTTONS
+        #self._add_button_to_side_frames_of_text_window(search_window_id, side='left',
+        #                                               button_text='Show results',
+        #                                               button_command=button_no_command,
+        #                                               sub_frame="Results")
+
+        #self._add_button_to_side_frames_of_text_window(search_window_id, side='left',
+        #                                               button_text='Select results',
+        #                                               button_command=button_no_command,
+        #                                               sub_frame="Results")
+
+        #self._add_button_to_side_frames_of_text_window(search_window_id, side='left',
+        #                                               button_text='Select group results',
+        #                                               button_command=button_no_command,
+        #                                               sub_frame="Results")
 
         # add text to the search window
         # self._text_window_update(search_window_id, 'Reading {} file{}.'
@@ -7743,19 +7841,8 @@ class toolkit_UI:
         # if the search corpus was prepared successfully, update the search window
         if search_item.prepare_search_corpus():
 
-            search_file_list = ''
-
-            # prepare a list with all the files
-            for search_file_path in search_item.search_file_paths:
-                search_file_list = search_file_list + os.path.basename(search_file_path) + '\n'
-
-            search_file_list = search_file_list.strip()
-
             # add the list of files to the search window
-            self._text_window_update(search_window_id, 'Loaded {} {}:'
-                                     .format(len(search_item.search_file_paths),
-                                             'file' if len(search_item.search_file_paths) == 1 else 'files'))
-            self._text_window_update(search_window_id, search_file_list)
+            self._list_search_files_in_window(search_window_id, search_item)
 
             if len(search_item.search_corpus) < 1000:
                 self._text_window_update(search_window_id, 'Ready for search. Type [help] if you need help.')
@@ -7766,6 +7853,89 @@ class toolkit_UI:
 
         else:
             self._text_window_update(search_window_id, 'Search corpus could not be prepared.')
+
+    def _list_search_files_in_window(self, search_window_id: str, search_item=None):
+        '''
+        This function lists the files that are loaded for search in the search window.
+        '''
+
+        # load the search item using the window id if it wasn't passed
+        if search_item is None:
+            search_item = self.windows[search_window_id].search_item
+
+        search_file_list = ''
+
+        # prepare a list with all the files
+        for search_file_path in search_item.search_file_paths:
+            search_file_list = search_file_list + os.path.basename(search_file_path) + '\n'
+
+        search_file_list = search_file_list.strip()
+        self._text_window_update(search_window_id, 'Loaded {} {}:'
+                                 .format(len(search_item.search_file_paths),
+                                         'file' if len(search_item.search_file_paths) == 1 else 'files'))
+        self._text_window_update(search_window_id, search_file_list)
+
+
+    def _add_button_to_side_frames_of_text_window(self,
+                                                    window_id: str,
+                                                    side: str,
+                                                    button_text: str,
+                                                    button_command: callable,
+                                                    sub_frame: str = None):
+
+        # we can pass the side as a string (either 'left' or 'right')
+        if side == 'left':
+            frame = self.windows[window_id].left_frame
+            frame_column = 0
+
+        elif side == 'right':
+            frame = self.windows[window_id].right_frame
+            frame_column = 2
+        else:
+            logger.error('Invalid side {} for search window {}.'.format(side, window_id))
+            return False
+
+        # for now, use the side frame as a parent for the button
+        button_parent_frame = frame
+
+        # if this button is supposed to be in a sub-frame and the sub-frame doesn't exist as a child of the frame
+        # add the frame
+        if sub_frame is not None and sub_frame.strip().lower() not in frame.children:
+
+            background_color = self.resolve_theme_colors['black']
+            foreground_color = self.resolve_theme_colors['normal']
+
+            new_buttons_frame = Frame(frame, name=sub_frame.strip().lower(),
+                                      highlightbackground=background_color, highlightthickness=1)
+            Label(new_buttons_frame, text=sub_frame, anchor='n', fg=foreground_color) \
+                .pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
+
+            new_buttons_frame.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
+
+            # use this newly created frame as the parent for the button
+            button_parent_frame = new_buttons_frame
+
+        # if the sub_frame already exists, use it as the parent for the button
+        elif sub_frame is not None and sub_frame.strip().lower() in frame.children:
+            button_parent_frame = frame.children[sub_frame.strip().lower()]
+
+        # finally, add the button
+        # but only if another button with the same text doesn't already exist
+        if button_text.strip().lower() in button_parent_frame.children:
+            return False
+
+        # add the button
+        new_button = Button(button_parent_frame,
+                            name=button_text.strip().lower(), text=button_text,
+                            command=button_command)
+        new_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
+
+        # is the frame in the grid?
+        if not frame.grid_info():
+            # if not, add it so that it's visible
+            frame.grid(row=0, column=frame_column, sticky="ns")
+
+        return True
 
     def advanced_search(self, prompt, search_item, search_window_id):
         '''
@@ -7825,6 +7995,10 @@ class toolkit_UI:
                                                            'for all the searches in this window.')
             return
 
+        elif prompt.lower() == '[listfiles]' or prompt.lower() == '[list files]':
+            self._list_search_files_in_window(search_window_id, search_item)
+            return
+
         # is the user trying to quit?
         elif prompt.lower() == '[quit]':
             self.destroy_advanced_search_window(search_window_id)
@@ -7849,6 +8023,9 @@ class toolkit_UI:
 
             # reset the previous search_term
             result_search_term = ''
+
+            # keep track of scores to calculate the average later
+            scores = []
 
             for result in search_results:
 
@@ -7876,9 +8053,6 @@ class toolkit_UI:
                 # color it in blue
                 results_text_element.tag_add('white', current_insert_position, tk.INSERT)
                 results_text_element.tag_config('white', foreground=self.resolve_theme_colors['supernormal'])
-
-                # add score to the result
-                #results_text_element.insert(tk.END, ' -- Score: {:.4f}\n'.format(result['score']))
 
                 # if the type is a transcription
                 if result['type'] == 'transcription':
@@ -7991,15 +8165,118 @@ class toolkit_UI:
                     # mention that the result source is unknown
                     results_text_element.insert(tk.END, ' -- Source: Unknown\n')
 
+                # add score to the result
+                # consider the result as low confidence if the score is less than 0.35
+                if result['score'] < 0.35:
+                    result_confidence = ' (Low)'
+                elif result['score'] > 0.8:
+                    result_confidence = ' (Good)'
+                else:
+                    result_confidence = ''
+                #results_text_element.insert(tk.END, ' -- Score: {:.4f}{}\n'.format(result['score'], result_confidence))
+
+                # highlight the tag when the mouse enters the tag
+                # (the unhighlight function is called when the mouse leaves the tag)
+                results_text_element.tag_bind(tag_name, '<Enter>',
+                                                lambda event, tag_name=tag_name:
+                    self._highlight_result_tag(self.text_windows[search_window_id]['text_widget'], tag_name))
+
                 # add a new line
                 results_text_element.insert(tk.END, '\n')
+
+                # add the score to the list of scores
+                scores.append(result['score'])
+
+            # calculate the average score
+            average_score = round(sum(scores) / len(scores) * 10, 1)
 
             # update the results text element
             results_text_element.insert(tk.END, '--------------------------------------\n')
             results_text_element.insert(tk.END, 'Search took {:.2f} seconds\n'.format(total_search_time))
+            results_text_element.insert(tk.END, 'Average results score {:.1f} out of 10\n'.format(average_score))
+            results_text_element.insert(tk.END, 'The last result is the closest to your search.\n')
 
             # use this to make sure we have a new prompt prefix for the next search
             self._text_window_update(search_window_id, 'Ready for new search.')
+
+    def _unhighlight_result_tag(self, parent_element, tag_name, initial_background_color=None, initial_cursor=None):
+
+        # revert to the original cursor
+        parent_element.config(cursor=initial_cursor)
+
+        # revert to the original background color
+        parent_element.tag_config(tag_name, background=initial_background_color)
+
+    def _highlight_result_tag(self, parent_element, tag_name):
+
+        # get the current cursor of the parent element
+        current_cursor = parent_element.cget("cursor")
+
+        # get the current background color of the tag
+        current_background_color = parent_element.tag_cget(tag_name, "background")
+
+        # show the hand cursor when hovering over the clickable text
+        parent_element.config(cursor="hand2")
+
+        #
+        parent_element.tag_config(tag_name, background=self.resolve_theme_colors['superblack'])
+
+        # add the leave event
+        parent_element.tag_bind(tag_name, '<Leave>', lambda event, tag_name=tag_name,
+                                                            initial_background_color=current_background_color,
+                                                            initial_cursor=current_cursor:
+        self._unhighlight_result_tag(parent_element, tag_name,
+                                     initial_background_color, initial_cursor)
+                                )
+
+    def button_search_list_files(self, search_window_id: str = None):
+
+        if search_window_id not in self.windows:
+            logger.error('Cannot list files. The search window ID is not valid.')
+
+        # inject the prompt that lists the files
+        self.inject_prompt(search_window_id, '[listfiles]')
+        return
+
+    def button_search_change_model(self, search_window_id: str = None):
+        '''
+        This opens up an AskDialog with a list of search models to choose from.
+        '''
+
+        # get the search item from the search window
+        if search_window_id not in self.windows:
+            logger.error('Cannot change search model. The search window ID is not valid.')
+            return False
+
+        if not hasattr(self.windows[search_window_id], 'search_item'):
+            logger.error('Cannot change search model. The search window does not have a search item.')
+            return False
+
+        # get the current model name from the search item
+        current_model_name = self.windows[search_window_id].search_item.model_name
+
+        # create a list of widgets for the input dialogue
+        input_widgets = [
+            {'name': 'model_name', 'label': 'Model:', 'type': 'entry', 'default_value': current_model_name}
+        ]
+
+        # then we call the ask_dialogue function
+        user_input = self.AskDialog(title='Change Advanced Search Model',
+                                                   input_widgets=input_widgets,
+                                                   parent=self.windows[search_window_id]
+                                                   ).value()
+
+        if not user_input or 'model_name' not in user_input or not user_input['model_name']:
+            return False
+
+        # bring the search window to the front
+        self.windows[search_window_id].focus_force()
+
+        # and select the text widget
+        self.text_windows[search_window_id]['text_widget'].focus_force()
+
+        # inject the prompt that changes the model
+        self.inject_prompt(search_window_id, '[model:{}]'.format(user_input['model_name']))
 
     def open_assistant_window(self, assistant_window_id: str = None,
                               transcript_text: str = None
