@@ -125,6 +125,7 @@ def main():
     parser.add_argument("--mode", choices=["gui"], default="gui", help="Choose the mode to run the application")
     parser.add_argument("--debug", action='store_true', help="Enable debug mode")
     parser.add_argument("--noresolve", action='store_true', help="Disable Resolve API polling")
+    parser.add_argument("--skip-python-check", action='store_true', help="Skips the Python version check")
     #parser.add_argument("--host", default="localhost", help="Server host for server mode")
     #parser.add_argument("--port", type=int, default=8000, help="Server port for server mode")
     args = parser.parse_args()
