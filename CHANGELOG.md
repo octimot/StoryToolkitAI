@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.18.5] - 2023-05-22
+
+Early update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+
+### Added
+- Improved Advanced Search Interface (more updates coming soon)
+- Advanced Search automatic file cache now avoids the initial speed penalty when searching transcriptions that were already encoded for search
+- Text Analyzer now performs an initial clustering of text for better search results (experimental)
+
+### Changed
+- Group Questions feature now creates additional Question groups if others already exist
+
+### Fixes
+- Fixed a bug that returned an incomplete transcript group list in the UI after Group Questions was used
+- Fixed a bug that ignored the --skip-python-check argument when starting the tool
+
 ## [0.18.4] - 2023-05-16
 
 ### Added
