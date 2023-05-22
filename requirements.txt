@@ -28,3 +28,4 @@ openai-whisper @ git+https://github.com/openai/whisper.git@248b6cb124225dd263bb9
 dtw-python
 resampy
 openai
+spacy>=3.0.0

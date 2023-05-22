@@ -55,6 +55,8 @@ class StoryToolkitAI:
         self.api = None
         self.api_token_valid = False
 
+        self.debug_mode = False
+
         self.check_api_token()
 
         # add a variable that holds usage statistics

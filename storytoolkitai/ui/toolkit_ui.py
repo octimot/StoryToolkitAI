@@ -5916,6 +5916,9 @@ class toolkit_UI:
             # destroy the window
             self.destroy()
 
+            # refocus on the parent element
+            self.parent.focus_set()
+
         def value(self):
             return self.return_value
 
@@ -7839,20 +7842,7 @@ class toolkit_UI:
         # now prepare the search corpus
         # (everything happens within the search item, that's why we don't really need to return anything)
         # if the search corpus was prepared successfully, update the search window
-        if search_item.prepare_search_corpus():
-
-            # add the list of files to the search window
-            self._list_search_files_in_window(search_window_id, search_item)
-
-            if len(search_item.search_corpus) < 1000:
-                self._text_window_update(search_window_id, 'Ready for search. Type [help] if you need help.')
-            else:
-                self._text_window_update(search_window_id, 'Large search corpus detected. '
-                                                           'The first search will take longer.\n\n'
-                                                           'Ready for search. Type [help] if you need help.')
-
-        else:
-            self._text_window_update(search_window_id, 'Search corpus could not be prepared.')
+        self._text_window_update(search_window_id, 'Ready for search. Type [help] if you need help.')
 
     def _list_search_files_in_window(self, search_window_id: str, search_item=None):
         '''
@@ -8041,11 +8031,8 @@ class toolkit_UI:
                 # remember the current insert position
                 current_insert_position = results_text_element.index(tk.INSERT)
 
-                # shorten the result text if it's longer than 200 characters, but don't cut off words
-                if len(result['text']) < 100:
-                    text_result = result['text']
-                else:
-                    text_result = result['text'][:200].rsplit(' ', 1)[0] + '...'
+                # add the result text
+                text_result = result['text']
 
                 # add the result text
                 results_text_element.insert(tk.END, str(text_result).strip() + '\n')
@@ -8173,7 +8160,10 @@ class toolkit_UI:
                     result_confidence = ' (Good)'
                 else:
                     result_confidence = ''
-                #results_text_element.insert(tk.END, ' -- Score: {:.4f}{}\n'.format(result['score'], result_confidence))
+
+                # show score if in debug mode
+                if self.stAI.debug_mode:
+                    results_text_element.insert(tk.END, ' -- Score: {:.4f}{}\n'.format(result['score'], result_confidence))
 
                 # highlight the tag when the mouse enters the tag
                 # (the unhighlight function is called when the mouse leaves the tag)

@@ -34,6 +34,8 @@ from timecode import Timecode
 import hashlib
 import pickle
 
+from storytoolkitai.core.textanalysis import TextAnalysis
+
 class NLE:
     '''
     Use this class to store any data that is supposed to be shared with the NLE (for eg. Resolve)
@@ -644,6 +646,9 @@ class ToolkitOps:
 
                 logger.debug('Reading search corpus from files.')
 
+                # load the TextAnalysis object
+                ta = TextAnalysis()
+
                 # take each file path and load the search data
                 for s_file_path in search_file_paths:
 
@@ -665,6 +670,62 @@ class ToolkitOps:
                                 and 'segments' in transcription_file_data \
                                 and type(transcription_file_data['segments']) is list:
 
+                            # detect the language of the transcription if we don't know it already
+                            if 'language' not in transcription_file_data:
+                                transcription_language \
+                                    = ta.detect_language(''.join([segment['text']
+                                                                  for segment in transcription_file_data['segments']]))
+
+                                # if we know the language of the transcription
+                                if transcription_language is not None:
+
+                                    transcription_file_data['language'] = transcription_language
+
+                                    # save it to the transcription file
+                                    if self.toolkit_ops_obj.save_transcription_file(
+                                        transcription_file_path=s_file_path,
+                                        transcription_data=transcription_file_data,
+                                        backup='backup'):
+
+                                            logger.debug(
+                                                'Saved language to transcription file: {}'.format(s_file_path))
+
+                            else:
+                                transcription_language = transcription_file_data['language']
+
+
+                            # try to see if we know which model to use for this language
+                            # (if not the TextAnalysis will try to get the model itself)
+                            spacy_models_per_language \
+                                = self.stAI.get_app_setting(setting_name='spacy_models_per_language',
+                                                            default_if_none={})
+
+                            if transcription_language in spacy_models_per_language:
+                                selected_model_name = spacy_models_per_language[transcription_language]
+                            else:
+                                selected_model_name = None
+
+                            # run it through the TextAnalysis to cluster and clean up the text
+                            filtered_transcription_segments = \
+                                ta.process_segments(
+                                    segments=transcription_file_data['segments'],
+                                    time_difference_threshold=None,
+                                    cache_dir=self.search_corpus_cache_dir,
+                                    lang=transcription_language,
+                                    model_name=selected_model_name
+                                )
+
+                            # if we didn't know the textanalysis model before, check if we know it now
+                            # check if we know the spacy model after running it through the TextAnalysis
+                            if selected_model_name is None:
+                                selected_model_name = ta.get_model_name()
+
+                            # and if it's not empty, add it to the config so we know it for next time
+                            if selected_model_name is not None:
+                                spacy_models_per_language[transcription_language] = selected_model_name
+                                self.stAI.save_config(setting_name='spacy_models_per_language',
+                                                      setting_value=spacy_models_per_language)
+
                             transcription_file_path = s_file_path
 
                             logger.debug('Adding {} to the search corpus.'.format(transcription_file_path))
@@ -684,7 +745,23 @@ class ToolkitOps:
                             previous_phrase = ''
 
                             # loop through the segments of this transcription file
-                            for segment_index, segment in enumerate(transcription_file_data['segments']):
+                            for segment_index, segment in enumerate(filtered_transcription_segments):
+
+                                filtered_segment_index = None
+
+                                # if there is a segment index in the segment
+                                # it means that these segments may have been filtered
+                                if 'idx' in segment:
+
+                                    # so let's use the first segment index as the segment index for the results
+                                    filtered_segment_index = segment['idx'][0]
+
+                                    # and if there is a filtered segment index, use that instead
+                                    # note: all_lines is a list of all the lines that are connected to this segment
+                                    # therefore, all_lines below will take this value too
+                                    # (+1 on each index to compensate for line numbers)
+                                    if filtered_segment_index is not None:
+                                        segment_index = filtered_segment_index
 
                                 # first remember the transcription file path and the segment index
                                 # if this is a new phrase (i.e. the current phrase is empty)
@@ -707,7 +784,9 @@ class ToolkitOps:
                                         'segment_index': segment_index,
                                         'start': segment['start'],
                                         'timecode': timecode,
-                                        'all_lines': [int(segment_index) + 1],
+                                        'all_lines': [int(segment_index) + 1]
+                                            if 'idx' not in segment
+                                            else [sgm+1 for sgm in segment['idx']],
                                         'type': 'transcription'
                                     }
 
@@ -1141,6 +1220,20 @@ class ToolkitOps:
             search_id = self.search_id
             max_results = self.max_results
             start_search_time = self.start_search_time
+
+            # if the search corpus is empty, try to prepare it
+            if self.search_file_paths and not self.search_corpus:
+
+                # prepare the search corpus
+                self.prepare_search_corpus()
+
+                # reload all the variables that might have changed
+                search_corpus_phrases = self.search_corpus
+                search_corpus_assoc = self.search_corpus_assoc
+                search_id = self.search_id
+                max_results = self.max_results
+                start_search_time = self.start_search_time
+
             corpus_cache_file_path = self.get_corpus_cache_file_path(search_type='semantic')
 
             if query is None or query == '':
@@ -2562,7 +2655,7 @@ class ToolkitOps:
             # use CUDA if available
             self.whisper_device = device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        logger.info('Using {} for Torch / Whisper.'.format(device))
+        logger.info('Using {} for Torch / Whisper / Transformers.'.format(device))
 
         return self.whisper_device
 
@@ -3449,7 +3542,7 @@ class ToolkitOps:
 
             # remove word timestamps from the result to avoid confusion,
             # until the word-based transcript editing is implemented
-            if 'words' in segment:
+            if 'words' in segment and kwargs.get('post_remove_word_timestamps', False):
                 del segment['words']
 
             # add the segment to the new result segments
@@ -3528,7 +3621,7 @@ class ToolkitOps:
             for key in other_whisper_options:
                 if key in ['max_chars_per_segment', 'max_words_per_segment',
                            'split_on_punctuation_marks', 'prevent_short_gaps',
-                           'group_questions']:
+                           'group_questions', 'post_remove_word_timestamps']:
                     post_processing_options[key] = other_whisper_options[key]
 
                 else:
@@ -3545,6 +3638,10 @@ class ToolkitOps:
                                                    previous_progress=previous_progress,
                                                    **whisper_options
                                                    )
+
+            # remove word timestamps from final transcription until we implement word-based editing
+            post_processing_options['post_remove_word_timestamps'] = \
+                post_processing_options.get('post_remove_word_timestamps', True)
 
             # post process the result
             result = self.post_process_whisper_result(audio_segment[2], result, **post_processing_options)
@@ -3680,7 +3777,7 @@ class ToolkitOps:
         return audio_segments, time_intervals
 
     def whisper_transcribe(self, name=None, audio_file_path=None, task=None,
-                           target_dir=None, queue_id=None, **other_whisper_options):
+                           target_dir=None, queue_id=None, return_path=False, **other_whisper_options) -> bool or str:
         """
         This prepares and transcribes audio using Whisper
         :param name:
@@ -3688,12 +3785,14 @@ class ToolkitOps:
         :param task:
         :param target_dir:
         :param queue_id:
+        :param return_path: if True, returns the path to the transcription file if successful
         :param other_whisper_options:
         :return:
         """
 
         # don't continue unless we have a queue_id
         if audio_file_path is None or not audio_file_path:
+            logger.warning('No audio file path was passed to whisper_transcribe. Aborting.')
             return False
 
         # use the name of the file in case the name wasn't passed
@@ -4149,7 +4248,7 @@ class ToolkitOps:
                                                           srt_file_path=srt_file_path
                                                             if srt_file_path in transcription_data else '')
 
-        return True
+        return True if not return_path else transcription_json_file_path
 
     def save_transcription_file(self, transcription_file_path=None, transcription_data=None,
                                 file_name=None, target_dir=None, backup=None) -> str or bool:
@@ -4510,7 +4609,6 @@ class ToolkitOps:
                 flush=True
             )
 
-
     def write_fusion_text_comp(self, transcript_segments: dict, comp_file_path: str, timeline_fps):
         '''
         Write the transcript segments into a Fusion Text+ comp file
@@ -4628,7 +4726,6 @@ class ToolkitOps:
 
         # return the comp file path
         return comp_file_path
-
 
     def save_srt_from_transcription(self, srt_file_path=None, transcription_segments=None,
                                     file_name=None, target_dir=None, transcription_data=None):

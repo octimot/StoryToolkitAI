@@ -91,6 +91,7 @@ The tool would be useless without using the following open source projects:
 - [OpenAI Whisper](https://openai.com/blog/whisper/)
 - [Sentence Transformers](https://www.sbert.net/)
 - [OpenAI ChatGPT](https://openai.com/blog/chat-gpt/)
+- [spaCy](https://spacy.io/)
 - and many other packages that are listed in the requirements.txt file
 
 ---

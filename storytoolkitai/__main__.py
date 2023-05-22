@@ -66,8 +66,6 @@ except:
         # get the relative path to the requirements file
         requirements_file_path_rel = os.path.relpath(requirements_file_path)
 
-        print(requirements_file_path_rel)
-
         # install the requirements
         # invoke pip as a subprocess:
         pip_complete = subprocess.call([sys.executable, '-m', 'pip', 'install', '-r', requirements_file_path_rel])
@@ -132,6 +130,9 @@ def main():
 
     # initialize operations object
     toolkit_ops_obj = ToolkitOps(stAI=stAI)
+
+    if '--debug' in sys.argv:
+        stAI.debug_mode = True
 
     if args.mode == "gui":
         run_gui(toolkit_ops_obj=toolkit_ops_obj, stAI=stAI)

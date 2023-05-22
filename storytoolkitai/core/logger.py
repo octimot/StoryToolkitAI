@@ -51,7 +51,7 @@ class Logger_ConsoleFormatter(logging.Formatter):
 # enable logger
 logger = logging.getLogger('StAI')
 
-# set the maximum log level
+# set the maximum log level for the text logger
 logger.setLevel(logging.DEBUG)
 
 # create console handler and set level to info
