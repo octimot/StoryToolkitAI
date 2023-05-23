@@ -29,3 +29,4 @@ dtw-python
 resampy
 openai
 spacy>=3.0.0
+spacy-langdetect
