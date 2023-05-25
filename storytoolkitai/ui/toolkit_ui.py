@@ -796,8 +796,7 @@ class toolkit_UI:
 
             # and start the transcription config process
             self.toolkit_ops_obj \
-                .prepare_transcription_file(toolkit_UI_obj=self.toolkit_UI_obj,
-                                            task='transcribe',
+                .prepare_transcription_file(toolkit_UI_obj=self.toolkit_UI_obj, transcription_task='transcribe',
                                             retranscribe=self.transcription_file_paths[window_id],
                                             time_intervals=time_intervals)
 
@@ -921,7 +920,7 @@ class toolkit_UI:
 
                 # if the user cancels the linking
                 elif user_response is None:
-                    logger.debug('User cancelled selection to marker operation.')
+                    logger.debug('User canceled selection to marker operation.')
                     return
 
             # first get the selected (or active) text from the transcript
@@ -1085,7 +1084,7 @@ class toolkit_UI:
 
                 # if the user pressed cancel, return
                 if export_file_path is None or export_file_path == '':
-                    logger.debug('User cancelled Export As process.')
+                    logger.debug('User canceled Export As process.')
                     return False
 
             # pass this to the relevant export function
@@ -1136,7 +1135,7 @@ class toolkit_UI:
 
                 # if the user pressed cancel, return
                 if export_file_path is None or export_file_path == '':
-                    logger.debug('User cancelled save as SRT.')
+                    logger.debug('User canceled save as SRT.')
                     return False
 
             # get the transcription segments
@@ -1206,7 +1205,7 @@ class toolkit_UI:
 
                 # if the user pressed cancel, return
                 if export_file_path is None or export_file_path == '':
-                    logger.debug('User cancelled save as TXT.')
+                    logger.debug('User canceled save as TXT.')
                     return False
 
             # get the transcription segments
@@ -1276,7 +1275,7 @@ class toolkit_UI:
 
                 # if the user pressed cancel, return
                 if export_file_path is None or export_file_path == '':
-                    logger.debug('User cancelled save as AVID DS.')
+                    logger.debug('User canceled save as AVID DS.')
                     return False
 
             # get the transcription segments
@@ -1355,7 +1354,7 @@ class toolkit_UI:
 
                 # if the user pressed cancel, return
                 if export_file_path is None or export_file_path == '':
-                    logger.debug('User cancelled save as Fusion Comp.')
+                    logger.debug('User canceled save as Fusion Comp.')
                     return False
 
             # get the transcription segments
@@ -1546,7 +1545,7 @@ class toolkit_UI:
                                                    )
 
             if not move_playhead:
-                logger.debug('User cancelled segment alignment.')
+                logger.debug('User canceled segment alignment.')
                 return False
 
             # convert the current_tc to seconds
@@ -1718,7 +1717,7 @@ class toolkit_UI:
                                                                    cancel_return=None
                                                                    ).value()
 
-                        # if the user cancelled, return None
+                        # if the user canceled, return None
                         if user_input is None:
                             return None
 
@@ -2642,7 +2641,7 @@ class toolkit_UI:
                                                            'and auto-add them to the group.\n\n'
                                                            'Are you sure you want to do this?'):
 
-                            logger.debug('User cancelled auto-add segments to group. Aborting.')
+                            logger.debug('User canceled auto-add segments to group. Aborting.')
 
                             return
 
@@ -2778,7 +2777,7 @@ class toolkit_UI:
                                                        )
 
                 if not move_playhead:
-                    logger.debug('User cancelled segment split.')
+                    logger.debug('User canceled segment split.')
                     return 'break'
 
                 # convert the current resolve timecode to seconds
@@ -3544,10 +3543,11 @@ class toolkit_UI:
                 whisper_model_name_input.grid(row=22, column=1, **form_grid_and_paddings)
 
                 # the whisper device
+                available_devices = ['auto'] + self.toolkit_ops_obj.queue_devices
+
                 tk.Label(pref_form_frame, text='Whisper Device', **label_settings).grid(row=23, column=0,
                                                                                         **form_grid_and_paddings)
-                whisper_device_input = tk.OptionMenu(pref_form_frame, whisper_device_var,
-                                                     *self.toolkit_ops_obj.get_torch_available_devices())
+                whisper_device_input = tk.OptionMenu(pref_form_frame, whisper_device_var, *available_devices)
                 whisper_device_input.grid(row=23, column=1, **form_grid_and_paddings)
 
                 # the default language for transcriptions
@@ -3777,7 +3777,7 @@ class toolkit_UI:
 
             # open the about window
 
-            # create a window for the transcription log if one doesn't already exist
+            # create a window for the about window if one doesn't already exist
             if about_window := self.toolkit_UI_obj.create_or_open_window(parent_element=self.root,
                                                                          window_id='about',
                                                                          title='About StoryToolkitAI', resizable=False,
@@ -4232,9 +4232,9 @@ class toolkit_UI:
             if goto_projectpage:
                 webbrowser.open(release_url)
 
-        # open the transcription log window if something is up in the transcription queue
+        # open the Queue window if something is up in the transcription queue
         if self.toolkit_ops_obj.transcription_queue_current_name:
-            self.open_transcription_log_window()
+            self.open_queue_window()
 
     def only_allow_integers(self, value):
         '''
@@ -4296,19 +4296,19 @@ class toolkit_UI:
     def on_exit(self):
         '''
         This function is usually called when the user closes the main window or exits the program via the menu.
-        -- work in progress --
         :return:
         '''
 
         # check if there are any items left in the queue
         # if there are, ask the user if they want to quit anyway
 
-        if (self.toolkit_ops_obj.transcription_queue is not None and len(self.toolkit_ops_obj.transcription_queue) > 0) \
-                or (self.toolkit_ops_obj.transcription_queue_current_name is not None \
-                    and self.toolkit_ops_obj.transcription_queue_current_name != ''):
+        queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items(
+            not_status=['failed', 'done', 'canceled', 'canceling'])
+
+        if queue_items is not None and len(queue_items) > 0:
 
             quit_anyway = messagebox.askyesno(title="Are you sure?",
-                                              message="We're still transcribing. Quit anyway?")
+                                              message="There are still items in the queue. Quit anyway?")
 
             # if the user doesn't want to quit anyway, return
             if not quit_anyway:
@@ -4628,8 +4628,8 @@ class toolkit_UI:
         # add the shift+click binding to the button
         # this forces the user to select the files manually
         self.windows['main'].button5.bind('<Shift-Button-1>',
-                                          lambda event: toolkit_ops_obj.prepare_transcription_file(
-                                              toolkit_UI_obj=self, select_files=True))
+                                          lambda event: toolkit_ops_obj.prepare_transcription_file(toolkit_UI_obj=self,
+                                                                                                   select_files=True))
         self.windows['main'].button5.grid(row=1, column=1, **self.paddings)
 
         self.windows['main'].button6 = tk.Button(self.windows['main'].other_buttons_frame,
@@ -4637,12 +4637,13 @@ class toolkit_UI:
                                                  **self.button_size,
                                                  text="Translate\nTimeline to English",
                                                  command=lambda: self.toolkit_ops_obj.prepare_transcription_file(
-                                                     toolkit_UI_obj=self, task='translate'))
+                                                     toolkit_UI_obj=self, transcription_task='translate'))
         # add the shift+click binding to the button
         # this forces the user to select the files manually
         self.windows['main'].button6.bind('<Shift-Button-1>',
-                                          lambda event: toolkit_ops_obj.prepare_transcription_file(
-                                              toolkit_UI_obj=self, task='translate', select_files=True))
+                                          lambda event: toolkit_ops_obj.prepare_transcription_file(toolkit_UI_obj=self,
+                                                                                                   transcription_task='translate',
+                                                                                                   select_files=True))
 
         self.windows['main'].button6.grid(row=1, column=2, **self.paddings)
 
@@ -4655,8 +4656,8 @@ class toolkit_UI:
         self.windows['main'].button8 = tk.Button(self.windows['main'].other_buttons_frame,
                                                  **self.blank_img_button_settings,
                                                  **self.button_size,
-                                                 text="Open\nTranscription Log",
-                                                 command=lambda: self.open_transcription_log_window())
+                                                 text="Queue",
+                                                 command=lambda: self.open_queue_window())
         self.windows['main'].button8.grid(row=2, column=2, **self.paddings)
 
         # THE ADVANCED SEARCH BUTTON
@@ -5923,27 +5924,27 @@ class toolkit_UI:
             return self.return_value
 
     def open_transcription_settings_window(self, title="Transcription Settings",
-                                           audio_file_path=None, name=None, task=None, unique_id=None,
+                                           audio_file_path=None, name=None, transcription_task=None, queue_id=None,
                                            transcription_file_path=False, time_intervals=None,
                                            excluded_time_intervals=None, **kwargs):
 
-        if self.toolkit_ops_obj is None or audio_file_path is None or unique_id is None:
+        if self.toolkit_ops_obj is None or audio_file_path is None or queue_id is None:
             logger.error('Aborting. Unable to open transcription settings window.')
             return False
 
-        # assign a unique_id for this window depending on the queue unique_id
-        ts_window_id = 'ts-' + unique_id
+        # assign a queue_id for this window depending on the queue queue_id
+        ts_window_id = 'ts-' + queue_id
 
         # what happens when the window is closed
-        close_action = lambda ts_window_id=ts_window_id, unique_id=unique_id: \
-            self.destroy_transcription_settings_window(ts_window_id, unique_id)
+        close_action = lambda ts_window_id=ts_window_id, queue_id=queue_id: \
+            self.destroy_transcription_settings_window(ts_window_id, queue_id)
 
         # create a window for the transcription settings if one doesn't already exist
         if self.create_or_open_window(parent_element=self.root, window_id=ts_window_id, title=title,
                                       type='transcription_settings',
                                       resizable=True, close_action=close_action):
 
-            self.toolkit_ops_obj.update_transcription_log(unique_id=unique_id, **{'status': 'waiting user'})
+            self.toolkit_ops_obj.processing_queue.update_queue_item(queue_id=queue_id, status='waiting user')
 
             # place the window on top for a moment so that the user sees that he has to interact
             self.windows[ts_window_id].wm_attributes('-topmost', True)
@@ -6006,13 +6007,13 @@ class toolkit_UI:
                                                                           **self.input_grid_settings,
                                                                           **self.form_paddings)
 
-            if task is None:
-                task = 'transcribe'
+            if transcription_task is None:
+                transcription_task = 'transcribe'
 
-            task_var = StringVar(ts_form_frame, value=task)
+            transcription_task_var = StringVar(ts_form_frame, value=transcription_task)
             available_tasks = ['transcribe', 'translate', 'transcribe+translate']
-            task_input = OptionMenu(ts_form_frame, task_var, *available_tasks)
-            task_input.grid(row=4, column=2, **self.input_grid_settings, **self.form_paddings)
+            transcription_task_input = OptionMenu(ts_form_frame, transcription_task_var, *available_tasks)
+            transcription_task_input.grid(row=4, column=2, **self.input_grid_settings, **self.form_paddings)
 
             # MODEL DROPDOWN
             # as options, use the list of whisper.avialable_models()
@@ -6031,7 +6032,7 @@ class toolkit_UI:
                                                                             **self.input_grid_settings,
                                                                             **self.form_paddings)
 
-            available_devices = self.toolkit_ops_obj.get_torch_available_devices()
+            available_devices = ['auto'] + list(self.toolkit_ops_obj.queue_devices)
 
             # the default selected value will be the whisper_device app setting
             device_selected = self.stAI.get_app_setting('whisper_device', default_if_none='auto')
@@ -6196,28 +6197,27 @@ class toolkit_UI:
 
             # START BUTTON
 
-            # add all the settings entered by the use into a nice dictionary
-            # transcription_config = dict(name=name_input.get(), language='English', beam_size=5, best_of=5)
-
             Label(ts_form_frame, text="", **self.label_settings).grid(row=60, column=1,
                                                                       **self.input_grid_settings, **self.paddings)
             start_button = Button(ts_form_frame, text='Start')
             start_button.grid(row=60, column=2, **self.input_grid_settings, **self.paddings)
             start_button.config(command=lambda audio_file_path=audio_file_path,
                                                transcription_file_path_var=transcription_file_path_var,
-                                               unique_id=unique_id,
+                                               queue_id=queue_id,
                                                ts_window_id=ts_window_id:
             self.start_transcription_button(ts_window_id,
                                             audio_file_path=audio_file_path,
-                                            unique_id=unique_id,
-                                            language=language_var.get(),
-                                            task=task_var.get(),
+                                            queue_id=queue_id,
+                                            transcription_task=transcription_task_var.get(),
                                             name=name_var.get(),
-                                            model=model_var.get(),
+                                            model_name=model_var.get(),
+                                            whisper_options=self.toolkit_ops_obj.whisper_options(
+                                                language=language_var.get(),
+                                                initial_prompt=prompt_input.get(1.0, END),
+                                                word_timestamps=word_timestamps_var.get(),
+                                            ),
                                             device=device_var.get(),
-                                            initial_prompt=prompt_input.get(1.0, END),
                                             pre_detect_speech=pre_detect_speech_var.get(),
-                                            word_timestamps=word_timestamps_var.get(),
                                             max_chars_per_segment=max_chars_per_segment_var.get(),
                                             max_words_per_segment=max_words_per_segment_var.get(),
                                             split_on_punctuation_marks=split_on_punctuation_marks_var.get(),
@@ -6235,15 +6235,17 @@ class toolkit_UI:
             if kwargs.get('skip_settings', False):
                 self.start_transcription_button(ts_window_id,
                                                 audio_file_path=audio_file_path,
-                                                unique_id=unique_id,
-                                                language=language_var.get(),
-                                                task=task_var.get(),
+                                                queue_id=queue_id,
+                                                model_name=model_var.get(),
+                                                whisper_options=self.toolkit_ops_obj.whisper_options(
+                                                    model=model_var.get(), language=language_var.get(),
+                                                    initial_prompt=prompt_input.get(1.0, END),
+                                                    word_timestamps=word_timestamps_var.get()
+                                                ),
+                                                transcription_task=transcription_task_var.get(),
                                                 name=name_var.get(),
-                                                model=model_var.get(),
                                                 device=device_var.get(),
-                                                initial_prompt=prompt_input.get(1.0, END),
                                                 pre_detect_speech=pre_detect_speech_var.get(),
-                                                word_timestamps=word_timestamps_var.get(),
                                                 max_chars_per_segment=max_chars_per_segment_var.get(),
                                                 max_words_per_segment=max_words_per_segment_var.get(),
                                                 split_on_punctuation_marks=split_on_punctuation_marks_var.get(),
@@ -6422,8 +6424,10 @@ class toolkit_UI:
 
     def start_transcription_button(self, transcription_settings_window_id=None, **transcription_config):
         '''
-        This sends the transcription to the transcription queue via toolkit_ops object,
-        but also closes the transcription settings window
+
+        This validates the transcription settings,
+        starts the transcription process and closes the transcription settings window
+
         :param transcription_settings_window_id:
         :param transcription_config:
         :return:
@@ -6452,12 +6456,15 @@ class toolkit_UI:
             return False
 
         # send transcription to queue
-        self.toolkit_ops_obj.add_to_transcription_queue(**transcription_config)
+        self.toolkit_ops_obj.add_transcription_to_queue(**transcription_config)
 
-        # destroy transcription config window
+        # close transcription config window
         self.destroy_window_(windows_dict=self.windows, window_id=transcription_settings_window_id)
 
-    def destroy_transcription_settings_window(self, window_id, unique_id, parent_element=None):
+        # open the processing queue window
+        self.open_queue_window()
+
+    def destroy_transcription_settings_window(self, window_id, queue_id, parent_element=None):
 
         if (messagebox.askyesno(title="Cancel Transcription",
                                 message='Are you sure you want to cancel this transcription?')):
@@ -6466,7 +6473,7 @@ class toolkit_UI:
             if parent_element is None:
                 parent_element = self.windows
 
-            self.toolkit_ops_obj.update_transcription_log(unique_id=unique_id, status='canceled')
+            self.toolkit_ops_obj.processing_queue.update_queue_item(queue_id=queue_id, status='canceled')
 
             # call the default destroy window function
             self.destroy_window_(windows_dict=self.windows, window_id=window_id)
@@ -7493,41 +7500,43 @@ class toolkit_UI:
                     # close the window
                     self.destroy_transcription_window(transcription_window)
 
-    def update_transcription_log_window(self):
+    def update_queue_window(self):
 
-        # don't do anything if the transcription log window doesn't exist
-        if 't_log' not in self.windows:
-            logger.debug('No transcription log window exists.')
+        # don't do anything if the queue window doesn't exist
+        if 'queue' not in self.windows:
+            # logger.debug('No queue window exists.')
             return
 
         # first destroy anything that the window might have held
-        list = self.windows['t_log'].winfo_children()
+        list = self.windows['queue'].winfo_children()
         for l in list:
             l.destroy()
 
-        # if there is no transcription log
-        if not self.toolkit_ops_obj.transcription_log:
+        all_queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+
+        # if there is no queue history
+        if not all_queue_items:
             # just add a label to the window
-            tk.Label(self.windows['t_log'], text='Transcription log empty.', **self.paddings).pack()
+            tk.Label(self.windows['queue'], text='Queue is empty.', **self.paddings).pack()
 
 
         # only do this if the transcription window exists
-        # and if the log exists
-        elif self.toolkit_ops_obj.transcription_log:
+        # and if the queue exists
+        elif all_queue_items:
 
             # create a canvas to hold all the log items in the window
-            log_canvas = tk.Canvas(self.windows['t_log'], borderwidth=0)
+            log_canvas = tk.Canvas(self.windows['queue'], borderwidth=0)
 
             # create a frame for the log items
             log_frame = tk.Frame(log_canvas)
 
             # create a footer frame for additional functions
-            log_footer = tk.Frame(self.windows['t_log'], **self.paddings)
+            log_footer = tk.Frame(self.windows['queue'], **self.paddings)
 
             log_footer.pack(side=BOTTOM, fill=X)
 
             # create a scrollbar to use with the canvas
-            scrollbar = Scrollbar(self.windows['t_log'], command=log_canvas.yview, **self.scrollbar_settings)
+            scrollbar = Scrollbar(self.windows['queue'], command=log_canvas.yview, **self.scrollbar_settings)
 
             # attach the scrollbar to the log_canvas
             log_canvas.config(yscrollcommand=scrollbar.set)
@@ -7548,48 +7557,50 @@ class toolkit_UI:
                                  width=event.width
                                  ))
 
-            # populate the log frame with the transcription items from the transcription log
+            # populate the log frame with the transcription items from the Queue
             num = 0
-            for t_item_id, t_item in self.toolkit_ops_obj.transcription_log.items():
+            for q_item_id in all_queue_items:
+
+                q_item = all_queue_items[q_item_id]
 
                 num = num + 1
 
-                if 'name' not in t_item:
-                    t_item['name'] = 'Unknown'
+                if 'name' not in q_item:
+                    q_item['name'] = 'Unknown'
 
-                label_name = Label(log_frame, text=t_item['name'], anchor='w', width=40)
+                label_name = Label(log_frame, text=q_item['name'], anchor='w', width=40)
                 label_name.grid(row=num, column=1, **self.list_paddings, sticky='w')
 
-                if 'status' not in t_item:
-                    t_item['status'] = ''
+                if 'status' not in q_item:
+                    q_item['status'] = ''
 
                 progress = ''
-                if 'progress' in t_item and t_item['progress'] and t_item['progress'] != '':
+                if 'progress' in q_item and q_item['progress'] and q_item['progress'] != '':
 
                     # prevent weirdness with progress values over 100%
-                    if int(t_item['progress']) > 100:
-                        t_item['progress'] = 100
+                    if int(q_item['progress']) > 100:
+                        q_item['progress'] = 100
 
-                    progress = ' (' + str(t_item['progress']) + '%)'
+                    progress = ' (' + str(q_item['progress']) + '%)'
 
-                label_status = Label(log_frame, text=t_item['status'] + progress, anchor='w', width=15)
+                label_status = Label(log_frame, text=q_item['status'] + progress, anchor='w', width=15)
                 label_status.grid(row=num, column=2, **self.list_paddings, sticky='w')
 
-                # unless the transcription is already done, cancelled or failed
-                if t_item['status'] not in ['cancelling', 'cancelled', 'done', 'failed']:
+                # unless the transcription is already done, canceled or failed
+                if q_item['status'] not in ['canceling', 'canceled', 'done', 'failed']:
                     # add a button to cancel the transcription
                     button_cancel = Button(log_frame, text='x', width=1)
                     button_cancel.grid(row=num, column=3, **self.list_paddings, sticky='w')
 
                     # bind the button to the cancel_transcription function
-                    button_cancel.bind("<Button-1>", lambda e, t_item_id=t_item_id, button_cancel=button_cancel:
-                        self.on_button_cancel_transcription(t_item_id, button_cancel))
+                    button_cancel.bind("<Button-1>", lambda e, q_item_id=q_item_id, button_cancel=button_cancel:
+                        self.on_button_cancel_queue_item(q_item_id, button_cancel))
 
                 # make the label clickable as soon as we have a file path for it in the log
-                if 'json_file_path' in t_item and t_item['json_file_path'] != '':
+                if 'json_file_path' in q_item and q_item['json_file_path'] != '':
                     # first assign variables to pass it easily to lambda
-                    json_file_path = t_item['json_file_path']
-                    name = t_item['name']
+                    json_file_path = q_item['json_file_path']
+                    name = q_item['name']
 
                     # now bind the button event
                     # the lambda needs all this code to "freeze" the current state of the variables
@@ -7610,14 +7621,16 @@ class toolkit_UI:
             button_cancel_all.pack(side=LEFT, **self.list_paddings)
 
             # bind the button to the cancel_all_transcriptions function
-            button_cancel_all.bind("<Button-1>", lambda e: self.on_button_cancel_all_transcriptions())
+            button_cancel_all.bind("<Button-1>", lambda e: self.on_button_cancel_queue())
 
 
 
-    def on_button_cancel_transcription(self, queue_id, button_cancel):
+    def on_button_cancel_queue_item(self, queue_id, button_cancel):
 
-        # is the queue id in the transcription log?
-        if queue_id in self.toolkit_ops_obj.transcription_log:
+        all_queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+
+        # is the queue id in the Queue?
+        if queue_id in all_queue_items:
 
             # ask the user if they're sure they want to cancel the transcription
             if not messagebox.askyesno('Cancel transcription',
@@ -7625,11 +7638,16 @@ class toolkit_UI:
                 return
 
             # cancel via toolkit_ops
-            self.toolkit_ops_obj.cancel_queue_item(queue_id=queue_id)
+            self.toolkit_ops_obj.processing_queue.set_to_canceled(queue_id=queue_id)
 
-    def on_button_cancel_all_transcriptions(self):
+        # update the queue window
+        self.update_queue_window()
 
-        if len(self.toolkit_ops_obj.transcription_log) == 0:
+    def on_button_cancel_queue(self):
+
+        all_queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+
+        if len(all_queue_items) == 0:
             return
 
         # ask the user if they're sure they want to cancel all transcriptions
@@ -7637,22 +7655,25 @@ class toolkit_UI:
                                    'Are you sure you want to cancel all transcriptions from queue?'):
             return
 
-        # take each transcription item in the log
-        for queue_id, t_item in self.toolkit_ops_obj.transcription_log.items():
+        # take each queue item from the queue
+        for queue_id in all_queue_items:
 
-            # if the transcription is not already done, cancelled or failed
-            if t_item['status'] not in ['cancelling', 'cancelled', 'done', 'failed']:
+            # if the transcription is not already done, canceled or failed
+            if all_queue_items[queue_id]['status'] not in ['canceling', 'canceled', 'done', 'failed']:
 
                 # cancel via toolkit_ops
-                self.toolkit_ops_obj.cancel_queue_item(queue_id=queue_id)
+                self.toolkit_ops_obj.processing_queue.set_to_canceled(queue_id=queue_id)
 
-    def open_transcription_log_window(self):
+        # update the queue window
+        self.update_queue_window()
 
-        # create a window for the transcription log if one doesn't already exist
-        if self.create_or_open_window(parent_element=self.root, type='transcription_log',
-                                      window_id='t_log', title='Transcription Log', resizable=True):
+    def open_queue_window(self):
+
+        # create a window for the Queue if one doesn't already exist
+        if self.create_or_open_window(parent_element=self.root, type='queue',
+                                      window_id='queue', title='Queue', resizable=True):
             # and then call the update function to fill the window up
-            self.update_transcription_log_window()
+            self.update_queue_window()
 
             return True
 

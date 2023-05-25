@@ -5,6 +5,7 @@ import json
 import codecs
 
 from threading import Thread
+from threading import Timer as threadingTimer
 
 import torch
 import torchaudio
@@ -84,6 +85,7 @@ class NLE:
         else:
             return True
 
+
 class ToolkitOps:
 
     def __init__(self, stAI=None, disable_resolve_api=False):
@@ -94,13 +96,13 @@ class ToolkitOps:
         # keep a reference to the StoryToolkitAI object here if one was passed
         self.stAI = stAI
 
-        # define the path to the transcription queue file relative to the user_data_path
+        # define the path to the  queue file relative to the user_data_path
         if self.stAI is not None:
-            self.TRANSCRIPTION_QUEUE_FILE_PATH = os.path.join(stAI.user_data_path, 'transcription_queue.json')
+            self.QUEUE_FILE_PATH = os.path.join(stAI.user_data_path, 'queue.json')
 
-        # use a relative path for the transcription queue file, if no stAI was passed
+        # use a relative path for the queue file, if no stAI was passed
         else:
-            self.TRANSCRIPTION_QUEUE_FILE_PATH = 'transcription_queue.json'
+            self.QUEUE_FILE_PATH = 'queue.json'
 
         # initialize the toolkit search engine
         self.t_search_obj = self.ToolkitSearch(toolkit_ops_obj=self)
@@ -108,25 +110,11 @@ class ToolkitOps:
         # initialize the TranscriptGroups object
         self.t_groups_obj = self.TranscriptGroups(toolkit_ops_obj=self)
 
-        # transcription queue thread - this will be useful when trying to figure out
-        # if there's any transcription thread active or not
-        self.transcription_queue_thread = None
-
-        # use these attributes for the transcription items (both queue and log)
-        # this will be useful in case we need to add additional attributes to the transcription items
-        # so that we don't have to update every single function that is using the transcription items
-        # @todo make sure this is correctly implemented across the toolkit
-        self.transcription_item_attr = ['name', 'audio_file_path', 'translate', 'info', 'status', 'progress',
-                                        'json_file_path', 'srt_file_path', 'txt_file_path']
-
-        # transcription log - this keeps a track of all the transcriptions
-        self.transcription_log = {}
-
         # this is used to get fast the name of what is being transcribed currently
         self.transcription_queue_current_name = None
 
         # this is to keep track of the current transcription item
-        # the format is {unique_id: transcription_item_attributes}
+        # the format is {queue_id: transcription_item_attributes}
         self.transcription_queue_current_item = {}
 
         # declare this as none for now so we know it exists
@@ -142,9 +130,9 @@ class ToolkitOps:
 
         # get the whisper device setting
         # currently, the setting may be cuda, cpu or auto
-        self.whisper_device = stAI.get_app_setting('whisper_device', 'auto')
+        self.torch_device = stAI.get_app_setting('torch_device', default_if_none='auto')
 
-        self.whisper_device = self.whisper_device_select(self.whisper_device)
+        self.torch_device = self.torch_device_type_select(self.torch_device)
 
         # now let's deal with the sentence transformer model
         # this is the transformer model name that we will use to search semantically
@@ -155,6 +143,20 @@ class ToolkitOps:
         # for now define an empty model here which should be loaded the first time it's needed
         # it's very likely that the model will not be loaded here, but in the SearchItem, for each search
         self.s_semantic_search_model = None
+
+        self.processing_queue = self.ProcessingQueue(toolkit_ops_obj=self)
+
+        # this is used by the queue dispatcher to know which functions to call depending on the task
+        # the key is the name of the task, the value is a list of functions to call for that task
+        # the queue dispatcher may also merge multiple tasks into one (for eg. if transcribe+ingest is called)
+        self.queue_tasks = {
+            'transcribe': [self.whisper_transcribe],
+            'translate': [self.whisper_transcribe],
+            # 'ingest': [self.index_video] # this will be added soon
+        }
+
+        # use this to store all the devices that can be used for processing queue tasks
+        self.queue_devices = self.get_torch_available_devices()
 
         # use this to know whether the resolve API is disabled or not for this session
         self.disable_resolve_api = disable_resolve_api
@@ -184,8 +186,8 @@ class ToolkitOps:
             self.resolve_enable()
 
         # resume the transcription queue if there's anything in it
-        if self.resume_transcription_queue_from_file():
-            logger.info('Resuming transcription queue from file')
+        if self.processing_queue.resume_queue_from_file():
+            logger.info('Resuming queue from file')
 
     class ToolkitAssistant:
         '''
@@ -393,7 +395,7 @@ class ToolkitOps:
             self.stAI.update_statistics('assistant_usage_{}_{}'.format(self.model_provider, self.model_name),
                                         self.usage)
 
-            #print(self.stAI.statistics)
+            # print(self.stAI.statistics)
 
         def send_query(self, content):
             '''
@@ -534,7 +536,7 @@ class ToolkitOps:
             # if the search path contains only one file
             # which ends with .pkl we'll return it directly
             # to be used as a search corpus (search cache)
-            #if search_paths is not None \
+            # if search_paths is not None \
             #        and ((type(search_paths) is str and os.path.isfile(search_paths)) \
             #             or ((type(search_paths) is list or type(search_paths) is tuple)
             #                 and len(search_paths) == 1 and os.path.isfile(search_paths[0]))) \
@@ -623,7 +625,8 @@ class ToolkitOps:
                 search_file_paths = [search_file_paths]
 
             # if there is a search corpus cache directory set in the config
-            default_search_cache_dir = self.stAI.get_app_setting(setting_name='default_search_cache_dir', default_if_none='')
+            default_search_cache_dir = self.stAI.get_app_setting(setting_name='default_search_cache_dir',
+                                                                 default_if_none='')
             if default_search_cache_dir != '' and os.path.isdir(default_search_cache_dir):
                 self.search_corpus_cache_dir = default_search_cache_dir
 
@@ -683,16 +686,14 @@ class ToolkitOps:
 
                                     # save it to the transcription file
                                     if self.toolkit_ops_obj.save_transcription_file(
-                                        transcription_file_path=s_file_path,
-                                        transcription_data=transcription_file_data,
-                                        backup='backup'):
-
-                                            logger.debug(
-                                                'Saved language to transcription file: {}'.format(s_file_path))
+                                            transcription_file_path=s_file_path,
+                                            transcription_data=transcription_file_data,
+                                            backup='backup'):
+                                        logger.debug(
+                                            'Saved language to transcription file: {}'.format(s_file_path))
 
                             else:
                                 transcription_language = transcription_file_data['language']
-
 
                             # try to see if we know which model to use for this language
                             # (if not the TextAnalysis will try to get the model itself)
@@ -773,20 +774,21 @@ class ToolkitOps:
                                     timecode = None \
                                         if not timecode_data \
                                         else self.toolkit_ops_obj.convert_sec_to_transcription_timecode(
-                                            segment['start'], transcription_file_data
+                                        segment['start'], transcription_file_data
                                     )
 
                                     search_corpus_assoc[general_segment_index] = {
                                         'transcription_file_path': transcription_file_path,
                                         'name': transcription_file_data['name']
-                                            if 'name' in transcription_file_data else os.path.basename(transcription_file_path),
+                                        if 'name' in transcription_file_data else os.path.basename(
+                                            transcription_file_path),
                                         'segment': segment['text'],
                                         'segment_index': segment_index,
                                         'start': segment['start'],
                                         'timecode': timecode,
                                         'all_lines': [int(segment_index) + 1]
-                                            if 'idx' not in segment
-                                            else [sgm+1 for sgm in segment['idx']],
+                                        if 'idx' not in segment
+                                        else [sgm + 1 for sgm in segment['idx']],
                                         'type': 'transcription'
                                     }
 
@@ -825,14 +827,14 @@ class ToolkitOps:
 
                                 # take each transcript group
                                 for transcript_group in transcription_file_data['transcript_groups']:
-
                                     general_segment_index = len(search_corpus_phrases)
 
                                     # and add the transcript group name and group notes to the search corpus association
                                     search_corpus_assoc[general_segment_index] = {
                                         'file_path': transcription_file_path,
                                         'transcription_name': transcription_file_data['name']
-                                            if 'name' in transcription_file_data else os.path.basename(transcription_file_path),
+                                        if 'name' in transcription_file_data else os.path.basename(
+                                            transcription_file_path),
                                         'type': 'transcript_group',
                                         'group_name': transcript_group
                                     }
@@ -842,7 +844,7 @@ class ToolkitOps:
                                         transcription_file_data['transcript_groups'][transcript_group]['name']
                                         + ': '
                                         + transcription_file_data['transcript_groups'][transcript_group]['notes']
-                                                                 )
+                                    )
 
 
                     # if it's a TEXT FILE
@@ -1059,7 +1061,6 @@ class ToolkitOps:
                 # assign the new model name
                 self.model_name = model_name
 
-
             # load the sentence transformer model if it hasn't been loaded yet
             if self.search_model is None:
                 logger.info(
@@ -1223,7 +1224,6 @@ class ToolkitOps:
 
             # if the search corpus is empty, try to prepare it
             if self.search_file_paths and not self.search_corpus:
-
                 # prepare the search corpus
                 self.prepare_search_corpus()
 
@@ -1263,8 +1263,7 @@ class ToolkitOps:
             # if we haven't loaded the search corpus embeddings in the cache,
             # check if we have them in a file
             if (search_id is None or search_id not in self.search_embeddings) \
-                and os.path.exists(corpus_cache_file_path):
-
+                    and os.path.exists(corpus_cache_file_path):
                 # load the corpus embeddings from the file
                 with open(corpus_cache_file_path, 'rb') as f:
                     corpus_embeddings = pickle.load(f)
@@ -1354,7 +1353,7 @@ class ToolkitOps:
                             search_corpus_assoc=search_corpus_assoc,
                             idx=idx,
                             score=score
-                       )
+                        )
 
             self.search_results = search_results
             self.top_k = top_k
@@ -1767,10 +1766,811 @@ class ToolkitOps:
                          .format(list(transcript_group.keys()), transcription_file_path))
             return saved
 
+    class ProcessingQueue:
+        '''
+        This class handles the processing queue:
+        '''
+
+        def __init__(self, toolkit_ops_obj=None, toolkit_UI_obj=None):
+            self.toolkit_ops_obj = toolkit_ops_obj
+            self.toolkit_UI_obj = toolkit_UI_obj
+
+            # this holds the queue ids of the items that need to be processed next
+            # once the item is sent for processing, it is removed from this list and only remains in the queue history
+            # since it's an ordered list, the first item in the list is the next item to be processed
+            self.queue = []
+
+            # this holds the queue history
+            # - when an object is added to the queue it must also have a corresponding entry in the queue history
+            # - we are only tracking the status of the object in the queue history
+            # - when an object sent for processing it will remain in the history so that we can track its status
+            self.queue_history = []
+
+            # this keeps track of the threads that are processing the queue by device
+            # the key is the device name and the value is a dict with the queue id and the thread object
+            # for eg. {'cuda:0': {'queue_id': queue_id, 'thread': <Thread(Thread-1, started 1234567890123)>}, ...}
+            self.queue_threads = {}
+
+            # how much to wait until checking if there are items in the queue that can be processed
+            # disabled for now - if we activate this we need to make sure that the device is not being used by another thread
+            # by checking the queue_threads dict
+            # self.queue_check_interval = 30 # seconds
+
+        def generate_queue_id(self, name: str=None) -> str:
+            """
+            This function generates a queue id for a task
+            """
+
+            # keep generating a queue id until it's not similar to one that already exists in the queue history
+            while True:
+
+                # use the name if one was provided
+                # and a timestamp to make it as unique as possible
+                queue_id = ((name + '-') if name else '') + str(int(time.time()))
+
+                # if the queue id doesn't return an item
+                if not self.get_item(queue_id=queue_id):
+
+                    # add it to the queue history
+                    self.queue_history.append({'queue_id': queue_id, 'status': 'pending'})
+
+                    logger.debug('Added queue id {} to queue history'.format(queue_id))
+
+                    return queue_id
+
+        def add_to_queue(self,
+                         tasks: list or str = None,
+                         queue_id: str = None,
+                         source_file_path=None,
+                         task_data=None,
+                         device=None,
+                         required_device_type=None,
+                         **kwargs
+                         ) -> str or bool:
+            """
+            This function adds a task to the processing queue
+            It either needs a source_file_path (audio, video etc.)
+            or directly the task_data (transcription, search corpus etc.)
+
+            Once it adds the task, it also pings the queue manager to start processing the queue
+            (if it is not already running)
+
+            :param tasks: a list of tasks to be added to the queue, or a single task
+                (don't confuse with the task queue, which will be determined by the task dispatcher based on this list)
+            :param queue_id: the queue id of the task - if None, one will be generated
+            :param source_file_path: the path(s) to the source file(s) - if empty, we need to have the task_data
+            :param task_data: the task data (transcription, search corpus etc.) - if empty, we need a source_file_path
+            :param device: the device to use for processing the task, if empty,
+                            we will use the next available device suitable for the task (device_required must be passed)
+            :param required_device_type: the device type required for processing the task (cpu, cuda, etc.)
+            :param kwargs: any other key-value pairs to be added to the queue item
+            :return: the queue id of the task or False if something went wrong
+
+            """
+
+            # if the queue id is not passed, generate one
+            if not queue_id:
+                queue_id = self.generate_queue_id(name=kwargs.get('name', None))
+
+            # check if we have task queue (a list of functions to be executed) via the task dispatcher
+            task_queue = self.task_dispatcher(tasks=tasks)
+
+            # if we don't have a task queue, abort
+            if not task_queue:
+                logger.error('Empty task queue - could not add item {} to queue'.format(queue_id))
+                return False
+
+            # if we have a task queue, add it to the kwargs
+            kwargs['task_queue'] = task_queue
+
+            # also add the tasks for future reference
+            kwargs['tasks'] = tasks
+
+            # if we don't have source files nor task data, abort
+            if not source_file_path and not task_data:
+                logger.error('Invalid task (no source files or data) - could not add item {} to queue')
+                return False
+
+            # add the queue_id to the kwargs
+            kwargs['queue_id'] = queue_id
+
+            # if we have a source file path, add it to the kwargs
+            if source_file_path:
+                kwargs['source_file_path'] = source_file_path
+
+            # if we have task data, add it to the kwargs
+            if task_data:
+                kwargs['task_data'] = task_data
+
+            # if we have a device, add it to the kwargs
+            if device is None:
+                logger.error('Device must be specified when adding an item to the queue')
+                return False
+
+            # make sure we have a string as a device, and not a torch.device object
+            if isinstance(device, torch.device):
+                device = str(device.type)
+
+            kwargs['device'] = device
+
+            # if we have a required device type, add it to the kwargs
+            if required_device_type:
+                kwargs['required_device_type'] = required_device_type
+
+            # add the 'queued' status to the kwargs
+            kwargs['status'] = 'queued'
+
+            # check if the queue id already exists in the queue history
+            item = self.get_item(queue_id=queue_id)
+            if not item:
+
+                # add the kwargs to the queue history
+                self.queue_history.append(kwargs)
+
+                logger.debug('Added item {} to queue history'.format(queue_id))
+
+            else:
+                # just update the item, but make sure that the queue id is not stripped
+                kwargs['queue_id'] = queue_id
+                self.update_queue_item(**kwargs)
+
+            # add the queue id to the queue
+            self.queue.append(queue_id)
+
+            logger.debug('Added item {} to queue'.format(queue_id))
+
+            # ping the queue to start processing
+            self.ping_queue()
+
+            # save the queue to a file
+            self.save_queue_to_file()
+
+            # throttle for a bit to avoid queue id queue id collisions,
+            # if this is a batch
+            time.sleep(0.01)
+
+            # return the queue id if we reached this point
+            return queue_id
+
+        def update_queue_item(self, queue_id, **kwargs):
+            """
+            This function updates a queue item in the queue history
+
+            :param queue_id: the queue id of the queue item to be updated
+            :param kwargs: the key-value pairs to be updated
+
+            :return: the updated queue item or False if something went wrong
+            """
+
+            # get the full item and make sure you don't strip the queue id
+            item = self.get_item(queue_id)
+
+            if not item:
+                logger.error('Unable to update queue item - queue id {} not found in queue history'.format(queue_id))
+                return False
+
+            # update the item
+            new_item = item
+
+            # keep all the existing keys and values, but update the ones that are passed in kwargs
+            for key, value in kwargs.items():
+                new_item[key] = value
+
+            # make sure to always pass the queue id too
+            new_item['queue_id'] = queue_id
+
+            # find the item index in the queue history according to its queue id
+            for index, item in enumerate(self.queue_history):
+                if 'queue_id' in item and item['queue_id'] == queue_id:
+                    item_index = index
+
+                    # replace the item in the queue history
+                    self.queue_history[item_index] = new_item
+
+                    # whenever the status is updated, make sure you update the window too
+                    # but only if the UI object exists
+                    # todo: this needs to be moved to the UI object!
+                    if self.toolkit_ops_obj.is_UI_obj_available():
+                        self.toolkit_ops_obj.toolkit_UI_obj.update_queue_window()
+
+                    # save the queue to a file
+                    self.save_queue_to_file()
+
+                    # and return the updated item
+                    return new_item
+
+            # let's hope this doesn't happen...
+            return False
+
+        def reorder_queue(self, new_queue_order) -> bool:
+            """
+            This function takes the new queue order and re-orders the queue and the queue history accordingly,
+            but does not add items that are not in the queue
+
+            :param new_queue_order: the new queue order
+            :return:
+            """
+
+            # return False if the new queue order is not a list
+            if not isinstance(new_queue_order, list):
+                logger.error('Unable to reorder queue - new queue order is not a list')
+                return False
+
+            # first, reorder the QUEUE (then the queue history)
+
+            # start by removing all the items that are not in the queue
+            new_queue_order = [item for item in new_queue_order if item in self.queue]
+
+            # now check that the new queue is the same length as the old queue
+            if len(new_queue_order) != len(self.queue):
+                logger.error('Unable to reorder queue - new queue order is not the same length as the queue')
+                return False
+
+            # re-order the queue
+            self.queue = new_queue_order
+
+            # now re-order the QUEUE HISTORY
+
+            # organize all the items that have the status 'processing', 'done', or 'failed' in a list
+            # these items will stay at the beginning of the queue history
+            # with their original order since they're finished
+            processed_items = [item for item in self.queue_history
+                               if item['status'] in ['processing', 'done', 'failed', 'canceled', 'canceling']]
+
+            # remove any processed items from the new_queue_order list by the 'queue_id' key in processed_items
+            new_queue_order = [item for item in new_queue_order if item['queue_id'] not in processed_items]
+
+            # now create a list of dictionaries with the remaining items in the new_queue_order
+            # - keep their entire dictionary structure from the queue history
+            # - but use the order in the new_queue_order list
+
+            # start the remaining items list with the processed items
+            queue_history = processed_items
+            for item in new_queue_order:
+
+                # get the item from the queue history
+                queue_item = self.get_item(queue_id=item['queue_id'])
+
+                # if the item is not in the queue history, skip it
+                if queue_item is None:
+                    continue
+
+                # add the item to the remaining items list
+                queue_history.append(queue_item)
+
+            # now replace the queue history with the remaining items list
+            self.queue_history = queue_history
+
+            return True
+
+        def cancel_item(self, queue_id: str):
+            '''
+            This function removes a task from the queue of items to be processed
+
+            And updates the status in the queue history to 'canceled'
+            '''
+
+            if queue_id is None:
+                logger.error('Unable to cancel item - queue id is None')
+                return False
+
+            # remove the item from the queue
+            # (to avoid processing it if it's not already being processed)
+            self.queue.remove(queue_id)
+
+            # try to get the item from the queue history
+            item = self.get_item(queue_id)
+
+            if not item:
+                logger.warning('Unable to cancel item - queue id {} not found in queue history'.format(queue_id))
+                return None
+
+            # if the current status is 'done' or 'failed',
+            # it doesn't make sense to cancel it
+            if item['status'] in ['done', 'failed']:
+                logger.debug('Item {} is already done or failed, cannot cancel.'
+                             .format(queue_id))
+
+            # check if the item is currently processing in the thread pool
+            # if it is, set the status to 'canceling', since we can't remove it from the thread pool
+
+            # go through all the threads in queue_threads
+            for thread in self.queue_threads:
+
+                if isinstance(thread, dict) \
+                        and 'queue_id' in thread \
+                        and thread['queue_id'] == queue_id:
+
+                    # set the status to 'canceling' in the queue history
+                    # and hope that someone will be watching the status and cancel the item!
+                    return self.update_queue_item(queue_id=queue_id, status='canceled')
+
+            # if we reached this point,
+            # the item is not currently being processed,
+            # so we can remove it from the queue history
+            return self.update_queue_item(queue_id=queue_id, status='canceled')
+
+        def cancel_if_canceled(self, queue_id):
+            """
+            Checks if the a queue item has been canceled and cancels it if it has
+            This usually happens if a process sends a 'canceled' status
+            so that item is canceled when the current task is finished
+
+            :param queue_id: the queue id of the item to check
+            :return True if the item was canceled, False otherwise
+            """
+
+            queue_item = self.get_item(queue_id=queue_id)
+
+            # if the status is 'canceling' or 'canceled', cancel the item
+            if queue_item \
+                    and isinstance(queue_item, dict) \
+                    and 'status' in queue_item \
+                    and queue_item['status'] in ['canceling', 'canceled']:
+
+                # cancel the item
+                self.cancel_item(queue_id=queue_id)
+
+                # the item was canceled
+                return True
+
+            # the item was not canceled
+            return False
+
+        def set_to_canceled(self, queue_id):
+            """
+            This function sets the status of a queue item to 'canceling' in the queue history
+            This is useful if we want the queue item to finish processing the current task before it is canceled,
+            to avoid killing a process in the middle of a task
+
+            Once it finishes it current task, the cancel_if_canceled function should wait before the next task
+
+            :param queue_id: the queue id of the item to set to 'canceled'
+            :return: True if the item was set to 'canceled', False otherwise
+            """
+
+            # get the item from the queue history
+            item = self.get_item(queue_id=queue_id)
+
+            if not item or not isinstance(item, dict):
+                logger.warning('Unable to set item to canceled - queue id {} not found in queue history'.format(queue_id))
+                return False
+
+            # if the current status is 'done' or 'failed',
+            # it doesn't make sense to cancel it
+            if item['status'] in ['done', 'failed']:
+                logger.debug('Item {} is already done or failed, cannot cancel.'
+                             .format(queue_id))
+
+            # if the item is not currently being processed by one of the threads,
+            # we can simply set the status to 'canceled'
+            if not self.is_item_in_thread(queue_id=queue_id):
+                return self.update_queue_item(queue_id=queue_id, status='canceled')
+
+            return self.update_queue_item(queue_id=queue_id, status='canceling', progress='')
+
+        def get_item(self, queue_id: str) -> dict or None:
+            """
+            This function checks if a queue id is in the queue history and returns the item if it is
+            :param queue_id: the queue id to check
+            :param strip_id: if True, the queue id will be removed from the item before it is returned
+            :return: the item if it is in the queue history, None otherwise
+            """
+
+            found_item = None
+
+            if queue_id is None:
+                return None
+
+            # the queue history is a list of dictionaries, so we need to iterate through it to find the item
+            for item in self.queue_history:
+
+                # if we found the item by its queue id, use it and break the loop
+                if 'queue_id' in item and item['queue_id'] == queue_id:
+                    found_item = item
+                    break
+
+            return found_item
+
+        def get_status(self, queue_id: str) -> str or None:
+            """
+            This function checks if a queue id is in the queue history and returns the status if it is
+            :param queue_id: the queue id to check
+            :return: the status if it is in the queue history, None otherwise
+            """
+
+            item = self.get_item(queue_id=queue_id)
+
+            if item and isinstance(item, dict) and 'status' in item:
+                return item['status']
+
+            return None
+
+        def get_all_queue_items(self, status: str or list or None = None, not_status: str or list or None = None) -> list:
+            """
+            This function returns all the items in the queue history in an dict,
+            where the queue id is the key and the value is the item
+            """
+
+            # if the status is a string, convert it to a list
+            if isinstance(status, str):
+                status = [status]
+
+            # if the not_status is a string, convert it to a list
+            if isinstance(not_status, str):
+                not_status = [not_status]
+
+            all_queue_items = {}
+
+            for item in self.queue_history:
+
+                # if the status is not None check if the item has the status we are looking for
+                # and if not, skip it
+                if status is not None \
+                        and 'status' in item and item['status'] not in status:
+                    continue
+
+                # if the not_status is not None check if the item has the status we don't want
+                # and if it does, skip it
+                if not_status is not None \
+                    and 'status' in item and item['status'] in not_status:
+                    continue
+
+                all_queue_items[item['queue_id']] = item
+
+            return all_queue_items
+
+        def task_dispatcher(self, tasks: list or str) -> list or bool:
+            """
+            This function dispatches the tasks to the appropriate function(s)
+            This function should be called by the queue manager before a task is added to the queue.
+
+            Each task had a 'task_queue' key that holds a list of functions that need to be executed
+            in order to complete the task. The functions are executed in the order they are in the list.
+
+            We will store possible tasks in a dictionary, where the key is the task name and the value is a list of
+            functions that need to be executed in order to complete the task.
+
+            The dictionary will be stored in the toolkit_ops_obj and will be called 'queue_tasks'
+
+            :param tasks: the list of tasks to dispatch, or a single task as a string
+            :return: The list of queue tasks that need to be executed, or False if there was an error
+
+            """
+
+            task_queue = []
+
+            # take each task in the list of tasks
+            # and dispatch the appropriate function(s)
+            if tasks is None:
+                logger.warning('Unable to dispatch tasks - no tasks were specified')
+                return False
+
+            # if the tasks is a string, convert it to a list of one item
+            if isinstance(tasks, str):
+                tasks = [tasks]
+
+            # iterate through the list of tasks
+            for task in tasks:
+
+                # if the task is not in the queue tasks, return False
+                if task not in self.toolkit_ops_obj.queue_tasks.keys():
+                    logger.warning('Unable to dispatch task {} - task not in queue tasks'.format(task))
+                    continue
+
+                # get the task queue from the queue tasks dictionary in the toolkit ops object
+                task_queue.extend(self.toolkit_ops_obj.queue_tasks[task])
+
+                # if the task queue is empty, return False
+                if len(task_queue) == 0:
+                    logger.error('Unable to dispatch task {} - task queue is empty'.format(task))
+                    continue
+
+            return task_queue
+
+        def execute_item_tasks(self, queue_id, task_queue: list, **kwargs):
+            """
+            This function executes the functions in the task queue for a given queue item
+            """
+
+            if task_queue is None:
+                logger.error('Unable to execute tasks for item {} - no tasks were specified'.format(queue_id))
+                return False
+
+            # keep track of the device we're using
+            device = kwargs.get('device', None)
+
+            # take each task in the list of tasks
+            for task in task_queue:
+
+                # get the item details from the queue history
+                item = self.get_item(queue_id=queue_id)
+
+                # stop if the item cannot be found anymore - that would be strange
+                if item is None:
+                    logger.error('Unable to execute task {} for item {} - item not found in queue history'
+                                 .format(task, queue_id))
+                    return False
+
+                # stop if the item's status is 'canceling'
+                # - this means that the user has requested to cancel the item
+                if item['status'] == 'canceling':
+                    self.update_status(queue_id=queue_id, status='canceled')
+                    return False
+
+                # stop also if something set the status to 'failed'
+                if item['status'] == 'failed':
+                    return False
+
+                try:
+
+                    # update the 'last_task' key in the queue item
+                    # so we know which task is being executed but also which task failed if the execution fails
+                    self.update_queue_item(queue_id=queue_id, last_task=task)
+
+                    # update the status of the queue item to 'processing'
+                    # - this should be updated in more detail from within the task itself (if needed)
+                    self.update_status(queue_id=queue_id, status='processing')
+
+                    # get the item one last time to pass it to the task
+                    item = self.get_item(queue_id=queue_id)
+
+                    # only merge if the kwargs is a dictionary
+                    # (whisper transcribe returns bool or a string right now - we need to fix that)
+                    kwargs = {**kwargs, **item} if isinstance(kwargs, dict) else item
+
+                    # execute the task, but merge the kwargs with the item
+                    # then re-update the kwargs with the result of the task
+                    kwargs = task(**{**kwargs, **item})
+
+                    logger.debug('Task {} finished execution for queue item {}'.format(task, queue_id))
+
+                except Exception as e:
+                    import traceback
+
+                    # add the error to the logger
+                    logger.error(traceback.format_exc())
+
+                    logger.error('Unable to execute task {} for queue item {}'.format(task, queue_id))
+
+                    # update the status of the queue item to 'failed'
+                    self.update_status(queue_id=queue_id, status='failed')
+
+                    # stop the execution
+                    return False
+
+            # remove the thread from the queue threads to free up the device
+            self.remove_thread_from_queue_threads(device=device)
+
+            # then ping the queue again
+            self.ping_queue()
+
+            # if we get here, the execution was successful
+            return True
+
+        def update_status(self, queue_id, status):
+            """
+            This function updates the status of a queue item
+            """
+
+            item = self.get_item(queue_id=queue_id)
+            if not item:
+                logger.error('Unable to update status for queue item {} - item not found'.format(queue_id))
+                return False
+
+            item['status'] = status
+
+            self.update_queue_item(**item)
+
+        def ping_queue(self):
+            """
+            Checks if there are items left in the queue and executes the first one if there are
+            """
+
+            # if there are no items in the queue, return False
+            if len(self.queue) == 0:
+
+                logger.debug('No items left in the queue. Ping the queue again to restart processing.')
+
+                #logger.info('No items in the queue. Checking again in {}'
+                #             .format(str(self.queue_check_interval)
+                #                     + ' seconds' if self.queue_check_interval == 1 else 'second'))
+                #
+                # start a timer to check the queue again according to the queue check interval
+                #threadingTimer(self.queue_check_interval, self.ping_queue).start()
+
+                return False
+
+            # get the first item in the queue
+            queue_id = self.queue[0]
+
+            # get the item details from the queue history
+            kwargs = self.get_item(queue_id=queue_id)
+
+            # check if the device is available
+            if not self.is_device_available(device=kwargs['device']):
+                logger.debug('Device busy. Try again later.')
+                return False
+
+            # create a thread to execute the tasks for this item
+            thread = Thread(target=self.execute_item_tasks, kwargs=kwargs)
+
+            # add the thread to the threads dictionary so that other processes know that the device is busy
+            self.add_thread_to_queue_threads(device=kwargs['device'], queue_id=kwargs['queue_id'], thread=thread)
+
+            # start the thread
+            thread.start()
+
+            # remove the item from the queue
+            self.queue.pop(0)
+
+            return True
+
+        def add_thread_to_queue_threads(self, device, queue_id, thread):
+            """
+            This function adds a thread to the queue_threads dict
+            (it will replace anything related to that device without checking if the old thread is still running!)
+            """
+
+            # if the device is not in the queue_threads dict, add it
+            self.queue_threads[device] = {'queue_id': queue_id, 'thread': thread}
+
+            return self.queue_threads
+
+        def remove_thread_from_queue_threads(self, device):
+            """
+            This function removes a thread from the queue_threads dict
+            """
+
+            if device is None:
+                logger.warning('Unable to remove thread from queue threads - no device specified')
+
+            # if the device is in the queue_threads dict, remove it
+            if device in self.queue_threads:
+                self.queue_threads.pop(device)
+
+            return self.queue_threads
+
+        def is_device_available(self, device):
+            """
+            This function checks if a device is busy processing something by checking the queue_threads dict.
+            There's no way, of course, to know if the device is busy with some other process,
+            but this helps keep the queue running smoothly internally.
+            """
+
+            # if the device is in the queue_threads dict, it's busy
+            if device in self.queue_threads:
+
+                # check if the thread is still running
+                if self.queue_threads[device]['thread'].is_alive():
+
+                    # if it's still running, it's busy
+                    return False
+
+                # if it's not running, it's not busy so remove it from the queue_threads dict
+                else:
+                    self.remove_thread_from_queue_threads(device)
+
+            return True
+
+        def is_item_in_thread(self, queue_id):
+            """
+            This function checks if a queue item is in the queue_threads dict
+            """
+
+            for device in self.queue_threads:
+                if queue_id == self.queue_threads[device]['queue_id']:
+                    return True
+
+            return False
+
+        def save_queue_to_file(self):
+            """
+            This function saves the queue history to the queue file
+            """
+
+            # get all the queue items
+            queue_items = self.queue_history
+
+            # if we don't have a list of queue items, create an empty one
+            if not isinstance(queue_items, list):
+                queue_items = []
+
+            # we need to clean up the task_queue list before saving it to file
+            # because we're unable to serialize the task_queue items with the thread objects
+            # but, no worries, when we load the queue from file,
+            # the add_to_queue function will dispatch the tasks again as needed
+            save_queue_items = []
+            for item in queue_items:
+                save_item = {k: v for k, v in item.items() if k not in ('task_queue', 'last_task')}
+                save_queue_items.append(save_item)
+
+            # the queue file
+            queue_file = self.toolkit_ops_obj.QUEUE_FILE_PATH
+
+            # save the queue items to the queue json file
+            try:
+                with open(queue_file, 'w') as f:
+                    json.dump(save_queue_items, f, indent=4)
+                    return True
+
+            except Exception as e:
+                logger.error('Could not save queue to file: {}'.format(e))
+                return False
+
+        def load_queue_from_file(self):
+            """
+            Reads the queue from the queue file
+            """
+
+            # the empty queue history list
+            queue_history = []
+
+            # the queue file
+            queue_file = self.toolkit_ops_obj.QUEUE_FILE_PATH
+
+            try:
+                if os.path.exists(queue_file):
+                    with open(queue_file, 'r') as f:
+                        queue_history = json.load(f)
+
+            except Exception as e:
+                logger.error('Could not load queue from file: {}'.format(e))
+
+            return queue_history
+
+        def resume_queue_from_file(self):
+            """
+            This loads the queue file and adds it to the queue and queue history
+            """
+
+            queue_history = self.load_queue_from_file()
+
+            # if we have a list
+            if isinstance(queue_history, list) and len(queue_history) > 0:
+
+                # first, rebuild the entire queue history from the queue file
+                # but only if we're supposed to see the finished items in the queue too
+                if not self.toolkit_ops_obj.stAI.get_app_setting('queue_ignore_finished', True):
+                    self.queue_history = queue_history
+
+                # take each item in the queue history and add it to the queue
+                for item in queue_history:
+
+                    # reset any progress
+                    item['progress'] = ''
+
+                    # if it has no status, just queue it
+                    if 'status' not in item:
+                        item['status'] = 'queued'
+
+                        # add to the queue
+                        self.add_to_queue(**item)
+
+                        continue
+
+                    # if the status is 'canceling', cancel it
+                    if item['status'] == 'canceling':
+                        item['status'] = 'canceled'
+                        continue
+
+                    # if the status is not ['done', 'failed', 'canceled'] add it to the queue
+                    if item['status'] not in ['done', 'failed', 'canceled']:
+                        self.add_to_queue(**item)
+
+                # once we finished re-building the queue, we need to ping it
+                self.ping_queue()
+
+                # if we processed the queue, we've resumed it
+                return True
+
+            # if we reached this point, we don't have a queue to resume
+            return False
+
     def get_torch_available_devices(self) -> list or None:
 
         # prepare a list of available devices
-        available_devices = ['auto', 'cpu']
+        available_devices = ['cpu']
 
         # and add cuda to the available devices, if it is available
         if torch.cuda.is_available():
@@ -1780,7 +2580,7 @@ class ToolkitOps:
 
     # TRANSCRIPTION MANAGEMENT/QUEUE/LOG METHODS
 
-    def prepare_transcription_file(self, toolkit_UI_obj=None, task=None, unique_id=None,
+    def prepare_transcription_file(self, toolkit_UI_obj=None, transcription_task=None, queue_id=None,
                                    retranscribe=False, time_intervals=None, select_files=False, **kwargs):
         '''
         This asks the user where to save the transcribed files,
@@ -1788,7 +2588,7 @@ class ToolkitOps:
          and then passes the file to the transcription config
 
         :param toolkit_UI_obj:
-        :param task:
+        :param transcription_task:
         :param audio_file:
         :return: bool
         '''
@@ -1850,14 +2650,14 @@ class ToolkitOps:
                 # get the transcription name from the transcription file
                 name = transcription_data['name'] if 'name' in transcription_data else ''
 
-                # a unique id is also useful to keep track of stuff
-                unique_id = self._generate_transcription_unique_id(name=name)
+                # a unique id is also useful to keep track of stuff in the queue
+                queue_id = self.processing_queue.generate_queue_id(name=name)
 
                 # now open up the transcription settings window
                 self.start_transcription_config(audio_file_path=audio_file_path,
                                                 name=name,
-                                                task=task,
-                                                unique_id=unique_id,
+                                                transcription_task=transcription_task,
+                                                queue_id=queue_id,
                                                 transcription_file_path=transcription_file_path,
                                                 time_intervals=time_intervals)
 
@@ -1871,7 +2671,8 @@ class ToolkitOps:
             toolkit_UI_obj.no_resolve_ok = False
 
             # did we ever save a target dir for this project?
-            last_target_dir = self.stAI.get_project_setting(project_name=NLE.current_project, setting_key='last_target_dir')
+            last_target_dir = self.stAI.get_project_setting(project_name=NLE.current_project,
+                                                            setting_key='last_target_dir')
 
             # ask the user where to save the files
             while target_dir == '' or not os.path.exists(os.path.join(target_dir)):
@@ -1901,12 +2702,12 @@ class ToolkitOps:
                 kwargs['project_name'] = resolve_data['currentProject']
 
             # generate a unique id to keep track of this file in the queue and transcription log
-            if unique_id is None:
-                unique_id = self._generate_transcription_unique_id(name=currentTimelineName)
+            if queue_id is None:
+                queue_id = self.processing_queue.generate_queue_id(name=currentTimelineName)
 
+            # todo check why this doesn't work - maybe because resolve polling is hanging the main thread
             # update the transcription log
-            # @todo this doesn't work - maybe because resolve polling is hanging the main thread
-            self.add_to_transcription_log(unique_id=unique_id, name=currentTimelineName, status='rendering')
+            self.processing_queue.update_queue_item(queue_id=queue_id, status='rendering')
 
             # use transcription_WAV render preset if it exists
             # transcription_WAV is an audio only custom render preset that renders Linear PCM codec in a Wave format
@@ -1924,7 +2725,7 @@ class ToolkitOps:
             rendered_files = self.resolve_api.render_timeline(target_dir, render_preset, True, False, False, True)
 
             if not rendered_files:
-                self.update_transcription_log(unique_id=unique_id, **{'status': 'failed'})
+                self.processing_queue.update_queue_item(queue_id=queue_id, status='failed')
                 logger.error("Timeline render failed.")
                 return False
 
@@ -1936,7 +2737,8 @@ class ToolkitOps:
             for rendered_file in rendered_files:
                 self.start_transcription_config(audio_file_path=rendered_file,
                                                 name=currentTimelineName,
-                                                task=task, unique_id=unique_id, **kwargs)
+                                                transcription_task=transcription_task,
+                                                queue_id=queue_id, **kwargs)
 
         # if resolve is not available or select_files is True, ask the user to select an audio file
         else:
@@ -1974,12 +2776,12 @@ class ToolkitOps:
                     file_name = os.path.basename(target_file)
 
                     # a unique id is also useful to keep track
-                    unique_id = self._generate_transcription_unique_id(name=file_name)
+                    queue_id = self.processing_queue.generate_queue_id(name=file_name)
 
                     # now open up the transcription settings window
                     self.start_transcription_config(audio_file_path=target_file,
                                                     name=file_name,
-                                                    task=task, unique_id=unique_id, **kwargs)
+                                                    transcription_task=transcription_task, queue_id=queue_id, **kwargs)
 
                 return True
 
@@ -1987,8 +2789,8 @@ class ToolkitOps:
             else:
                 return False
 
-    def start_transcription_config(self, audio_file_path=None, name=None, task=None,
-                                   unique_id=None, transcription_file_path=False,
+    def start_transcription_config(self, audio_file_path=None, name=None, transcription_task=None,
+                                   queue_id=None, transcription_file_path=False,
                                    time_intervals=None, excluded_time_intervals=None, **kwargs):
         '''
         Opens up a window to allow the user to configure and start the transcription process for each file
@@ -2011,500 +2813,138 @@ class ToolkitOps:
         # open up the transcription settings window via Toolkit_UI
         return self.toolkit_UI_obj.open_transcription_settings_window(title=title,
                                                                       name=name,
-                                                                      audio_file_path=audio_file_path, task=task,
-                                                                      unique_id=unique_id,
+                                                                      audio_file_path=audio_file_path,
+                                                                      transcription_task=transcription_task,
+                                                                      queue_id=queue_id,
                                                                       transcription_file_path=transcription_file_path,
                                                                       time_intervals=time_intervals,
                                                                       excluded_time_intervals=excluded_time_intervals,
                                                                       **kwargs
                                                                       )
 
-    def add_to_transcription_log(self, unique_id=None, **attribute):
-        '''
-        This adds items to the transcription log and opens the transcription log window
-        :param toolkit_UI_obj:
-        :param unique_id:
-        :param attribute:
-        :return:
-        '''
-        # if a unique id was passed, add the file to the log
-        if unique_id:
+    def add_transcription_to_queue(self, transcription_task=None, audio_file_path: str=None, queue_id: str=None, **kwargs):
+        """
+        This adds one (or multiple) transcription item(s) to the transcription queue
+        """
 
-            # then simply update the item by passing everything to the update function
-            self.update_transcription_log(unique_id, **attribute)
+        # if no audio file path was passed, return False
+        if not audio_file_path:
+            logger.warning('No audio file path was passed for transcription. Aborting.')
 
-            # finally open or focus the transcription log window
-            if self.is_UI_obj_available():
-                self.toolkit_UI_obj.open_transcription_log_window()
+            # update the queue item status
+            if queue_id is not None:
+                self.processing_queue.update_queue_item(queue_id=queue_id, status='failed')
 
-            return True
-
-        else:
-            logger.warning('Missing unique id when trying to add item to transcription log.')
             return False
 
-    def in_transcription_log(self, unique_id=None, return_status=False):
-        '''
-        Checks if a unique id is in the transcription log
-        :param unique_id:
-        :param return_status: Whether to return the status of the item or just True/False
-        :return:
-        '''
+        # as name, use either the passed name or the file name if nothing was passed
+        name = kwargs.get('name', os.path.basename(audio_file_path))
 
-        # if a unique id was passed, check if it's in the log
-        if unique_id:
+        # get the right device via torch_device_type_select
+        kwargs['device'] = self.torch_device_type_select(kwargs.get('device', None))
 
-            # if the transcription log is a dict and the unique id is in there
-            if isinstance(self.transcription_log, dict) and unique_id in self.transcription_log:
+        # select the 'transcribe' if neither transcribe or translate was passed
+        if transcription_task is None \
+                or transcription_task not in ['transcribe', 'translate', 'transcribe+translate']:
+            transcription_task = 'transcribe'
 
-                # if the user wants the status, return it
-                if return_status and 'status' in self.transcription_log[unique_id]:
-                    return self.transcription_log[unique_id]['status']
-
-                # otherwise just return True
-                else:
-                    return True
-
-        # if no unique id was passed or the unique id was not found in the log, return False
-        return False
-
-    def transcription_progress(self, unique_id=None, progress=None):
-        '''
-        Updates the progress of a transcription item in the transcription log
-        :param unique_id:
-        :param progress:
-        :return:
-        '''
-
-        # if a progress was passed, update the progress
-        if unique_id and progress:
-            self.update_transcription_log(unique_id=unique_id, **{'progress': progress})
-
-        # if no progress was passed, just return the current progress
-        elif unique_id:
-            if unique_id in self.transcription_log and 'progress' in self.transcription_log[unique_id]:
-                return self.transcription_log[unique_id]['progress']
-            else:
-                self.transcription_log[unique_id]['progress'] = 0
-                return 0
-
-    def update_transcription_log(self, unique_id=None, **attributes):
-        '''
-        Updates items in the transcription log (or adds them if necessary)
-        The items are identified by unique_id and only the passed attributes will be updated
-        :param unique_id:
-        :param options:
-        :return:
-        '''
-        if unique_id:
-
-            # add the item to the transcription log if it's not already in there
-            if unique_id not in self.transcription_log:
-                self.transcription_log[unique_id] = {}
-
-        # the transcription log items will contain things like
-        # name, status, audio_file_path etc.
-        # these attributes are set using the self.transcription_item_attr variable
-
-        # use the passed attribute to populate the transcription log entry
-        if attributes:
-            for attribute in attributes:
-                # but only use said option if it was mentioned in the transcription_item_attr
-                if attribute in self.transcription_item_attr:
-                    # populate the transcription log
-                    self.transcription_log[unique_id][attribute] = attributes[attribute]
-
-        # whenever the transcription log is updated, make sure you update the window too
-        # but only if the UI object exists
-        if self.is_UI_obj_available():
-            self.toolkit_UI_obj.update_transcription_log_window()
-
-    def transcription_queue_attr(self, attributes):
-        '''
-        Cleans up the attributes passed to the transcription queue
-        :param attributes:
-        :return:
-        '''
-
-        # define the permitted attributes
-        permitted_attributes = ['task', 'audio_file_path', 'name', 'language', 'model', 'device', 'unique_id',
-                                'pre_detect_speech', 'word_timestamps',
-                                'max_chars_per_segment', 'max_words_per_segment',
-                                'split_on_punctuation_marks', 'prevent_short_gaps',
-                                'group_questions',
-                                'transcription_file_path', 'time_intervals', 'excluded_time_intervals', 'initial_prompt'
-                                ]
-
-        clean_attributes = {}
-
-        # re-create the attributes dict with only the permitted attributes
-        for attribute in attributes:
-            if attribute in permitted_attributes:
-                clean_attributes[attribute] = attributes[attribute]
-
-        return clean_attributes
-
-    def add_to_transcription_queue(self, task=None, audio_file_path=None,
-                                   name=None, language=None, model=None, device=None,
-                                   unique_id=None, initial_prompt=None,
-                                   time_intervals=None, excluded_time_intervals=None, transcription_file_path=None,
-                                   save_queue=True, **kwargs):
-        '''
-        Adds files to the transcription queue and then pings the queue in case it's sleeping.
-        It also adds the files to the transcription log
-        :param toolkit_UI_obj:
-        :param translate:
-        :param audio_file_path:
-        :param name:
-        :return:
-        '''
-
-        # check if there's a UI object available
-        # if not self.is_UI_obj_available(toolkit_UI_obj):
-        #     return False
-
-        # select the transcribe task automatically if neither transcribe or translate was passed
-        if task is None or task not in ['transcribe', 'translate', 'transcribe+translate']:
-            task = 'transcribe'
-
-        # if it's a regular transcribe or translate task
-        if task in ['transcribe', 'translate']:
+        # only allow 'transcribe' or 'translate'
+        if transcription_task in ['transcribe', 'translate']:
 
             # just do that task
-            tasks = [task]
+            transcription_tasks = [transcription_task]
 
-        # if the user is asking for a transcribe+translate
-        elif task == 'transcribe+translate':
+        # if user asked for 'transcribe+translate'
+        # split this into two items to add them separately to the queuee
+        elif transcription_task == 'transcribe+translate':
             # add both tasks
-            tasks = ['transcribe', 'translate']
+            transcription_tasks = ['transcribe', 'translate']
 
         # we will never get to this, but let's have it
         else:
             return False
 
-        # to count tasks we need an int
-        task_num = 0
-
         # add all the above tasks to the queue
-        for c_task in tasks:
-
-            task_num = task_num + 1
+        for i, c_task in enumerate(transcription_tasks):
 
             # generate a unique id if one hasn't been passed
-            if unique_id is None:
-                next_queue_id = self._generate_transcription_unique_id(name=name)
-            else:
+            if queue_id is None:
+                next_queue_id = self.processing_queue.generate_queue_id(name=name)
 
-                # if a unique id was passed, only use it for the first task
-                next_queue_id = unique_id
+            else:
+                # if a unique id was passed, only use it for the first transcription_task
+                next_queue_id = queue_id
 
                 # then reset it
-                unique_id = None
-
-            # add numbering to names, but starting with the second task
-            if task_num > 1:
-                c_name = name + ' ' + str(task_num)
-            else:
-                c_name = name
-
-            # add to transcription queue if we at least know the path and the name of the timeline/file
-            if next_queue_id and audio_file_path and os.path.exists(audio_file_path) and name:
-
-                file_dict = {'name': c_name, 'audio_file_path': audio_file_path, 'task': c_task,
-                             'language': language, 'model': model, 'device': device,
-                             'initial_prompt': initial_prompt,
-                             'pre_detect_speech': kwargs.get('pre_detect_speech', False),
-                             'word_timestamps': kwargs.get('word_timestamps', False),
-                             'max_chars_per_segment': kwargs.get('max_chars_per_segment', False),
-                             'max_words_per_segment': kwargs.get('max_words_per_segment', False),
-                             'split_on_punctuation_marks': kwargs.get('split_on_punctuation_marks', False),
-                             'prevent_short_gaps': kwargs.get('prevent_short_gaps', False),
-                             'time_intervals': time_intervals,
-                             'excluded_time_intervals': excluded_time_intervals,
-                             'group_questions': kwargs.get('group_questions', False),
-                             'transcription_file_path': transcription_file_path,
-                             'timeline_name': kwargs.get('timeline_name', None),
-                             'project_name': kwargs.get('project_name', None),
-                             'progress': kwargs.get('progress', 0),
-                             'status': 'waiting', 'info': None}
-
-                # add to transcription queue
-                self.transcription_queue[next_queue_id] = file_dict
-
-                # write transcription queue to file
-                if save_queue:
-                    self.save_transcription_queue()
-
-                # add the file to the transcription log too (the add function will check if it's already there)
-                self.add_to_transcription_log(unique_id=next_queue_id, **file_dict)
-
-                # now ping the transcription queue in case it's sleeping
-                self.ping_transcription_queue()
-
-            else:
-                logger.error('Missing parameters to add file to transcription queue')
-                return False
-
-            # throttle for a bit to avoid unique id unique id collisions
-            time.sleep(0.01)
-
-        return True
-
-    def resume_transcription_queue_from_file(self):
-        '''
-        Reads the transcription queue from file and adds all the items to the queue
-        :return:
-        '''
-
-        # if the file exists, read it
-        try:
-            if os.path.exists(self.TRANSCRIPTION_QUEUE_FILE_PATH):
-                with open(self.TRANSCRIPTION_QUEUE_FILE_PATH, 'r') as f:
-                    transcription_queue = json.load(f)
-
-                resume = False
-
-                if transcription_queue and len(transcription_queue) > 0:
-
-                    # add each element to the transcription queue
-                    for unique_id in transcription_queue:
-                        # clean up the attributes
-                        transcription_queue_attributes = self.transcription_queue_attr(transcription_queue[unique_id])
-
-                        # add item to the transcription queue
-                        # but do not save the queue to the file again (since we're reading everything from the file) -
-                        #  - this is also to prevent deleting the items that are currently being transcribed, but are
-                        #    no longer in the app memory queue (self.transcription_queue)
-                        self.add_to_transcription_queue(unique_id=unique_id, save_queue=False,
-                                                        **transcription_queue_attributes)
-
-                        resume = True
-
-                return resume
-
-            else:
-                return False
-
-        except Exception as e:
-            logger.error('Error reading transcription queue from file: {}'.format(e))
-            return False
-
-    def save_transcription_queue(self):
-        '''
-        Saves the transcription queue to a file
-        :return:
-        '''
-
-        transcription_queue = {}
-
-        # first add the current item in the dictionary that will be saved to file
-        # this is to prevent losing track of the item that is currently being transcribed if the app crashes
-        # because normally, it's not in the queue memory anymore (self.transcription_queue), but it's also not done yet
-        if self.transcription_queue_current_item is not None and self.transcription_queue_current_item != {}:
-            transcription_queue = self.transcription_queue_current_item
-
-        # then add the rest of the items in the queue
-        transcription_queue = transcription_queue | self.transcription_queue
-
-        # save the transcription queue as json to a file
-        try:
-            with open(self.TRANSCRIPTION_QUEUE_FILE_PATH, 'w') as f:
-                json.dump(transcription_queue, f, indent=4)
-                return True
-
-        except Exception as e:
-            logger.error('Could not save transcription queue to file: {}'.format(e))
-            return False
-
-    def _generate_transcription_unique_id(self, name=None):
-        if name:
-            return name + '-' + str(int(time.time()))
-        else:
-            return str(int(time.time()))
-
-    def ping_transcription_queue(self):
-        '''
-        Checks if there are files waiting in the transcription queue and starts the transcription queue thread,
-        if there isn't a thread already running
-        :return:
-        '''
-
-        # if there are files in the queue
-        if self.transcription_queue:
-            # logger.info('Files waiting in queue for transcription:\n {} \n'.format(self.transcription_queue))
-
-            # check if there's an active transcription thread
-            if self.transcription_queue_thread is not None:
-                logger.info('Currently transcribing: {}'.format(self.transcription_queue_current_name))
-
-            # if there's no active transcription thread, start it
-            else:
-                # take the first file in the queue:
-                next_queue_id = list(self.transcription_queue.keys())[0]
-
-                # update the status of the item in the transcription log
-                self.update_transcription_log(unique_id=next_queue_id, **{'status': 'preparing'})
-
-                # and now start the transcription thread with it
-                self.transcription_queue_thread = Thread(target=self.transcribe_from_queue,
-                                                         args=(next_queue_id,)
-                                                         )
-                self.transcription_queue_thread.daemon = True
-                self.transcription_queue_thread.start()
-
-                # delete this file from the queue
-                # (but we will write the changed queue to the transcription queue file
-                #  only after the transcription of this file is done - this way, if the process crashes,
-                #  on restart, the app will start the queue with this file)
-                del self.transcription_queue[next_queue_id]
-
-            return True
-
-        # if there are no more files left in the queue, stop until something pings it again
-        else:
-            logger.info('Transcription queue empty. Going to sleep.')
-            return False
-
-    def transcribe_from_queue(self, queue_id):
-
-        # define queue attributes
-        queue_attr = {}
-
-        # get file info from queue
-        queue_attr['name'], \
-        queue_attr['audio_file_path'], \
-        queue_attr['task'], \
-        queue_attr['language'], \
-        queue_attr['model'], \
-        queue_attr['device'], \
-        queue_attr['initial_prompt'], \
-        queue_attr['pre_detect_speech'], \
-        queue_attr['word_timestamps'], \
-        queue_attr['max_chars_per_segment'], \
-        queue_attr['max_words_per_segment'], \
-        queue_attr['split_on_punctuation_marks'], \
-        queue_attr['prevent_short_gaps'], \
-        queue_attr['time_intervals'], \
-        queue_attr['excluded_time_intervals'], \
-        queue_attr['group_questions'], \
-        queue_attr['transcription_file_path'], \
-        queue_attr['timeline_name'], \
-        queue_attr['project_name'], \
-        info \
-            = self.get_queue_file_info(queue_id)
-
-        logger.info("Starting to transcribe {}".format(queue_attr['name']))
-
-        # keep track of the name of the item that is currently being transcribed
-        self.transcription_queue_current_name = queue_attr['name']
-
-        # keep track of the item that is currently being transcribed
-        self.transcription_queue_current_item = {queue_id: queue_attr}
-
-        import traceback
-
-        # transcribe the file via whisper
-        try:
-            self.whisper_transcribe(queue_id=queue_id, **queue_attr)
-
-        # in case the transcription process crashes
-        except Exception:
-            # show error
-            logger.error(traceback.format_exc())
-            # update the status of the item in the transcription log
-            self.update_transcription_log(unique_id=queue_id, **{'status': 'failed', 'progress': ''})
-
-        # reset the transcription thread and name:
-        self.transcription_queue_current_name = None
-        self.transcription_queue_thread = None
-        self.transcription_queue_current_item = {}
-
-        # re-write the transcription queue to file if the file was transcribed
-        self.save_transcription_queue()
-
-        # then ping the queue again
-        self.ping_transcription_queue()
-
-        return False
-
-    def get_queue_file_info(self, queue_id):
-        '''
-        Returns the file info stored in a queue given the correct queue_id
-        :param queue_id:
-        :return: list or False
-        '''
-        if self.transcription_queue and queue_id in self.transcription_queue:
-            queue_file = self.transcription_queue[queue_id]
-            return [queue_file['name'], queue_file['audio_file_path'], queue_file['task'],
-                    queue_file['language'], queue_file['model'], queue_file['device'],
-                    queue_file['initial_prompt'],
-                    queue_file['pre_detect_speech'],
-                    queue_file['word_timestamps'],
-                    queue_file['max_chars_per_segment'],
-                    queue_file['max_words_per_segment'],
-                    queue_file['split_on_punctuation_marks'],
-                    queue_file['prevent_short_gaps'],
-                    queue_file['time_intervals'],
-                    queue_file['excluded_time_intervals'],
-                    queue_file['group_questions'],
-                    queue_file['transcription_file_path'],
-                    queue_file['timeline_name'],
-                    queue_file['project_name'],
-                    queue_file['info']]
-
-        return False
-
-    def cancel_queue_item_if_cancelled(self, queue_id):
-        '''
-        Checks if the status of the item in the transcription log is 'cancelling' and cancels it if it is
-        '''
-
-        # if the status is 'cancelling', cancel the item
-        if self.in_transcription_log(unique_id=queue_id, return_status=True) in [False, 'cancelling', 'cancelled']:
-            self.cancel_queue_item(queue_id, ignore_current=True)
-            return True
-
-        return False
-
-    def cancel_queue_item(self, queue_id, ignore_current=False):
-        '''
-        Cancels a queue item by deleting it from the queue and updating the transcription log
-        :param queue_id:
-        :param ignore_current: if True, will ignore the item if it is currently being transcribed
-        :return:
-        '''
-
-        # if the item is currently being transcribed, signal the transcription thread to stop using the cancelling flag
-        # - for eg. mots_whisper should see that we've cancelled the transcription and stop it
-        # there's no other way to force this to stop, since the transcription is running in a separate thread
-        if queue_id in self.transcription_queue_current_item:
-
-            # update the status of the item in the transcription log
-            self.update_transcription_log(unique_id=queue_id, **{'status': 'cancelling', 'progress': ''})
-
-        # is the item still in the queue?
-        if self.transcription_queue and queue_id in self.transcription_queue:
-
-            # delete the item from the queue
-            del self.transcription_queue[queue_id]
-
-            # re-write the transcription queue to file
-            self.save_transcription_queue()
-
-            # then ping the queue again
-            self.ping_transcription_queue()
-
-            # also update the status of the item in the transcription log
-            if queue_id not in self.transcription_queue_current_item or ignore_current:
-                self.update_transcription_log(unique_id=queue_id, **{'status': 'cancelled', 'progress': ''})
-
-            return True
-
-        if ignore_current:
-            # also update the status of the item in the transcription log
-            self.update_transcription_log(unique_id=queue_id, **{'status': 'cancelled', 'progress': ''})
+                queue_id = None
+
+            c_name = name
+            # add the task name to the name if there are multiple tasks
+            if i>0:
+                c_name += ' - ' + str(c_task)
+
+            # pass the queue tasks via kwargs
+            # we're not all the transcription tasks into a single item but going through this loop,
+            # because we want to be able to pass different settings for each task,
+            # plus we want to see the progress on each queue item separately
+            # therefore splitting them into separate queue items makes more sense
+            kwargs['tasks'] = [c_task]
+
+            # pass the name and queue id
+            kwargs['name'] = c_name
+            kwargs['queue_id'] = next_queue_id
+
+            # add the audio file path as source file path
+            kwargs['source_file_path'] = audio_file_path
+
+            # send each item to the universal queue
+            self.processing_queue.add_to_queue(**kwargs)
 
     # TRANSCRIPTION METHODS
+
+    def whisper_options(self, **parameters):
+        """
+        This function looks at all the passed parameters
+        and returns the ones that are relevant to mots_whisper
+        """
+
+        allowed_parameters = [
+            ('audio_file_path', str),
+            ('language', str),
+            ('model', str),
+            ('device', str),
+            ('task', str),
+            ('initial_prompt', str),
+
+            ('beam_size', int),
+            ('best_of', int),
+            ('temperature', float),
+            ('compression_ratio_threshold', float),
+            ('logprob_threshold', float),
+            ('no_speech_threshold', float),
+            ('word_timestamps', bool),
+            ('prepend_punctuations', bool),
+            ('append_punctuations', bool),
+            ('prompt', str),
+
+            # mots_whisper specific parameters
+            ('queue_id', str)
+        ]
+
+        filtered_parameters = {}
+
+        # filter out the parameters that are not allowed
+        # by checking if they are in the allowed_parameters list
+        for param, param_type in allowed_parameters:
+
+            # if the parameter is in the list and is of the correct type
+            if param in parameters and isinstance(parameters[param], param_type):
+
+                # add it to the filtered parameters
+                filtered_parameters[param] = parameters[param]
+
+        # return only the filtered parameters
+        return filtered_parameters
 
     def time_intervals_to_transcript_segments(self, time_intervals: list, segments: list) -> list or None:
         '''
@@ -2625,39 +3065,43 @@ class ToolkitOps:
 
         return sorted(available_languages)
 
-    def whisper_device_select(self, device):
+    def torch_device_type_select(self, device):
         '''
-        A standardized way of selecting the right whisper device
+        A standardized way of selecting the right Torch device type
         :param device:
         :return:
         '''
 
         allowed_devices = ['cuda', 'CUDA', 'gpu', 'GPU', 'cpu', 'CPU']
 
-        # change the whisper device if it was passed as a parameter
+        # change the torch device if it was passed as a parameter
         if device is not None and device in allowed_devices:
-            self.whisper_device = device
+            self.torch_device = device
 
-        # if the whisper device is set to cuda
-        if self.whisper_device in ['cuda', 'CUDA', 'gpu', 'GPU']:
-            # use CUDA if available
+        # if the torch device is set to cuda
+        if self.torch_device in ['cuda', 'CUDA', 'gpu', 'GPU']:
+
+            # use CUDA only if available
             if torch.cuda.is_available():
-                self.whisper_device = device = torch.device('cuda')
+                self.torch_device = device = torch.device('cuda')
+
             # or let the user know that cuda is not available and switch to cpu
             else:
-                logger.error('CUDA not available. Switching to cpu.')
-                self.whisper_device = device = torch.device('cpu')
-        # if the whisper device is set to cpu
-        elif self.whisper_device in ['cpu', 'CPU']:
-            self.whisper_device = device = torch.device('cpu')
+                logger.warning('CUDA not available. Switching to cpu.')
+                self.torch_device = device = torch.device('cpu')
+
+        # if the torch device is set to cpu
+        elif self.torch_device in ['cpu', 'CPU']:
+            self.torch_device = device = torch.device('cpu')
+
         # any other setting, defaults to automatic selection
         else:
-            # use CUDA if available
-            self.whisper_device = device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            # use CUDA if available, or CPU otherwise
+            self.torch_device = device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        logger.info('Using {} for Torch / Whisper / Transformers.'.format(device))
+        logger.debug('Using {} for Torch.'.format(device))
 
-        return self.whisper_device
+        return self.torch_device
 
     def split_audio_by_intervals(self, audio_array, time_intervals=None, sr=16_000):
         """
@@ -2842,7 +3286,8 @@ class ToolkitOps:
 
         return audio_segment
 
-    def split_segment_by_word_limits(self, segment, segment_word_limit: int = None, segment_character_limit: int = None):
+    def split_segment_by_word_limits(self, segment, segment_word_limit: int = None,
+                                     segment_character_limit: int = None):
         """
         Splits the segment into multiple segments by the given word limit or character limit.
         The word limit will be overridden by the character limit if both are specified.
@@ -3162,7 +3607,7 @@ class ToolkitOps:
         # return the resulting segments
         return resulting_segments
 
-    def split_segments(self, segments:list, **kwargs):
+    def split_segments(self, segments: list, **kwargs):
         '''
         This splits transcription segments into smaller segments based on:
         - punctuation marks (if the split_on_punctuation_marks option is set)
@@ -3183,9 +3628,11 @@ class ToolkitOps:
         # split the result on punctuation marks if the option is set
         if split_on_punctuation_marks:
 
+            logger.debug('Splitting segments on pre-defined punctuation marks...')
+
             # get the custom punctuation marks from the config
             custom_punctuation_marks = self.stAI.get_app_setting('transcription_custom_punctuation_marks',
-                                                                        default_if_none=['.', '!', '?', '…'])
+                                                                 default_if_none=['.', '!', '?', '…'])
 
             # the resulting segments
             new_segments = []
@@ -3228,12 +3675,15 @@ class ToolkitOps:
         # then split the result into multiple segments
         if segment_character_limit is not None or segment_word_limit is not None:
 
+            logger.debug('Splitting segments on word/character limits...')
+
             # the resulting segments
             new_segments = []
             # take each segment in the result
             for segment in segments:
                 # split the segment into multiple segments
-                resulting_segment = self.split_segment_by_word_limits(segment, segment_word_limit, segment_character_limit)
+                resulting_segment = self.split_segment_by_word_limits(segment, segment_word_limit,
+                                                                      segment_character_limit)
 
                 # add the resulting segments to the new segments list
                 new_segments.extend(resulting_segment)
@@ -3243,8 +3693,8 @@ class ToolkitOps:
 
         return segments
 
-    def classify_segments(self, segments:list, labels:list,
-                          min_confidence=0.55, multi_label_pass:list =None):
+    def classify_segments(self, segments: list, labels: list,
+                          min_confidence=0.55, multi_label_pass: list = None):
         '''
         Classifies segments into different types using the transformers zero-shot-classification pipeline
         :param segments: the segments to classify
@@ -3273,10 +3723,10 @@ class ToolkitOps:
 
         # using tensorflow but with another model,
         # because facebook/bart-large-mnli is not available in tensorflow
-        #from transformers import TFAutoModelForSequenceClassification, AutoTokenizer
-        #tokenizer = AutoTokenizer.from_pretrained('roberta-large-mnli')
-        #model = TFAutoModelForSequenceClassification.from_pretrained('roberta-large-mnli')
-        #classifier = pipeline('zero-shot-classification', model=model, tokenizer=tokenizer)
+        # from transformers import TFAutoModelForSequenceClassification, AutoTokenizer
+        # tokenizer = AutoTokenizer.from_pretrained('roberta-large-mnli')
+        # model = TFAutoModelForSequenceClassification.from_pretrained('roberta-large-mnli')
+        # classifier = pipeline('zero-shot-classification', model=model, tokenizer=tokenizer)
 
         # start classification process
         model_name = self.stAI.get_app_setting('text_classifier_model', default_if_none='facebook/bart-large-mnli')
@@ -3397,7 +3847,7 @@ class ToolkitOps:
                     # if not, skip it
                     logger.warn("Label {} doesn't exist in classified segments: {}\n"
                                 "Multi-label pass failed for all segments, since none of them have this label."
-                                 .format(label, classified_segments.keys()))
+                                .format(label, classified_segments.keys()))
                     break
 
                 # simply add the first label to the multi-label pass list
@@ -3506,6 +3956,9 @@ class ToolkitOps:
             except ValueError:
                 prevent_short_gaps = False
 
+        if prevent_short_gaps:
+            logger.debug('Filling gaps shorter than {}s in the result...'.format(prevent_short_gaps))
+
         # do some housekeeping
         # go through each segment in the result
         previous_segment_end_time = None
@@ -3530,16 +3983,6 @@ class ToolkitOps:
                 # continue to the next segment
                 continue
 
-            # is the segment's start time greater than the end time of the previous segment?
-            #if previous_segment_end_time is not None and segment['start'] < previous_segment_end_time:
-
-            #    logger.error('Segment overlap: {} -----  '
-            #                 'previous segment end time: {} < {} this segment start time'
-            #                 .format(segment['text'], previous_segment_end_time, segment['start']))
-            #
-            #    # if so, set the segment's start time to the end time of the previous segment
-            #    #segment['start'] = previous_segment_end_time
-
             # remove word timestamps from the result to avoid confusion,
             # until the word-based transcript editing is implemented
             if 'words' in segment and kwargs.get('post_remove_word_timestamps', False):
@@ -3558,7 +4001,6 @@ class ToolkitOps:
 
                 # if the time difference is less than the prevent_short_gaps value
                 if time_difference < prevent_short_gaps:
-
                     # set the end time of the previous segment to the start time of this segment
                     new_result_segments[-2]['end'] = segment['start']
 
@@ -3587,7 +4029,7 @@ class ToolkitOps:
         #    print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
         return False
 
-    def whisper_transcribe_segments(self, audio_segments, task, next_segment_id, other_whisper_options, queue_id=None):
+    def whisper_transcribe_segments(self, audio_segments, task, next_segment_id, other_options, queue_id=None):
         """
         Transcribes only the passed audio segments
         and offsets the transcription segments start and end times
@@ -3596,6 +4038,7 @@ class ToolkitOps:
         """
 
         results = {'segments': []}
+        result = None
 
         # this will be counted up for each segment to provide a unique id
         id_count = 0
@@ -3613,19 +4056,10 @@ class ToolkitOps:
                 continue
 
             # pre process the audio segment
-            audio_segment = self.pre_process_audio_segment(audio_segment, **other_whisper_options)
+            audio_segment = self.pre_process_audio_segment(audio_segment, **other_options)
 
-            # remove post processing options not used by whisper to prevent disaster
-            post_processing_options = {}
-            whisper_options = {}
-            for key in other_whisper_options:
-                if key in ['max_chars_per_segment', 'max_words_per_segment',
-                           'split_on_punctuation_marks', 'prevent_short_gaps',
-                           'group_questions', 'post_remove_word_timestamps']:
-                    post_processing_options[key] = other_whisper_options[key]
-
-                else:
-                    whisper_options[key] = other_whisper_options[key]
+            # only send to whisper the options that it knows
+            decoding_options = self.whisper_options(**other_options.get('whisper_options', {}))
 
             # run whisper transcribe on the audio segment
             result = self.whisper_model.transcribe(audio_segment[2],
@@ -3636,15 +4070,15 @@ class ToolkitOps:
                                                    total_duration=total_duration,
                                                    audio_segment_duration=audio_segment[1] - audio_segment[0],
                                                    previous_progress=previous_progress,
-                                                   **whisper_options
+                                                   **decoding_options
                                                    )
 
             # remove word timestamps from final transcription until we implement word-based editing
-            post_processing_options['post_remove_word_timestamps'] = \
-                post_processing_options.get('post_remove_word_timestamps', True)
+            other_options['post_remove_word_timestamps'] = \
+                other_options.get('post_remove_word_timestamps', True)
 
             # post process the result
-            result = self.post_process_whisper_result(audio_segment[2], result, **post_processing_options)
+            result = self.post_process_whisper_result(audio_segment[2], result, **other_options)
 
             # get the progress of the transcription so far,
             # so we can pass it to the next audio segment for the progress calculation
@@ -3698,7 +4132,7 @@ class ToolkitOps:
                     results['segments'].append(transcript_segment)
 
         # copy the status from the result to the results (if any)
-        # normally we should only get a status if the transcription was cancelled or it failed
+        # normally we should only get a status if the transcription was canceled or it failed
         if isinstance(result, dict) and 'status' in result:
             results['status'] = result['status']
 
@@ -3777,7 +4211,7 @@ class ToolkitOps:
         return audio_segments, time_intervals
 
     def whisper_transcribe(self, name=None, audio_file_path=None, task=None,
-                           target_dir=None, queue_id=None, return_path=False, **other_whisper_options) -> bool or str:
+                           target_dir=None, queue_id=None, return_path=False, **other_options) -> bool or str:
         """
         This prepares and transcribes audio using Whisper
         :param name:
@@ -3786,13 +4220,22 @@ class ToolkitOps:
         :param target_dir:
         :param queue_id:
         :param return_path: if True, returns the path to the transcription file if successful
-        :param other_whisper_options:
+        :param other_options:
         :return:
         """
+
+        # if no audio file path was passed, try to use the source file path if it was passed
+        if audio_file_path is None and other_options.get('source_file_path', None) is not None:
+            audio_file_path = other_options.get('source_file_path', None)
 
         # don't continue unless we have a queue_id
         if audio_file_path is None or not audio_file_path:
             logger.warning('No audio file path was passed to whisper_transcribe. Aborting.')
+
+            # update the queue item status
+            if queue_id is not None:
+                self.processing_queue.update_queue_item(queue_id=queue_id, status='failed')
+
             return False
 
         # use the name of the file in case the name wasn't passed
@@ -3808,41 +4251,42 @@ class ToolkitOps:
 
         # if a timeline_name was sent, remember it for later
         timeline_name = None
-        if 'timeline_name' in other_whisper_options:
-            timeline_name = other_whisper_options['timeline_name']
-            del other_whisper_options['timeline_name']
+        if 'timeline_name' in other_options:
+            timeline_name = other_options['timeline_name']
+            del other_options['timeline_name']
 
         # if a project_name was sent, remember it for later
         project_name = None
-        if 'project_name' in other_whisper_options:
-            project_name = other_whisper_options['project_name']
-            del other_whisper_options['project_name']
+        if 'project_name' in other_options:
+            project_name = other_options['project_name']
+            del other_options['project_name']
 
-        whisper_device_changed = False
-        if 'device' in other_whisper_options and self.whisper_device != other_whisper_options['device']:
-            whisper_device_changed = True
+        torch_device_changed = False
+        if 'device' in other_options and self.torch_device != other_options['device']:
+            torch_device_changed = True
 
         # select the device that was passed (if any)
-        if 'device' in other_whisper_options:
-            # select the new whisper device
-            self.whisper_device = self.whisper_device_select(other_whisper_options['device'])
-            del other_whisper_options['device']
+        if 'device' in other_options:
+            # select the new whisper device but take it through the torch device selection to make sure it's valid
+            self.torch_device = self.torch_device_type_select(other_options['device'])
+            del other_options['device']
 
         # load OpenAI Whisper model
-        # and hold it loaded for future use (unless another model was passed via other_whisper_options)
+        # and hold it loaded for future use (unless another model name was passed via other_whisper_options)
         if self.whisper_model is None \
-                or ('model' in other_whisper_options and self.whisper_model_name != other_whisper_options['model'])\
-                or whisper_device_changed:
+                or ('model_name' in other_options
+                    and self.whisper_model_name != other_options['model_name']) \
+                or torch_device_changed:
 
-            # update the status of the item in the transcription log
-            self.update_transcription_log(unique_id=queue_id, **{'status': 'loading model'})
+            # update the status of the item in the queue
+            self.processing_queue.update_queue_item(queue_id=queue_id, status='loading model')
 
-            # use the model that was passed in the call (if any)
-            if 'model' in other_whisper_options and other_whisper_options['model']:
-                self.whisper_model_name = other_whisper_options['model']
+            # use the model name that was passed in the call (if any)
+            if 'model_name' in other_options and other_options['model_name']:
+                self.whisper_model_name = other_options['model_name']
 
             # cancel transcription if user requested it
-            if self.cancel_queue_item_if_cancelled(queue_id=queue_id):
+            if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
                 return None
 
             # if the Whisper transformer model was never downloaded, log that we're downloading it
@@ -3857,22 +4301,22 @@ class ToolkitOps:
                                )
 
                 # update the status of the item in the transcription log
-                self.update_transcription_log(unique_id=queue_id, **{'status': 'downloading model'})
+                self.processing_queue.update_queue_item(queue_id=queue_id, status='downloading model')
 
                 model_downloaded_before = False
 
             # cancel transcription if user requested it
-            if self.cancel_queue_item_if_cancelled(queue_id=queue_id):
+            if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
                 return None
 
             logger.info('Loading Whisper {} model.'.format(self.whisper_model_name))
             try:
-                self.whisper_model = whisper.load_model(self.whisper_model_name, device=self.whisper_device)
+                self.whisper_model = whisper.load_model(self.whisper_model_name, device=self.torch_device)
             except Exception as e:
                 logger.error('Error loading Whisper {} model: {}'.format(self.whisper_model_name, e))
 
                 # update the status of the item in the transcription log
-                self.update_transcription_log(unique_id=queue_id, **{'status': 'failed'})
+                self.processing_queue.update_queue_item(queue_id=queue_id, status='failed')
 
             # once the model has been loaded, we can note that in the app settings
             # this is a wat to keep track if the model has been downloaded or not
@@ -3887,11 +4331,11 @@ class ToolkitOps:
             ))
 
         # delete the model reference so we don't pass it again in the transcribe function below
-        if 'model' in other_whisper_options:
-            del other_whisper_options['model']
+        if 'model_name' in other_options:
+            del other_options['model_name']
 
         # cancel transcription if user requested it
-        if self.cancel_queue_item_if_cancelled(queue_id=queue_id):
+        if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
             return None
 
         # load audio file as array using librosa
@@ -3905,19 +4349,19 @@ class ToolkitOps:
             long_audio_msg = ""
 
         # cancel transcription if user requested it
-        if self.cancel_queue_item_if_cancelled(queue_id=queue_id):
+        if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
             return None
 
         # technically the transcription process starts here, so start a timer for statistics
         transcription_start_time = time.time()
 
         # remove empty language
-        if 'language' in other_whisper_options and other_whisper_options['language'] == '':
-            del other_whisper_options['language']
+        if 'language' in other_options and other_options['language'] == '':
+            del other_options['language']
 
         # remove empty initial prompt
-        if 'initial_prompt' in other_whisper_options and other_whisper_options['initial_prompt'] == '':
-            del other_whisper_options['initial_prompt']
+        if 'initial_prompt' in other_options and other_options['initial_prompt'] == '':
+            del other_options['initial_prompt']
 
         # assume no time intervals
         time_intervals = None
@@ -3925,14 +4369,14 @@ class ToolkitOps:
         # TIME INTERVALS PRE-PROCESSING starts here
 
         # if pre_detect_speech is True, detect speech intervals in the audio
-        if 'pre_detect_speech' in other_whisper_options:
+        if 'pre_detect_speech' in other_options:
 
             # detect speech intervals and save them in time_intervals
-            if other_whisper_options['pre_detect_speech']:
+            if other_options['pre_detect_speech']:
                 logger.info('Detecting speech intervals in the audio.')
 
                 # update the status of the item in the transcription log
-                self.update_transcription_log(unique_id=queue_id, **{'status': 'pre-detecting speech'})
+                self.processing_queue.update_queue_item(queue_id=queue_id, status='pre-detecting speech')
 
                 logger.info('Pre-detecting speech intervals in the audio.')
 
@@ -3940,39 +4384,39 @@ class ToolkitOps:
                 time_intervals = self.get_speech_intervals(audio_array)
 
             # remove this so it doesn't get passed to the transcribe function
-            del other_whisper_options['pre_detect_speech']
+            del other_options['pre_detect_speech']
 
         # if time_intervals was passed from the request, take them into consideration
-        if 'time_intervals' in other_whisper_options:
+        if 'time_intervals' in other_options:
 
             # only take into consideration non boolean values
-            if type(other_whisper_options['time_intervals']) is not bool:
+            if type(other_options['time_intervals']) is not bool:
 
                 # if no time intervals were set before, just use the ones from the request
                 if time_intervals is None:
-                    time_intervals = other_whisper_options['time_intervals']
+                    time_intervals = other_options['time_intervals']
                 else:
                     # intersect the time intervals from the request
                     # with the previously had time intervals (from speech for eg.)
                     time_intervals = \
-                        self.combine_overlapping_intervals(other_whisper_options['time_intervals'], time_intervals)
+                        self.combine_overlapping_intervals(other_options['time_intervals'], time_intervals)
 
-            del other_whisper_options['time_intervals']
+            del other_options['time_intervals']
 
         # split the audio into segments according to the time intervals
         # in case no time intervals were passed, this will just return one audio segment with the whole audio
         audio_segments, time_intervals = self.split_audio_by_intervals(audio_array, time_intervals, sr)
 
         # cancel transcription if user requested it
-        if self.cancel_queue_item_if_cancelled(queue_id=queue_id):
+        if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
             return None
 
         # exclude time intervals that need to be excluded
-        if 'excluded_time_intervals' in other_whisper_options:
+        if 'excluded_time_intervals' in other_options:
             audio_segments, time_intervals = self.exclude_segments_by_intervals(
-                audio_array, time_intervals, other_whisper_options['excluded_time_intervals'], sr=sr
+                audio_array, time_intervals, other_options['excluded_time_intervals'], sr=sr
             )
-            del other_whisper_options['excluded_time_intervals']
+            del other_options['excluded_time_intervals']
 
         # create an empty list to load existing transcription data (or to save the new data)
         transcription_data = {}
@@ -3980,16 +4424,16 @@ class ToolkitOps:
         existing_transcription = False
 
         # ignore the transcription file path if it's empty
-        if 'transcription_file_path' in other_whisper_options \
-                and other_whisper_options['transcription_file_path'] is None:
+        if 'transcription_file_path' in other_options \
+                and other_options['transcription_file_path'] is None:
 
-            del other_whisper_options['transcription_file_path']
+            del other_options['transcription_file_path']
 
         # load the transcription data from the file if a path was passed
-        elif 'transcription_file_path' in other_whisper_options:
+        elif 'transcription_file_path' in other_options:
 
-            if other_whisper_options['transcription_file_path'].strip() != '':
-                transcription_file_path = other_whisper_options['transcription_file_path']
+            if other_options['transcription_file_path'].strip() != '':
+                transcription_file_path = other_options['transcription_file_path']
 
                 # load the transcription data from the file
                 transcription_data = self.get_transcription_file_data(transcription_file_path)
@@ -3999,9 +4443,9 @@ class ToolkitOps:
                 existing_transcription = transcription_file_path
 
                 # change the status of the item in the transcription log to re-transcribing
-                self.update_transcription_log(unique_id=queue_id, **{'status': 're-transcribing'})
+                self.processing_queue.update_queue_item(queue_id=queue_id, status='re-transcribing')
 
-            del other_whisper_options['transcription_file_path']
+            del other_options['transcription_file_path']
 
         # get the next id based on the largest id from transcription_data segments
         if type(transcription_data) == dict and 'segments' in transcription_data:
@@ -4010,7 +4454,7 @@ class ToolkitOps:
             next_segment_id = 0
 
         # update the status of the item in the transcription log
-        self.update_transcription_log(unique_id=queue_id, **{'status': 'transcribing'})
+        self.processing_queue.update_queue_item(queue_id=queue_id, status='transcribing')
 
         # let the user know the transcription process has started
         notification_msg = "Transcribing {}.\n{}".format(name, long_audio_msg)
@@ -4023,7 +4467,7 @@ class ToolkitOps:
 
         # last chance to cancel if user requested it
         # before the transcription process starts
-        if self.cancel_queue_item_if_cancelled(queue_id=queue_id):
+        if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
             return None
 
         # initialize empty result
@@ -4035,27 +4479,26 @@ class ToolkitOps:
             result = self.whisper_transcribe_segments(audio_segments=audio_segments,
                                                       task=task,
                                                       next_segment_id=next_segment_id,
-                                                      other_whisper_options=other_whisper_options,
+                                                      other_options=other_options,
                                                       queue_id=queue_id
                                                       )
         except Exception as e:
             logger.error('Error transcribing audio using Whisper.', exc_info=True)
 
             # update the status of the item in the transcription log
-            self.update_transcription_log(unique_id=queue_id, **{'status': 'failed', 'progress': ''})
+            self.processing_queue.update_queue_item(queue_id=queue_id, status='failed', progress='')
 
         # was the transcription canceled or failed?
         # if whisper returned None or a dict with status failed or canceled
         if result is None \
-            or (type(result) is dict and 'status' in result
-                and (result['status'] == 'failed' or result['status'] == 'canceled')
-                ):
-
+                or (type(result) is dict and 'status' in result
+                    and (result['status'] == 'failed' or result['status'] == 'canceled')
+        ):
             # copy the status from the result to the log status
             # or simply set it to failed if the result is None
-            log_status = result['status'] if type(result) is dict and 'status' in result else 'failed'
+            queue_status = result['status'] if type(result) is dict and 'status' in result else 'failed'
 
-            self.update_transcription_log(unique_id=queue_id, **{'status': log_status, 'progress': ''})
+            self.processing_queue.update_queue_item(queue_id=queue_id, status=queue_status, progress='')
 
             return None
 
@@ -4097,7 +4540,7 @@ class ToolkitOps:
             logger.info(notification_msg)
 
         # update the status of the item in the transcription log
-        self.update_transcription_log(unique_id=queue_id, **{'status': 'saving files'})
+        self.processing_queue.update_queue_item(queue_id=queue_id, status='saving files')
 
         # WHAT HAPPENS FROM HERE
 
@@ -4209,14 +4652,13 @@ class ToolkitOps:
                                                                     transcription_data=transcription_data)
 
         # cancel transcription if user requested it
-        if self.cancel_queue_item_if_cancelled(queue_id=queue_id):
+        if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
             return None
 
         # perform question grouping if requested
-        if 'group_questions' in other_whisper_options and other_whisper_options['group_questions']:
-
+        if 'group_questions' in other_options and other_options['group_questions']:
             logger.info('Grouping questions.')
-            self.update_transcription_log(unique_id=queue_id, **{'status': 'grouping', 'progress': ''})
+            self.processing_queue.update_queue_item(queue_id=queue_id, status='grouping', progress='')
 
             # detect and group questions
             self.group_questions(
@@ -4234,19 +4676,24 @@ class ToolkitOps:
 
         # when done, change the status in the transcription log, clear the progress
         # and also add the file paths to the transcription log
-        self.update_transcription_log(unique_id=queue_id, status='done', progress='',
-                                      srt_file_path=transcription_data['srt_file_path']
-                                        if 'srt_file_path' in transcription_data else '',
-                                      txt_file_path=transcription_data['txt_file_path']
-                                        if 'txt_file_path' in transcription_data else '',
-                                      json_file_path=transcription_json_file_path)
+        self.processing_queue.update_queue_item(
+            queue_id=queue_id,
+            status='done',
+            progress='',
+            srt_file_path=transcription_data['srt_file_path']
+                if 'srt_file_path' in transcription_data else '',
+            txt_file_path=transcription_data['txt_file_path']
+                if 'txt_file_path' in transcription_data else '',
+            json_file_path=transcription_json_file_path
+        )
 
+        # todo: move this to the UI - maybe a monitor function that checks the queue window for events?
         # why not open the transcription in a transcription window if the UI is available?
         if self.is_UI_obj_available():
             self.toolkit_UI_obj.open_transcription_window(title=name,
                                                           transcription_file_path=transcription_json_file_path,
                                                           srt_file_path=srt_file_path
-                                                            if srt_file_path in transcription_data else '')
+                                                          if srt_file_path in transcription_data else '')
 
         return True if not return_path else transcription_json_file_path
 
@@ -4482,7 +4929,6 @@ class ToolkitOps:
             transcription_data['text'] = ''
 
             for segment in transcription_segments:
-
                 # take each segment and insert it into the text variable
                 transcription_data['text'] = segment + ' '
 
@@ -4563,7 +5009,6 @@ class ToolkitOps:
         timeline_start_tc = Timecode(timeline_fps, timeline_start_tc)
 
         def format_timecode_line(start_time, end_time, timeline_fps, timeline_start_tc):
-
             # convert the start to a timecode
             start_tc = Timecode(timeline_fps, start_seconds=start_time)
 
@@ -4619,7 +5064,7 @@ class ToolkitOps:
         # take each transcription segment
         for segment in transcript_segments:
 
-            #frame = int(segment["start"] * fps)
+            # frame = int(segment["start"] * fps)
 
             # calculate frame based on segment start and timeline fps
             # we'll ignore the timeline_start_tc considering that we're in a comp file that starts at 0
@@ -4636,23 +5081,22 @@ class ToolkitOps:
             text = segment["text"].replace('"', '\\"')
 
             # create the segment keyframe
-            keyframe = '['+str(frame)+'] = { Value = Text { Value = "'+str(text)+'" } }'
+            keyframe = '[' + str(frame) + '] = { Value = Text { Value = "' + str(text) + '" } }'
 
             # if the next segment doesn't start exactly when this one ends, add a keyframe with an empty string
             # but only if this isn't the last segment
             if segment != transcript_segments[-1]:
 
                 # get the next segment
-                next_segment = transcript_segments[transcript_segments.index(segment)+1]
+                next_segment = transcript_segments[transcript_segments.index(segment) + 1]
 
                 # if the next segment doesn't start exactly when this one ends, add a keyframe with an empty string
                 if next_segment["start"] != segment["end"]:
-
                     # calculate frame based on segment end and timeline fps
                     # we'll ignore the timeline_start_tc considering that we're in a comp file that starts at 0
                     keyframe_tc = Timecode(timeline_fps, start_seconds=segment["end"])
                     frame = keyframe_tc.frames
-                    keyframe += ',\n['+str(frame)+'] = { Value = Text { Value = "" } }'
+                    keyframe += ',\n[' + str(frame) + '] = { Value = Text { Value = "" } }'
 
             keyframes.append(keyframe)
 
@@ -4685,7 +5129,7 @@ class ToolkitOps:
                 TranscriptTextStyledText = BezierSpline {
                     SplineColor = { Red = 237, Green = 142, Blue = 243 },
                     KeyFrames = {
-                        '''+keyframes_str+''',
+                        ''' + keyframes_str + ''',
                     }
                 },
                 MergeText = Merge {
@@ -4704,7 +5148,7 @@ class ToolkitOps:
                     CtrlWZoom = false,
                     NameSet = true,
                     Inputs = {
-                        Comments = Input { Value = "Exported using StoryToolkitAI version '''+self.stAI.version+'''", }
+                        Comments = Input { Value = "Exported using StoryToolkitAI version ''' + self.stAI.version + '''", }
                     },
                     ViewInfo = UnderlayInfo {
                         Pos = { 307.152, 15.0243 },
@@ -4896,7 +5340,7 @@ class ToolkitOps:
         if timeline_name is None:
 
             # try to get the timeline currently opened in Resolve
-            #global current_timeline
+            # global current_timeline
             if NLE.current_timeline and NLE.current_timeline is not None and 'name' in NLE.current_timeline:
 
                 # and use it as timeline name
@@ -5027,7 +5471,7 @@ class ToolkitOps:
             self.poll_resolve_thread()
 
     def calculate_sec_to_resolve_timecode(self, seconds=0):
-        #global resolve
+        # global resolve
         if NLE.resolve:
 
             # poll resolve for some info
@@ -5110,7 +5554,7 @@ class ToolkitOps:
 
         # get the timecode data from the transcription
         timecode_data = self.transcription_has_timecode_data(transcription_data=transcription_data,
-                                                            transcription_path=transcription_path)
+                                                             transcription_path=transcription_path)
 
         # if False or None was returned, pass them
         if timecode_data is False or timecode_data is None:
@@ -5135,7 +5579,6 @@ class ToolkitOps:
 
                     # only offset if timecode is different than 00:00:00:00
                     if timeline_start_tc != '00:00:00:00':
-
                         # calculate the new timecode
                         timecode = timeline_start_tc + timecode
 
@@ -5172,7 +5615,7 @@ class ToolkitOps:
         # get the timecode data from the transcription
         if timecode_data is None:
             timecode_data = self.transcription_has_timecode_data(transcription_data=transcription_data,
-                                                                transcription_path=transcription_path)
+                                                                 transcription_path=transcription_path)
 
         # if False or None was returned, pass them
         if timecode_data is False or timecode_data is None:
@@ -5206,7 +5649,6 @@ class ToolkitOps:
 
                     # only offset if timecode is different than 00:00:00:00
                     if timeline_start_tc != '00:00:00:00' and seconds is None:
-
                         # calculate the new timecode
                         timecode = timecode - timeline_start_tc
 
@@ -5224,7 +5666,6 @@ class ToolkitOps:
             except:
                 logger.debug('Something went wrong converting the timecode to seconds', exc_info=True)
                 return None
-
 
     def calculate_resolve_timecode_to_sec(self, timecode=None, frames=None, framerate=None, start_tc=None):
         '''
@@ -5362,7 +5803,7 @@ class ToolkitOps:
         # when the timeline has changed
         elif event_name == 'timeline_changed':
 
-            #global current_timeline
+            # global current_timeline
 
             if NLE.current_timeline is not None and NLE.current_timeline != '' \
                     and type(NLE.current_timeline) == dict and 'name' in NLE.current_timeline:
@@ -5403,7 +5844,7 @@ class ToolkitOps:
         :return:
         '''
 
-        #global resolve
+        # global resolve
 
         if NLE.resolve:
             return True
@@ -5488,7 +5929,7 @@ class ToolkitOps:
                     if type(NLE.resolve) != type(resolve_data['resolve']):
 
                         logger.debug('Resolve object changed from {} to {}.'
-                                       .format(type(NLE.resolve), type(resolve_data['resolve'])))
+                                     .format(type(NLE.resolve), type(resolve_data['resolve'])))
 
                         # set the resolve object to whatever it is now
                         NLE.resolve = resolve_data['resolve']
@@ -5509,20 +5950,19 @@ class ToolkitOps:
                     logger.debug(traceback.format_exc())
                     continue
 
-
                 # RESOLVE TIMELINE NAME CHANGE
                 # if the current project was already set and now it's no longer set in the polled data
                 # or if the current project has changed
                 try:
                     if (NLE.current_project is not None and 'currentProject' not in resolve_data) \
-                        or NLE.current_project != resolve_data['currentProject']:
-
-                        #logger.debug('Current project changed from {} to {}.'
+                            or NLE.current_project != resolve_data['currentProject']:
+                        # logger.debug('Current project changed from {} to {}.'
                         #             .format(NLE.current_project, resolve_data['currentProject']))
 
                         # set the current project to whatever it is now
                         # but if the polled data doesn't contain the currentProject key, set it to None
-                        NLE.current_project = resolve_data['currentProject'] if 'currentProject' in resolve_data else None
+                        NLE.current_project = resolve_data[
+                            'currentProject'] if 'currentProject' in resolve_data else None
 
                         # trigger the project_changed event
                         self.on_resolve('project_changed')
@@ -5533,14 +5973,13 @@ class ToolkitOps:
                     logger.debug(traceback.format_exc())
                     continue
 
-
                 # if the current timeline was already set and now it's no longer set in the polled data
                 # or if the current timeline has changed
                 try:
                     if (NLE.current_timeline is not None and 'currentTimeline' not in resolve_data) \
-                        or NLE.current_timeline != resolve_data['currentTimeline']:
+                            or NLE.current_timeline != resolve_data['currentTimeline']:
 
-                        #logger.debug('Current timeline changed from {} to {}.'
+                        # logger.debug('Current timeline changed from {} to {}.'
                         #             .format(NLE.current_timeline, resolve_data['currentTimeline']))
 
                         # because we only want to trigger the timeline_changed event if the name of the timeline has changed
@@ -5552,7 +5991,7 @@ class ToolkitOps:
                         # yet the NLE.current_timeline was set before
                         if NLE.current_timeline is not None and 'currentTimeline' not in resolve_data:
 
-                            #logger.debug('Current timeline changed from {} to None.'.format(NLE.current_timeline))
+                            # logger.debug('Current timeline changed from {} to None.'.format(NLE.current_timeline))
 
                             # set the current timeline to None
                             NLE.current_timeline = None
@@ -5563,11 +6002,13 @@ class ToolkitOps:
                         # if the polled data contains the currentTimeline key
                         elif 'currentTimeline' in resolve_data \
                                 and (type(NLE.current_timeline) != type(resolve_data['currentTimeline']) \
-                                        or ('name' in NLE.current_timeline and not 'name' in resolve_data['currentTimeline']) \
-                                        or ('name' in resolve_data['currentTimeline'] and not 'name' in NLE.current_timeline) \
-                                        or (NLE.current_timeline['name'] != resolve_data['currentTimeline']['name'])):
+                                     or ('name' in NLE.current_timeline and not 'name' in resolve_data[
+                                    'currentTimeline']) \
+                                     or ('name' in resolve_data[
+                                    'currentTimeline'] and not 'name' in NLE.current_timeline) \
+                                     or (NLE.current_timeline['name'] != resolve_data['currentTimeline']['name'])):
 
-                            #logger.debug('Current timeline changed from {} to {}.'
+                            # logger.debug('Current timeline changed from {} to {}.'
                             #             .format(NLE.current_timeline, resolve_data['currentTimeline']))
 
                             # set the current timeline to whatever it is now
@@ -5579,17 +6020,16 @@ class ToolkitOps:
 
                         # if the polled data contains the currentTimeline key, but the name of the timeline hasn't changed
                         else:
-                                # set the current timeline to whatever it is now
-                                # but don't trigger the timeline_changed event
-                                NLE.current_timeline = resolve_data['currentTimeline'] \
-                                    if 'currentTimeline' in resolve_data else None
+                            # set the current timeline to whatever it is now
+                            # but don't trigger the timeline_changed event
+                            NLE.current_timeline = resolve_data['currentTimeline'] \
+                                if 'currentTimeline' in resolve_data else None
 
                 except:
                     import traceback
                     logger.debug('Fail detected in resolve timeline change check.')
                     logger.debug(traceback.format_exc())
                     continue
-
 
                 # did the markers change?
                 # (this only matters if the current timeline is not None
@@ -5623,7 +6063,6 @@ class ToolkitOps:
 
                 else:
                     NLE.current_timeline_markers = None
-                
 
                 #  updates the currentBin
                 if (NLE.current_bin is not None and NLE.current_bin != '' and 'currentBin' not in resolve_data) \
@@ -5644,7 +6083,6 @@ class ToolkitOps:
                         or NLE.current_timeline_fps != resolve_data['currentTimelineFPS']:
                     NLE.current_timeline_fps = resolve_data['currentTimelineFPS']
                     self.on_resolve('fps_changed')
-
 
                 # was there a previous error?
                 if NLE.resolve is not None and NLE.resolve_error > 0:
@@ -5803,8 +6241,9 @@ class ToolkitOps:
                     NLE.current_timeline and 'markers' in NLE.current_timeline:
                 # take each marker from timeline and get its color
                 # but also add a an empty string to the list to allow the user to render all markers
-                current_timeline_marker_colors = [' '] + sorted(list(set([NLE.current_timeline['markers'][marker]['color']
-                                                                          for marker in NLE.current_timeline['markers']])))
+                current_timeline_marker_colors = [' '] + sorted(
+                    list(set([NLE.current_timeline['markers'][marker]['color']
+                              for marker in NLE.current_timeline['markers']])))
 
             # if no markers exist, cancel operation and let the user know that there are no markers to render
             if current_timeline_marker_colors:

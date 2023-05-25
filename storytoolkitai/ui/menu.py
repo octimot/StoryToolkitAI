@@ -674,13 +674,13 @@ class UImenus:
 
     def transcribe_audio_files(self):
 
-        self.toolkit_ops_obj.prepare_transcription_file(
-            toolkit_UI_obj=self.toolkit_UI_obj, task='transcribe', select_files=True)
+        self.toolkit_ops_obj.prepare_transcription_file(toolkit_UI_obj=self.toolkit_UI_obj,
+                                                        transcription_task='transcribe', select_files=True)
 
     def translate_audio_files(self):
 
-        self.toolkit_ops_obj.prepare_transcription_file(
-            toolkit_UI_obj=self.toolkit_UI_obj, task='translate', select_files=True)
+        self.toolkit_ops_obj.prepare_transcription_file(toolkit_UI_obj=self.toolkit_UI_obj,
+                                                        transcription_task='translate', select_files=True)
 
     def donothing(self):
         return

@@ -266,9 +266,11 @@ def transcribe(
     ) as pbar:
         while seek < content_frames:
 
-            # gracefully cancel the transcription if it's queue status is canceled or False
-            if toolkit_ops_obj.in_transcription_log(unique_id=queue_id, return_status=True) \
-                    in [False, 'cancelling', 'canceled']:
+            # gracefully cancel if the queue item has been canceled
+
+            if queue_id is not None \
+                    and toolkit_ops_obj.processing_queue.get_status(queue_id=queue_id) \
+                    in [None, False, 'canceling', 'canceled']:
                 return dict(
                     text=tokenizer.decode(all_tokens[len(initial_prompt_tokens):]),
                     segments=all_segments,
@@ -432,7 +434,8 @@ def transcribe(
                 progress = total_progress
 
             # update the progress in the app
-            toolkit_ops_obj.transcription_progress(unique_id=queue_id, progress=progress)
+            if queue_id is not None:
+                toolkit_ops_obj.processing_queue.update_queue_item(queue_id=queue_id, progress=progress)
 
     return dict(
         text=tokenizer.decode(all_tokens[len(initial_prompt_tokens):]),
