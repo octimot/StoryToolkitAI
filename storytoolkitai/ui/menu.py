@@ -9,6 +9,7 @@ import webbrowser
 from storytoolkitai.core.logger import *
 from storytoolkitai.core.toolkit_ops import NLE
 
+
 class UImenus:
 
     def __init__(self, toolkit_UI_obj):
@@ -82,14 +83,13 @@ class UImenus:
             self.load_menu_for_other(window_id=self.current_window_id,
                                      window_type=self.toolkit_UI_obj.get_window_type(self.current_window_id))
 
-
         # also update the state of the keep on top menu item
         self.keep_on_top_state.set(self.toolkit_UI_obj.get_window_on_top_state(self.current_window_id))
 
     def load_menu_for_main(self):
-        '''
+        """
         This function loads the menu bar considering that we're now in the main window.
-        '''
+        """
 
         # disable show the keep on top menu item
         self.windowsmenu.entryconfig('Keep window on top', state=DISABLED)
@@ -99,10 +99,12 @@ class UImenus:
 
         self.disable_menu_for_non_transcriptions()
 
+        self.toggle_resolve_buttons()
+
     def load_menu_for_other(self, window_id=None, window_type=None):
-        '''
+        """
         This function loads the menu bar considering that we're now in any other window except the main window.
-        '''
+        """
 
         # enable the keep on top menu item
         self.windowsmenu.entryconfig('Keep window on top', state=NORMAL)
@@ -116,7 +118,6 @@ class UImenus:
         # if the window doesn't have a close_action, disable the menu item
         else:
             self.windowsmenu.entryconfig('Close window', state=DISABLED)
-
 
         # EDIT MENU FUNCTIONS
 
@@ -143,10 +144,12 @@ class UImenus:
         else:
             self.revert_to_selectall(window_id)
 
+        self.toggle_resolve_buttons()
+
     def revert_to_selectall(self, window_id):
-        '''
+        """
         This is used for basically everything except transcriptions
-        '''
+        """
 
         self.editmenu.entryconfig('Select All',
                                   state=NORMAL,
@@ -163,14 +166,12 @@ class UImenus:
         self.searchmenu.entryconfig("List files used for search...",  state=NORMAL,
                                     command= lambda: self.toolkit_UI_obj.button_search_list_files(window_id))
 
-
     def load_menu_for_transcriptions(self, window_id):
 
         # enable the Export as SRT menu item
         self.filemenu.entryconfig('Export transcript as...', state=NORMAL,
                                     command=lambda: self.toolkit_UI_obj.t_edit_obj.button_export_as(window_id)
                                   )
-
 
         self.filemenu.entryconfig('Export transcript as AVID DS...', state=NORMAL,
                                     command=lambda: self.toolkit_UI_obj.t_edit_obj.button_export_as_avid_ds(window_id)
@@ -181,10 +182,10 @@ class UImenus:
                                     self.toolkit_UI_obj.t_edit_obj.button_export_as_fusion_text_comp(window_id)
                                   )
 
-        self.filemenu.entryconfig("Show transcription in "+self.file_browser_name, state=NORMAL,
-                                    command=lambda:
-                                    self.open_file_dir(self.toolkit_UI_obj.t_edit_obj.transcription_file_paths[window_id])
-                                  )
+        self.filemenu.entryconfig(
+            "Show transcription in "+self.file_browser_name, state=NORMAL,
+            command=lambda: self.open_file_dir(self.toolkit_UI_obj.t_edit_obj.transcription_file_paths[window_id])
+        )
 
         # enable the advanced search menu items relevant for transcriptions
         self.searchmenu.entryconfig("Advanced Search in current transcript...", state=NORMAL,
@@ -410,7 +411,55 @@ class UImenus:
         self.searchmenu.entryconfig("Advanced Search in current transcript...", state=DISABLED)
         #self.searchmenu.entryconfig("Advanced Search in current project...", state=DISABLED)
 
+    def toggle_resolve_buttons(self):
+        """
+        This refreshes the general buttons that are related to resolve
+        """
 
+        # toggle the menu items for general resolve related functions
+        if NLE.is_connected() and NLE.current_timeline is not None:
+            self.integrationsmenu.entryconfig("Render and Transcribe Timeline",
+                                              command=self.toolkit_UI_obj.button_nle_transcribe_timeline,
+                                              state=NORMAL)
+            self.integrationsmenu.entryconfig("Render and Translate Timeline",
+                                              command=lambda:
+                                              self.toolkit_UI_obj.button_nle_transcribe_timeline(
+                                                  transcription_task='translate'),
+                                              state=NORMAL)
+            self.integrationsmenu.entryconfig(
+                "Copy Timeline Markers to Timeline Bin Clip",
+                command=lambda: self.toolkit_ops_obj.execute_operation(
+                    'copy_markers_timeline_to_clip', self.toolkit_UI_obj),
+                state=NORMAL)
+            self.integrationsmenu.entryconfig(
+                "Copy Timeline Bin Clip Markers to Timeline",
+                command=lambda: self.toolkit_ops_obj.execute_operation(
+                    'copy_markers_clip_to_timeline', self.toolkit_UI_obj),
+                state=NORMAL)
+            self.integrationsmenu.entryconfig(
+                "Render Markers to Stills",
+                command=lambda: self.toolkit_ops_obj.execute_operation(
+                    'render_markers_to_stills', self.toolkit_UI_obj),
+                state=NORMAL)
+            self.integrationsmenu.entryconfig(
+                "Render Markers to Clips",
+                command=lambda: self.toolkit_ops_obj.execute_operation(
+                    'render_markers_to_clips', self.toolkit_UI_obj),
+                state=NORMAL)
+
+        else:
+            self.integrationsmenu.entryconfig("Render and Transcribe Timeline", command=self.donothing,
+                                              state=DISABLED)
+            self.integrationsmenu.entryconfig("Render and Translate Timeline", command=self.donothing,
+                                              state=DISABLED)
+            self.integrationsmenu.entryconfig("Copy Timeline Markers to Timeline Bin Clip",
+                                              command=self.donothing, state=DISABLED)
+            self.integrationsmenu.entryconfig("Copy Timeline Bin Clip Markers to Timeline",
+                                              command=self.donothing, state=DISABLED)
+            self.integrationsmenu.entryconfig("Render Markers to Clips",
+                                              command=self.donothing, state=DISABLED)
+            self.integrationsmenu.entryconfig("Render Markers to Stills",
+                                              command=self.donothing, state=DISABLED)
 
     def pass_key_event(self, window_id, key_event):
         '''
@@ -436,6 +485,8 @@ class UImenus:
         self.filemenu.add_command(label="Open transcription file...", command=self.toolkit_UI_obj.open_transcript)
         self.filemenu.add_separator()
 
+        self.filemenu.add_command(label="Ingest files...", command=self.toolkit_UI_obj.open_ingest_window)
+
         self.filemenu.add_command(label="Transcribe audio file...", command=self.transcribe_audio_files)
         self.filemenu.add_command(label="Translate audio file...", command=self.translate_audio_files)
 
@@ -456,7 +507,6 @@ class UImenus:
         self.filemenu.add_command(label="Open last used folder", command=self.open_last_dir)
 
         self.main_menubar.add_cascade(label="File", menu=self.filemenu)
-
 
         # EDIT MENU
         self.editmenu = Menu(self.main_menubar, tearoff=0)
@@ -541,6 +591,17 @@ class UImenus:
                                      command=self.toolkit_UI_obj.on_connect_resolve_api_press)
         self.integrationsmenu.add_command(label="Disable Resolve API",
                                      command=self.toolkit_UI_obj.on_disable_resolve_api_press)
+
+        # INTEGRATIONS - GENERAL RESOLVE menu items
+        self.integrationsmenu.add_separator()
+        self.integrationsmenu.add_command(label="Render and Transcribe Timeline", command=self.donothing, state=DISABLED)
+        self.integrationsmenu.add_command(label="Render and Translate Timeline", command=self.donothing, state=DISABLED)
+        self.integrationsmenu.add_command(label="Copy Timeline Markers to Timeline Bin Clip",
+                                          command=self.donothing, state=DISABLED)
+        self.integrationsmenu.add_command(label="Copy Timeline Bin Clip Markers to Timeline",
+                                          command=self.donothing, state=DISABLED)
+        self.integrationsmenu.add_command(label="Render Markers to Clips", command=self.donothing, state=DISABLED)
+        self.integrationsmenu.add_command(label="Render Markers to Stills", command=self.donothing, state=DISABLED)
 
         # INTEGRATIONS - TRANSCRIPT related menu items
         self.integrationsmenu.add_separator()
@@ -673,14 +734,10 @@ class UImenus:
         self.toolkit_UI_obj.windows[self.current_window_id].close_action()
 
     def transcribe_audio_files(self):
-
-        self.toolkit_ops_obj.prepare_transcription_file(toolkit_UI_obj=self.toolkit_UI_obj,
-                                                        transcription_task='transcribe', select_files=True)
+        self.toolkit_UI_obj.button_transcribe()
 
     def translate_audio_files(self):
-
-        self.toolkit_ops_obj.prepare_transcription_file(toolkit_UI_obj=self.toolkit_UI_obj,
-                                                        transcription_task='translate', select_files=True)
+        self.toolkit_UI_obj.button_transcribe(transcription_task='translate')
 
     def donothing(self):
         return

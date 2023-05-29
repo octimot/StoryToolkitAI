@@ -1791,6 +1791,11 @@ class ToolkitOps:
             # for eg. {'cuda:0': {'queue_id': queue_id, 'thread': <Thread(Thread-1, started 1234567890123)>}, ...}
             self.queue_threads = {}
 
+            # this holds other variables that don't need to be part of the queue history,
+            # but can be shared between threads
+            # the key is the queue id and the value is a dict variable names and values
+            self.queue_variables = {}
+
             # how much to wait until checking if there are items in the queue that can be processed
             # disabled for now - if we activate this we need to make sure that the device is not being used by another thread
             # by checking the queue_threads dict
@@ -1868,7 +1873,8 @@ class ToolkitOps:
 
             # if we don't have source files nor task data, abort
             if not source_file_path and not task_data:
-                logger.error('Invalid task (no source files or data) - could not add item {} to queue')
+                logger.error('Invalid task (no source files or data) - could not add item {} to queue'
+                             .format(queue_id))
                 return False
 
             # add the queue_id to the kwargs
@@ -2056,7 +2062,8 @@ class ToolkitOps:
 
             # remove the item from the queue
             # (to avoid processing it if it's not already being processed)
-            self.queue.remove(queue_id)
+            if queue_id in self.queue:
+                self.queue.remove(queue_id)
 
             # try to get the item from the queue history
             item = self.get_item(queue_id)
@@ -2186,6 +2193,23 @@ class ToolkitOps:
 
             return None
 
+        def get_progress(self, queue_id: str) -> str or None:
+            """
+            This function returns the 'progress' of a queue item,
+            0 if it has no progress or None if the item doesn't exist
+            """
+
+            item = self.get_item(queue_id=queue_id)
+
+            if not item:
+                return None
+
+            if isinstance(item, dict) and 'progress' in item:
+                return item['progress']
+
+            else:
+                return '0'
+
         def get_all_queue_items(self, status: str or list or None = None, not_status: str or list or None = None) -> list:
             """
             This function returns all the items in the queue history in an dict,
@@ -2219,6 +2243,42 @@ class ToolkitOps:
                 all_queue_items[item['queue_id']] = item
 
             return all_queue_items
+
+        def set_item_variable(self, queue_id: str, variable_name: str, variable_value, append=False) -> bool:
+            """
+            This function sets a variable for a queue item, that can be accessed by any function.
+            These variables will not be saved to the queue history
+            """
+
+            # we are using the self.queue_variables dictionary to store the variables
+            # so we need to make sure it exists
+            if queue_id not in self.queue_variables:
+                self.queue_variables[queue_id] = {}
+
+            # set an empty variable if it doesn't exist
+            if variable_name not in self.queue_variables[queue_id]:
+                self.queue_variables[queue_id][variable_name] = ''
+
+            # set the variable (this will also overwrite the variable if it already exists)
+            self.queue_variables[queue_id][variable_name] = variable_value if not append else \
+                self.queue_variables[queue_id][variable_name] + variable_value
+
+            return True
+
+        def get_item_variable(self, queue_id: str, variable_name: str):
+            """
+            This function gets a variable for a queue item (do not confuse for variables in the queue history/item)
+            """
+
+            # if the queue id is not in the queue variables, return None
+            if queue_id not in self.queue_variables:
+                return None
+
+            # if the variable name is not in the queue variables, return None
+            if variable_name not in self.queue_variables[queue_id]:
+                return None
+
+            return self.queue_variables[queue_id][variable_name]
 
         def task_dispatcher(self, tasks: list or str) -> list or bool:
             """
@@ -2272,6 +2332,10 @@ class ToolkitOps:
             """
             This function executes the functions in the task queue for a given queue item
             """
+
+            # cancel item if someone or something requested it
+            if self.cancel_if_canceled(queue_id=queue_id):
+                return False
 
             if task_queue is None:
                 logger.error('Unable to execute tasks for item {} - no tasks were specified'.format(queue_id))
@@ -2482,6 +2546,7 @@ class ToolkitOps:
             # the add_to_queue function will dispatch the tasks again as needed
             save_queue_items = []
             for item in queue_items:
+
                 save_item = {k: v for k, v in item.items() if k not in ('task_queue', 'last_task')}
                 save_queue_items.append(save_item)
 
@@ -2535,7 +2600,19 @@ class ToolkitOps:
                     self.queue_history = queue_history
 
                 # take each item in the queue history and add it to the queue
-                for item in queue_history:
+                for idx, item in enumerate(queue_history):
+
+                    # skip if there's no queue_id or either the source_file_path or task_data is missing
+                    # it doesn't make sense to put it back in the queue since we can't do anything with it
+                    if not item.get('queue_id', None) \
+                        or not (item.get('source_file_path', None) or item.get('task_data', None)):
+
+                        # remove the item from the queue history
+                        # removing this will make sure we don't add it next time we save the queue file
+                        if not self.toolkit_ops_obj.stAI.get_app_setting('queue_ignore_finished', True):
+                            self.queue_history.pop(idx)
+
+                        continue
 
                     # reset any progress
                     item['progress'] = ''
@@ -2578,253 +2655,173 @@ class ToolkitOps:
 
         return available_devices
 
-    # TRANSCRIPTION MANAGEMENT/QUEUE/LOG METHODS
+    # TRANSCRIPTION MANAGEMENT
 
-    def prepare_transcription_file(self, toolkit_UI_obj=None, transcription_task=None, queue_id=None,
-                                   retranscribe=False, time_intervals=None, select_files=False, **kwargs):
-        '''
-        This asks the user where to save the transcribed files,
-         it chooses between transcribing an existing timeline (and first starting the render process)
-         and then passes the file to the transcription config
+    def get_all_valid_media_paths_in_dir(self, dir_path, recursive=False):
 
-        :param toolkit_UI_obj:
-        :param transcription_task:
-        :param audio_file:
-        :return: bool
-        '''
-
-        # check if there's a UI object available
-        if not self.is_UI_obj_available(toolkit_UI_obj):
-            logger.error('No UI object available, aborting')
+        # if the source file path is a directory, get all the valid media files in the directory
+        if not os.path.isdir(dir_path):
+            logger.warning('The source file path is not a directory. Aborting.')
             return False
 
-        # get info from resolve
-        # todo: this needs to be done using the NLE object in the future
-        try:
-            resolve_data = self.resolve_api.get_resolve_data()
-        # in case of exception still create a dict with an empty resolve object
-        except:
-            resolve_data = {'resolve': None}
+        # if the source file path is a file, return the file path
+        elif os.path.isdir(dir_path):
 
-        # set an empty target directory for future use
-        target_dir = ''
-
-        # if retranscribe is True, we're going to use an existing transcription item
-        if retranscribe:
-
-            # hope that the retranscribe attribute is the transcription file path too
-            if os.path.isfile(str(retranscribe)):
-
-                transcription_file_path = str(retranscribe)
-
-                # open the transcription file
-                transcription_data = self.get_transcription_file_data(transcription_file_path)
-
-                # prepare an empty audio file path
-                audio_file_path = None
-
-                # make sure the audio file path is in the transcription data and that the audio file exists
-                if 'audio_file_path' in transcription_data:
-
-                    # set the target directory to the transcription file path
-                    target_dir = os.path.dirname(transcription_file_path)
-
-                    # set the audio file path
-                    audio_file_path = os.path.join(target_dir, transcription_data['audio_file_path'])
-
-                    # check if the audio file exists
-                    if not os.path.isfile(audio_file_path):
-                        audio_file_path = None
-
-                # if no audio file was found, notify the user
-                if audio_file_path is None:
-                    audio_file_error = 'The audio file path is not in the transcription file ' \
-                                       'or the audio file cannot be found.'
-                    if self.is_UI_obj_available():
-                        self.toolkit_UI_obj.notify_via_messagebox(type='error',
-                                                                  message=audio_file_error)
-                    else:
-                        logger.error(audio_file_error)
-                    return False
-
-                # get the transcription name from the transcription file
-                name = transcription_data['name'] if 'name' in transcription_data else ''
-
-                # a unique id is also useful to keep track of stuff in the queue
-                queue_id = self.processing_queue.generate_queue_id(name=name)
-
-                # now open up the transcription settings window
-                self.start_transcription_config(audio_file_path=audio_file_path,
-                                                name=name,
-                                                transcription_task=transcription_task,
-                                                queue_id=queue_id,
-                                                transcription_file_path=transcription_file_path,
-                                                time_intervals=time_intervals)
-
-        # if Resolve is available and the user has an open timeline, render the timeline to an audio file
-        # but only if select files is False
-        elif not select_files and resolve_data is not None and resolve_data['resolve'] != None \
-                and 'currentTimeline' in resolve_data and \
-                resolve_data['currentTimeline'] != '' and resolve_data['currentTimeline'] is not None:
-
-            # reset any potential yes that the user might have said when asked to continue without resolve
-            toolkit_UI_obj.no_resolve_ok = False
-
-            # did we ever save a target dir for this project?
-            last_target_dir = self.stAI.get_project_setting(project_name=NLE.current_project,
-                                                            setting_key='last_target_dir')
-
-            # ask the user where to save the files
-            while target_dir == '' or not os.path.exists(os.path.join(target_dir)):
-                logger.info("Prompting user for render path.")
-                target_dir = toolkit_UI_obj.ask_for_target_dir(target_dir=last_target_dir)
-
-                # remember this target_dir for the next time we're working on this project
-                # (but only if it was selected by the user)
-                if target_dir and target_dir != last_target_dir:
-                    self.stAI.save_project_setting(project_name=NLE.current_project,
-                                                   setting_key='last_target_dir', setting_value=target_dir)
-
-                # cancel if the user presses cancel
-                if not target_dir:
-                    logger.info("User canceled transcription operation.")
-                    return False
-
-            # get the current timeline from Resolve
-            currentTimelineName = resolve_data['currentTimeline']['name']
-
-            # send the timeline name via kwargs
-            kwargs['timeline_name'] = currentTimelineName
-
-            # get the current project name from Resolve
-            if 'currentProject' in resolve_data and resolve_data['currentProject'] is not None:
-                # get the project name from Resolve
-                kwargs['project_name'] = resolve_data['currentProject']
-
-            # generate a unique id to keep track of this file in the queue and transcription log
-            if queue_id is None:
-                queue_id = self.processing_queue.generate_queue_id(name=currentTimelineName)
-
-            # todo check why this doesn't work - maybe because resolve polling is hanging the main thread
-            # update the transcription log
-            self.processing_queue.update_queue_item(queue_id=queue_id, status='rendering')
-
-            # use transcription_WAV render preset if it exists
-            # transcription_WAV is an audio only custom render preset that renders Linear PCM codec in a Wave format
-            # instead of Quicktime mp4; this is just to work with wav files instead of mp4 to improve compatibility.
-            # but the user needs to add it manually to resolve in order for it to work since the Resolve API
-            # doesn't permit choosing the audio format (only the codec)
-            render_preset = self.stAI.get_app_setting(setting_name='transcription_render_preset',
-                                                      default_if_none='transcription_WAV')
-
-            # let the user know that we're starting the render
-            toolkit_UI_obj.notify_via_os("Starting Render", "Starting Render in Resolve",
-                                         "Saving into {} and starting render.".format(target_dir))
-
-            # render the timeline in Resolve
-            rendered_files = self.resolve_api.render_timeline(target_dir, render_preset, True, False, False, True)
-
-            if not rendered_files:
-                self.processing_queue.update_queue_item(queue_id=queue_id, status='failed')
-                logger.error("Timeline render failed.")
-                return False
-
-            # don't show the settings window and simply use the default settings (selected from Preferences window)
-            if self.stAI.get_app_setting('transcripts_skip_settings', default_if_none=False):
-                kwargs['skip_settings'] = True
-
-            # now open up the transcription settings window
-            for rendered_file in rendered_files:
-                self.start_transcription_config(audio_file_path=rendered_file,
-                                                name=currentTimelineName,
-                                                transcription_task=transcription_task,
-                                                queue_id=queue_id, **kwargs)
-
-        # if resolve is not available or select_files is True, ask the user to select an audio file
-        else:
-
-            # ask the user if they want to simply transcribe a file from the drive
-            if not select_files and not toolkit_UI_obj.no_resolve_ok:
-
-                try:
-                    if not messagebox.askyesno(message='A Resolve Timeline is not available.\n\n'
-                                                   'Do you want to transcribe existing audio files instead?'):
-
-                        # and close the process if the user doesn't want to transcribe an existing file
-                        return False
-
-                # also, assume that the user wants to transcribe an existing file if the messagebox fails
-                # this is a hack until we move all UI stuff to the UI class
-                except:
-                    logger.debug('A Resolve Timeline is not available. Switching to file selection mode.')
-
-            # don't show the settings window and simply use the default settings (selected from Preferences window)
-            if self.stAI.get_app_setting('transcripts_skip_settings', default_if_none=False):
-                kwargs['skip_settings'] = True
-
-            # remember that the user said it's ok to continue without resolve
-            toolkit_UI_obj.no_resolve_ok = True
-
-            # ask the user for the target files
-            target_files = toolkit_UI_obj.ask_for_target_file(multiple=True)
-
-            # add it to the transcription list
-            if target_files:
-
-                for target_file in target_files:
-                    # the file name also becomes currentTimelineName for future use
-                    file_name = os.path.basename(target_file)
-
-                    # a unique id is also useful to keep track
-                    queue_id = self.processing_queue.generate_queue_id(name=file_name)
-
-                    # now open up the transcription settings window
-                    self.start_transcription_config(audio_file_path=target_file,
-                                                    name=file_name,
-                                                    transcription_task=transcription_task, queue_id=queue_id, **kwargs)
-
-                return True
-
-            # or close the process if the user canceled
+            # get all the files in the directory
+            # either reccursively
+            if not recursive:
+                all_files = os.listdir(dir_path)
             else:
-                return False
+                all_files = []
+                for root, dirs, files in os.walk(dir_path):
+                    for file in files:
+                        all_files.append(os.path.join(root, file))
 
-    def start_transcription_config(self, audio_file_path=None, name=None, transcription_task=None,
-                                   queue_id=None, transcription_file_path=False,
-                                   time_intervals=None, excluded_time_intervals=None, **kwargs):
-        '''
-        Opens up a window to allow the user to configure and start the transcription process for each file
-        :return:
-        '''
+                        if len(all_files) > self.stAI.get_app_setting('ingest_files_limit', default_if_none=30):
+                            logger.error('Too many files in the directory. Aborting.')
 
-        # check if there's a UI object available
-        if not self.is_UI_obj_available():
-            logger.error('No UI object available.')
+            # filter out the valid media files
+            valid_media_files \
+                = [os.path.join(dir_path, file) for file in all_files if self.is_valid_media_file(file)]
+
+            return valid_media_files
+
+        # if the source file path is neither a file nor a directory, return False
+        return False
+
+    def is_valid_media_file(self, source_file_path):
+        """
+        This checks if the source file path is a valid media file by checking the extension
+        """
+
+        if not source_file_path:
             return False
 
-        # if no transcription_file_path was passed, start a new transcription
-        if not transcription_file_path:
-            title = "Transcription Settings: " + name
+        # get the file extension
+        file_extension = os.path.splitext(source_file_path)[1].lower()
 
-        # if a transcription_file_path was passed, we're going to perform a re-transcription
-        else:
-            title = "Transcription Settings: " + name + " (re-transcribe)"
+        # check if the file extension is valid
+        if file_extension in ['.mov', '.mp4', '.mp3', '.wav', '.aif', '.aiff']:
+            return True
 
-        # open up the transcription settings window via Toolkit_UI
-        return self.toolkit_UI_obj.open_transcription_settings_window(title=title,
-                                                                      name=name,
-                                                                      audio_file_path=audio_file_path,
-                                                                      transcription_task=transcription_task,
-                                                                      queue_id=queue_id,
-                                                                      transcription_file_path=transcription_file_path,
-                                                                      time_intervals=time_intervals,
-                                                                      excluded_time_intervals=excluded_time_intervals,
-                                                                      **kwargs
-                                                                      )
+        # if the file extension is not valid, return False
+        return False
+
+    def add_media_to_queue(self, source_file_paths: str or list=None, queue_id: str=None,
+                           transcription_settings = None, video_indexing_settings = None,
+                           **kwargs):
+        """
+        This adds one media item to the ingest queue
+        (the task however might split into multiple queue items, for eg. transcription and video indexing)
+        """
+
+        # if no source file path was passed, return False
+        if not source_file_paths:
+            logger.warning('No source file path was passed for ingest. Aborting.')
+
+            # update the queue item status
+            if queue_id is not None:
+                self.processing_queue.update_queue_item(queue_id=queue_id, status='failed')
+
+            return False
+
+        # if the source file path is a string, convert it to a list
+        if isinstance(source_file_paths, str):
+            source_file_paths = [source_file_paths]
+
+        # this is the path variable we'll use to send the items to the queue
+        valid_source_file_paths = []
+
+        # loop through the source file paths
+        for source_file_path in source_file_paths:
+
+            # check if the source file path exists
+            if not os.path.exists(source_file_path):
+                # if it doesn't exist, log a warning and go to the next path
+                logger.warning('Source file path does not exist: ' + source_file_path)
+                continue
+
+            # if it's a folder, add all the valid media files in the folder to the queue
+            if os.path.isdir(source_file_path):
+
+                # get all the valid media files in the folder
+                valid_source_file_paths += self.get_all_valid_media_paths_in_dir(source_file_path, recursive=True)
+
+            # if it's a file, check if it's a valid media file
+            if os.path.isfile(source_file_path):
+
+                # if it's a valid media file, add it to the queue
+                if self.is_valid_media_file(source_file_path):
+                    valid_source_file_paths.append(source_file_path)
+
+                # if it's not a valid media file, log a warning and go to the next path
+                else:
+                    logger.debug('Skipping file path - not a valid media file: ' + source_file_path)
+                    continue
+
+        # if there are no valid source file paths, return False
+        if not valid_source_file_paths:
+            return False
+
+        queued = []
+
+        # if there are valid source file paths, add each of them to the queue
+        for source_file_path in valid_source_file_paths:
+
+            # create a transcription job only if we have transcription settings
+            if transcription_settings is not None and isinstance(transcription_settings, dict):
+
+                transcription_settings['name'] = os.path.basename(source_file_path)
+
+                # make sure to generate a new queue id for each type of task (transcription, video indexing, etc.)
+                # if a queue_id exists use it for the first item
+                if queue_id is not None:
+
+                    current_queue_id = queue_id
+
+                    # then reset it, so we make sure we generate a new queue_id if there are multiple files
+                    queue_id = None
+
+                else:
+                    current_queue_id = self.processing_queue.generate_queue_id(name=transcription_settings['name'])
+
+                # get the ingest settings
+                #ingest_settings = self.get_ingest_settings(source_file_path, ingest_task=ingest_task, **kwargs)
+
+                # send the item to ingest queue
+                #self.processing_queue.add_queue_item(source_file_path, **ingest_settings)
+
+                # don't forget the queue_id
+                transcription_settings['queue_id'] = current_queue_id
+
+                # remove the audio_file_path from the transcription settings
+                transcription_settings['audio_file_path'] = source_file_path
+
+                # send the item to transcription queue
+                self.add_transcription_to_queue(**transcription_settings)
+
+                # add this to the queued list
+                queued.append(current_queue_id)
+
+                # throttle a bit to avoid collisions etc.
+                time.sleep(0.05)
+
+        # confirm that stuff was added to the queue
+        if len(queued) > 0:
+            return queued
+
+        # otherwise return false
+        return False
+
 
     def add_transcription_to_queue(self, transcription_task=None, audio_file_path: str=None, queue_id: str=None, **kwargs):
         """
-        This adds one (or multiple) transcription item(s) to the transcription queue
+        This adds a transcription item to the transcription queue
+        (it also splits it into two queue items, if it's a transcribe+translate transcription_task)
+
+        Here, we are processing the options that have something to do with the queue processing
+        The whisper options are processed by the whisper_transcribe function,
+        since we might still need them in the queue history later
         """
 
         # if no audio file path was passed, return False
@@ -2899,6 +2896,22 @@ class ToolkitOps:
 
             # send each item to the universal queue
             self.processing_queue.add_to_queue(**kwargs)
+
+    def transcription_progress(self, queue_id=None, progress=None):
+        '''
+        Updates the progress of a transcription item in the transcription log
+        :param queue_id:
+        :param progress:
+        :return:
+        '''
+
+        # if a progress was passed, update the progress
+        if queue_id and progress:
+            self.processing_queue.update_queue_item(queue_id=queue_id, progress=progress)
+
+        # if no progress was passed, just return the current progress
+        elif queue_id:
+            return self.processing_queue.get_progress(queue_id=queue_id)
 
     # TRANSCRIPTION METHODS
 
@@ -4330,10 +4343,6 @@ class ToolkitOps:
                 'multilingual' if self.whisper_model.is_multilingual else 'English-only'
             ))
 
-        # delete the model reference so we don't pass it again in the transcribe function below
-        if 'model_name' in other_options:
-            del other_options['model_name']
-
         # cancel transcription if user requested it
         if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
             return None
@@ -4355,13 +4364,22 @@ class ToolkitOps:
         # technically the transcription process starts here, so start a timer for statistics
         transcription_start_time = time.time()
 
-        # remove empty language
-        if 'language' in other_options and other_options['language'] == '':
-            del other_options['language']
+        # clean up empty whisper options
+        if 'whisper_options' in other_options:
 
-        # remove empty initial prompt
-        if 'initial_prompt' in other_options and other_options['initial_prompt'] == '':
-            del other_options['initial_prompt']
+            # remove empty language from whisper_options
+            if 'language' in other_options['whisper_options'] \
+                and (other_options['whisper_options']['language'] == ''
+                     or other_options['whisper_options']['language'] is None):
+
+                del other_options['whisper_options']['language']
+
+            # remove empty initial prompt
+            if 'initial_prompt' in other_options['whisper_options'] \
+                    and (other_options['whisper_options']['initial_prompt'] == ''
+                         or other_options['whisper_options']['initial_prompt'] is None):
+
+                del other_options['whisper_options']['initial_prompt']
 
         # assume no time intervals
         time_intervals = None
@@ -4383,9 +4401,6 @@ class ToolkitOps:
                 # perform speech detection
                 time_intervals = self.get_speech_intervals(audio_array)
 
-            # remove this so it doesn't get passed to the transcribe function
-            del other_options['pre_detect_speech']
-
         # if time_intervals was passed from the request, take them into consideration
         if 'time_intervals' in other_options:
 
@@ -4401,8 +4416,6 @@ class ToolkitOps:
                     time_intervals = \
                         self.combine_overlapping_intervals(other_options['time_intervals'], time_intervals)
 
-            del other_options['time_intervals']
-
         # split the audio into segments according to the time intervals
         # in case no time intervals were passed, this will just return one audio segment with the whole audio
         audio_segments, time_intervals = self.split_audio_by_intervals(audio_array, time_intervals, sr)
@@ -4416,7 +4429,6 @@ class ToolkitOps:
             audio_segments, time_intervals = self.exclude_segments_by_intervals(
                 audio_array, time_intervals, other_options['excluded_time_intervals'], sr=sr
             )
-            del other_options['excluded_time_intervals']
 
         # create an empty list to load existing transcription data (or to save the new data)
         transcription_data = {}
@@ -4425,7 +4437,7 @@ class ToolkitOps:
 
         # ignore the transcription file path if it's empty
         if 'transcription_file_path' in other_options \
-                and other_options['transcription_file_path'] is None:
+            and other_options['transcription_file_path'] is None:
 
             del other_options['transcription_file_path']
 
@@ -4482,7 +4494,7 @@ class ToolkitOps:
                                                       other_options=other_options,
                                                       queue_id=queue_id
                                                       )
-        except Exception as e:
+        except Exception:
             logger.error('Error transcribing audio using Whisper.', exc_info=True)
 
             # update the status of the item in the transcription log
@@ -4690,10 +4702,12 @@ class ToolkitOps:
         # todo: move this to the UI - maybe a monitor function that checks the queue window for events?
         # why not open the transcription in a transcription window if the UI is available?
         if self.is_UI_obj_available():
-            self.toolkit_UI_obj.open_transcription_window(title=name,
-                                                          transcription_file_path=transcription_json_file_path,
-                                                          srt_file_path=srt_file_path
-                                                          if srt_file_path in transcription_data else '')
+            self.toolkit_UI_obj.open_transcription_window(
+                title=name,
+                transcription_file_path=transcription_json_file_path,
+                srt_file_path=transcription_data['srt_file_path']
+                if 'srt_file_path' in transcription_data and transcription_data['srt_file_path'] else None
+            )
 
         return True if not return_path else transcription_json_file_path
 
@@ -4782,6 +4796,47 @@ class ToolkitOps:
             logger.debug("Word level timings detected.")
 
         return transcription_json
+
+    def get_transcription_audio_file_path(self, transcription_file_path, transcription_data=None):
+        """
+        Returns the audio file path from the transcription file
+        """
+
+        # we still need the transcription file path to get the absolute path of the audio file
+        if not transcription_file_path:
+            logger.error('No transcription file path was passed.')
+            return None
+
+        # get the transcription data first (if it wasn't passed)
+        if not transcription_data:
+            transcription_data = self.get_transcription_file_data(transcription_file_path)
+
+        if transcription_data:
+
+            if 'audio_file_path' in transcription_data:
+
+                # if the path is not absolute, make it absolute, based on the transcription file path
+                if not os.path.isabs(transcription_data['audio_file_path']):
+
+                    # get the directory of the transcription file
+                    transcription_file_dir = os.path.dirname(transcription_file_path)
+
+                    # join the audio file path with the transcription file dir
+                    audio_file_path = os.path.join(transcription_file_dir, transcription_data['audio_file_path'])
+
+                    # if the audio file exists, return it
+                    if os.path.exists(audio_file_path):
+                        return audio_file_path
+
+                    logger.error("Audio file path not found: {}".format(audio_file_path))
+                    return None
+
+            logger.error("Audio file path not found in transcription file: {}".format(transcription_file_path))
+            return None
+
+        # if we got here it means that the audio file path is not in the transcription file or cannot be found
+        logger.error("Invalid transcription file: {}".format(transcription_file_path))
+        return None
 
     def time_str_to_seconds(self, time_str: str) -> float:
         '''
@@ -5509,18 +5564,18 @@ class ToolkitOps:
         else:
             return False
 
-    def transcription_has_timecode_data(self, transcription_data=None, transcription_path=None):
+    def transcription_has_timecode_data(self, transcription_data=None, transcription_file_path=None):
         '''
         This function checks if the passed transcription data or path has timecode data
         :param transcription_data: The transcription data to check
-        :param transcription_path: The path to the transcription file to check
+        :param transcription_file_path: The path to the transcription file to check
         :return: [timeline_fps, timeline_start_tc] if the transcription data has timecode data,
                 False if it doesn't, None if the transcription data or path is invalid
         '''
 
         # if the transcription data isn't passed, try to get it from the path
-        if transcription_data is None and transcription_path is not None:
-            transcription_data = self.get_transcription_file_data(transcription_file_path=transcription_path)
+        if transcription_data is None and transcription_file_path is not None:
+            transcription_data = self.get_transcription_file_data(transcription_file_path=transcription_file_path)
 
         # if the transcription data is still None, return False
         if transcription_data is None:
@@ -5536,15 +5591,15 @@ class ToolkitOps:
         logger.debug('Transcription does not contain timeline_fps or timeline_start_tc')
         return False
 
-    def convert_sec_to_transcription_timecode(self, seconds=0, transcription_data=None, transcription_path=None,
+    def convert_sec_to_transcription_timecode(self, seconds=0, transcription_data=None, transcription_file_path=None,
                                               offset_with_start_tc=True, return_timecode_data=False):
         '''
         This function converts the passed number of seconds to timecode,
         using the framerate and start_tc found in the transcription file/data
 
         :param seconds: The number of seconds to convert
-        :param transcription_data: The transcription data to use (ignored if transcription_path is passed)
-        :param transcription_path: The path to the transcription file to use
+        :param transcription_data: The transcription data to use (ignored if transcription_file_path is passed)
+        :param transcription_file_path: The path to the transcription file to use
         :param offset_with_start_tc: Whether or not to offset the timecode with the transcription file's start_tc
         :param return_timecode_data: Whether or not to return the timecode data as well as the timecode string
         :return: The timecode string, a list with the timecode string and timecode data (timecode, fps, start_tc),
@@ -5554,7 +5609,7 @@ class ToolkitOps:
 
         # get the timecode data from the transcription
         timecode_data = self.transcription_has_timecode_data(transcription_data=transcription_data,
-                                                             transcription_path=transcription_path)
+                                                             transcription_file_path=transcription_file_path)
 
         # if False or None was returned, pass them
         if timecode_data is False or timecode_data is None:
@@ -5596,7 +5651,7 @@ class ToolkitOps:
         return None
 
     def convert_transcription_timecode_to_sec(self, timecode: str,
-                                              transcription_data=None, transcription_path=None,
+                                              transcription_data=None, transcription_file_path=None,
                                               offset_with_start_tc=True, return_timecode_data=False,
                                               timecode_data=None):
         '''
@@ -5604,8 +5659,8 @@ class ToolkitOps:
         using the framerate and start_tc found in the transcription file/data
 
         :param timecode: The timecode to convert (must be a string)
-        :param transcription_data: The transcription data to use (ignored if transcription_path is passed)
-        :param transcription_path: The path to the transcription file to use
+        :param transcription_data: The transcription data to use (ignored if transcription_file_path is passed)
+        :param transcription_file_path: The path to the transcription file to use
         :param offset_with_start_tc: Whether or not to offset the timecode with the transcription file's start_tc
         :param return_timecode_data: Whether or not to return the timecode data as well as the timecode string
         :return: The number of seconds, a list with the number of seconds and timecode data (seconds, fps, start_tc),
@@ -5615,13 +5670,17 @@ class ToolkitOps:
         # get the timecode data from the transcription
         if timecode_data is None:
             timecode_data = self.transcription_has_timecode_data(transcription_data=transcription_data,
-                                                                 transcription_path=transcription_path)
+                                                                 transcription_file_path=transcription_file_path)
 
         # if False or None was returned, pass them
         if timecode_data is False or timecode_data is None:
             return timecode_data
 
         if (isinstance(timecode_data, list) or isinstance(timecode_data, tuple)) and len(timecode_data) == 2:
+
+            # stop if the timecode data tuple is useless
+            if timecode_data == (None, None):
+                return None
 
             seconds = None
 
@@ -5799,6 +5858,9 @@ class ToolkitOps:
 
                 # sync all the synced transcription windows
                 self.toolkit_UI_obj.update_all_transcription_windows()
+
+                # update the resolve buttons in the menu
+                self.toolkit_UI_obj.UI_menus.toggle_resolve_buttons()
 
         # when the timeline has changed
         elif event_name == 'timeline_changed':
@@ -6246,6 +6308,8 @@ class ToolkitOps:
                               for marker in NLE.current_timeline['markers']])))
 
             # if no markers exist, cancel operation and let the user know that there are no markers to render
+            marker_color = None
+            starts_with = None
             if current_timeline_marker_colors:
                 # marker_color = simpledialog.askstring(title="Markers Color",
                 #                                      prompt="What color markers should we render?\n\n"

@@ -267,7 +267,6 @@ def transcribe(
         while seek < content_frames:
 
             # gracefully cancel if the queue item has been canceled
-
             if queue_id is not None \
                     and toolkit_ops_obj.processing_queue.get_status(queue_id=queue_id) \
                     in [None, False, 'canceling', 'canceled']:
@@ -396,6 +395,11 @@ def transcribe(
                     start, end, text = segment["start"], segment["end"], segment["text"]
                     line = f"[{format_timestamp(start)} --> {format_timestamp(end)}] {text}"
                     print(make_safe(line))
+
+                    # add the text to the queue item variable (to make it available in the UI)
+                    toolkit_ops_obj.processing_queue.set_item_variable(
+                        queue_id=queue_id, variable_name='text', variable_value=make_safe(segment["text"]), append=True)
+
 
             # if a segment is instantaneous or does not contain text, clear it
             for i, segment in enumerate(current_segments):

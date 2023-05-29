@@ -77,70 +77,71 @@ class MotsResolve:
         If this is not the case, the API will not work properly on Windows machines.
         '''
 
-        if sys.platform == 'win32':
+        # there seems to be a problem on MacOS too
+        #if sys.platform == 'win32':
 
-            from packaging import version
+        from packaging import version
 
-            # get the current Python major and minor version numbers
-            current_python_version = platform.python_version()
+        # get the current Python major and minor version numbers
+        current_python_version = platform.python_version()
 
-            # get the list of all Python versions installed on this machine using py -0
-            try:
-                result = subprocess.run(['py', '-0'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                output_str = result.stdout.decode('utf-8').strip()
+        # get the list of all Python versions installed on this machine using py -0
+        try:
+            result = subprocess.run(['py', '-0'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            output_str = result.stdout.decode('utf-8').strip()
 
-            # if py is not found, assume the Python version is fine - the latest python versions should come with py
-            except FileNotFoundError:
-                self.logger.debug("py not found on this machine. Skipping Python version check.")
-                return True
+        # if py is not found, assume the Python version is fine - the latest python versions should come with py
+        except FileNotFoundError:
+            self.logger.debug("py not found on this machine. Skipping Python version check.")
+            return True
 
-            output_str = output_str.split('\n')
+        output_str = output_str.split('\n')
 
-            # take all the lines that start with a dash
-            higher_python_versions = []
-            all_python_versions = []
-            for line in output_str:
+        # take all the lines that start with a dash
+        higher_python_versions = []
+        all_python_versions = []
+        for line in output_str:
 
-                if line.strip().startswith('-'):
-                    # get the version number
-                    found_python_version = line.strip()
+            if line.strip().startswith('-'):
+                # get the version number
+                found_python_version = line.strip()
 
-                    # remove the dash in front of the version number
-                    found_python_version = found_python_version[1:]
+                # remove the dash in front of the version number
+                found_python_version = found_python_version[1:]
 
-                    # remove the -64 suffix if it's there
-                    found_python_version = found_python_version.replace('-64', '')
+                # remove the -64 suffix if it's there
+                found_python_version = found_python_version.replace('-64', '')
 
-                    # get the major and minor version numbers
-                    #found_python_version = '.'.join(found_python_version.split('.')[:2])
+                # get the major and minor version numbers
+                #found_python_version = '.'.join(found_python_version.split('.')[:2])
 
-                    # add the version to the list of versions
-                    # (only if it's higher than the current version)
-                    if version.parse(found_python_version) > version.parse(current_python_version):
-                        higher_python_versions.append(found_python_version)
+                # add the version to the list of versions
+                # (only if it's higher than the current version)
+                if version.parse(found_python_version) > version.parse(current_python_version):
+                    higher_python_versions.append(found_python_version)
 
-                    # add the version to the list of all versions
-                    all_python_versions.append(found_python_version)
+                # add the version to the list of all versions
+                all_python_versions.append(found_python_version)
 
-            # check if more than one Python version was found
-            if len(higher_python_versions) > 1 or \
-                    (len(higher_python_versions) == 1 and current_python_version not in higher_python_versions):
+        # check if more than one Python version was found
+        if len(higher_python_versions) > 1 or \
+                (len(higher_python_versions) == 1 and current_python_version not in higher_python_versions):
 
-                self.logger.warning("Found the following Python versions on this machine: {}"
-                                    .format(", ".join(all_python_versions)))
-                self.logger.warning("Current installation runs on Python version {}."
-                                    .format(current_python_version))
-                self.logger.warning("DaVinci Resolve API on Windows might not work if this is the case.")
-                self.logger.warning("Please uninstall the following Python versions: {}"
-                                    .format(", ".join(higher_python_versions)))
+            self.logger.warning("Found the following Python versions on this machine: {}"
+                                .format(", ".join(all_python_versions)))
+            self.logger.warning("Current installation runs on Python version {}."
+                                .format(current_python_version))
+            self.logger.warning("DaVinci Resolve API on Windows might not work if this is the case.")
+            self.logger.warning("Please uninstall the following Python versions: {}"
+                                .format(", ".join(higher_python_versions)))
 
-                self.logger.warning("You can use --skip-python-check to skip this check, but the tool might not start.")
-                self.logger.warning("Or, install the tool using git into a virtual environment with the highest Python "
-                                    "version available on your machine on your own risk.")
+            self.logger.warning("You can use --skip-python-check to skip this check, but the tool might not start.")
+            self.logger.warning("Or, install the tool using git into a virtual environment with the highest Python "
+                                "version available on your machine on your own risk.")
 
-                return False
+            return False
 
-        return True
+        #return True
 
 
     def get_resolve(self):

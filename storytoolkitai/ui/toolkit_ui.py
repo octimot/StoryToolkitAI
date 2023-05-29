@@ -15,8 +15,12 @@ from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_N
 from storytoolkitai.core.toolkit_ops import *
 
 import tkinter as tk
+import customtkinter as ctk
+from storytoolkitai.ui.CTkMessagebox import CTkMessagebox as CTkMessagebox
 from tkinter import filedialog, simpledialog, messagebox, font, ttk
 from tkinter import *
+
+from storytoolkitai.ui.ctk_tooltip import CTkToolTip
 
 from whisper import available_models as whisper_available_models
 
@@ -795,10 +799,16 @@ class toolkit_UI:
                 return False
 
             # and start the transcription config process
-            self.toolkit_ops_obj \
-                .prepare_transcription_file(toolkit_UI_obj=self.toolkit_UI_obj, transcription_task='transcribe',
-                                            retranscribe=self.transcription_file_paths[window_id],
-                                            time_intervals=time_intervals)
+            #self.toolkit_ops_obj \
+            #    .prepare_transcription_file(toolkit_UI_obj=self.toolkit_UI_obj, transcription_task='transcribe',
+            #                                retranscribe=self.transcription_file_paths[window_id],
+            #                                time_intervals=time_intervals)
+
+            # open the ingest window with the transcription file to show only the re-transcribing options
+            self.toolkit_UI_obj.open_ingest_window(
+                transcription_file_path=self.transcription_file_paths[window_id],
+                time_intervals=time_intervals
+            )
 
             # close the transcription window
             self.toolkit_UI_obj.destroy_transcription_window(window_id)
@@ -899,7 +909,7 @@ class toolkit_UI:
 
             # check if the user is trying to add markers
             # to a timeline that is not connected to the transcription in this window
-            is_linked, transcription_path = self.toolkit_ops_obj.get_transcription_to_timeline_link(
+            is_linked, transcription_file_path = self.toolkit_ops_obj.get_transcription_to_timeline_link(
                     transcription_file_path=self.transcription_file_paths[window_id],
                     timeline_name=NLE.current_timeline['name'],
                     project_name=NLE.current_project)
@@ -1791,15 +1801,18 @@ class toolkit_UI:
             # loop this until we return something
             while start_tc is None or fps is None:
 
-                # then we call the ask_dialogue function
-                user_input = self.toolkit_UI_obj.AskDialog(title='Timeline Timecode Info',
-                                                           input_widgets=input_widgets,
-                                                           parent=self.toolkit_UI_obj.windows[window_id],
-                                                           cancel_return=None
-                                                           ).value()
+                try:
+                    # then we call the ask_dialogue function
+                    user_input = self.toolkit_UI_obj.AskDialog(title='Timeline Timecode Info',
+                                                               input_widgets=input_widgets,
+                                                               parent=self.toolkit_UI_obj.windows[window_id],
+                                                               cancel_return=None
+                                                               ).value()
 
-                # if the user clicked cancel, stop the loop
-                if user_input is None:
+                    # if the user clicked cancel, stop the loop
+                    if user_input is None:
+                        return None, None
+                except:
                     return None, None
 
                 # validate the user input
@@ -3847,7 +3860,7 @@ class toolkit_UI:
         self.stAI = stAI
 
         # initialize tkinter as the main GUI
-        self.root = tk.Tk()
+        self.root = ctk.CTk()
 
         # what happens when the user tries to close the main window
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
@@ -3936,7 +3949,31 @@ class toolkit_UI:
         # what to call before exiting the app
         self.before_exit = None
 
+        # new ctk UI styling here
+        self.ctk_frame_paddings = {'padx': 5, 'pady': 5}
+        self.ctk_form_paddings_ext = {'padx': 10, 'pady': 5}
+        self.ctk_form_entry_paddings = {'padx': 10, 'pady': 10}
+        self.ctk_frame_transparent = {'fg_color': 'transparent'}
+        self.ctk_frame_invisible_paddings = {'padx': 0, 'pady': 0}
+        self.ctk_form_entry_settings = {'width': 120}
+        self.ctk_form_entry_settings_half = {'width': self.ctk_form_entry_settings['width'] / 2}
+        self.ctk_form_entry_settings_quarter = {'width': self.ctk_form_entry_settings['width'] / 4}
+        self.ctk_form_textbox = {'width': 300, 'height': 100}
+        self.ctk_form_paddings = {'padx': 10, 'pady': 5}
+        self.ctk_form_label_settings = {'width': 170, 'anchor': 'w'}
+        self.ctk_frame_label_settings = {
+            **{'fg_color': ctk.ThemeManager.theme["CTkScrollableFrame"]["label_fg_color"],'anchor': 'w'},
+            **self.ctk_frame_paddings
+        }
+        self.ctk_main_window_label_settings = {
+                **self.ctk_frame_label_settings, **self.ctk_frame_transparent,
+                **{'anchor': 'center', 'padx': 10, 'width': 150}
+        }
+
+        self.ctk_button_size ={'width': 200, 'height': 45}
+
         # set some UI styling here
+        # todo: check where these are used and replace all elements with ctk ones
         self.paddings = {'padx': 10, 'pady': 10}
         self.left_frame_button_paddings = {'padx': 5, 'pady': 5}
         self.form_paddings = {'padx': 10, 'pady': 5}
@@ -3947,7 +3984,6 @@ class toolkit_UI:
         self.entry_settings = {'width': 30}
         self.entry_settings_half = {'width': 20}
         self.entry_settings_quarter = {'width': 8}
-
         self.dialog_paddings = {'padx': 0, 'pady': 0}
         self.dialog_entry_settings = {'width': 30}
 
@@ -4020,9 +4056,9 @@ class toolkit_UI:
         self.default_font_h3.configure(size=int(default_font_size_after_ratio + 1))
 
         # define the pixel size for buttons
-        pixel = tk.PhotoImage(width=1, height=1)
+        #pixel = tk.PhotoImage(width=1, height=1)
 
-        self.blank_img_button_settings = {'image': pixel, 'compound': 'c'}
+        #self.blank_img_button_settings = {'image': pixel, 'compound': 'c'}
 
         # these are the marker colors used in Resolve
         self.resolve_marker_colors = {
@@ -4056,9 +4092,11 @@ class toolkit_UI:
         }
 
         # other colors
-        self.theme_colors = {
-            'blue': '#1E90FF',
-        }
+        self.theme_colors = {}
+        self.theme_colors['blue'] = '#1E90FF'
+        self.theme_colors['red'] = '#800020'
+        self.theme_colors['error'] = self.theme_colors['red']
+        self.theme_colors['error_text'] = self.theme_colors['red']
 
         # CMD or CTRL?
         # use CMD for Mac
@@ -4133,7 +4171,7 @@ class toolkit_UI:
 
                 changelog_instructions = 'Maybe update now before getting back to work?\n' + \
                                          'Quit the tool and use `git pull` to update.\n\n' \
- \
+
                     # prepare some action buttons for the text window
                 action_buttons = [{'text': 'Quit to update', 'command': lambda: sys.exit()}]
 
@@ -4290,9 +4328,6 @@ class toolkit_UI:
         # save the config file
         self.stAI.save_config()
 
-    class main_window:
-        pass
-
     def on_exit(self):
         '''
         This function is usually called when the user closes the main window or exits the program via the menu.
@@ -4324,21 +4359,29 @@ class toolkit_UI:
         # and finally, exit the program
         sys.exit()
 
-    def focus_window(self, window_id):
+    def focus_window(self, window_id=None, window=None):
         '''
-        This function focuses a window.
+        This function focuses a window. Requires either a window_id or a window
+        :param window_id: The window id of the window to focus. (must be available in self.windows)
+        :param window: The window object to focus.
         '''
 
-        # if the window id is not available in the window list, return
-        if window_id not in self.windows:
-            logger.debug('Window not found: ' + window_id)
+        if window_id is None and window is None:
+            logger.debug('We need at least a window id or a window object to focus a window.')
             return False
 
+        # if the window id is not available in the window list, return
+        if window_id is not None and window_id not in self.windows:
+            logger.debug('Window not found: {}'.format(window_id))
+            return False
+
+        window = self.windows[window_id] if window is None else window
+
         # bring the window to the top
-        self.windows[window_id].lift()
+        window.lift()
 
         # then focus on it
-        self.windows[window_id].focus_set()
+        window.focus_set()
 
     def create_or_open_window(self, parent_element: tk.Toplevel or tk = None, window_id: str = None,
                               title: str = None, resizable: bool = False,
@@ -4346,7 +4389,7 @@ class toolkit_UI:
                               close_action=None,
                               open_multiple: bool = False, return_window: bool = False) \
             -> tk.Toplevel or str or bool:
-        '''
+        """
         This function creates a new window or opens an existing one based on the window_id.
         :param parent_element:
         :param window_id:
@@ -4357,7 +4400,7 @@ class toolkit_UI:
                              (but adds the timestamp to the window_id for differentiations)
         :param return_window: If false, it just returns the window_id. If true, it returns the window object.
         :return: The window_id, the window object if return_window is True, or False if the window already exists
-        '''
+        """
 
         # if the window is already opened somewhere, do this
         # (but only if open_multiple is False)
@@ -4388,7 +4431,7 @@ class toolkit_UI:
                 parent_element = self.root
 
             # add the window to the toolkit UI windows dictionary
-            self.windows[window_id] = Toplevel(parent_element)
+            self.windows[window_id] = ctk.CTkToplevel(parent_element)
 
             # keep track of the window type
             if type is not None:
@@ -4508,7 +4551,7 @@ class toolkit_UI:
         # only attempt to show the frame from the main window if it's known not to be visible
         if frame_name not in self.windows['main'].main_window_visible_frames:
             # first show it
-            self.windows['main'].__dict__[frame_name].pack()
+            self.windows['main'].__dict__[frame_name].pack(expand=True, fill=X)
 
             # then add it to the visible frames list
             self.windows['main'].main_window_visible_frames.append(frame_name)
@@ -4522,30 +4565,20 @@ class toolkit_UI:
         Updates the main window GUI
         :return:
         '''
+        
+        main_window = self.windows['main']
+
+        #  show the tool buttons if they're not visible already
+        self.show_main_window_frame('tool_buttons_frame')
 
         # if resolve isn't connected or if there's a communication error
         if not NLE.is_connected():
             # hide resolve related buttons
             self.hide_main_window_frame('resolve_buttons_frame')
 
-            # update the names of the transcribe buttons
-            self.windows['main'].button5.config(text='Transcribe\nAudio')
-            self.windows['main'].button6.config(text='Translate\nAudio to English')
-
-            # if resolve is connected and the resolve buttons are not visible
+        # if resolve is connected and the resolve buttons are not visible
         else:
-            # show resolve buttons
-            if self.show_main_window_frame('resolve_buttons_frame'):
-                # but hide other buttons so we can place them back below the resolve buttons frame
-                self.hide_main_window_frame('other_buttons_frame')
-
-            # update the names of the transcribe buttons
-            self.windows['main'].button5.config(text='Transcribe\nTimeline')
-            self.windows['main'].button6.config(text='Translate\nTimeline to English')
-
-        # now show the other buttons too if they're not visible already
-        self.show_main_window_frame('other_buttons_frame')
-        self.show_main_window_frame('footer_frame')
+            self.show_main_window_frame('resolve_buttons_frame')
 
         return
 
@@ -4561,137 +4594,117 @@ class toolkit_UI:
         # temporary width and height for the main window
         self.root.config(width=1, height=1)
 
-        # create a reference main window
-        self.windows['main'] = self.root
+        # the reference to the main window
+        main_window = self.windows['main'] = self.root
 
         # any frames stored here in the future will be considered visible
-        self.windows['main'].main_window_visible_frames = []
+        main_window.main_window_visible_frames = []
 
         # retrieve toolkit_ops object
         toolkit_ops_obj = self.toolkit_ops_obj
 
-        # set the window size
-        # self.root.geometry("350x440")
+        # todo: check how the menu bar looks on Windows and if it's super bad,
+        #  try to create a separate toplevel window just for the menu bar
+        #  (or for the below buttons)
+
+
+        # create the frame that will hold the tool buttons
+        main_window.tool_buttons_frame = ctk.CTkFrame(self.root, **self.ctk_frame_transparent)
 
         # create the frame that will hold the resolve buttons
-        self.windows['main'].resolve_buttons_frame = tk.Frame(self.root)
-
-        # create the frame that will hold the other buttons
-        self.windows['main'].other_buttons_frame = tk.Frame(self.root)
+        main_window.resolve_buttons_frame = ctk.CTkFrame(self.root, **self.ctk_frame_transparent)
 
         # add footer frame
-        self.windows['main'].footer_frame = tk.Frame(self.root)
+        main_window.footer_frame = ctk.CTkFrame(self.root, **self.ctk_frame_transparent)
 
         # draw buttons
 
-        # label1 = tk.Label(frame, text="Resolve Operations", anchor='w')
-        # label1.grid(row=0, column=1, sticky='w', padx=10, pady=10)
+        # resolve buttons frame
+        main_window.r_transcribe = ctk.CTkButton(main_window.resolve_buttons_frame,
+                                                 **self.ctk_button_size, text="Transcribe Timeline",
+                                                 command=lambda: self.button_nle_transcribe_timeline())
 
-        # resolve buttons frame row 1
-        self.windows['main'].button1 = tk.Button(self.windows['main'].resolve_buttons_frame,
-                                                 **self.blank_img_button_settings,
-                                                 **self.button_size,
-                                                 text="Copy Timeline\nMarkers to Same Clip",
+        main_window.r_copy_markers_clip = ctk.CTkButton(main_window.resolve_buttons_frame,
+                                                 **self.ctk_button_size,
+                                                 text="Timeline Markers to Same Clip",
                                                  command=lambda: self.toolkit_ops_obj.execute_operation(
                                                      'copy_markers_timeline_to_clip', self))
-        self.windows['main'].button1.grid(row=1, column=1, **self.paddings)
 
-        self.windows['main'].button2 = tk.Button(self.windows['main'].resolve_buttons_frame,
-                                                 **self.blank_img_button_settings,
-                                                 **self.button_size,
-                                                 text="Copy Clip Markers\nto Same Timeline",
+        main_window.r_copy_markers_timeline = ctk.CTkButton(main_window.resolve_buttons_frame,
+                                                 **self.ctk_button_size,
+                                                 text="Clip Markers to Same Timeline",
                                                  command=lambda: self.toolkit_ops_obj.execute_operation(
                                                      'copy_markers_clip_to_timeline', self))
-        self.windows['main'].button2.grid(row=1, column=2, **self.paddings)
 
         # resolve buttons frame row 2
-        self.windows['main'].button3 = tk.Button(self.windows['main'].resolve_buttons_frame,
-                                                 **self.blank_img_button_settings,
-                                                 **self.button_size, text="Render Markers\nto Stills",
+        main_window.r_render_marker_stils = ctk.CTkButton(main_window.resolve_buttons_frame,
+                                                 **self.ctk_button_size, text="Render Markers to Stills",
                                                  command=lambda: self.toolkit_ops_obj.execute_operation(
                                                      'render_markers_to_stills', self))
-        self.windows['main'].button3.grid(row=2, column=1, **self.paddings)
 
-        self.windows['main'].button4 = tk.Button(self.windows['main'].resolve_buttons_frame,
-                                                 **self.blank_img_button_settings,
-                                                 **self.button_size, text="Render Markers\nto Clips",
+        main_window.r_render_marker_clips = ctk.CTkButton(main_window.resolve_buttons_frame,
+                                                 **self.ctk_button_size, text="Render Markers to Clips",
                                                  command=lambda: self.toolkit_ops_obj.execute_operation(
                                                      'render_markers_to_clips', self))
-        self.windows['main'].button4.grid(row=2, column=2, **self.paddings)
 
-        # Other Frame Row 1
-        self.windows['main'].button5 = tk.Button(self.windows['main'].other_buttons_frame,
-                                                 **self.blank_img_button_settings,
-                                                 **self.button_size, text="Transcribe\nTimeline",
-                                                 command=lambda: self.toolkit_ops_obj.prepare_transcription_file(
-                                                     toolkit_UI_obj=self))
-        # add the shift+click binding to the button
-        # this forces the user to select the files manually
-        self.windows['main'].button5.bind('<Shift-Button-1>',
-                                          lambda event: toolkit_ops_obj.prepare_transcription_file(toolkit_UI_obj=self,
-                                                                                                   select_files=True))
-        self.windows['main'].button5.grid(row=1, column=1, **self.paddings)
 
-        self.windows['main'].button6 = tk.Button(self.windows['main'].other_buttons_frame,
-                                                 **self.blank_img_button_settings,
-                                                 **self.button_size,
-                                                 text="Translate\nTimeline to English",
-                                                 command=lambda: self.toolkit_ops_obj.prepare_transcription_file(
-                                                     toolkit_UI_obj=self, transcription_task='translate'))
-        # add the shift+click binding to the button
-        # this forces the user to select the files manually
-        self.windows['main'].button6.bind('<Shift-Button-1>',
-                                          lambda event: toolkit_ops_obj.prepare_transcription_file(toolkit_UI_obj=self,
-                                                                                                   transcription_task='translate',
-                                                                                                   select_files=True))
+        # TOOL BUTTONS
 
-        self.windows['main'].button6.grid(row=1, column=2, **self.paddings)
+        main_window.t_ingest = ctk.CTkButton(main_window.tool_buttons_frame,
+                                                 **self.ctk_button_size,
+                                                 text="Transcribe Audio", command=self.button_transcribe)
 
-        self.windows['main'].button7 = tk.Button(self.windows['main'].other_buttons_frame,
-                                                 **self.blank_img_button_settings,
-                                                 **self.button_size,
-                                                 text="Open\nTranscript", command=lambda: self.open_transcript())
-        self.windows['main'].button7.grid(row=2, column=1, **self.paddings)
+        main_window.t_open_transcript = ctk.CTkButton(main_window.tool_buttons_frame,
+                                                 **self.ctk_button_size,
+                                                 text="Open Transcript", command=lambda: self.open_transcript())
 
-        self.windows['main'].button8 = tk.Button(self.windows['main'].other_buttons_frame,
-                                                 **self.blank_img_button_settings,
-                                                 **self.button_size,
+        main_window.t_queue = ctk.CTkButton(main_window.tool_buttons_frame,
+                                                 **self.ctk_button_size,
                                                  text="Queue",
                                                  command=lambda: self.open_queue_window())
-        self.windows['main'].button8.grid(row=2, column=2, **self.paddings)
 
         # THE ADVANCED SEARCH BUTTON
-        self.windows['main'].button9 = tk.Button(self.windows['main'].other_buttons_frame,
-                                                 **self.blank_img_button_settings,
-                                                 **self.button_size,
-                                                 text="Advanced\n Search", command=lambda:
-            self.open_advanced_search_window())
+        main_window.t_adv_search = ctk.CTkButton(main_window.tool_buttons_frame,
+                                                 **self.ctk_button_size,
+                                                 text="Search",
+                                                command=lambda: self.open_advanced_search_window())
         # add the shift+click binding to the button
-        self.windows['main'].button9.bind('<Shift-Button-1>',
+        main_window.t_adv_search.bind('<Shift-Button-1>',
                                           lambda event: self.open_advanced_search_window(select_dir=True))
 
-        self.windows['main'].button9.grid(row=3, column=1, **self.paddings)
-
         # THE ASSISTANT BUTTON
-        self.windows['main'].button10 = tk.Button(self.windows['main'].other_buttons_frame,
-                                                  **self.blank_img_button_settings,
-                                                  **self.button_size,
+        main_window.open_assistant = ctk.CTkButton(main_window.tool_buttons_frame,
+                                                  **self.ctk_button_size,
                                                   text="Assistant",
                                                   command=lambda: self.open_assistant_window())
 
-        self.windows['main'].button10.grid(row=3, column=2, **self.paddings)
+        # add the resolve buttons to the window
+        # but first a label
+        #ctk.CTkLabel(main_window.resolve_buttons_frame, text="Resolve", **self.ctk_main_window_label_settings)\
+        #    .grid(row=1, column=0, sticky='ew')
 
-        # THE CONSOLE BUTTON
-        # self.windows['main'].button10 = tk.Button(self.windows['main'].other_buttons_frame, **self.blank_img_button_settings,
-        #                                        **self.button_size,
-        #                                        text="Console", command=lambda:
-        #                                                    self.open_text_window(title="Console", initial_text="hello",
-        #                                                                          can_find=True,
-        #                                                                          user_prompt=True,
-        #                                                                          prompt_prefix="> ")
-        #                                      )
-        #
-        # self.windows['main'].button10.grid(row=3, column=2, **self.paddings)
+        main_window.r_transcribe.grid(row=1, column=1, **self.paddings)
+        main_window.r_copy_markers_clip.grid(row=1, column=2, **self.paddings)
+        main_window.r_copy_markers_timeline.grid(row=1, column=3, **self.paddings)
+        main_window.r_render_marker_stils.grid(row=1, column=4, **self.paddings)
+        main_window.r_render_marker_clips.grid(row=1, column=5, **self.paddings)
+
+        # make column 1 the size of the window
+        #main_window.resolve_buttons_frame.grid_columnconfigure(1, weight=1)
+
+        # add the app buttons to the window
+        # but first the tool label
+        #ctk.CTkLabel(main_window.tool_buttons_frame, text="Tool", **self.ctk_main_window_label_settings)\
+        #    .grid(row=1, column=0, sticky='ew')
+
+        main_window.t_ingest.grid(row=1, column=1, **self.paddings)
+        main_window.t_open_transcript.grid(row=1, column=2, **self.paddings)
+        main_window.t_queue.grid(row=1, column=3, **self.paddings)
+        main_window.t_adv_search.grid(row=1, column=4, **self.paddings)
+        main_window.open_assistant.grid(row=1, column=5, **self.paddings)
+
+        # make column 1 the size of the window
+        #main_window.tool_buttons_frame.grid_columnconfigure(1, weight=1)
 
         # Make the window resizable false
         self.root.resizable(False, False)
@@ -4702,15 +4715,14 @@ class toolkit_UI:
         logger.info("Starting StoryToolkitAI GUI")
 
         # when the window is focused or clicked on
-        self.windows['main'].bind("<FocusIn>", lambda event: self._focused_window('main'))
-        self.windows['main'].bind("<Button-1>", lambda event: self._focused_window('main'))
-        self.windows['main'].bind("<Button-2>", lambda event: self._focused_window('main'))
-        self.windows['main'].bind("<Button-3>", lambda event: self._focused_window('main'))
+        main_window.bind("<FocusIn>", lambda event: self._focused_window('main'))
+        main_window.bind("<Button-1>", lambda event: self._focused_window('main'))
+        main_window.bind("<Button-2>", lambda event: self._focused_window('main'))
+        main_window.bind("<Button-3>", lambda event: self._focused_window('main'))
 
         # add key bindings to the main window
         # key t for the transcription window
-        self.windows['main'].bind("t", lambda event: self.toolkit_ops_obj.prepare_transcription_file(
-            toolkit_UI_obj=self))
+        main_window.bind("t", lambda event: self.button_transcribe())
 
         # load menubar items
         self.UI_menus.load_menubar()
@@ -5923,345 +5935,1243 @@ class toolkit_UI:
         def value(self):
             return self.return_value
 
-    def open_transcription_settings_window(self, title="Transcription Settings",
-                                           audio_file_path=None, name=None, transcription_task=None, queue_id=None,
-                                           transcription_file_path=False, time_intervals=None,
-                                           excluded_time_intervals=None, **kwargs):
+    def open_ingest_window(self, title="Ingest Files", queue_id=None, **kwargs):
+        """
+        This will open the main window for ingesting files
+        If a transcription_file_path that exists is passed, it will be used as a Re-transcribing window
 
-        if self.toolkit_ops_obj is None or audio_file_path is None or queue_id is None:
-            logger.error('Aborting. Unable to open transcription settings window.')
-            return False
+        """
 
         # assign a queue_id for this window depending on the queue queue_id
-        ts_window_id = 'ts-' + queue_id
+        ingest_window_id = 'ingest-' + str(queue_id if queue_id is not None else time.time())
 
-        # what happens when the window is closed
-        close_action = lambda ts_window_id=ts_window_id, queue_id=queue_id: \
-            self.destroy_transcription_settings_window(ts_window_id, queue_id)
+        # if a transcription path was passed, use its hash instead
+        if 'transcription_file_path' in kwargs \
+                and kwargs['transcription_file_path'] is not None:
 
-        # create a window for the transcription settings if one doesn't already exist
-        if self.create_or_open_window(parent_element=self.root, window_id=ts_window_id, title=title,
-                                      type='transcription_settings',
-                                      resizable=True, close_action=close_action):
+            # check if the transcription path exists
+            if os.path.exists(kwargs['transcription_file_path']):
+                # get the hash of the transcription path
+                ingest_window_id = 'ingest-' + \
+                                   str(hashlib.md5(str(kwargs['transcription_file_path']).encode('utf-8')).hexdigest())
 
-            self.toolkit_ops_obj.processing_queue.update_queue_item(queue_id=queue_id, status='waiting user')
+                # get the transcription data
+                transcription_data = self.toolkit_ops_obj.get_transcription_file_data(kwargs['transcription_file_path'])
 
-            # place the window on top for a moment so that the user sees that he has to interact
-            self.windows[ts_window_id].wm_attributes('-topmost', True)
-            self.windows[ts_window_id].wm_attributes('-topmost', False)
-            self.windows[ts_window_id].lift()
+                # add the name of the transcription to the window
+                title = "Re-transcribe" + (' - ' + transcription_data['name'] if 'name' in transcription_data else '')
 
-            ts_form_frame = tk.Frame(self.windows[ts_window_id])
-            ts_form_frame.pack()
+                # add the transcription_data to the kwargs
+                kwargs['transcription_data'] = transcription_data
 
-            # escape key closes the window
-            self.windows[ts_window_id].bind('<Escape>', lambda event: close_action())
-
-            # File items start here
-
-            # TRANSCRIPTION FILE PATH (hidden) - for re-transcriptions only
-            if transcription_file_path:
-                transcription_file_path_var = StringVar(ts_form_frame, str(transcription_file_path))
+            # if the transcription path doesn't exist, remove it from the kwargs
             else:
-                transcription_file_path_var = StringVar(ts_form_frame, '')
+                del kwargs['transcription_file_path']
 
-            # NAME INPUT
-            Label(ts_form_frame, text="Name", **self.label_settings).grid(row=1, column=1,
-                                                                          **self.input_grid_settings,
-                                                                          **self.form_paddings)
-            name_var = StringVar(ts_form_frame)
-            name_input = Entry(ts_form_frame, textvariable=name_var, **self.entry_settings)
-            name_input.grid(row=1, column=2, **self.input_grid_settings, **self.form_paddings)
-            name_input.insert(0, name)
+        # create a function to close the ingest window
+        close_ingest_window = lambda: self.button_cancel_ingest(window_id=ingest_window_id, queue_id=queue_id)
 
-            # FILE INPUT (disabled)
-            Label(ts_form_frame, text="File", **self.label_settings).grid(row=2, column=1,
-                                                                          **self.input_grid_settings,
-                                                                          **self.form_paddings)
+        # create an empty form_vars dictionary
+        # so we can easily gather all the user input turned into variables
+        # that need to be sent when pressing the start button (or any other buttons)
+        form_vars = {}
 
-            file_path_var = StringVar(ts_form_frame)
-            file_path_input = Entry(ts_form_frame, textvariable=file_path_var, **self.entry_settings)
-            file_path_input.grid(row=2, column=2, **self.input_grid_settings, **self.form_paddings)
-            file_path_input.insert(END, os.path.basename(audio_file_path))
-            file_path_input.config(state=DISABLED)
+        if self.create_or_open_window(parent_element=self.root, window_id=ingest_window_id, type='ingest',
+                                      title=title, open_multiple=True, close_action=close_ingest_window
+                                      ):
 
-            # SOURCE LANGUAGE INPUT
-            Label(ts_form_frame, text="Source Language", **self.label_settings).grid(row=3, column=1,
-                                                                                     **self.input_grid_settings,
-                                                                                     **self.form_paddings)
+            # update the queue item status to 'waiting user'
+            if queue_id is not None:
+                self.toolkit_ops_obj.processing_queue.update_queue_item(queue_id=queue_id, status='waiting user')
 
-            # try to get the languages from tokenizer
-            available_languages = self.toolkit_ops_obj.get_whisper_available_languages()
+                # add the queue id to the kwargs
+                kwargs['queue_id'] = queue_id
 
-            default_language = self.stAI.get_app_setting('transcription_default_language', default_if_none='')
+                # add the queue id to the form vars as a tk variable
+                form_vars['queue_id'] = tk.StringVar(value=queue_id)
 
-            language_var = StringVar(ts_form_frame, default_language)
-            available_languages = sorted(available_languages)
-            language_input = OptionMenu(ts_form_frame, language_var, *available_languages)
-            language_input.grid(row=3, column=2, **self.input_grid_settings, **self.form_paddings)
+            # use this variable for the ingest window object for cleaner code
+            ingest_window = self.windows[ingest_window_id]
 
-            # TASK DROPDOWN
+            # add the ingest_window_id to the kwargs
+            kwargs['ingest_window_id'] = ingest_window_id
 
-            # hold the selected task in this variable
-            Label(ts_form_frame, text="Task", **self.label_settings).grid(row=4, column=1,
-                                                                          **self.input_grid_settings,
-                                                                          **self.form_paddings)
+            # UI - make the window resizable only in the vertical direction
+            ingest_window.resizable(width=False, height=True)
 
-            if transcription_task is None:
-                transcription_task = 'transcribe'
+            # UI - escape key closes the window
+            ingest_window.bind('<Escape>', lambda event: close_ingest_window())
 
-            transcription_task_var = StringVar(ts_form_frame, value=transcription_task)
-            available_tasks = ['transcribe', 'translate', 'transcribe+translate']
-            transcription_task_input = OptionMenu(ts_form_frame, transcription_task_var, *available_tasks)
-            transcription_task_input.grid(row=4, column=2, **self.input_grid_settings, **self.form_paddings)
+            # UI - create the top frame
+            top_frame = ctk.CTkFrame(ingest_window)
 
-            # MODEL DROPDOWN
-            # as options, use the list of whisper.avialable_models()
-            # the selected value will be the whisper_model_name app setting
-            Label(ts_form_frame, text="Transcription Model", **self.label_settings).grid(row=5, column=1,
-                                                                                         **self.input_grid_settings,
-                                                                                         **self.form_paddings)
+            # UI - create the middle frame (it's a tab view)
+            middle_frame = ctk.CTkTabview(ingest_window)
 
-            model_selected = self.stAI.get_app_setting('whisper_model_name', default_if_none='medium')
-            model_var = StringVar(ts_form_frame, model_selected)
-            model_input = OptionMenu(ts_form_frame, model_var, *whisper_available_models())
-            model_input.grid(row=5, column=2, **self.input_grid_settings, **self.form_paddings)
+            # UI - create the bottom frame
+            bottom_frame = ctk.CTkFrame(ingest_window, **self.ctk_frame_transparent)
 
-            # DEVICE DROPDOWN
-            Label(ts_form_frame, text="Device", **self.label_settings).grid(row=6, column=1,
-                                                                            **self.input_grid_settings,
-                                                                            **self.form_paddings)
+            # UI -
+            # but instead of packing the frames, use a grid layout,
+            # so that the top frame and the bottom frames only take the space they need
+            # and the middle frame extends with the window
+            top_frame.grid(row=0, column=0, sticky="ew", **self.ctk_frame_paddings)
+            middle_frame.grid(row=1, column=0, sticky="nsew", **self.ctk_frame_paddings)
+            bottom_frame.grid(row=2, column=0, sticky="ew", **self.ctk_frame_paddings)
 
-            available_devices = ['auto'] + list(self.toolkit_ops_obj.queue_devices)
+            # UI - grid configure the middle frame so that it expands with the window
+            ingest_window.grid_rowconfigure(1, weight=1)
 
-            # the default selected value will be the whisper_device app setting
-            device_selected = self.stAI.get_app_setting('whisper_device', default_if_none='auto')
-            device_var = StringVar(ts_form_frame, value=device_selected)
+            # UI - the columns should expand with the window
+            ingest_window.grid_columnconfigure(0, weight=1, minsize=500)
 
-            device_input = OptionMenu(ts_form_frame, device_var, *available_devices)
-            device_input.grid(row=6, column=2, **self.input_grid_settings, **self.form_paddings)
+            # TOP FRAME ELEMENTS
+            # these will be added a few lines below
 
-            # PRE-DETECT SPEACH
-            Label(ts_form_frame, text="Pre-Detect Speech", **self.label_settings).grid(row=7, column=1,
-                                                                                       **self.input_grid_settings,
-                                                                                       **self.form_paddings)
-            pre_detect_speech_var = tk.BooleanVar(ts_form_frame,
-                                                  value=self.stAI.get_app_setting('transcription_pre_detect_speech',
-                                                                                  default_if_none=True))
+            # MIDDLE FRAME ELEMENTS
 
-            pre_detect_speech_input = tk.Checkbutton(ts_form_frame, variable=pre_detect_speech_var)
-            pre_detect_speech_input.grid(row=7, column=2, **self.input_grid_settings, **self.form_paddings)
+            # UI - add the audio and video tabs
+            audio_tab = middle_frame.add('Audio')
+            #video_tab = middle_frame.add('Video')
 
-            # WORD TIMESTAMPS
-            # (USE "INCREASED TIME PRECISION" FOR NOW TO AVOID CONFUSION)
-            Label(ts_form_frame, text="Increased Time Precision", **self.label_settings).grid(row=8, column=1,
-                                                                                              **self.input_grid_settings,
-                                                                                              **self.form_paddings)
-            word_timestamps_var = tk.BooleanVar(ts_form_frame,
-                                                value=self.stAI.get_app_setting('transcription_word_timestamps',
-                                                                                default_if_none=True))
+            # UI - add a scrollable frame to the audio and video tabs
+            audio_tab_scrollable_frame = ctk.CTkScrollableFrame(audio_tab, **self.ctk_frame_transparent)
+            #video_tab_scrollable_frame = ctk.CTkScrollableFrame(video_tab, **self.ctk_frame_transparent)
+            audio_tab_scrollable_frame.pack(fill='both', expand=True)
+            #video_tab_scrollable_frame.pack(fill='both', expand=True)
 
-            word_timestamps_input = tk.Checkbutton(ts_form_frame, variable=word_timestamps_var)
-            word_timestamps_input.grid(row=8, column=2, **self.input_grid_settings, **self.form_paddings)
+            # UI - set the visibility on the audio tab
+            middle_frame.set('Audio')
+            middle_frame.columnconfigure(0, weight=1)
 
-            # MAX CHARACTERS PER SEGMENT
-            max_chars_per_segment_label = Label(ts_form_frame, text="Max. Characters Per Line", **self.label_settings)
-            max_chars_per_segment_label.grid(row=9, column=1, **self.input_grid_settings, **self.form_paddings)
-            max_chars_per_segment_var = tk.StringVar(ts_form_frame,
-                                                     value=self.stAI.get_app_setting(
-                                                         'transcription_max_chars_per_segment',
-                                                         default_if_none=''))
+            # BOTTOM FRAME ELEMENTS
+            # the bottom frame should have a start button, a cancel button, a progress bar, and a progress label
+            # the start button should stick to the left
+            # the cancel button should stick to the right
+            # the progress bar should be under the start button and the cancel button
 
-            max_chars_per_segment_input = tk.Entry(ts_form_frame, textvariable=max_chars_per_segment_var,
-                                                   **self.entry_settings_quarter)
-            max_chars_per_segment_input.grid(row=9, column=2, **self.input_grid_settings, **self.form_paddings)
+            # UI - create another frame for the buttons
+            buttons_frame = ctk.CTkFrame(bottom_frame, **self.ctk_frame_transparent)
 
-            # only allow integers
-            max_chars_per_segment_input.config(validate="key",
-                                               validatecommand=
-                                               (max_chars_per_segment_input.register(
-                                                   self.only_allow_integers), '%P'))
+            # UI - create the start button
+            start_button = ctk.CTkButton(buttons_frame, text='Start', state='disabled')
 
-            # MAX WORDS PER SEGMENT
-            max_words_per_segment_label = Label(ts_form_frame, text="Max. Words Per Line", **self.label_settings)
-            max_words_per_segment_label.grid(row=10, column=1, **self.input_grid_settings, **self.form_paddings)
+            # UI - create the cancel button
+            cancel_button = ctk.CTkButton(buttons_frame, text='Cancel')
 
-            max_words_per_segment_var = tk.StringVar(ts_form_frame,
-                                                     value=self.stAI.get_app_setting(
-                                                         'transcription_max_words_per_segment',
-                                                         default_if_none=''))
+            # create the progress bar
+            #progress_bar = ctk.CTkProgressBar(bottom_frame, mode='determinate')
 
-            max_words_per_segment_input = tk.Entry(ts_form_frame, textvariable=max_words_per_segment_var,
-                                                   **self.entry_settings_quarter)
-            max_words_per_segment_input.grid(row=10, column=2, **self.input_grid_settings, **self.form_paddings)
+            # create the progress label
+            #progress_label = ctk.CTkLabel(bottom_frame, text='Ready')
 
-            # only allow integers
-            max_words_per_segment_input.config(validate="key",
-                                               validatecommand=
-                                               (max_chars_per_segment_input.register(
-                                                   self.only_allow_integers), '%P'))
+            # UI - add the start button, the cancel button
+            buttons_frame.grid(row=0, column=0, sticky="w", **self.ctk_frame_paddings)
 
-            # SPLIT ON PUNCTUATION MARKS
-            split_on_punctuation_marks_label = Label(ts_form_frame, text="Split On Punctuation", **self.label_settings)
-            split_on_punctuation_marks_label.grid(row=11, column=1, **self.input_grid_settings, **self.form_paddings)
+            # UI - the buttons should be next to each other, so we'll use a pack layout
+            start_button.pack(side='left', **self.ctk_frame_paddings)
+            cancel_button.pack(side='left', **self.ctk_frame_paddings)
 
-            split_on_punctuation_marks_var = tk.BooleanVar(ts_form_frame,
-                                                           value=self.stAI.get_app_setting(
-                                                               'transcription_split_on_punctuation_marks',
-                                                               default_if_none=False))
+            # add the buttons to the kwargs so we can pass them to future functions
+            kwargs['start_button'] = start_button
+            kwargs['cancel_button'] = cancel_button
 
-            split_on_punctuation_marks_input = tk.Checkbutton(ts_form_frame, variable=split_on_punctuation_marks_var)
-            split_on_punctuation_marks_input.grid(row=11, column=2, **self.input_grid_settings, **self.form_paddings)
+            # add the form_invalid attribute to the window to store which items are invalid (if any)
+            ingest_window.form_invalid = []
 
-            # PREVENT GAPS SHORTER THAN
-            prevent_short_gaps_label = Label(ts_form_frame, text="Prevent Gaps Shorter Than", **self.label_settings)
-            prevent_short_gaps_label.grid(row=12, column=1, **self.input_grid_settings, **self.form_paddings)
+            # add the file/folder selection form (in the top frame)
+            file_path_var = self.add_select_files_form_elements(top_frame, **kwargs)
 
-            prevent_short_gaps_var = tk.StringVar(ts_form_frame,
-                                                            value=self.stAI.get_app_setting(
-                                                                'transcription_prevent_short_gaps',
-                                                                default_if_none=''))
-            prevent_short_gaps_input = tk.Entry(ts_form_frame, textvariable=prevent_short_gaps_var,
-                                                         **self.entry_settings_quarter)
-            prevent_short_gaps_input.grid(row=12, column=2, **self.input_grid_settings, **self.form_paddings)
+            # if something went wrong with the file selection, let's close the window
+            if file_path_var is None:
+                self.button_cancel_ingest(window_id=ingest_window_id, queue_id=queue_id, dont_ask=True)
+                return None
 
-            # only allow floats
-            prevent_short_gaps_input.config(validate="key",
-                                                    validatecommand=
-                                                    (prevent_short_gaps_input.register(
-                                                        self.only_allow_floats), '%P'))
+            # add the ingest audio options to the audio tab (in the middle frame)
+            audio_form_vars = self.add_ingest_audio_form_elements(audio_tab_scrollable_frame, **kwargs)
 
-            # if word_timestamps_var is False, hide the max words per segment input
-            # but check on every change of the word_timestamps_var
-            def update_max_per_segment_inputs_visibility():
-                if word_timestamps_var.get():
-                    max_words_per_segment_input.grid()
-                    max_chars_per_segment_input.grid()
-                    max_words_per_segment_label.grid()
-                    max_chars_per_segment_label.grid()
-                    split_on_punctuation_marks_input.grid()
-                    split_on_punctuation_marks_label.grid()
-                else:
-                    max_words_per_segment_input.grid_remove()
-                    max_chars_per_segment_input.grid_remove()
-                    max_words_per_segment_label.grid_remove()
-                    max_chars_per_segment_label.grid_remove()
-                    split_on_punctuation_marks_input.grid_remove()
-                    split_on_punctuation_marks_label.grid_remove()
+            # if something went wrong with the audio options tab, close the window
+            if audio_form_vars is None:
+                self.button_cancel_ingest(window_id=ingest_window_id, queue_id=queue_id, dont_ask=True)
+                return None
 
-            word_timestamps_var.trace('w', lambda *args: update_max_per_segment_inputs_visibility())
-            update_max_per_segment_inputs_visibility()
+            # add the two variables to the form variables
+            form_vars = {**form_vars, **file_path_var, 'audio_form_vars': audio_form_vars}
 
-            # INITIAL PROMPT INPUT
-            Label(ts_form_frame, text="Initial Prompt", **self.label_settings).grid(row=20, column=1,
-                                                                                    sticky='nw',
-                                                                                    # **self.input_grid_settings,
-                                                                                    **self.form_paddings)
-            # prompt_var = StringVar(ts_form_frame)
-            prompt_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
-            prompt_input.grid(row=20, column=2, **self.input_grid_settings, **self.form_paddings)
-            prompt_input.insert(END, " - How are you?\n - I'm fine, thank you.")
+            # UI - start button command
+            # at this point, the kwargs should also contain the ingest_window_id
+            start_button.configure(
+                command=lambda:
+                self.button_start_ingest(form_vars=form_vars, **kwargs)
+            )
 
-            # TIME INTERVALS INPUT
-            Label(ts_form_frame, text="Time Intervals", **self.label_settings).grid(row=30, column=1,
-                                                                                    sticky='nw',
-                                                                                    # **self.input_grid_settings,
-                                                                                    **self.form_paddings)
+            # UI - cancel button command
+            cancel_button.configure(
+                command=lambda:
+                self.button_cancel_ingest(window_id=ingest_window_id, queue_id=queue_id)
+            )
 
-            time_intervals_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
-            time_intervals_input.grid(row=30, column=2, **self.input_grid_settings, **self.form_paddings)
-            time_intervals_input.insert(END, str(time_intervals) if time_intervals is not None else '')
+            # the progress bar should be under the start button and the cancel button
+            #progress_bar.grid(row=1, column=0, columnspan=2, sticky="ew", **self.ctk_frame_paddings)
 
-            # EXCLUDE TIME INTERVALS INPUT
-            Label(ts_form_frame, text="Exclude Time Intervals", **self.label_settings).grid(row=31, column=1,
-                                                                                            sticky='nw',
-                                                                                            # **self.input_grid_settings,
-                                                                                            **self.form_paddings)
+            # the progress label should be under the progress bar
+            #progress_label.grid(row=2, column=0, columnspan=2, sticky="w", **self.ctk_frame_paddings)
 
-            excluded_time_intervals_input = Text(ts_form_frame, wrap=tk.WORD, height=4, **self.entry_settings)
-            excluded_time_intervals_input.grid(row=31, column=2, **self.input_grid_settings, **self.form_paddings)
-            excluded_time_intervals_input.insert(END,
-                                                 str(excluded_time_intervals) \
-                                                     if excluded_time_intervals is not None else '')
+            # UI - configure the bottom columns and rows so that the elements expand with the window
+            bottom_frame.columnconfigure(0, weight=1)
+            bottom_frame.columnconfigure(1, weight=1)
+            bottom_frame.rowconfigure(1, weight=1)
+            bottom_frame.rowconfigure(2, weight=1)
 
-            # GROUP QUESTIONS
-            Label(ts_form_frame, text="Group Questions", **self.label_settings).grid(row=40, column=1,
-                                                                                        sticky='nw',
-                                                                                        # **self.input_grid_settings,
-                                                                                        **self.form_paddings)
-            group_questions_var = tk.BooleanVar(ts_form_frame,
-                                                value=self.stAI.get_app_setting('transcription_group_questions',
-                                                                                    default_if_none=False))
-            group_questions_input = tk.Checkbutton(ts_form_frame, variable=group_questions_var)
-            group_questions_input.grid(row=40, column=2, **self.input_grid_settings, **self.form_paddings)
+            # UI - add a minimum height to the window
+            ingest_window.minsize(500, 700
+                if ingest_window.winfo_screenheight() > 700 else ingest_window.winfo_screenheight())
 
-            # START BUTTON
+            # UI- add a maximum height to the window (to prevent it from being bigger than the screen)
+            ingest_window.maxsize(600, ingest_window.winfo_screenheight())
 
-            Label(ts_form_frame, text="", **self.label_settings).grid(row=60, column=1,
-                                                                      **self.input_grid_settings, **self.paddings)
-            start_button = Button(ts_form_frame, text='Start')
-            start_button.grid(row=60, column=2, **self.input_grid_settings, **self.paddings)
-            start_button.config(command=lambda audio_file_path=audio_file_path,
-                                               transcription_file_path_var=transcription_file_path_var,
-                                               queue_id=queue_id,
-                                               ts_window_id=ts_window_id:
-            self.start_transcription_button(ts_window_id,
-                                            audio_file_path=audio_file_path,
-                                            queue_id=queue_id,
-                                            transcription_task=transcription_task_var.get(),
-                                            name=name_var.get(),
-                                            model_name=model_var.get(),
-                                            whisper_options=self.toolkit_ops_obj.whisper_options(
-                                                language=language_var.get(),
-                                                initial_prompt=prompt_input.get(1.0, END),
-                                                word_timestamps=word_timestamps_var.get(),
-                                            ),
-                                            device=device_var.get(),
-                                            pre_detect_speech=pre_detect_speech_var.get(),
-                                            max_chars_per_segment=max_chars_per_segment_var.get(),
-                                            max_words_per_segment=max_words_per_segment_var.get(),
-                                            split_on_punctuation_marks=split_on_punctuation_marks_var.get(),
-                                            prevent_short_gaps=prevent_short_gaps_var.get(),
-                                            time_intervals=time_intervals_input.get(1.0, END),
-                                            excluded_time_intervals=excluded_time_intervals_input.get(1.0, END),
-                                            group_questions=group_questions_var.get(),
-                                            transcription_file_path=transcription_file_path_var.get(),
-                                            timeline_name=kwargs.get('timeline_name', None),
-                                            project_name=kwargs.get('project_name', None)
-                                            )
-                                )
+            # add the form variables to the window
+            ingest_window.form_vars = form_vars
 
-            # if skip settings was passed, just start the transcription
+            # UI - place the window on top for a moment so that the user sees that he has to interact
+            ingest_window.wm_attributes('-topmost', True)
+            ingest_window.wm_attributes('-topmost', False)
+            ingest_window.lift()
+
+            # and focus on the window
+            self.focus_window(window=ingest_window)
+
+            # if we're supposed to skip the settings
             if kwargs.get('skip_settings', False):
-                self.start_transcription_button(ts_window_id,
-                                                audio_file_path=audio_file_path,
-                                                queue_id=queue_id,
-                                                model_name=model_var.get(),
-                                                whisper_options=self.toolkit_ops_obj.whisper_options(
-                                                    model=model_var.get(), language=language_var.get(),
-                                                    initial_prompt=prompt_input.get(1.0, END),
-                                                    word_timestamps=word_timestamps_var.get()
-                                                ),
-                                                transcription_task=transcription_task_var.get(),
-                                                name=name_var.get(),
-                                                device=device_var.get(),
-                                                pre_detect_speech=pre_detect_speech_var.get(),
-                                                max_chars_per_segment=max_chars_per_segment_var.get(),
-                                                max_words_per_segment=max_words_per_segment_var.get(),
-                                                split_on_punctuation_marks=split_on_punctuation_marks_var.get(),
-                                                prevent_short_gaps=prevent_short_gaps_var.get(),
-                                                time_intervals=time_intervals_input.get(1.0, END),
-                                                excluded_time_intervals=excluded_time_intervals_input.get(1.0, END),
-                                                group_questions=group_questions_var.get(),
-                                                transcription_file_path=transcription_file_path_var.get(),
-                                                timeline_name=kwargs.get('timeline_name', None),
-                                                project_name=kwargs.get('project_name', None)
+
+                # send all the vars to ingest
+                # (this will also check if the form is valid)
+                self.button_start_ingest(form_vars=form_vars, **kwargs)
+
+            return
+
+        else:
+            # todo: simply update the existing window with the passed arguments
+            #   then get back the updated from variables and an updated start button / and anything else?
+
+            return
+
+
+    def validate_files_or_folders_path(self, var=None, path: str=None,
+                           valid_callback: callable=None, invalid_callback: callable=None, **kwargs):
+        """
+        Validates if the variable contains a valid file or folder paths
+
+        :param var: the variable to validate
+        :param entry: the entry to validate
+        :param valid_callback: the callback to execute if the path is valid
+        :param invalid_callback: the callback to execute if the path is invalid
+        :return: the path if it's valid, None otherwise
+        """
+
+        valid = False
+
+        if path is None and var is None:
+            logger.error('Unable to validate files or folders - no path or variable was passed.')
+            return None
+
+        # if no path was passed, get the path from the variable
+        if path is None:
+            # get the variable value
+            path = var.get()
+
+        # are these comma separated files or folders?
+        if ',' in path:
+
+            # split the paths
+            path = path.split(',')
+
+            # remove the quotes from the beginning and end of each path
+            path = [p.strip(' \'\"') for p in path]
+
+            # check if all the paths are valid
+            # if all the paths are valid, the result will be True
+            valid = all([os.path.isfile(p.strip()) or os.path.isdir(p.strip()) for p in path])
+
+        # if there are no commas in the path, it must be a single file or folder
+        # so if it exists, it's valid
+        elif os.path.isfile(path.strip(' \'\"')) or os.path.isdir(path.strip(' \'\"')):
+            path = [path]
+            valid = True
+
+        # if the file path is empty, clear the label and return
+        if valid:
+
+            # execute the valid callback if it exists
+            if valid_callback is not None:
+
+                # check the reply from the callback and if it's False/None, return None
+                valid = valid_callback(path=path, **kwargs)
+
+                if not valid:
+                    return None
+
+            # return the path
+            return path
+
+        else:
+
+            # execute the invalid callback if it exists
+            if invalid_callback is not None:
+                invalid_callback(path=path, **kwargs)
+
+            # return None
+            return None
+
+    def validate_time_interval_var(self, var, valid_callback: callable=None,
+                                invalid_callback: callable=None, strict=False, **kwargs):
+        """
+        Validates if the variable contains valid time intervals
+        We're basically just passing the variable to the validate_time_interval function
+        and returning the result, while also executing the callbacks if they exist
+        """
+
+        valid = False
+
+        # get the time intervals from the passed variable
+        time_intervals = var.get()
+        kwargs['time_intervals'] = time_intervals
+
+        # validate the time intervals
+        # (we're converting them to a list of lists, and checking if they're valid while doing so)
+        valid = self.convert_text_to_time_intervals(text=time_intervals, supress_errors=True, **kwargs)
+
+        # if this is just an empty string and we're not doing strict validation, validate
+        if not strict and time_intervals.strip() == '':
+            valid = True
+
+        # if the time intervals are valid
+        if valid:
+
+            # execute the valid callback if it exists
+            if valid_callback is not None:
+
+                # check the reply from the callback and if it's False/None, return None
+                valid = valid_callback(**kwargs)
+
+                if not valid:
+                    return None
+
+            # return the time_intervals
+            return time_intervals
+
+        # execute the invalid callback if it exists
+        if invalid_callback is not None:
+            invalid_callback(**kwargs)
+
+        # return None
+        return None
+
+    def add_select_files_form_elements(self, parent: tk.Widget, **kwargs) -> dict or None:
+        """
+        This is a universal function that creates a form section for selecting files or folders
+
+        :param parent: the parent element
+        :param kwargs: other stuff to pass to the function (start_button etc.)
+        :return: all the variables that are created here in a dict or None if the function fails
+        """
+
+        if parent is None:
+            return None
+
+        # create a dict to gather all the form variables
+        # so we can return them later
+        form_vars = {}
+
+        # create a frame for the form elements
+        file_selection_form = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
+
+        form_vars['file_path_var'] = \
+            file_path_var = tk.StringVar(parent)
+        file_path_entry = ctk.CTkEntry(file_selection_form, width=100, textvariable=file_path_var)
+
+        # create the browse button
+        browse_button = ctk.CTkButton(file_selection_form, text='Browse')
+
+        # add the browse button command
+        browse_button.bind('<Button-1>', lambda e: self.ask_for_file_or_dir_for_var(parent, file_path_var))
+
+        # browse for directories if Shift+Click
+        # browse_button.bind('<Shift-Button-1>', lambda e: self.ask_for_file_or_dir_for_var(parent, file_path_var,
+        #                                                                                 directory=True))
+
+        # create the file info label (under the file path entry)
+        file_info_label = ctk.CTkLabel(file_selection_form, text='', anchor='w')
+
+        def files_are_valid(path, **kwargs):
+
+            # add the file to the passed file info label label
+            if kwargs.get('file_info_label') is not None:
+
+                # reset the text of the file info label
+                kwargs.get('file_info_label').configure(text="")
+
+            # todo: make this callback work
+            if kwargs.get('file_analyze_callback') is not None:
+                kwargs.get('file_analyze_callback')(path=path, **kwargs)
+
+            # remove this from the from_invalid attribute of the window
+            self.remove_form_invalid(window_id=kwargs.get('ingest_window_id'), key='file_path', **kwargs)
+
+            # style the entry as valid
+            if kwargs.get('file_path_entry') is not None:
+                self.style_input_as_valid(kwargs.get('file_path_entry'))
+
+        def files_are_invalid(path, **kwargs):
+
+            # deactivate the start button if it exists
+            if kwargs.get('start_button') is not None:
+                start_button = kwargs.get('start_button')
+                start_button.configure(state='disabled')
+
+            # add this to the form_invalid attribute of the window
+            self.add_form_invalid(window_id=kwargs.get('ingest_window_id'), key='file_path', **kwargs)
+
+            # style the entry as invalid
+            if kwargs.get('file_path_entry') is not None:
+                self.style_input_as_invalid(kwargs.get('file_path_entry'))
+
+        # if the source file path kwarg is set, add the source file path entry
+        if kwargs.get('source_file_path', None) is not None:
+            file_path_var.set(kwargs.get('source_file_path'))
+
+        # if the source file path is empty, add the form invalid attribute
+        # this will keep the start button disabled until the user selects a file
+        if file_path_var.get() == '':
+            self.add_form_invalid(window_id=kwargs.get('ingest_window_id'), key='file_path', **kwargs)
+
+        # if it the source file path is not empty, validate it
+        else:
+            self.validate_files_or_folders_path(var=file_path_var, entry=file_path_entry,
+                                                valid_callback=files_are_valid, file_info_label=file_info_label,
+                                                invalid_callback=files_are_invalid, file_path_entry=file_path_entry,
+                                                **kwargs)
+
+        # if the file_path_var changes, validate it
+        file_path_var.trace('w', lambda *args:
+            self.validate_files_or_folders_path(var=file_path_var, entry=file_path_entry,
+                                                valid_callback=files_are_valid, file_info_label=file_info_label,
+                                                invalid_callback=files_are_invalid, file_path_entry=file_path_entry,
+                                                **kwargs))
+
+
+        # Create the file path entry, the browse button, and the file info label
+        # The file path entry should stick to the left and expand horizontally
+        # The browse button should stick to the right and be next to the file path entry
+        file_path_entry.grid(row=0, column=0, sticky="ew", **self.ctk_frame_paddings)
+        browse_button.grid(row=0, column=1, sticky="e", **self.ctk_frame_paddings)
+
+        # Configure column weight for the top frame to make the file_path_entry expand horizontally
+        file_selection_form.columnconfigure(0, weight=1)
+
+        # The file info label should be under the file path entry and the browse button
+        # (but use the ext paddings to add a bit of space on the left and align it to the entry above)
+        # todo: make the label expand horizontally all the way
+        #  (probably need to add the file_selection form back to the grid)
+        # file_info_label.grid(row=1, column=0, columnspan=3, sticky="w", **self.ctk_form_paddings_ext)
+
+        # add the file selection form to the parent
+        file_selection_form.pack(fill=X, expand=True, **self.ctk_frame_paddings)
+
+        # disable the file selection form if we have a transcription path
+        if kwargs.get('transcription_file_path', None) is not None:
+
+            # disable the file path entry and the browse button
+            file_path_entry.configure(state='disabled')
+            browse_button.configure(state='disabled')
+
+            # unbind the click from the browse button
+            browse_button.unbind('<Button-1>')
+
+            # remove browse button from grid
+            browse_button.grid_forget()
+
+            # make file_path_entry cover the whole row
+            file_path_entry.grid(row=0, column=0, columnspan=2, sticky="ew", **self.ctk_frame_paddings)
+
+            # get the audio file path from the transcription data (if any) or transcription file
+            audio_file_path =  self.toolkit_ops_obj.get_transcription_audio_file_path(
+                    transcription_data=kwargs.get('transcription_data', None),
+                    transcription_file_path=kwargs.get('transcription_file_path', None)
+                )
+
+            if audio_file_path is None:
+
+                # let the user know that the audio file path could not be found
+                logger.error("Audio file path not found, cannot re-transcribe.")
+
+                return None
+
+            # and use the audio file path from the transcription path
+            file_path_var.set(audio_file_path)
+
+        return form_vars
+
+    def add_ingest_audio_form_elements(self, parent: tk.Widget, **kwargs) -> dict or None:
+        """
+        This function creates the elements for the ingest audio tab
+        - it will be useful both the ingest settings window, but also for the preferences window
+
+        :param parent: the parent element
+        :param kwargs: other stuff to pass to the function (start_button, variable values etc.)
+        :return: all the variables that are created here in a dict or None if the function fails
+        """
+
+        if parent is None:
+            return None
+
+        # the audio form elements are split into: basic, post-processing, and advanced
+        # for each of these, we will create a frame, and add the elements to it
+
+        # create the frames
+        basic_frame = ctk.CTkFrame(parent,  **self.ctk_frame_transparent)
+        post_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
+        advanced_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
+
+        # create labels for the frames (and style them according to the theme)
+        basic_frame_label = ctk.CTkLabel(parent, text='Basic Settings', **self.ctk_frame_label_settings)
+        advanced_frame_label = ctk.CTkLabel(parent, text='Advanced Settings', **self.ctk_frame_label_settings)
+        post_frame_label = ctk.CTkLabel(parent, text='Transcription Post-Processing', **self.ctk_frame_label_settings)
+        # for the advanced settings, we will have a switch on a frame instead of the label
+        #advanced_frame_label = ctk.CTkFrame(parent, fg_color=frame_label_fg_color)
+        #advanced_frame_switch = ctk.CTkSwitch(advanced_frame_label, text='Advanced Settings')
+        #advanced_frame_switch.grid(row=0, column=0, sticky="ew", **self.ctk_frame_paddings)
+        #advanced_frame_label.columnconfigure(0, weight=1)
+
+        # we're going to create the form_vars dict to store all the variables
+        # we will use this dict at the end of the function to gather all the created tk variables
+        form_vars = {}
+
+        # add the labels and frames to the parent
+        basic_frame_label.grid(row=0, column=0, sticky="ew", **self.ctk_frame_paddings)
+        basic_frame.grid(row=1, column=0, sticky="ew", **self.ctk_frame_paddings)
+        advanced_frame_label.grid(row=2, column=0, sticky="ew", **self.ctk_frame_paddings)
+        advanced_frame.grid(row=3, column=0, sticky="ew", **self.ctk_frame_paddings)
+        post_frame_label.grid(row=4, column=0, sticky="ew", **self.ctk_frame_paddings)
+        post_frame.grid(row=5, column=0, sticky="ew", **self.ctk_frame_paddings)
+
+        # make the column expandable
+        parent.columnconfigure(0, weight=1)
+        basic_frame.columnconfigure(1, weight=1)
+        post_frame.columnconfigure(1, weight=1)
+        advanced_frame.columnconfigure(1, weight=1)
+
+        # SOURCE LANGUAGE DROPDOWN
+        # get the available languages from whisper, and the default language from the app settings
+        languages_available = self.toolkit_ops_obj.get_whisper_available_languages()
+
+        # use either the language selected from the kwargs, or the default language from the app settings
+        language_selected = \
+            kwargs.get('language_selected', None) \
+                if kwargs.get('language_selected', None) is not None \
+                else self.stAI.get_app_setting('transcription_default_language', default_if_none='')
+
+        # create the source language variable, label and input
+        form_vars['source_language_var'] = \
+            source_language_var = tk.StringVar(basic_frame, value=language_selected)
+        source_language_label = ctk.CTkLabel(basic_frame, text='Source Language', **self.ctk_form_label_settings)
+        source_language_input = ctk.CTkOptionMenu(basic_frame,
+                                                  variable=source_language_var,
+                                                  values=['']+languages_available,
+                                                  **self.ctk_form_entry_settings)
+
+        # TASK DROPDOWN
+        transcription_task = kwargs.get('transcription_task', None)
+        if transcription_task is None:
+            kwargs['transcription_task'] = transcription_task = 'transcribe'
+
+        tasks_available = ['transcribe', 'translate', 'transcribe+translate']
+
+        # create the task variable, label and input
+        form_vars['transcription_task_var'] = \
+            task_var = tk.StringVar(basic_frame, value=transcription_task)
+        task_label = ctk.CTkLabel(basic_frame, text='Task', **self.ctk_form_label_settings)
+        task_entry = ctk.CTkOptionMenu(basic_frame, variable=task_var, values=tasks_available,
+                                       **self.ctk_form_entry_settings)
+
+
+        # THE MODEL DROPDOWN
+        # get the available models from whisper, and the default model from the app settings
+        model_selected = \
+            kwargs.get('model_selected', None) \
+                if kwargs.get('model_selected', None) is not None \
+                else self.stAI.get_app_setting('whisper_model_name', default_if_none='medium')
+
+        # create the model variable, label and input
+        form_vars['model_name_var'] = \
+            model_name_var = tk.StringVar(basic_frame, value=model_selected)
+        model_name_label = ctk.CTkLabel(basic_frame, text='Model', **self.ctk_form_label_settings)
+        model_name_input = ctk.CTkOptionMenu(basic_frame, variable=model_name_var, values=whisper_available_models(),
+                                        **self.ctk_form_entry_settings)
+
+        # ADVANCED OPTIONS
+        # device, pre-detect speech, initial prompt, increased time precision, time intervals
+
+        # DEVICE DROPDOWN
+        # get the available devices from the toolkit, and the default device from the app settings
+        devices_available = ['auto'] + list(self.toolkit_ops_obj.queue_devices)
+        device_selected = \
+            kwargs.get('device_selected', None) \
+            if kwargs.get('device_selected', None) is not None \
+            else self.stAI.get_app_setting('whisper_device', default_if_none='auto')
+
+        # create the device variable, label and input
+        form_vars['device_var'] = \
+            device_var = tk.StringVar(advanced_frame, value=device_selected)
+        device_label = ctk.CTkLabel(advanced_frame, text='Device', **self.ctk_form_label_settings)
+        device_input = ctk.CTkOptionMenu(advanced_frame, variable=device_var, values=devices_available,
+                                         **self.ctk_form_entry_settings)
+
+        # PRE-DETECT SPEECH SWITCH
+        # get the pre-detect speech setting from the app settings
+        pre_detect_speech = \
+            kwargs.get('pre_detect_speech', None) \
+            if kwargs.get('pre_detect_speech', None) is not None \
+            else self.stAI.get_app_setting('transcription_pre_detect_speech', default_if_none=False)
+
+        # create the pre-detect speech variable, label and input
+        form_vars['pre_detect_speech_var'] = \
+            pre_detect_speech_var = tk.BooleanVar(advanced_frame, value=pre_detect_speech)
+        pre_detect_speech_label = ctk.CTkLabel(advanced_frame, text='Pre-Detect Speech', **self.ctk_form_label_settings)
+        pre_detect_speech_input = ctk.CTkSwitch(advanced_frame,
+                                                variable=pre_detect_speech_var,
+                                                text='',
+                                                **self.ctk_form_entry_settings)
+
+        # INCREASED TIME PRECISION (WORD TIMESTAMPS) SWITCH
+        # get the increased time precision setting from the app settings
+        word_timestamps = \
+            kwargs.get('transcription_word_timestamps', None) \
+            if kwargs.get('transcription_word_timestamps', None) is not None \
+            else self.stAI.get_app_setting('transcription_word_timestamps', default_if_none=False)
+
+        # create the increased time precision variable, label and input
+        form_vars['word_timestamps_var'] = \
+            word_timestamps_var = tk.BooleanVar(advanced_frame, value=word_timestamps)
+        word_timestamps_label = ctk.CTkLabel(advanced_frame, text='Increased Time Precision', **self.ctk_form_label_settings)
+        word_timestamps_input = ctk.CTkSwitch(advanced_frame, variable=word_timestamps_var, text='',
+                                              **self.ctk_form_entry_settings)
+
+        # INITIAL PROMPT
+        # get the initial prompt setting from the app settings
+        initial_prompt = \
+            kwargs.get('initial_prompt', None) \
+            if kwargs.get('initial_prompt', None) is not None \
+            else self.stAI.get_app_setting('transcription_initial_prompt',
+                                           default_if_none=" - How are you?\n - I'm fine, thank you.")
+
+        # create the initial prompt variable, label and input
+        form_vars['initial_prompt_var'] = \
+            initial_prompt_var = tk.StringVar(advanced_frame, value=initial_prompt)
+        initial_prompt_label = ctk.CTkLabel(advanced_frame, text='Initial Prompt', **self.ctk_form_label_settings)
+        initial_prompt_input = ctk.CTkTextbox(advanced_frame, **self.ctk_form_textbox)
+        initial_prompt_input.insert(tk.END, initial_prompt)
+
+        # if the initial prompt input changes, update the initial prompt variable
+        def update_initial_prompt(*args):
+            initial_prompt_var.set(initial_prompt_input.get('1.0', tk.END))
+
+        initial_prompt_input.bind('<KeyRelease>', update_initial_prompt)
+
+        # TIME INTERVALS
+        # get the time intervals setting from the kwargs if any
+        # (we don't need to get them from the app settings because they're unique to each transcription task)
+        time_intervals = \
+            kwargs.get('time_intervals', None) if kwargs.get('time_intervals', None) is not None else ''
+
+        # create the time intervals variable, label and input
+        form_vars['time_intervals_var'] = \
+            time_intervals_var = tk.StringVar(advanced_frame, value=time_intervals)
+        time_intervals_label = ctk.CTkLabel(advanced_frame, text='Time Intervals', **self.ctk_form_label_settings)
+        time_intervals_input = ctk.CTkTextbox(advanced_frame, **self.ctk_form_textbox)
+        time_intervals_input.insert(tk.END, time_intervals)
+
+        # we will use this function for the exclude time intervals input validation too
+        def time_intervals_are_invalid(name, **kwargs):
+
+            # add this to the form_invalid attribute of the window
+            self.add_form_invalid(window_id=kwargs.get('ingest_window_id'), key=name,
+                                  **kwargs)
+
+            # style the time interval input as invalid
+            self.style_input_as_invalid(input=kwargs.get('input'), label=kwargs.get('label'))
+
+        def time_intervals_are_valid(name, **kwargs):
+
+            # remove this from the form_invalid attribute of the window
+            self.remove_form_invalid(window_id=kwargs.get('ingest_window_id'), key=name,
+                                     **kwargs)
+
+            # style the time interval input as valid
+            self.style_input_as_valid(input=kwargs.get('input'), label=kwargs.get('label'))
+
+        # if the time intervals input changes, update the time intervals variable
+        def update_time_intervals(*args):
+            time_intervals_var.set(time_intervals_input.get('1.0', tk.END))
+        time_intervals_input.bind('<KeyRelease>', update_time_intervals)
+
+        # validate when we're leaving the exclude time intervals input
+        time_intervals_input.bind(
+            '<FocusOut>',
+            lambda e, time_intervals_var=time_intervals_var,
+                   kwargs=kwargs:
+            self.validate_time_interval_var(name='time_intervals',
+                                            var=time_intervals_var,
+                                            input=time_intervals_input, label=time_intervals_label,
+                                            valid_callback=time_intervals_are_valid,
+                                            invalid_callback=time_intervals_are_invalid, **kwargs)
+            )
+
+        # EXCLUDE TIME INTERVALS
+        # get the exclude time intervals setting from the kwargs if any
+        # (we don't need to get them from the app settings because they're unique to each transcription task)
+        excluded_time_intervals = \
+            kwargs.get('excluded_time_intervals', None) \
+                if kwargs.get('excluded_time_intervals', None) is not None else ''
+
+        # create the time intervals variable, label and input
+        form_vars['excluded_time_intervals_var'] = \
+            excluded_time_intervals_var = tk.StringVar(advanced_frame,
+                                                      value=excluded_time_intervals)
+        excluded_time_intervals_label = ctk.CTkLabel(advanced_frame, text='Exclude Time Intervals', **self.ctk_form_label_settings)
+        excluded_time_intervals_input = ctk.CTkTextbox(advanced_frame, **self.ctk_form_textbox)
+        excluded_time_intervals_input.insert(tk.END, excluded_time_intervals)
+
+        # if the time intervals input changes, update the time intervals variable
+        def update_time_intervals(*kwargs):
+            excluded_time_intervals_var.set(excluded_time_intervals_input.get('1.0', tk.END))
+
+        excluded_time_intervals_input.bind('<KeyRelease>', update_time_intervals)
+
+        # validate when we're leaving the exclude time intervals input
+        excluded_time_intervals_input.bind(
+            '<FocusOut>',
+            lambda e, exclude_time_intervals_var=excluded_time_intervals_var,
+                   kwargs=kwargs:
+            self.validate_time_interval_var(name='excluded_time_intervals',
+                                            var=exclude_time_intervals_var,
+                                            input=excluded_time_intervals_input, label=excluded_time_intervals_label,
+                                            valid_callback=time_intervals_are_valid,
+                                            invalid_callback=time_intervals_are_invalid, **kwargs)
+            )
+
+
+
+        # POST-PROCESSING OPTIONS
+        # max_per_line, max_per_line_unit, split_on_punctuation, prevent_gaps_shorter_than
+
+        # MAX PER LINE
+        # instead of creating a max_characters_per_line and a max_words_per_line variable,
+        # we will create a single variable that holds either one, to which we add a unit selector (characters or words)
+        max_per_line_unit = kwargs.get('transcription_max_per_line_unit', None) \
+            if kwargs.get('transcription_max_per_line_unit', None) is not None \
+            else self.stAI.get_app_setting('transcription_max_per_line_unit', default_if_none='characters')
+
+        # make sure we're not using an invalid unit
+        max_per_line_unit = 'characters' if max_per_line_unit not in ['characters', 'words'] else max_per_line_unit
+
+        form_vars['max_per_line_unit_var'] = \
+            max_per_line_unit_var = tk.StringVar(post_frame, value=max_per_line_unit)
+
+        # depending on the unit,
+        # we will either fill this variable with the max characters or the max words from the app settings / kwargs
+        max_per_line_setting_name = 'transcription_max_words_per_segment' \
+            if max_per_line_unit == 'words' else 'transcription_max_chars_per_segment'
+
+        max_per_line = kwargs.get(max_per_line_setting_name, None) \
+            if kwargs.get(max_per_line_setting_name, None) is not None \
+            else self.stAI.get_app_setting(max_per_line_setting_name, default_if_none='')
+
+        form_vars['max_per_line_var'] = \
+            max_per_line_var = tk.StringVar(post_frame, value=max_per_line)
+        max_per_line_label = ctk.CTkLabel(post_frame, text='Split lines at', **self.ctk_form_label_settings)
+
+        max_per_line_frame = ctk.CTkFrame(post_frame, **self.ctk_frame_transparent)
+        max_per_line_input = ctk.CTkEntry(max_per_line_frame, textvariable=max_per_line_var,
+                                          **self.ctk_form_entry_settings_half)
+        max_per_line_unit_input = ctk.CTkSegmentedButton(max_per_line_frame, variable=max_per_line_unit_var,
+                                                         values=['characters', 'words'], dynamic_resizing=True)
+        max_per_line_input.pack(side=tk.LEFT)
+        max_per_line_unit_input.pack(side=tk.LEFT, **self.ctk_form_paddings)
+
+        # only allow integers in the max_per_line_input
+        max_per_line_input.configure(
+            validate="key",
+            validatecommand= (max_per_line_input.register(self.only_allow_integers), '%P')
+        )
+
+
+        # SPLIT ON PUNCTUATION
+        split_on_punctuation = kwargs.get('transcription_split_on_punctuation_marks', None) \
+            if kwargs.get('transcription_split_on_punctuation_marks', None) is not None \
+            else self.stAI.get_app_setting('transcription_split_on_punctuation_marks', default_if_none=True)
+
+        form_vars['split_on_punctuation_var'] = \
+            split_on_punctuation_var = tk.BooleanVar(post_frame,
+                                                     value=split_on_punctuation)
+        split_on_punctuation_label = ctk.CTkLabel(post_frame, text='Split on punctuation',
+                                                  **self.ctk_form_label_settings)
+        split_on_punctuation_input = ctk.CTkSwitch(post_frame, variable=split_on_punctuation_var,
+                                                   text='', **self.ctk_form_entry_settings)
+
+        # PREVENT GAPS SHORTER THAN
+        prevent_gaps_shorter_than = kwargs.get('transcription_prevent_short_gaps', None) \
+            if kwargs.get('transcription_prevent_short_gaps', None) is not None \
+            else self.stAI.get_app_setting('transcription_prevent_short_gaps', default_if_none='')
+
+        form_vars['prevent_gaps_shorter_than_var'] = \
+            prevent_gaps_shorter_than_var = tk.StringVar(post_frame,
+                                                         value=prevent_gaps_shorter_than)
+        prevent_gaps_shorter_than_label = ctk.CTkLabel(post_frame, text='Prevent gaps shorter than',
+                                                        **self.ctk_form_label_settings)
+
+        prevent_gaps_shorter_than_frame = ctk.CTkFrame(post_frame, **self.ctk_frame_transparent)
+        prevent_gaps_shorter_than_input = ctk.CTkEntry(prevent_gaps_shorter_than_frame,
+                                                       textvariable=prevent_gaps_shorter_than_var,
+                                                       **self.ctk_form_entry_settings_half)
+        prevent_gaps_shorter_than_unit_label = ctk.CTkLabel(prevent_gaps_shorter_than_frame, text='seconds')
+        prevent_gaps_shorter_than_input.pack(side=tk.LEFT)
+        prevent_gaps_shorter_than_unit_label.pack(side=tk.LEFT, **self.ctk_form_paddings)
+
+        # only allow floats in the prevent_gaps_shorter_than_input
+        prevent_gaps_shorter_than_input.configure(
+            validate="key",
+            validatecommand= (prevent_gaps_shorter_than_input.register(self.only_allow_floats), '%P')
+        )
+
+        # if word_timestamps_var is False, disable the max words per segment and max chars per segment inputs
+        # but check on every change of the word_timestamps_var
+        def update_max_per_segment_inputs_visibility():
+
+            if word_timestamps_var.get():
+                max_per_line_label.grid()
+                max_per_line_frame.grid()
+                split_on_punctuation_input.grid()
+                split_on_punctuation_label.grid()
+            else:
+                max_per_line_label.grid_remove()
+                max_per_line_frame.grid_remove()
+                split_on_punctuation_input.grid_remove()
+                split_on_punctuation_label.grid_remove()
+
+        word_timestamps_var.trace('w', lambda: update_max_per_segment_inputs_visibility())
+
+        update_max_per_segment_inputs_visibility()
+
+        # Adding all the elements to THE GRID:
+
+        # BASIC SETTINGS FRAME GRID add all the elements to the grid of the basic frame
+        # add all elements to the grid of the basic frame
+        source_language_label.grid(row=1, column=0, sticky="w", **self.ctk_form_paddings)
+        source_language_input.grid(row=1, column=1, sticky="w", **self.ctk_form_paddings)
+        task_label.grid(row=2, column=0, sticky="w", **self.ctk_form_paddings)
+        task_entry.grid(row=2, column=1, sticky="w", **self.ctk_form_paddings)
+        model_name_label.grid(row=3, column=0, sticky="w", **self.ctk_form_paddings)
+        model_name_input.grid(row=3, column=1, sticky="w", **self.ctk_form_paddings)
+
+        # ADVANCED SETTINGS FRAME GRID
+        # add all elements to the grid of the advanced options frame
+        device_label.grid(row=1, column=0, sticky="w", **self.ctk_form_paddings)
+        device_input.grid(row=1, column=1, sticky="w", **self.ctk_form_paddings)
+        pre_detect_speech_label.grid(row=2, column=0, sticky="w", **self.ctk_form_paddings)
+        pre_detect_speech_input.grid(row=2, column=1, sticky="w", **self.ctk_form_paddings)
+        word_timestamps_label.grid(row=3, column=0, sticky="w", **self.ctk_form_paddings)
+        word_timestamps_input.grid(row=3, column=1, sticky="w", **self.ctk_form_paddings)
+        initial_prompt_label.grid(row=4, column=0, sticky="w", **self.ctk_form_paddings)
+        initial_prompt_input.grid(row=4, column=1, sticky="w", **self.ctk_form_paddings)
+        time_intervals_label.grid(row=5, column=0, sticky="w", **self.ctk_form_paddings)
+        time_intervals_input.grid(row=5, column=1, sticky="w", **self.ctk_form_paddings)
+        excluded_time_intervals_label.grid(row=6, column=0, sticky="w", **self.ctk_form_paddings)
+        excluded_time_intervals_input.grid(row=6, column=1, sticky="w", **self.ctk_form_paddings)
+
+        # POST PROCESSING FRAME GRID
+        # add all elements to the grid of the post processing frame
+        max_per_line_label.grid(row=1, column=0, sticky="w", **self.ctk_form_paddings)
+        max_per_line_frame.grid(row=1, column=1, sticky="w", **self.ctk_form_paddings)
+        split_on_punctuation_label.grid(row=2, column=0, sticky="w", **self.ctk_form_paddings)
+        split_on_punctuation_input.grid(row=2, column=1, sticky="w", **self.ctk_form_paddings)
+        prevent_gaps_shorter_than_label.grid(row=3, column=0, sticky="w", **self.ctk_form_paddings)
+        prevent_gaps_shorter_than_frame.grid(row=3, column=1, sticky="w", **self.ctk_form_paddings)
+
+        # return all the gathered form variables
+        return form_vars
+
+    def form_to_transcription_settings(self, form_audio_vars, **kwargs):
+        """
+        This function takes the form variables and gets them into the transcription settings
+        :param: form_audio_vars: the form variables (a dict of tkinter variables)
+        :param: kwargs: additional keyword arguments
+        :return: transcription_settings: the transcription settings formatted for add_transcription_to_queue function
+        """
+
+        transcription_settings = dict()
+
+        # first, the non-transcription specific settings
+        transcription_settings['queue_id'] = kwargs.get('queue_id', None)
+        transcription_settings['timeline_name'] = kwargs.get('timeline_name', None)
+        transcription_settings['project_name'] = kwargs.get('project_name', None)
+
+        # if we have a transcription_file_path, we must be re-transcribing
+        transcription_settings['transcription_file_path'] = kwargs.get('transcription_file_path', None)
+
+         # then, the transcription specific settings
+        transcription_settings['audio_file_path'] = kwargs.get('file_path', None)
+        transcription_settings['transcription_task'] = form_audio_vars['transcription_task_var'].get()
+        transcription_settings['model_name'] = form_audio_vars['model_name_var'].get()
+        transcription_settings['device'] = form_audio_vars['device_var'].get()
+        transcription_settings['pre_detect_speech'] = form_audio_vars['pre_detect_speech_var'].get()
+
+        # choose between max words or characters per line
+        if form_audio_vars['max_per_line_unit_var'].get() == 'words':
+            transcription_settings['max_words_per_segment'] = form_audio_vars['max_per_line_var'].get()
+        else:
+            transcription_settings['max_chars_per_segment'] = form_audio_vars['max_per_line_var'].get()
+
+        transcription_settings['split_on_punctuation_marks'] = form_audio_vars['split_on_punctuation_var'].get()
+        transcription_settings['prevent_short_gaps'] = form_audio_vars['prevent_gaps_shorter_than_var'].get()
+        transcription_settings['time_intervals'] = form_audio_vars['time_intervals_var'].get()
+        transcription_settings['excluded_time_intervals'] = form_audio_vars['excluded_time_intervals_var'].get()
+
+        # validate the time intervals
+        transcription_settings['time_intervals'] = \
+            self.convert_text_to_time_intervals(transcription_settings['time_intervals'],
+                                                transcription_file_path= \
+                                                    kwargs.get('transcription_file_path', None),
+                                                ingest_window_id=kwargs.get('ingest_window_id'),
+                                                pop_error=True
                                                 )
+
+        if not transcription_settings['time_intervals']:
+            return False
+
+        # validate the excluded time intervals
+        transcription_settings['excluded_time_intervals'] = \
+            self.convert_text_to_time_intervals(transcription_settings['excluded_time_intervals'],
+                                                transcription_file_path= \
+                                                    kwargs.get('transcription_file_path', None),
+                                                ingest_window_id=kwargs.get('ingest_window_id'),
+                                                pop_error=True
+                                                )
+
+        if not transcription_settings['excluded_time_intervals']:
+            return False
+
+
+        # the whisper options
+        transcription_settings['whisper_options'] = dict()
+        transcription_settings['whisper_options']['language'] = form_audio_vars['source_language_var'].get()
+        transcription_settings['whisper_options']['initial_prompt'] = \
+            form_audio_vars['initial_prompt_var'].get()
+        transcription_settings['whisper_options']['word_timestamps'] = form_audio_vars['word_timestamps_var'].get()
+
+        return transcription_settings
+
+    def button_start_ingest(self, **kwargs):
+        """
+        This function is called when the user clicks the start ingest button
+        and basically takes all the form variables and passes it to the ingest function
+        """
+
+        ingest_window_id = kwargs.get('ingest_window_id', None)
+        form_vars = kwargs.get('form_vars', None)
+        queue_id = kwargs.get('queue_id', None)
+
+        # check if the form is valid before proceeding
+        if not self.is_form_valid(window_id=ingest_window_id):
+            logger.debug("Failed form validation. Cannot proceed with ingest.")
+
+            # focus back on the window
+            self.focus_window(window_id=ingest_window_id)
+
+            return False
+
+        # validate the file path(s)
+        file_paths = self.validate_files_or_folders_path(path=form_vars['file_path_var'].get())
+
+        # the file path should be a list of file paths
+        if not isinstance(file_paths, list) or len(file_paths) == 0:
+            logger.error('No file paths found in the ingest call. Aborting ingest.')
+            return False
+
+        # soon: convert the video form variables to video indexing settings
+        video_indexing_settings = {}
+
+        # convert the audio form variables to transcription settings
+        transcription_settings = self.form_to_transcription_settings(form_audio_vars=form_vars['audio_form_vars'], **kwargs)
+
+        # add the transcription job(s) to the queue
+        if self.toolkit_ops_obj.add_media_to_queue(source_file_paths=file_paths,
+                                                queue_id=queue_id,
+                                                video_indexing_settings=video_indexing_settings,
+                                                transcription_settings=transcription_settings
+                                                ):
+
+            # todo:  add group_questions on another job queue
+
+            # close the ingest window
+            self.destroy_window_(windows_dict=self.windows, window_id=ingest_window_id)
+
+            # if we reached this point safely, just open the queue window
+            self.open_queue_window()
+
+        return
+
+    def button_cancel_ingest(self, window_id, queue_id, parent_element=None, dont_ask=False):
+
+        if dont_ask or messagebox.askyesno(title="Cancel Ingest", message='Are you sure you want to cancel?'):
+
+            # assume the window is references in the windows dict
+            if parent_element is None:
+                parent_element = self.windows
+
+            if queue_id is not None:
+                self.toolkit_ops_obj.processing_queue.update_queue_item(queue_id=queue_id, status='canceled')
+
+            # call the default destroy window function
+            self.destroy_window_(windows_dict=self.windows, window_id=window_id)
+
+            return True
+
+        return False
+
+    def style_input_as_invalid(self, input=None, label: ctk.CTkLabel=None, **kwargs):
+        """
+        This function styles the entry and the label as invalid
+        """
+
+        if input is not None:
+            # change the input color to the error color
+            input.configure(fg_color=self.theme_colors['error'])
+
+        if label is not None:
+            # revert the style of the label to the theme default
+            label.configure(text_color=self.theme_colors['error_text'])
+
+    def style_input_as_valid(self, input=None, label: ctk.CTkLabel=None, **kwargs):
+        """
+        This function reverts the style of the entry and the label to the theme default
+        """
+
+        if input is not None:
+
+            # get the instance type of the input
+            input_type = type(input).__name__
+
+            # revert the style of the input to the theme default
+            input.configure(fg_color=ctk.ThemeManager.theme[input_type]["fg_color"])
+
+        if label is not None:
+            # revert the style of the label to the theme default
+            label.configure(text_color=ctk.ThemeManager.theme["CTkLabel"]["text_color"])
+
+    def is_form_valid(self, window_id: str, **kwargs):
+        """
+        This checks the form_invalid attribute of the window and returns True if it's False
+        If the window has no form_invalid attribute, it returns True
+        """
+
+        # if the window doesn't exist, return None
+        if window_id not in self.windows:
+            return None
+
+        # if the window has a form_invalid attribute check and it's not empty, return False
+        if hasattr(self.windows[window_id], 'form_invalid') \
+                and len(self.windows[window_id].form_invalid) > 0:
+
+            # deactivate the start button if it exists
+            if kwargs.get('start_button') is not None:
+                start_button = kwargs.get('start_button')
+                start_button.configure(state='disabled')
+
+            return False
+
+        # otherwise, it means the form is valid
+
+        # deactivate the start button if it exists
+        if kwargs.get('start_button') is not None:
+            start_button = kwargs.get('start_button')
+            start_button.configure(state='normal')
+
+        return True
+
+    def add_form_invalid(self, window_id: str, key: str, **kwargs):
+        """
+        This updates the form_invalid attribute of the window
+        """
+
+        # if the window doesn't exist, return None
+        if window_id not in self.windows:
+            return None
+
+        # if the window doesn't have a form_invalid attribute, create it
+        if not hasattr(self.windows[window_id], 'form_invalid'):
+            self.windows[window_id].form_invalid = []
+
+        # append the form_invalid attribute with the passed key
+        if key not in self.windows[window_id].form_invalid:
+            self.windows[window_id].form_invalid.append(key)
+
+        # do a validation check to potentially change the start button state
+        self.is_form_valid(window_id=window_id, **kwargs)
+
+    def remove_form_invalid(self, window_id: str, key: str, **kwargs):
+
+        # if the window doesn't exist, return None
+        if window_id not in self.windows:
+            return None
+
+        # if the window doesn't have a form_invalid attribute, create it
+        if not hasattr(self.windows[window_id], 'form_invalid'):
+            self.windows[window_id].form_invalid = []
+
+        # get the current form_invalid attribute
+        current_form_invalid = self.windows[window_id].form_invalid
+
+        # if the key is in the form_invalid attribute, remove it
+        if key in current_form_invalid:
+            current_form_invalid.remove(key)
+
+        # update the form_invalid attribute
+        self.windows[window_id].form_invalid = current_form_invalid
+
+        # do a validation check to potentially change the start button state
+        self.is_form_valid(window_id=window_id, **kwargs)
+
+    def button_transcribe(self, target_files=None, transcription_task='transcribe', **kwargs):
+        """
+        This prompts the user for a file path and opens the ingest window
+        """
+
+        # this ensures that we show the ingest window
+        # and simply use the default settings (selected from Preferences window)
+        if self.stAI.get_app_setting('transcripts_skip_settings', default_if_none=False):
+            kwargs['skip_settings'] = True
+
+        # ask the user for the target files if none were passed
+        if target_files is None:
+            target_files = self.ask_for_file_or_dir_for_var(self.root, multiple=True)
+
+        # add it to the transcription list
+        if target_files:
+
+            # a unique id is also useful to keep track
+            if 'queue_id' not in kwargs:
+                kwargs['queue_id'] = self.toolkit_ops_obj.processing_queue.generate_queue_id()
+
+            # now open up the transcription settings window
+            self.open_ingest_window(
+                title='Transcribe',
+                source_file_path=target_files,
+                transcription_task=transcription_task, **kwargs)
+
+            return True
+
+        # or close the process if the user canceled
+        else:
+            return False
+
+    def button_nle_transcribe_timeline(self, transcription_task='transcribe', **kwargs):
+        """
+        Used to render a timeline in Resolve and add it to the ingest window, once it's rendered
+        """
+
+        # get info from resolve
+        # todo: this needs to be done using the NLE object in the future
+        try:
+            resolve_data = self.toolkit_ops_obj.resolve_api.get_resolve_data()
+        # in case of exception still create a dict with an empty resolve object
+        except:
+            resolve_data = {'resolve': None}
+
+        # set an empty target directory for future use
+        target_dir = ''
+
+        if resolve_data is not None and resolve_data['resolve'] != None \
+             and 'currentTimeline' in resolve_data and \
+             resolve_data['currentTimeline'] != '' and resolve_data['currentTimeline'] is not None:
+
+            # did we ever save a target dir for this project?
+            last_target_dir = self.stAI.get_project_setting(project_name=NLE.current_project,
+                                                            setting_key='last_target_dir')
+
+            # ask the user where to save the files
+            while target_dir == '' or not os.path.exists(os.path.join(target_dir)):
+                logger.info("Prompting user for render path.")
+                target_dir = self.ask_for_target_dir(target_dir=last_target_dir)
+
+                # remember this target_dir for the next time we're working on this project
+                # (but only if it was selected by the user)
+                if target_dir and target_dir != last_target_dir:
+                    self.stAI.save_project_setting(project_name=NLE.current_project,
+                                                   setting_key='last_target_dir', setting_value=target_dir)
+
+                # cancel if the user presses cancel
+                if not target_dir:
+                    logger.info("User canceled transcription operation.")
+                    return
+
+            # get the current timeline from Resolve
+            currentTimelineName = resolve_data['currentTimeline']['name']
+
+            # send the timeline name via kwargs
+            kwargs['timeline_name'] = currentTimelineName
+
+            # get the current project name from Resolve
+            if 'currentProject' in resolve_data and resolve_data['currentProject'] is not None:
+                # get the project name from Resolve
+                kwargs['project_name'] = resolve_data['currentProject']
+
+            # generate a unique id to keep track of this file in the queue and transcription log
+            if kwargs.get('queue_id', None) is None:
+                kwargs['queue_id'] = self.toolkit_ops_obj.processing_queue.generate_queue_id(name=currentTimelineName)
+
+            # todo check why this doesn't work - maybe because resolve polling is hanging the main thread
+            # update the transcription log
+            self.toolkit_ops_obj.processing_queue.update_queue_item(queue_id=kwargs['queue_id'],
+                                                                    status='waiting for render')
+
+            # open the queue window
+            self.open_queue_window()
+
+            # use transcription_WAV render preset if it exists
+            # transcription_WAV is an audio only custom render preset that renders Linear PCM codec in a Wave format
+            # instead of Quicktime mp4; this is just to work with wav files instead of mp4 to improve compatibility.
+            # but the user needs to add it manually to resolve in order for it to work since the Resolve API
+            # doesn't permit choosing the audio format (only the codec)
+            render_preset = self.stAI.get_app_setting(setting_name='transcription_render_preset',
+                                                      default_if_none='transcription_WAV')
+
+            # let the user know that we're starting the render
+            self.notify_via_os("Starting Render", "Starting Render in Resolve",
+                                         "Saving into {} and starting render.".format(target_dir))
+
+            # render the timeline in Resolve
+            rendered_files = self.toolkit_ops_obj.resolve_api.render_timeline(
+                target_dir, render_preset, True, False, False, True)
+
+            if not rendered_files:
+                self.toolkit_ops_obj.processing_queue.update_queue_item(queue_id=kwargs['queue_id'], status='failed')
+                logger.error("Timeline render failed.")
+                return
+
+            # turn the rendered files into a string separated by commas with each element between double quotes
+            if len(rendered_files) > 1:
+                rendered_files = ', '.join(['"{}"'.format(f) for f in rendered_files])
+            else:
+                rendered_files = '{}'.format(rendered_files[0])
+
+            # now open up the ingest window
+            self.button_transcribe(target_files=rendered_files, transcription_task=transcription_task, **kwargs)
 
     def convert_text_to_time_intervals(self, text, **kwargs):
         '''
-        Checks all lines in the text and converts them to time intervals.
-        If using timecodes, we need to have either a transcription_data or transcription_path in the kwargs,
+        Takes all the time interval lines and converts them to time intervals list.
+        If using timecodes, we need to have either a transcription_data or transcription_file_path in the kwargs,
             and the transcription data must contain the framerate and the start time of the transcription.
         '''
 
@@ -6272,46 +7182,76 @@ class toolkit_UI:
 
         # for each line
         for line in lines:
-            # split the line into two parts, separated by a dash
-            parts = line.split('-')
 
-            # if there are two parts,
-            # it means that we have a start and end time
-            if len(parts) == 2:
-                # remove any spaces
-                start = parts[0].strip()
-                end = parts[1].strip()
+            # don't process empty lines
+            if line.strip() == '':
+                continue
 
-                # convert the start and end times to seconds
-                start_seconds = self.convert_time_to_seconds(start, **kwargs)
+            # when we validate, we get back a list with start and end times in return
+            time_interval = self.validate_time_interval(line, **kwargs)
 
-                # if the start time is a tuple, it means that we have a timecode with timecode data,
-                # so let's unpack it and use the timecode data later
-                if isinstance(start_seconds, tuple) and len(start_seconds) == 2:
-                    kwargs['timecode_data'] = start_seconds[1]
-                    start_seconds = start_seconds[0]
+            if isinstance(time_interval, list):
+                time_intervals.append(time_interval)
 
-                end_seconds = self.convert_time_to_seconds(end, **kwargs)
+            # if we received a boolean and it's False,
+            # it means that the time interval is invalid
+            elif isinstance(time_interval, bool) and not time_interval:
 
-                # now unpack the end time
-                if isinstance(end_seconds, tuple) and len(end_seconds) == 2:
-                    kwargs['timecode_data'] = end_seconds[1]
-                    end_seconds = end_seconds[0]
-
-                # if both start and end times are valid
-                if start_seconds is not None and end_seconds is not None:
-                    # add the time interval to the list
-                    time_intervals.append([start_seconds, end_seconds])
-
-                else:
-                    # otherwise, show an error message
-                    messagebox.showerror("Error", "Invalid time interval: " + line)
-                    return False
+                # so just return invalid
+                return False
 
         if time_intervals == []:
             return True
 
         return time_intervals
+
+    def validate_time_interval(self, time_interval_str, pop_error=False, **kwargs):
+        """
+        Validates a time interval and returns the start and end times in seconds.
+        If timecode_data was passed in the kwargs, it will be used to convert the timecodes to seconds.
+        """
+        # split the line into two parts, separated by a dash
+        parts = time_interval_str.split('-')
+
+        # if we don't have two parts, it means that the time interval is invalid
+        if len(parts) == 2:
+
+            # remove any spaces
+            start = parts[0].strip()
+            end = parts[1].strip()
+
+            # convert the start and end times to seconds
+            start_seconds = self.convert_time_to_seconds(start, **kwargs)
+
+            # if the start time is a tuple, it means that we have a timecode with timecode data,
+            # so let's unpack it and use the timecode data later
+            if isinstance(start_seconds, tuple) and len(start_seconds) == 2:
+                kwargs['timecode_data'] = start_seconds[1]
+                start_seconds = start_seconds[0]
+
+            end_seconds = self.convert_time_to_seconds(end, **kwargs)
+
+            # now unpack the end time
+            if isinstance(end_seconds, tuple) and len(end_seconds) == 2:
+                kwargs['timecode_data'] = end_seconds[1]
+                end_seconds = end_seconds[0]
+
+            # if both start and end times are valid
+            if start_seconds is not None and end_seconds is not None:
+                # add the time interval to the list
+                return [start_seconds, end_seconds]
+
+        # if we got here, it means that the time interval is invalid
+        if kwargs.get('surpress_errors', False):
+            logger.error("Invalid time interval: " + time_interval_str)
+
+        # pop an error message if we need to
+        if pop_error:
+            messagebox.showerror("Error", "Invalid time interval: " + time_interval_str)
+
+        # return false if the time interval is invalid
+        return False
+
 
     def convert_time_to_seconds(self, time, **kwargs):
         '''
@@ -6326,7 +7266,7 @@ class toolkit_UI:
         # or like this:
         # 0.0
 
-        If we're using timecode, we need to have either a transcription_data or transcription_path in the kwargs,
+        If we're using timecode, we need to have either a transcription_data or transcription_file_path in the kwargs,
         and the transcription data must contain the framerate and the start time of the transcription,
         otherwise it's impossible to convert the timecode to seconds.
 
@@ -6337,7 +7277,8 @@ class toolkit_UI:
 
             time_array = time.split(':')
 
-            # if the format is 0:00:00:00 - assume a timecode was passed
+            # if the format is 0:00:00:00 - assume timecode stings were used
+            # so try to get the timecode data to calculate to seconds
             if len(time_array) == 4:
 
                 if kwargs.get('transcription_file_path', None) is None and kwargs.get('transcription_data') is None:
@@ -6348,12 +7289,12 @@ class toolkit_UI:
                 time_converted = None
 
                 # use this function to convert the timecode to seconds using timecode data
-                def convert_from_timecode_using_tc_data(timecode_data, **kwargs):
+                def convert_from_timecode_using_tc_data(timecode_data=None, **kwargs):
 
                     # if we have the time in timecode, convert it to seconds using the toolkit ops object
                     time_converted = self.toolkit_ops_obj.convert_transcription_timecode_to_sec(
                         time,
-                        transcription_path=kwargs.get('transcription_file_path', None),
+                        transcription_file_path=kwargs.get('transcription_file_path', None),
                         transcription_data=kwargs.get('transcription_data', None),
                         timecode_data=timecode_data
                     )
@@ -6364,14 +7305,14 @@ class toolkit_UI:
                 timecode_data = None if kwargs.get('timecode_data', None) is None else kwargs.get('timecode_data')
 
                 # remove the timecode data from the kwargs
-                if timecode_data is not None:
+                if 'timecode_data' in kwargs:
                     del kwargs['timecode_data']
 
                 time_converted = convert_from_timecode_using_tc_data(timecode_data, **kwargs)
 
                 # if False was returned, it means that the transcription data has no timecode information
                 if time_converted is False:
-                    logger.warning("You're using timecodes, "
+                    logger.warning("You're using timecodes,"
                                  "but we don't have transcription data to determine the start timecode")
 
                     if messagebox.askokcancel("Error", "You're using timecodes, "
@@ -6380,12 +7321,16 @@ class toolkit_UI:
                                               "Please enter the timecode information."):
 
                         timecode_data = self.t_edit_obj.ask_for_transcription_timecode_data(
-                            window_id=kwargs.get('transcription_settings_window_id', None),
+                            window_id=kwargs.get('transcription_window_id', None),
                             default_start_tc='01:00:00:00'
                         )
 
+                        # replace the timecode data from the kwargs
+                        if timecode_data is not None:
+                            kwargs['timecode_data'] = timecode_data
+
                         # try the conversion again
-                        time_converted = convert_from_timecode_using_tc_data(timecode_data, **kwargs)
+                        time_converted = convert_from_timecode_using_tc_data(**kwargs)
 
                     # if user cancels, return None
                     else:
@@ -6419,7 +7364,8 @@ class toolkit_UI:
             return int(time)
 
         else:
-            logger.error('The time format is not recognized.')
+            if kwargs.get('supress_errors', False):
+                logger.error('The time value "{}" is not recognized.'.format(time))
             return None
 
     def start_transcription_button(self, transcription_settings_window_id=None, **transcription_config):
@@ -6438,7 +7384,8 @@ class toolkit_UI:
             self.convert_text_to_time_intervals(transcription_config['time_intervals'],
                                                 transcription_file_path= \
                                                     transcription_config.get('transcription_file_path', None),
-                                                transcription_settings_window_id=transcription_settings_window_id
+                                                transcription_settings_window_id=transcription_settings_window_id,
+                                                pop_error=True
                                                 )
 
         if not transcription_config['time_intervals']:
@@ -6449,7 +7396,8 @@ class toolkit_UI:
             self.convert_text_to_time_intervals(transcription_config['excluded_time_intervals'],
                                                 transcription_file_path= \
                                                     transcription_config.get('transcription_file_path', None),
-                                                transcription_settings_window_id=transcription_settings_window_id
+                                                transcription_settings_window_id=transcription_settings_window_id,
+                                                pop_error=True
                                                 )
 
         if not transcription_config['excluded_time_intervals']:
@@ -6749,19 +7697,6 @@ class toolkit_UI:
             else:
                 title = os.path.splitext(os.path.basename(transcription_file_path))[0]
 
-        # ask user if they want to add timeline info to the transcription file (if they were not recorded)
-        # (but only if ask_for_timeline_info is True in the app settings)
-        # if self.stAI.get_app_setting(setting_name='ask_for_timeline_info', default_if_none=False) is True:
-        #
-        #    # if the transcription file does not containe the timeline fps
-        #    if 'timeline_fps' not in transcription_json:
-        #         # ask the user if they want to add timeline info to the transcription file
-        #         if timeline_fps := simpledialog.askstring(title='Add fps to transcription data?',
-        #                                   prompt="The transcription file does not contain timeline fps info.\n"
-        #                                          "If you want to add it, please enter the fps value here.\n"
-        #                                   ):
-        #             print(timeline_fps)
-
         # create a window for the transcript if one doesn't already exist
         if self.create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title, resizable=True,
                                         type='transcription',
@@ -6774,10 +7709,6 @@ class toolkit_UI:
 
             # initialize the transcript_segments_ids for this window
             self.t_edit_obj.transcript_segments_ids[t_window_id] = {}
-
-            # create a header frame to hold stuff above the transcript text
-            #header_frame = tk.Frame(self.windows[t_window_id], name='header_frame')
-            #header_frame.place(anchor='nw', relwidth=1)
 
             # THE THREE WINDOW COLUMN FRAMES
             current_tk_window = self.windows[t_window_id]
@@ -7160,7 +8091,6 @@ class toolkit_UI:
             # so update all the windows just to make sure that all the elements are in the right state
             self.update_all_transcription_windows()
 
-
         # if select_line_no was passed
         if select_line_no is not None:
             # select the line in the text widget
@@ -7504,8 +8434,18 @@ class toolkit_UI:
 
         # don't do anything if the queue window doesn't exist
         if 'queue' not in self.windows:
-            # logger.debug('No queue window exists.')
             return
+
+        # add the last_update attribute to the queue window if it doesn't exist
+        if not hasattr(self.windows['queue'], 'last_update'):
+            self.windows['queue'].last_update = time.time()
+
+        else:
+            # temporary solution?
+            # - if we don't have this and we are updating the queue window too fast, the tool might crash:
+            # don't update the queue window if it was updated less than 0.5 seconds ago
+            if time.time() - self.windows['queue'].last_update < 0.5:
+                return
 
         # first destroy anything that the window might have held
         list = self.windows['queue'].winfo_children()
@@ -7518,7 +8458,6 @@ class toolkit_UI:
         if not all_queue_items:
             # just add a label to the window
             tk.Label(self.windows['queue'], text='Queue is empty.', **self.paddings).pack()
-
 
         # only do this if the transcription window exists
         # and if the queue exists
@@ -7557,7 +8496,7 @@ class toolkit_UI:
                                  width=event.width
                                  ))
 
-            # populate the log frame with the transcription items from the Queue
+            # populate the log frame with the items from the Queue
             num = 0
             for q_item_id in all_queue_items:
 
@@ -7634,7 +8573,7 @@ class toolkit_UI:
 
             # ask the user if they're sure they want to cancel the transcription
             if not messagebox.askyesno('Cancel transcription',
-                                       'Are you sure you want to cancel this transcription?'):
+                                       'Are you sure you want to cancel this item?'):
                 return
 
             # cancel via toolkit_ops
@@ -7651,8 +8590,8 @@ class toolkit_UI:
             return
 
         # ask the user if they're sure they want to cancel all transcriptions
-        if not messagebox.askyesno('Cancel all transcriptions',
-                                   'Are you sure you want to cancel all transcriptions from queue?'):
+        if not messagebox.askyesno('Cancel entire queue',
+                                   'Are you sure you want to cancel all the items from queue?'):
             return
 
         # take each queue item from the queue
@@ -9320,6 +10259,57 @@ class toolkit_UI:
         self.stAI.initial_target_dir = target_dir
 
         return target_dir
+
+    def ask_for_file_or_dir_for_var(self, parent=None, var=None, **kwargs):
+        """
+        This function asks the user for target files and then updates the variable passed to it with the file path(s)
+        """
+
+        # default to multiple files if not specified
+        if 'multiple' not in kwargs:
+            kwargs['multiple'] = True
+
+        # ask the user for the target file
+        target_path = self.ask_for_target_file(**kwargs)
+
+        # if the user canceled
+        if not target_path:
+
+            # re-focus on the parent window
+            if parent is not None:
+                self.focus_window(window=parent)
+
+            return False
+
+        if target_path:
+
+            # take all the file paths and put them into a string separated by commas,
+            # where each file path is wrapped in quotes
+
+            # if there is only one file path
+            if len(target_path) == 1:
+                # we don't need the quotes
+                target_path = target_path[0]
+
+            else:
+                # otherwise, we need to wrap each file path in quotes
+                target_path = ', '.join(['"{}"'.format(f) for f in target_path])
+
+            if var is None:
+                # if no variable was passed, just return the file path(s)
+                return target_path
+
+            # if we have a tk variable, do this:
+            # update the variable passed to this function with the file path(s)
+            var.set(target_path)
+
+            # re-focus on the parent window
+            if parent is not None:
+                self.focus_window(window=parent)
+
+            # return the file path(s)
+            return target_path
+
 
     def ask_for_target_file(self, filetypes=[("Audio files", ".mov .mp4 .wav .mp3")], target_dir=None, multiple=False):
 
