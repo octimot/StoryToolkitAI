@@ -149,6 +149,10 @@ class ToolkitOps:
         # it's very likely that the model will not be loaded here, but in the SearchItem, for each search
         self.s_semantic_search_model = None
 
+        # add observers so that we can update the UI when something changes
+        # this dictionary will hold all the actions and their observers (for eg. from the UI)
+        self._observers = {}
+
         self.processing_queue = self.ProcessingQueue(toolkit_ops_obj=self)
 
         # this is used by the queue dispatcher to know which functions to call depending on the task
@@ -194,10 +198,6 @@ class ToolkitOps:
         # resume the transcription queue if there's anything in it
         if self.processing_queue.resume_queue_from_file():
             logger.info('Resuming queue from file')
-
-        # add observers so that we can update the UI when something changes
-        # this dictionary will hold all the actions and their observers (for eg. from the UI)
-        self._observers = {}
 
     def attach_observer(self, action, observer):
         """
@@ -1875,9 +1875,12 @@ class ToolkitOps:
                 if not self.get_item(queue_id=queue_id):
 
                     # add it to the queue history
-                    self.queue_history.append({'queue_id': queue_id, 'status': 'pending'})
+                    self.queue_history.append({'queue_id': queue_id, name: '', 'status': 'pending'})
 
                     logger.debug('Added queue id {} to queue history'.format(queue_id))
+
+                    # notify the update_queue observers
+                    self.toolkit_ops_obj.notify_observers('update_queue')
 
                     return queue_id
 
@@ -1972,6 +1975,9 @@ class ToolkitOps:
                 self.queue_history.append(kwargs)
 
                 logger.debug('Added item {} to queue history'.format(queue_id))
+
+                # notify the update_queue observers
+                self.toolkit_ops_obj.notify_observers('update_queue')
 
             else:
                 # just update the item, but make sure that the queue id is not stripped
@@ -2095,19 +2101,15 @@ class ToolkitOps:
 
             # find the item index in the queue history according to its queue id
             for index, item in enumerate(self.queue_history):
+
                 if 'queue_id' in item and item['queue_id'] == queue_id:
                     item_index = index
 
                     # replace the item in the queue history
                     self.queue_history[item_index] = new_item
 
-                    # whenever the status is updated, make sure you update the window too
-                    # but only if the UI object exists
-                    if self.toolkit_ops_obj.is_UI_obj_available():
-                        self.toolkit_ops_obj.toolkit_UI_obj.update_queue_window()
-
-                    # todo: use observer pattern to notify the UI object instead of the above
-                    # self.toolkit_ops_obj.notify_observers('update_queue_item_{}'.format(queue_id))
+                    # whenever the status is updated, make sure notify all the observers
+                    self.toolkit_ops_obj.notify_observers('update_queue_item')
 
                     # save the queue to a file
                     if save_to_file:
@@ -2352,7 +2354,8 @@ class ToolkitOps:
             else:
                 return '0'
 
-        def get_all_queue_items(self, status: str or list or None = None, not_status: str or list or None = None) -> list:
+        def get_all_queue_items(self, status: str or list or None = None, not_status: str or list or None = None) \
+                -> dict:
             """
             This function returns all the items in the queue history in an dict,
             where the queue id is the key and the value is the item
@@ -2538,6 +2541,15 @@ class ToolkitOps:
 
                     logger.debug('Finished execution of {} for queue item {}'.format(task.__name__, queue_id))
 
+                    # remove the thread from the queue threads to free up the device
+                    self.remove_thread_from_queue_threads(device=device)
+
+                    # notify all the observers that the queue has been updated
+                    self.toolkit_ops_obj.notify_observers('update_queue')
+
+                    # then ping the queue again
+                    self.ping_queue()
+
                 except Exception as e:
                     import traceback
 
@@ -2551,12 +2563,6 @@ class ToolkitOps:
 
                     # stop the execution
                     return False
-
-            # remove the thread from the queue threads to free up the device
-            self.remove_thread_from_queue_threads(device=device)
-
-            # then ping the queue again
-            self.ping_queue()
 
             # if we get here, the execution was successful
             return True
@@ -2578,6 +2584,29 @@ class ToolkitOps:
                 item['progress'] = ''
 
             self.update_queue_item(**item)
+
+        def update_output(self, queue_id, output, append=True):
+            """
+            This function adds output to the queue item
+            """
+
+            item = self.get_item(queue_id=queue_id)
+            if not item:
+                logger.error('Unable to update output for queue item {} - item not found'.format(queue_id))
+                return False
+
+            # chose between appending or replacing the output
+            if append:
+                if 'output' not in item:
+                    item['output'] = []
+
+                item['output'].append(output)
+            else:
+                item['output'] = [output]
+
+            # update the queue item, but prevent saving the item to file
+            # since the output will not get saved anyway
+            self.update_queue_item(save_to_file=False, **item)
 
         def ping_queue(self):
             """
@@ -2603,7 +2632,7 @@ class ToolkitOps:
             queue_id = self.queue[queue_index]
             reorder_queue = False
 
-            # todo: fix this too
+            # todo: fix this
             """
             # try to see if we can start this item
             # and loop through the queue until we find one that we can start
@@ -2774,10 +2803,11 @@ class ToolkitOps:
             # because we're unable to serialize the task_queue items with the thread objects
             # but, no worries, when we load the queue from file,
             # the add_to_queue function will dispatch the tasks again as needed
+            # also, we don't need the output saved to the file
             save_queue_items = []
             for item in queue_items:
 
-                save_item = {k: v for k, v in item.items() if k not in ('task_queue', 'last_task')}
+                save_item = {k: v for k, v in item.items() if k not in ('task_queue', 'last_task', 'output')}
                 save_queue_items.append(save_item)
 
             # the queue file
@@ -4103,8 +4133,7 @@ class ToolkitOps:
 
                 # if there's a queue_id, update the queue item with the progress and some output
                 if kwargs.get('queue_id'):
-                    self.processing_queue.update_queue_item(kwargs['queue_id'],
-                                                            progress=progress, output='', save_to_file=False)
+                    self.processing_queue.update_queue_item(kwargs['queue_id'], progress=progress, save_to_file=False)
 
                     # cancel process if user requested it via queue
                     if self.processing_queue.cancel_if_canceled(queue_id=kwargs.get('queue_id')):

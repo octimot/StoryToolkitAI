@@ -397,8 +397,9 @@ def transcribe(
                     print(make_safe(line))
 
                     # add the text to the queue item variable (to make it available in the UI)
-                    toolkit_ops_obj.processing_queue.set_item_variable(
-                        queue_id=queue_id, variable_name='text', variable_value=make_safe(segment["text"]), append=True)
+                    if queue_id is not None:
+                        toolkit_ops_obj.processing_queue.update_output(queue_id=queue_id,
+                                                                       output=make_safe(segment["text"]))
 
 
             # if a segment is instantaneous or does not contain text, clear it

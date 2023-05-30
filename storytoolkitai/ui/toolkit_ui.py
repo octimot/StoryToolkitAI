@@ -4308,7 +4308,7 @@ class toolkit_UI():
                 webbrowser.open(release_url)
 
         # open the Queue window if something is up in the transcription queue
-        if self.toolkit_ops_obj.transcription_queue_current_name:
+        if len(self.toolkit_ops_obj.processing_queue.get_all_queue_items()) > 0:
             self.open_queue_window()
 
     def only_allow_integers(self, value):
@@ -8606,7 +8606,7 @@ class toolkit_UI():
                     # close the window
                     self.destroy_transcription_window(transcription_window)
 
-    def update_queue_window(self):
+    def old_update_queue_window(self):
 
         # don't do anything if the queue window doesn't exist
         if 'queue' not in self.windows:
@@ -8779,11 +8779,203 @@ class toolkit_UI():
         # update the queue window
         self.update_queue_window()
 
+    def update_queue_window(self, force_redraw=False):
+
+        # get the queue window
+        queue_window = self.windows['queue']
+
+        # load all the queue items
+        all_queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+
+        # redraw the queue list if needed
+        if force_redraw:
+            self.draw_queue_list(all_queue_items)
+
+        for row_num, queue_id in enumerate(all_queue_items):
+
+            q_item = all_queue_items[queue_id]
+
+            # the status may contain the progress too
+            status_progress = ''
+            if 'progress' in q_item and q_item['progress'] and q_item['progress'] != '':
+
+                # prevent weirdness with progress values over 100%
+                if int(q_item['progress']) > 100:
+                    q_item['progress'] = 100
+
+                status_progress = ' (' + str(q_item['progress']) + '%)'
+
+            # update the name label variable which is in the queue window
+            if 'name' not in q_item:
+                q_item['name'] = 'Unknown'
+
+            queue_window.queue_items[queue_id]['name_var'].set(q_item['name'])
+
+            # update the status label variable which is in the queue window
+            if 'status' not in q_item:
+                q_item['status'] = ''
+            queue_window.queue_items[queue_id]['status_var'].set(q_item['status']+status_progress)
+
+            # show the cancel button
+            # unless the transcription is already done, canceled or failed
+            if q_item['status'] not in ['canceling', 'canceled', 'done', 'failed']:
+
+                # show the cancel button
+                queue_window.queue_items[queue_id]['button_cancel']\
+                    .grid(row=0, column=2, **self.list_paddings, sticky='w')
+
+            else:
+                # hide the cancel button
+                queue_window.queue_items[queue_id]['button_cancel'].grid_forget()
+
+            # show the progress bar
+            if 'progress' in q_item and q_item['progress'] != '':
+
+                # the value of the progressbar is between 0 and 1
+                progress_bar_val = int(q_item['progress']) / 100
+
+                # update the progress bar
+                queue_window.queue_items[queue_id]['progress_bar'].set(progress_bar_val)
+                queue_window.queue_items[queue_id]['progress_bar'].grid(row=1, column=0, columnspan=3, sticky='ew',
+                                                                        **self.ctk_form_paddings)
+
+            else:
+                queue_window.queue_items[queue_id]['progress_bar'].set(0)
+                queue_window.queue_items[queue_id]['progress_bar'].grid_forget()
+
+    def draw_queue_list(self, queue_items=None):
+        """
+        We're using this to (re-)draw the list of items in the Queue window
+        """
+
+        queue_items_frame = self.windows['queue'].queue_items_frame
+
+        # this is the queue window
+        queue_window = self.windows['queue']
+
+        # get the queue
+        if queue_items is None:
+            all_queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+        else:
+            all_queue_items = queue_items
+
+        # reset the queue items dict for this window
+        queue_window.queue_items = {}
+
+        for row_num, queue_id in enumerate(all_queue_items):
+
+            # create a frame to hold the queue item
+            queue_item_frame = ctk.CTkFrame(queue_items_frame)
+
+            # add the queue item dict to the queue window
+            window_queue_item = queue_window.queue_items[queue_id] = {}
+
+            # add the name label
+            window_queue_item['name_var'] = \
+                name_var = ctk.StringVar(queue_window)
+            name_label = ctk.CTkLabel(queue_item_frame, textvariable=name_var)
+
+            # expand the name label to fill the space
+            queue_item_frame.columnconfigure(0, weight=1)
+
+            # add the status label
+            window_queue_item['status_var'] = \
+                status_var = ctk.StringVar(queue_window)
+            status_label = ctk.CTkLabel(queue_item_frame, textvariable=status_var)
+
+            # add the progress bar (under both the name and status labels)
+            window_queue_item['progress_bar'] = \
+                progress_bar = ctk.CTkProgressBar(queue_item_frame, height=5)
+
+            # add a button to cancel the transcription
+            window_queue_item['button_cancel'] = \
+                button_cancel = ctk.CTkButton(queue_item_frame, text='x', width=1)
+
+            # bind the button to the cancel_transcription function
+            button_cancel.bind("<Button-1>", lambda e, queue_id=queue_id, button_cancel=button_cancel:
+                self.on_button_cancel_queue_item(queue_id, button_cancel))
+
+            # add the name and status labels to the queue item frame (but don't add the progress bar yet)
+            name_label.grid(row=0, column=0, sticky='w', **self.ctk_form_paddings)
+            status_label.grid(row=0, column=1, sticky='e', **self.ctk_form_paddings)
+
+            # add the queue item to the queue items frame
+            queue_item_frame.grid(row=row_num, column=0, sticky='ew', **self.ctk_form_paddings)
+
+        # add the queue items frame to the queue window
+        queue_items_frame.grid(row=0, column=0, sticky='nsew')
+
+        # make sure it expands horizontally to fill the window
+        queue_items_frame.columnconfigure(0, weight=1)
+
+        # make the window larger if the queue items frame is larger than the window
+        queue_window.update_idletasks()
+
+        # get the height of the queue items frame
+        queue_items_frame_height = queue_items_frame.winfo_height()
+
+        # get the height of the queue window
+        queue_window_height = queue_window.winfo_height()
+
+        # if the queue items frame is larger than the window
+        if queue_items_frame_height > queue_window_height:
+
+            # make the window larger
+            queue_window.geometry('{}x{}'.format(queue_window.winfo_width(), queue_items_frame_height+50))
+
+        return
+
     def open_queue_window(self):
 
         # create a window for the Queue if one doesn't already exist
         if self.create_or_open_window(parent_element=self.root, type='queue',
                                       window_id='queue', title='Queue', resizable=True):
+
+            queue_window = self.windows['queue']
+
+            # add a frame to hold all the queue items
+            self.windows['queue'].queue_items_frame = \
+                queue_items_frame = ctk.CTkScrollableFrame(queue_window)
+
+            # add a frame to hold the footer
+            bottom_footer = ctk.CTkFrame(queue_window)
+
+            # draw the list of items in the queue
+            self.draw_queue_list()
+
+            # add the bottom footer to the queue window
+            bottom_footer.grid(row=1, column=0, sticky='nsew')
+
+            # the column needs to be expanded to fill the window
+            queue_window.columnconfigure(0, weight=1)
+            queue_window.rowconfigure(0, weight=1)
+
+            # the window must be minimum 600px wide
+            queue_window.minsize(600, 0)
+
+            # add a cancel all button in the footer
+            button_cancel_all = ctk.CTkButton(bottom_footer, text='Cancel all')
+
+            # bind the button to the cancel_all_transcriptions function
+            button_cancel_all.bind("<Button-1>", lambda e: self.on_button_cancel_queue())
+
+            # add the button to the footer
+            button_cancel_all.grid(row=0, column=0, sticky='e', **self.ctk_form_entry_paddings)
+
+            # add an observer to the queue window to make sure it gets updated if any item changes
+            self.add_observer_to_window(
+                window_id='queue',
+                action='update_queue_item',
+                callback=lambda: self.update_queue_window()
+            )
+
+            # add an observer to the queue window to make sure it gets redrawn when the queue changes
+            self.add_observer_to_window(
+                window_id='queue',
+                action='update_queue',
+                callback=lambda: self.update_queue_window(force_redraw=True)
+            )
+
             # and then call the update function to fill the window up
             self.update_queue_window()
 
