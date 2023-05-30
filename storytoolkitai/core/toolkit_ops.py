@@ -86,6 +86,11 @@ class NLE:
             return True
 
 
+class Observer:
+    def update(self, subject):
+        pass
+
+
 class ToolkitOps:
 
     def __init__(self, stAI=None, disable_resolve_api=False):
@@ -189,6 +194,50 @@ class ToolkitOps:
         # resume the transcription queue if there's anything in it
         if self.processing_queue.resume_queue_from_file():
             logger.info('Resuming queue from file')
+
+        # add observers so that we can update the UI when something changes
+        # this dictionary will hold all the actions and their observers (for eg. from the UI)
+        self._observers = {}
+
+    def attach_observer(self, action, observer):
+        """
+        Attach an observer to an action
+        """
+
+        if action not in self._observers:
+            self._observers[action] = []
+
+        # add the observer to the list of observers for this action
+        self._observers[action].append(observer)
+
+    def dettach_observer(self, action, observer):
+        """
+        Dettach an observer from an action
+        """
+
+        if action not in self._observers:
+            return False
+
+        # add the observer to the list of observers for this action
+        self._observers[action].remove(observer)
+
+        # if the list is empty, remove the action
+        if len(self._observers[action]) == 0:
+            del self._observers[action]
+
+    def notify_observers(self, action):
+        """
+        Use this to notify all observers if a certain action has been performed
+        """
+
+        # no observers for this action
+        if action not in self._observers:
+            return False
+
+        # notify all observers for this action
+        for observer in self._observers[action]:
+
+            observer.update()
 
     class ToolkitAssistant:
         '''
@@ -1472,7 +1521,7 @@ class ToolkitOps:
             # and the stAI object
             self.stAI = toolkit_ops_obj.stAI
 
-        def get_all_transcript_groups(self, transcription_file_path: str = None, transcription_data = None) \
+        def get_all_transcript_groups(self, transcription_file_path: str = None, transcription_data=None) \
                 -> dict or None:
             '''
             This function returns a list of transcript groups for a given transcription file or transcription data.
@@ -2054,9 +2103,11 @@ class ToolkitOps:
 
                     # whenever the status is updated, make sure you update the window too
                     # but only if the UI object exists
-                    # todo: this needs to be moved to the UI object!
                     if self.toolkit_ops_obj.is_UI_obj_available():
                         self.toolkit_ops_obj.toolkit_UI_obj.update_queue_window()
+
+                    # todo: use observer pattern to notify the UI object instead of the above
+                    # self.toolkit_ops_obj.notify_observers('update_queue_item_{}'.format(queue_id))
 
                     # save the queue to a file
                     if save_to_file:
@@ -4048,7 +4099,7 @@ class ToolkitOps:
                 pbar.update(1)
 
                 # get the percentage of progress
-                progress = int((i / len(segments)) * 100)
+                progress = int(((i+1) / len(segments)) * 100)
 
                 # if there's a queue_id, update the queue item with the progress and some output
                 if kwargs.get('queue_id'):
@@ -4178,10 +4229,6 @@ class ToolkitOps:
                 group_name=group_name
             )
 
-        # if we have a queue_id, update the status to done
-        if kwargs.get('queue_id', None):
-            self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='done')
-
         # if this was successful, save the questions group to the transcription json file
         if questions_group is not None:
 
@@ -4191,10 +4238,18 @@ class ToolkitOps:
                                                      questions_group,
                                                      group_id=group_name)
 
-            return questions_group
+        # if we have a queue_id, update the status to done
+        if kwargs.get('queue_id', None):
+            self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='done')
 
-        # if we couldn't find any questions, return None
-        return None
+        # update all the observers that are listening for this transcription
+        self.notify_observers('update_transcription_{}'.format(self.get_transcription_id(transcription_file_path)))
+
+        # update all the observers that are listening for this transcription's groups
+        self.notify_observers('update_transcription_groups_{}'
+                              .format(self.get_transcription_id(transcription_file_path)))
+
+        return questions_group
 
     def post_process_whisper_result(self, audio, result, **kwargs):
         """
@@ -5024,7 +5079,8 @@ class ToolkitOps:
 
         return False
 
-    def get_transcription_file_data(self, transcription_file_path):
+    @staticmethod
+    def get_transcription_file_data(transcription_file_path):
 
         # make sure the transcription exists
         if not os.path.exists(transcription_file_path):
@@ -5046,6 +5102,13 @@ class ToolkitOps:
             logger.debug("Word level timings detected in transcription file data.")
 
         return transcription_json
+
+    @staticmethod
+    def get_transcription_id(transcription_file_path):
+        """
+        We're using this to generate a unique ID for the transcription based on its file path
+        """
+        return hashlib.md5(transcription_file_path.encode('utf-8')).hexdigest()
 
     def get_transcription_audio_file_path(self, transcription_file_path, transcription_data=None):
         """

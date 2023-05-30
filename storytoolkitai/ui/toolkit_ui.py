@@ -27,7 +27,8 @@ from whisper import available_models as whisper_available_models
 
 from .menu import UImenus
 
-class toolkit_UI:
+
+class toolkit_UI():
     '''
     This handles all the GUI operations mainly using tkinter
     '''
@@ -548,7 +549,6 @@ class toolkit_UI:
 
                 elif event.keysym == 'G':
                     self.button_add_to_group(window_id=window_id, only_add=True)
-
 
             # SHIFT+G opens group window
             elif event.keysym == 'G':
@@ -1432,7 +1432,9 @@ class toolkit_UI:
 
                 if messagebox.askyesno(title='Group Questions',
                                            message='Grouping Questions will be sent to the queue '
-                                                   'and might take a bit to complete.\n'
+                                                   'and might take a bit to complete.\n\n'
+                                                   'Working on this transcription while the grouping is in progress '
+                                                   'is not recommended.\n\n'
                                                    'Are you sure you want to continue?'
                                            ):
 
@@ -3290,6 +3292,17 @@ class toolkit_UI:
             # returning false means that no changes were made
             return False
 
+        def get_transcription_path_from_window(self, window_id):
+            """
+            This looks into self.transcription_file_paths and returns the transcription path for the window_id if it exists
+            """
+
+            if window_id in self.transcription_file_paths:
+                return self.transcription_file_paths[window_id]
+
+            # if we didn't find the transcription path, return None
+            return None
+
     class AppItemsUI:
 
         def __init__(self, toolkit_UI_obj):
@@ -3929,6 +3942,10 @@ class toolkit_UI:
         # keep track of which window is what type by window_id
         self.window_types = {}
 
+        # keep track of all the window observers
+        # {window_id: {action: observer_obj etc.}}
+        self.windows_observers = {}
+
         # use this to keep the text_windows
         # this doesn't apply only to windows opened with the open_text_window method, but can be used for any window
         # that has a text widget which needs to be accessed externally
@@ -4489,6 +4506,65 @@ class toolkit_UI:
             else:
                 return window_id
 
+    def add_observer_to_window(self, window_id, action, callback):
+        """
+        This adds an observer to a window, so that the callback can be called
+        when the action is triggered from toolkit_ops_obj
+        """
+
+        # if the window_id is not in the windows_observers dictionary, add it
+        if window_id not in self.windows_observers:
+            self.windows_observers[window_id] = {}
+
+        # if the action is already in the windows_observers dictionary, return
+        if action in self.windows_observers[window_id]:
+            logger.debug('Observer already exists for action: ' + action + ' (window ' + window_id + ')')
+            return False
+
+        # add an Observer to the transcription window
+        window_observer = Observer()
+        window_observer.update = callback
+
+        # attach the observer to update_transcription action
+        self.toolkit_ops_obj.attach_observer(action=action, observer=window_observer)
+
+        # add the observer to the windows_observers dictionary
+        self.windows_observers[window_id][action] = window_observer
+
+        return window_observer
+
+    def remove_observer_from_window(self, window_id, action=None):
+
+        # first, dettach the observer from the toolkit_ops_obj
+        # but if no action was specified, remove all actions (check them in the windows_observers dictionary)
+        if action is None:
+
+            # if the action is not in the windows_observers dictionary, return
+            if window_id not in self.windows_observers:
+                return
+
+            # remove all actions related to this window
+            for removable_action in self.windows_observers[window_id]:
+                self.toolkit_ops_obj.dettach_observer(action=removable_action,
+                                                      observer=self.windows_observers[window_id][removable_action])
+
+        # if we do have an action, remove only that action
+        else:
+            self.toolkit_ops_obj.dettach_observer(action=action, observer=self.windows_observers[window_id][action])
+
+        # if the window_id is not in the windows_observers dictionary, add it
+        if window_id not in self.windows_observers:
+
+            # if an action was specified, only remove that action
+            if action is not None and action in self.windows_observers[window_id]:
+                del self.windows_observers[window_id][action]
+
+            # otherwise, remove the entire window from the dictionary
+            else:
+                del self.windows_observers[window_id]
+
+        return
+
     def get_window_type(self, window_id: str) -> str:
         '''
         This function returns the type of a window based on the window_id
@@ -4585,7 +4661,7 @@ class toolkit_UI:
         Updates the main window GUI
         :return:
         '''
-        
+
         main_window = self.windows['main']
 
         #  show the tool buttons if they're not visible already
@@ -7653,6 +7729,9 @@ class toolkit_UI:
         # then remove its reference
         del windows_dict[window_id]
 
+        # also remove any observers that are registered for this window
+        self.remove_observer_from_window(window_id=window_id)
+
     def open_transcript(self, **options):
         '''
         This prompts the user to open a transcript file and then opens it a transcript window
@@ -8165,6 +8244,18 @@ class toolkit_UI:
             if self.stAI.get_app_setting('transcripts_always_on_top', default_if_none=False):
                 self.window_on_top(window_id=t_window_id, on_top=self.stAI.get_app_setting('transcripts_always_on_top'))
 
+            # add an observer to this window
+            # for the action, we'll use  update_transcription_ + the transcription id
+            # for the callback, we'll use the update_transcription_window function
+            # so whenever the observer is notified from toolkit the ops object,
+            # it will call the update_transcription_window function
+            self.add_observer_to_window(
+                window_id=t_window_id,
+                action='{}_{}'
+                .format('update_transcription', self.toolkit_ops_obj.get_transcription_id(transcription_file_path)),
+                callback=lambda: self.update_transcription_window(t_window_id)
+            )
+
         # if the transcription window already exists,
         # we won't know the window id since it's not passed
         else:
@@ -8186,13 +8277,20 @@ class toolkit_UI:
                 # select the line in the text widget
                 self.t_edit_obj.segment_to_selection(window_id=t_window_id, line=selection_line_no)
 
-        # add the transcript groups to the transcript_groups dict
-        if 'transcript_groups' in transcription_json:
+        self.update_window_transcript_groups(transcript_window_id=t_window_id,
+                                             transcription_data=transcription_json,
+                                             select_group=select_group, title=title)
 
-            self.t_edit_obj.transcript_groups[t_window_id] = transcription_json['transcript_groups']
+    def update_window_transcript_groups(self, transcript_window_id: str, transcription_data: dict,
+                                        select_group=False, title=''):
+
+        # add the transcript groups to the transcript_groups dict
+        if 'transcript_groups' in transcription_data:
+
+            self.t_edit_obj.transcript_groups[transcript_window_id] = transcription_data['transcript_groups']
 
             # if the transcript groups are not empty
-            if transcription_json['transcript_groups']:
+            if transcription_data['transcript_groups']:
 
                 # automatically open the transcript groups window if the setting is set to True
                 # or if a select_group was passed
@@ -8200,12 +8298,12 @@ class toolkit_UI:
                                              default_if_none=False) is True \
                         or select_group is not None:
                     # open the transcript groups window
-                    self.open_transcript_groups_window(transcription_window_id=t_window_id,
+                    self.open_transcript_groups_window(transcription_window_id=transcript_window_id,
                                                        transcription_name=title,
                                                        select_group=select_group)
 
         else:
-            self.t_edit_obj.transcript_groups[t_window_id] = {}
+            self.t_edit_obj.transcript_groups[transcript_window_id] = {}
 
     def update_transcription_window(self, window_id, update_all: bool = True, **update_attr):
         '''
@@ -8213,7 +8311,7 @@ class toolkit_UI:
 
         :param window_id:
         :param update_all: If this is True, try to update all the GUI elements of the window
-                            by using their hard-coded, even if they were not passed in the update_attr dict.
+                            by using their hard-coded names, even if they were not passed in the update_attr dict.
         :param update_attr:
         :return:
         '''
@@ -8371,7 +8469,7 @@ class toolkit_UI:
                 show_resolve_buttons = True
 
         # finally, start showing the frames that need to be shown
-        #if show_selection_buttons:
+        # if show_selection_buttons:
         #    # but also make sure that the s_buttons_frame is right after the t_buttons_frame
         update_attr['s_buttons_frame'].pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
 
@@ -8389,12 +8487,10 @@ class toolkit_UI:
             else:
                 button.config(state=tk.NORMAL)
 
-
         if show_resolve_buttons:
             update_attr['r_buttons_frame'].pack(fill='x', expand=True, padx=5, pady=42, anchor='sw')
         else:
             update_attr['r_buttons_frame'].pack_forget()
-
 
     def sync_current_tc_to_transcript(self, window_id, **update_attr):
 
@@ -8539,8 +8635,7 @@ class toolkit_UI:
             # just add a label to the window
             tk.Label(self.windows['queue'], text='Queue is empty.', **self.paddings).pack()
 
-        # only do this if the transcription window exists
-        # and if the queue exists
+        # only if the queue exists
         elif all_queue_items:
 
             # create a canvas to hold all the log items in the window
@@ -8641,8 +8736,6 @@ class toolkit_UI:
 
             # bind the button to the cancel_all_transcriptions function
             button_cancel_all.bind("<Button-1>", lambda e: self.on_button_cancel_queue())
-
-
 
     def on_button_cancel_queue_item(self, queue_id, button_cancel):
 
@@ -8904,7 +8997,6 @@ class toolkit_UI:
                                  .format(len(search_item.search_file_paths),
                                          'file' if len(search_item.search_file_paths) == 1 else 'files'))
         self._text_window_update(search_window_id, search_file_list)
-
 
     def _add_button_to_side_frames_of_text_window(self,
                                                     window_id: str,
@@ -9986,7 +10078,19 @@ class toolkit_UI:
                          .format(window_id, missing_inputs))
 
     def update_transcript_groups_window(self, t_window_id: str, t_group_window_id: str = None,
-                                        groups_listbox: tk.Listbox = None):
+                                        groups_listbox: tk.Listbox = None, reload_groups: bool = False):
+
+        # if we're supposed to reload the groups, do it
+        if reload_groups:
+
+            # reload the transcription from disk
+            transcription_data = self.toolkit_ops_obj.get_transcription_file_data(
+                self.t_edit_obj.get_transcription_path_from_window(t_window_id)
+            )
+
+            if transcription_data:
+                self.update_window_transcript_groups(t_window_id, transcription_data)
+
 
         # if the group window id is not provided, assume this:
         if t_group_window_id is None:
@@ -10059,11 +10163,15 @@ class toolkit_UI:
             self._show_group_details_frame(t_group_window_id, group_details_frame)
 
         # now, if there are any selected groups for this window
-        if t_window_id in self.t_edit_obj.selected_groups:
+        if t_window_id in self.t_edit_obj.selected_groups \
+            and self.t_edit_obj.selected_groups[t_window_id]:
 
             # select the groups in the listbox
             for group_name in self.t_edit_obj.selected_groups[t_window_id]:
-                #groups_listbox.selection_set(group_names.index(group_name))
+
+                # this should not happen, so if errors are reported, look into it!
+                if not group_name:
+                    continue
 
                 # select the group in the listbox, but using a case-insensitive search
                 # - this is because the listbox is case-sensitive, but the group names are not
@@ -10267,6 +10375,24 @@ class toolkit_UI:
                                                  t_group_window_id=transcript_groups_window_id,
                                                  groups_listbox=groups_listbox)
 
+            # get the transcription path from the transcription window
+            transcription_file_path = self.t_edit_obj.get_transcription_path_from_window(
+                window_id=transcription_window_id
+            )
+
+            # add an observer for this groups window,
+            # to trigger an update in case the groups are changed
+            self.add_observer_to_window(
+                window_id=transcript_groups_window_id,
+                action='update_transcription_groups_{}'
+                .format(self.toolkit_ops_obj.get_transcription_id(transcription_file_path)),
+                callback=lambda: self.update_transcript_groups_window(t_window_id=transcription_window_id,
+                                                                      t_group_window_id=transcript_groups_window_id,
+                                                                      groups_listbox=groups_listbox,
+                                                                      reload_groups=True
+                                                                      )
+            )
+
         if select_group is not None:
             self.on_group_press(None, t_window_id=transcription_window_id,
                                 t_group_window_id=transcript_groups_window_id,
@@ -10290,7 +10416,6 @@ class toolkit_UI:
             button.config(text='Don\'t Auto Add')
         else:
             button.config(text='Auto Add')
-
 
     def open_file_in_os(self, file_path):
         '''

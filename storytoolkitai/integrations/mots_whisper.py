@@ -439,7 +439,8 @@ def transcribe(
 
             # update the progress in the app
             if queue_id is not None:
-                toolkit_ops_obj.processing_queue.update_queue_item(queue_id=queue_id, progress=progress)
+                toolkit_ops_obj.processing_queue.update_queue_item(queue_id=queue_id,
+                                                                   save_to_file=False, progress=progress)
 
     return dict(
         text=tokenizer.decode(all_tokens[len(initial_prompt_tokens):]),
