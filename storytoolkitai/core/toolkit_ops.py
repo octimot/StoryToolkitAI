@@ -2603,7 +2603,7 @@ class ToolkitOps:
             queue_id = self.queue[queue_index]
             reorder_queue = False
 
-            # todo: fix this
+            # todo: fix this too
             """
             # try to see if we can start this item
             # and loop through the queue until we find one that we can start
@@ -4451,6 +4451,9 @@ class ToolkitOps:
                     # add the transcription of the audio segment to the results list
                     results['segments'].append(transcript_segment)
 
+                    # add the language to the result
+                    results['whisper_language'] = result['language'] if 'language' in result else ''
+
         # copy the status from the result to the results (if any)
         # normally we should only get a status if the transcription was canceled or it failed
         if isinstance(result, dict) and 'status' in result:
@@ -4660,7 +4663,7 @@ class ToolkitOps:
 
         # if the audio_array is longer than 10 minutes, notify the user that the process will take a while
         if len(audio_array) > 10 * 60 * 16_000:
-            long_audio_msg = "The audio is long... This might take a while."
+            long_audio_msg = "This might take a while."
         else:
             long_audio_msg = ""
 
@@ -4860,23 +4863,6 @@ class ToolkitOps:
 
         # update the status of the item in the transcription log
         self.processing_queue.update_queue_item(queue_id=queue_id, status='saving files')
-
-        # WHAT HAPPENS FROM HERE
-
-        # Once a transcription is completed, you should see 4 or 5 files:
-        # - the original audio file used for transcription (usually WAV)
-        # - if the file was rendered from resolve, a json file - which is kind of like a report card for what was
-        #   rendered from where (see mots_resolve.py render())
-        # - the resulting transcription.json file with the actual transcription
-        # - the plain text transcript in TXT format - transcript.txt
-        # - the transcript in SRT format, ready to be imported in Resolve (or other apps)
-        #
-        # Once these are written, the transcription.json file should be used to gather any further information saved
-        # within the tool, therefore it's important to also mention the 3 other files within it (txt, srt, wav). But,
-        # with this approach we need to keep in mind to always keep the other 3 files next to the transcription.json
-        # to ensure that the files can migrate between different machines and the links won't break.
-        #
-        # Furthermore, the same file will be used to save any other information related to the transcription.)
 
         # if we're not updating an older transcription file
         if not existing_transcription or type(existing_transcription) is not str:
