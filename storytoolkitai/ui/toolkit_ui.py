@@ -3832,42 +3832,45 @@ class toolkit_UI():
                 justify = {'justify': tk.LEFT}
 
                 # create a frame for the about window
-                about_frame = Frame(about_window)
-                about_frame.pack(**self.toolkit_UI_obj.paddings)
+                about_frame = ctk.CTkFrame(about_window, **self.toolkit_UI_obj.ctk_frame_transparent)
+                about_frame.pack(**self.toolkit_UI_obj.window_paddings)
 
                 # add the app name text
                 app_name = 'StoryToolkitAI version ' + self.stAI.version
 
                 # create the app name heading
-                app_name_label = Label(about_frame, text=app_name, font=self.toolkit_UI_obj.default_font_h1, **justify)
+                app_name_label = ctk.CTkLabel(about_frame, text=app_name, font=self.toolkit_UI_obj.default_font_h1,
+                                              **justify)
                 app_name_label.grid(column=1, row=1, sticky='w')
 
                 # the made by frame
-                made_by_frame = Frame(about_frame)
+                made_by_frame = ctk.CTkFrame(about_frame, **self.toolkit_UI_obj.ctk_frame_transparent)
                 made_by_frame.grid(column=1, row=2, sticky='w')
 
                 # create the made by label
-                made_by_label = Label(made_by_frame, text='made by', font=self.toolkit_UI_obj.default_font, **justify)
+                made_by_label = ctk.CTkLabel(made_by_frame, text='made by ', font=self.toolkit_UI_obj.default_font,
+                                             **justify)
                 made_by_label.pack(side=tk.LEFT)
 
                 # create the mots link label
-                mots_label = Label(made_by_frame, text='mots', font=self.toolkit_UI_obj.default_font_link, **justify)
+                mots_label = ctk.CTkLabel(made_by_frame, text='mots', font=self.toolkit_UI_obj.default_font_link,
+                                          **justify)
                 mots_label.pack(side=tk.LEFT)
 
                 # make the made by text clickable
                 mots_label.bind('<Button-1>', self.UI_menus.open_mots)
 
                 # the project page frame
-                project_page_frame = Frame(about_frame)
+                project_page_frame = ctk.CTkFrame(about_frame, **self.toolkit_UI_obj.ctk_frame_transparent)
                 project_page_frame.grid(column=1, row=3, sticky='w', pady=self.toolkit_UI_obj.paddings['pady'])
 
                 # add the project page label
-                project_page_label = Label(project_page_frame, text='Project page:',
+                project_page_label = ctk.CTkLabel(project_page_frame, text='Project page: ',
                                            font=self.toolkit_UI_obj.default_font, **justify)
                 project_page_label.pack(side=tk.LEFT)
 
                 # create the project page link label
-                project_page_link_label = Label(project_page_frame, text='github.com/octimot/StoryToolkitAI',
+                project_page_link_label = ctk.CTkLabel(project_page_frame, text='github.com/octimot/StoryToolkitAI',
                                                 font=self.toolkit_UI_obj.default_font_link, **justify)
                 project_page_link_label.pack(side=tk.LEFT)
 
@@ -3875,9 +3878,10 @@ class toolkit_UI():
                 project_page_link_label.bind('<Button-1>', self.UI_menus.open_project_page)
 
                 # add license info
-                license_info_label = Label(about_frame, text='For third party software and license information\n'
-                                                             'see the project page.',
-                                           font=self.toolkit_UI_obj.default_font, **justify)
+                license_info_label = ctk.CTkLabel(about_frame,
+                                                  text='For third party software and license information\n'
+                                                       'see the project page.',
+                                                  font=self.toolkit_UI_obj.default_font, **justify)
                 license_info_label.grid(column=1, row=4, sticky='w')
 
                 return True
@@ -4012,6 +4016,7 @@ class toolkit_UI():
         # set some UI styling here
         # todo: check where these are used and replace all elements with ctk ones
         self.paddings = {'padx': 10, 'pady': 10}
+        self.window_paddings = {'padx': 20, 'pady': 20}
         self.left_frame_button_paddings = {'padx': 5, 'pady': 5}
         self.form_paddings = {'padx': 10, 'pady': 5}
         self.button_size = {'width': 150, 'height': 50}
@@ -4063,8 +4068,7 @@ class toolkit_UI():
         console_font_size = self.stAI.get_app_setting('console_font_size', default_if_none=13)
 
         # set the platform independent fixed font (for console)
-        self.console_font = font.nametofont(name='TkFixedFont')
-        self.console_font.configure(size=int(console_font_size * font_size_ratio))
+        self.console_font = ctk.CTkFont(family='TkFixedFont', size=int(console_font_size * font_size_ratio))
 
         # set the default font size
         default_font_size = 13
@@ -4073,29 +4077,24 @@ class toolkit_UI():
         self.default_font_size_after_ratio = default_font_size_after_ratio
 
         # set the platform independent default font
-        self.default_font = tk.font.Font(font=font.nametofont(name='TkDefaultFont'))
-        self.default_font.configure(size=default_font_size_after_ratio)
+        self.default_font = ctk.CTkFont(family='TkDefaultFont', size=default_font_size_after_ratio)
 
         # set the platform independent default link font
-        self.default_font_link = tk.font.Font(font=self.default_font)
-        self.default_font_link.configure(size=default_font_size_after_ratio, underline=True)
+        self.default_font_link = ctk.CTkFont(family='TkDefaultFont', size=default_font_size_after_ratio, underline=True)
 
         # set the platform independent default font for headings
-        self.default_font_h1 = font.nametofont(name='TkHeadingFont')
-        self.default_font_h1.configure(size=int(default_font_size_after_ratio + 3))
+        self.default_font_h1 = ctk.CTkFont(family='TkHeadingFont', size=int(default_font_size_after_ratio + 3))
 
         # set the platform independent default font for headings
-        self.default_font_h2 = font.nametofont(name='TkHeadingFont')
-        self.default_font_h2.configure(size=int(default_font_size_after_ratio + 2))
+        self.default_font_h2 = ctk.CTkFont(family='TkHeadingFont', size=int(default_font_size_after_ratio + 2))
 
         # set the platform independent default font for headings
-        self.default_font_h3 = font.nametofont(name='TkHeadingFont')
-        self.default_font_h3.configure(size=int(default_font_size_after_ratio + 1))
+        self.default_font_h3 = ctk.CTkFont(family='TkHeadingFont', size=int(default_font_size_after_ratio + 1))
 
         # define the pixel size for buttons
-        #pixel = tk.PhotoImage(width=1, height=1)
+        # pixel = tk.PhotoImage(width=1, height=1)
 
-        #self.blank_img_button_settings = {'image': pixel, 'compound': 'c'}
+        # self.blank_img_button_settings = {'image': pixel, 'compound': 'c'}
 
         # these are the marker colors used in Resolve
         self.resolve_marker_colors = {
