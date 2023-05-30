@@ -152,6 +152,7 @@ class ToolkitOps:
         self.queue_tasks = {
             'transcribe': [self.whisper_transcribe],
             'translate': [self.whisper_transcribe],
+            'group_questions': [self.group_questions]
             # 'ingest': [self.index_video] # this will be added soon
         }
 
@@ -1471,31 +1472,39 @@ class ToolkitOps:
             # and the stAI object
             self.stAI = toolkit_ops_obj.stAI
 
-        def get_all_transcript_groups(self, transcription_file_path: str) -> dict or None:
+        def get_all_transcript_groups(self, transcription_file_path: str = None, transcription_data = None) \
+                -> dict or None:
             '''
-            This function returns a list of transcript groups for a given transcription file.
+            This function returns a list of transcript groups for a given transcription file or transcription data.
 
             :param: transcription_file_path: the path to the transcription file
             :return: a dict of transcript groups or None if the transcription file doesn't exist
             '''
 
-            # load the transcription file
-            # get the contents of the transcription file
-            transcription_file_data = \
-                self.toolkit_ops_obj.get_transcription_file_data(
-                    transcription_file_path=transcription_file_path)
+            if transcription_data is None and transcription_file_path is None:
+                logger.error('Unable to get transcript groups '
+                             '- no transcription file path or transcription data provided.')
+                return None
+
+            # if no transcription data was provided, load the transcription file
+            if transcription_data is None:
+                # load the transcription file
+                # get the contents of the transcription file
+                transcription_data = \
+                    self.toolkit_ops_obj.get_transcription_file_data(
+                        transcription_file_path=transcription_file_path)
 
             # if the transcription file data was cannot be loaded, return None
-            if transcription_file_data is False:
+            if transcription_data is False:
                 return None
 
             # check if the transcription has any transcript groups
             # and return accordingly
-            if 'transcript_groups' not in transcription_file_data:
+            if 'transcript_groups' not in transcription_data:
                 return {}
             else:
                 logger.debug('Transcript groups found in transcription {}'.format(transcription_file_path))
-                return transcription_file_data['transcript_groups']
+                return transcription_data['transcript_groups']
 
         def get_transcript_group(self, transcription_file_path: str, transcript_group_id: str) -> dict or None:
             '''
@@ -1797,7 +1806,7 @@ class ToolkitOps:
             self.queue_variables = {}
 
             # how much to wait until checking if there are items in the queue that can be processed
-            # disabled for now - if we activate this we need to make sure that the device is not being used by another thread
+            # disabled for now - if we activate this we need to make sure that the device is not used by another thread
             # by checking the queue_threads dict
             # self.queue_check_interval = 30 # seconds
 
@@ -1811,7 +1820,7 @@ class ToolkitOps:
 
                 # use the name if one was provided
                 # and a timestamp to make it as unique as possible
-                queue_id = ((name + '-') if name else '') + str(int(time.time()))
+                queue_id = "{}{}".format(((name.replace(' ', '') + '-') if name else ''), time.time())
 
                 # if the queue id doesn't return an item
                 if not self.get_item(queue_id=queue_id):
@@ -1938,11 +1947,81 @@ class ToolkitOps:
             # return the queue id if we reached this point
             return queue_id
 
-        def update_queue_item(self, queue_id, **kwargs):
+        def add_dependency(self, queue_id, dependency_id = None):
+            """
+            This adds the dependency_id to the list of dependencies of the queue_id
+            """
+
+            # get the item
+            item = self.get_item(queue_id)
+
+            # if the item doesn't exist, abort
+            if not item:
+                logger.error('Unable to add dependency - queue id {} not found in queue history'.format(queue_id))
+                return False
+
+            # if the item exists, add the dependency_id to the list of dependencies
+            if dependency_id:
+
+                if 'dependencies' not in item:
+                    item['dependencies'] = []
+
+                item['dependencies'].append(dependency_id)
+
+            # update the item
+            self.update_queue_item(**item)
+
+            # return the item
+            return item
+
+        def pass_dependency_data(self, queue_id, dependency_id, override=False, save_to_file=False):
+            """
+            This passes all the data from the item with the dependency_id to the item with the queue_id
+            (all except the queue_id and name)
+
+            This will not overwrite any existing data in the item with the queue_id, unless override is set to True
+            """
+
+            # the stuff that we're never supposed to override
+            override_not_allowed = ['queue_id', 'name', 'tasks', 'device', 'task_queue', 'dependencies']
+
+            # get the item
+            item = self.get_item(queue_id)
+
+            # if the item doesn't exist, abort
+            if not item:
+                logger.error('Unable to pass dependency data - queue id {} not found in queue history'.format(queue_id))
+                return False
+
+            # get the dependency item
+            dependency_item = self.get_item(dependency_id)
+
+            # if the dependency item doesn't exist, abort
+            if not dependency_item:
+                logger.error('Unable to pass dependency data - dependency id {} not found in queue history'
+                             .format(dependency_id))
+                return False
+
+            # if the dependency item exists, pass all the data from the dependency item to the item
+            # except the queue-related data above
+            for key, value in dependency_item.items():
+
+                # we will use the override_not_allowed list to make sure we don't override stuff
+                # also, we will only override if override is set to True
+                if (override or key not in item) and key not in override_not_allowed:
+
+                    # pass the key-value pair to the item
+                    item[key] = value
+
+            # update the item
+            self.update_queue_item(**item, save_to_file=save_to_file)
+
+        def update_queue_item(self, queue_id, save_to_file=True, **kwargs):
             """
             This function updates a queue item in the queue history
 
             :param queue_id: the queue id of the queue item to be updated
+            :param save_to_file: whether to save the queue to a file after updating the item
             :param kwargs: the key-value pairs to be updated
 
             :return: the updated queue item or False if something went wrong
@@ -1980,7 +2059,8 @@ class ToolkitOps:
                         self.toolkit_ops_obj.toolkit_UI_obj.update_queue_window()
 
                     # save the queue to a file
-                    self.save_queue_to_file()
+                    if save_to_file:
+                        self.save_queue_to_file()
 
                     # and return the updated item
                     return new_item
@@ -2012,6 +2092,11 @@ class ToolkitOps:
                 logger.error('Unable to reorder queue - new queue order is not the same length as the queue')
                 return False
 
+            # but if the queues are empty, just return True
+            if not new_queue_order and not self.queue:
+                logger.debug("Queue is empty, nothing to reorder.")
+                return True
+
             # re-order the queue
             self.queue = new_queue_order
 
@@ -2021,10 +2106,16 @@ class ToolkitOps:
             # these items will stay at the beginning of the queue history
             # with their original order since they're finished
             processed_items = [item for item in self.queue_history
-                               if item['status'] in ['processing', 'done', 'failed', 'canceled', 'canceling']]
+                               if 'queue_id' in item
+                               and 'status' in item
+                               and item['status'] in ['processing', 'done', 'failed', 'canceled', 'canceling']
+                               ]
+
+            # extract queue_ids of processed items
+            processed_ids = [item['queue_id'] for item in processed_items]
 
             # remove any processed items from the new_queue_order list by the 'queue_id' key in processed_items
-            new_queue_order = [item for item in new_queue_order if item['queue_id'] not in processed_items]
+            new_queue_order = [item for item in new_queue_order if item['queue_id'] not in processed_ids]
 
             # now create a list of dictionaries with the remaining items in the new_queue_order
             # - keep their entire dictionary structure from the queue history
@@ -2294,6 +2385,7 @@ class ToolkitOps:
             The dictionary will be stored in the toolkit_ops_obj and will be called 'queue_tasks'
 
             :param tasks: the list of tasks to dispatch, or a single task as a string
+            :param custom_queue_tasks: a dictionary of tasks in addition to the object self.queue_tasks dictionary
             :return: The list of queue tasks that need to be executed, or False if there was an error
 
             """
@@ -2344,11 +2436,17 @@ class ToolkitOps:
             # keep track of the device we're using
             device = kwargs.get('device', None)
 
+            # get the item details from the queue history
+            item = self.get_item(queue_id=queue_id)
+
+            # if the item has dependencies, pass_dependency_data for all of them
+            if 'dependencies' in item:
+                for dependency_id in item['dependencies']:
+                    self.pass_dependency_data(queue_id=queue_id, dependency_id=dependency_id,
+                                              override=True, save_to_file=False)
+
             # take each task in the list of tasks
             for task in task_queue:
-
-                # get the item details from the queue history
-                item = self.get_item(queue_id=queue_id)
 
                 # stop if the item cannot be found anymore - that would be strange
                 if item is None:
@@ -2387,7 +2485,7 @@ class ToolkitOps:
                     # then re-update the kwargs with the result of the task
                     kwargs = task(**{**kwargs, **item})
 
-                    logger.debug('Task {} finished execution for queue item {}'.format(task, queue_id))
+                    logger.debug('Finished execution of {} for queue item {}'.format(task.__name__, queue_id))
 
                 except Exception as e:
                     import traceback
@@ -2424,6 +2522,10 @@ class ToolkitOps:
 
             item['status'] = status
 
+            # also reset the progress if the status update is 'done', 'failed', 'canceled' or 'canceling'
+            if status in ['done', 'failed', 'canceled', 'canceling']:
+                item['progress'] = ''
+
             self.update_queue_item(**item)
 
         def ping_queue(self):
@@ -2446,7 +2548,47 @@ class ToolkitOps:
                 return False
 
             # get the first item in the queue
-            queue_id = self.queue[0]
+            queue_index = 0
+            queue_id = self.queue[queue_index]
+            reorder_queue = False
+
+            # todo: fix this
+            """
+            # try to see if we can start this item
+            # and loop through the queue until we find one that we can start
+            # or until we reach the end of the queue
+            # todo: update the item status to failed if we get a None returned from _item_can_start
+            while not self._item_can_start(queue_id=queue_id):
+
+                # add +1 to the queue index
+                queue_index += 1
+
+                # and try again (if the queue index is out of range, this will return False)
+                if queue_index >= len(self.queue):
+                    logger.debug('Left queue items not ready to start. Try again later.')
+                    return False
+
+                # get the next item in the queue
+                queue_id = self.queue[queue_index]
+
+                # mark that we need to reorder the queue
+                reorder_queue = True
+
+            # make sure that we re-order the queue
+            if reorder_queue:
+
+                # first get the old order
+                # (use a copy of the list to avoid changing the original list due to mutability)
+                new_queue_order = [queue_id for queue_id in self.queue]
+
+                # then remove the item from the old order (from whatever position it was in)
+                new_queue_order.pop(queue_index)
+
+                # and add it back to the beginning of the list
+                new_queue_order.insert(0, queue_id)
+
+                self.reorder_queue(new_queue_order=new_queue_order)
+            """
 
             # get the item details from the queue history
             kwargs = self.get_item(queue_id=queue_id)
@@ -2465,8 +2607,45 @@ class ToolkitOps:
             # start the thread
             thread.start()
 
-            # remove the item from the queue
+            # remove the first item from the queue
             self.queue.pop(0)
+
+            return True
+
+        def _item_can_start(self, queue_id, item_data = None):
+            """
+            This determines if a certain item can start based on its dependencies
+            If any of its dependencies has failed, this will return None
+            """
+
+            if item_data is None:
+                item_data = self.get_item(queue_id=queue_id)
+
+            # if the item has no dependencies, it can start
+            if 'dependencies' not in item_data:
+                return True
+
+            # if the item has dependencies, check if they are all completed
+            for dependency_id in item_data['dependencies']:
+
+                dependency_item_data = self.get_item(queue_id=dependency_id)
+
+                # return None if the dependency item is not found
+                # since it's impossible to determine if the dependency finished or not
+                if not dependency_item_data:
+                    return None
+
+                # if the status of the dependency is not in the item data,
+                if 'status' not in dependency_item_data:
+                    return False
+
+                # if the dependency has failed, return None
+                if dependency_item_data['status'] == 'failed':
+                    return None
+
+                # if the dependency is not completed, return False
+                if dependency_item_data['status'] != 'done':
+                    return False
 
             return True
 
@@ -2813,8 +2992,8 @@ class ToolkitOps:
         # otherwise return false
         return False
 
-
-    def add_transcription_to_queue(self, transcription_task=None, audio_file_path: str=None, queue_id: str=None, **kwargs):
+    def add_transcription_to_queue(self, transcription_task=None, audio_file_path: str=None, queue_id: str=None,
+                                   **kwargs):
         """
         This adds a transcription item to the transcription queue
         (it also splits it into two queue items, if it's a transcribe+translate transcription_task)
@@ -2877,7 +3056,7 @@ class ToolkitOps:
 
             c_name = name
             # add the task name to the name if there are multiple tasks
-            if i>0:
+            if i > 0:
                 c_name += ' - ' + str(c_task)
 
             # pass the queue tasks via kwargs
@@ -2897,6 +3076,20 @@ class ToolkitOps:
             # send each item to the universal queue
             self.processing_queue.add_to_queue(**kwargs)
 
+            # if we need to group questions, add the group questions tasks too
+            if kwargs.get('transcription_group_questions', False):
+
+                kwargs['tasks'] = ['group_questions']
+                kwargs['name'] = '{} {}'.format(kwargs['name'], '(Group Questions)')
+                kwargs['queue_id'] = None
+
+                group_questions_queue_id = self.processing_queue.add_to_queue(**kwargs)
+
+                # add the main transcription queue item as a dependency to the group questions queue item
+                # this way, when the transcription is done, the group questions item will start
+                # and retrieve all the all the data from the transcription queue item
+                self.processing_queue.add_dependency(queue_id=group_questions_queue_id, dependency_id=next_queue_id)
+
     def transcription_progress(self, queue_id=None, progress=None):
         '''
         Updates the progress of a transcription item in the transcription log
@@ -2907,7 +3100,7 @@ class ToolkitOps:
 
         # if a progress was passed, update the progress
         if queue_id and progress:
-            self.processing_queue.update_queue_item(queue_id=queue_id, progress=progress)
+            self.processing_queue.update_queue_item(queue_id=queue_id, save_to_file=False, progress=progress)
 
         # if no progress was passed, just return the current progress
         elif queue_id:
@@ -3078,7 +3271,7 @@ class ToolkitOps:
 
         return sorted(available_languages)
 
-    def torch_device_type_select(self, device):
+    def torch_device_type_select(self, device = None):
         '''
         A standardized way of selecting the right Torch device type
         :param device:
@@ -3707,7 +3900,7 @@ class ToolkitOps:
         return segments
 
     def classify_segments(self, segments: list, labels: list,
-                          min_confidence=0.55, multi_label_pass: list = None):
+                          min_confidence: int or list = 0.55, multi_label_pass: list = None, **kwargs):
         '''
         Classifies segments into different types using the transformers zero-shot-classification pipeline
         :param segments: the segments to classify
@@ -3718,6 +3911,10 @@ class ToolkitOps:
         :param multi_label_pass: a list of groups of labels that need to be passed together,
                                 so that the segment stays in the result
         '''
+
+        if segments is None or len(segments) == 0:
+            logger.debug('No segments to classify.')
+            return None
 
         # make sure that if a list of lists of labels is provided,
         # and also a list of minimum confidence values is provided,
@@ -3754,78 +3951,40 @@ class ToolkitOps:
 
         # go through each segment and classify it
         classified_segments = {}
-        #for segment in segments:
 
-        # instead of for use tqdm to also show a progress bar
-        for segment in tqdm.tqdm(segments, desc='Classifying segments'):
+        # use tqdm to show a progress bar while classifying segments
+        with tqdm.tqdm(segments, desc='Classifying segments', total=len(segments)) as pbar:
 
-            # skip segments that don't have any text or words
-            if 'text' not in segment and 'words' not in segment:
-                logger.debug('Skipping segment classification because it doesn\'t have any text or words: {}'
-                             .format(segment))
-                continue
+            for i, segment in enumerate(segments):
 
-            # if the text is empty, try to get the text from the words
-            if not segment['text'] or segment['text'].strip() == '':
-                segment['text'] = ' '.join([word['word'] for word in segment['words']])
 
-            # if the text is still empty, skip the segment
-            if not segment['text'] or segment['text'].strip() == '':
-                logger.debug('Skipping segment classification because it doesn\'t have any text: {}'
-                                .format(segment))
-                continue
 
-            # classify the segment
-
-            # if labels is a list of strings, do a normal classification
-            if isinstance(labels, list) and isinstance(labels[0], str):
-                classification = classifier(segment['text'], labels)
-
-                # if the classification confidence is too low, skip the segment
-                if min_confidence and classification['scores'][0] < min_confidence:
-                    logger.debug('Skipping segment classification because the confidence is too low {}: {}'
-                                 .format(classification['scores'][0], segment))
+                # skip segments that don't have any text or words
+                if 'text' not in segment and 'words' not in segment:
+                    logger.debug('Skipping segment classification because it doesn\'t have any text or words: {}'
+                                 .format(segment))
                     continue
 
-                # add it to the corresponding list, but first make sure the label exists
-                if classification['labels'][0] not in classified_segments:
-                    classified_segments[classification['labels'][0]] = []
+                # if the text is empty, try to get the text from the words
+                if not segment['text'] or segment['text'].strip() == '':
+                    segment['text'] = ' '.join([word['word'] for word in segment['words']])
 
-                classified_segments[classification['labels'][0]].append(segment)
+                # if the text is still empty, skip the segment
+                if not segment['text'] or segment['text'].strip() == '':
+                    logger.debug('Skipping segment classification because it doesn\'t have any text: {}'
+                                    .format(segment))
+                    continue
 
-                # clear classification to free up memory
-                del classification
+                # classify the segment
 
-            # if labels is a list of lists, do a multi-label classification
-            elif isinstance(labels, list) and isinstance(labels[0], list):
+                # if labels is a list of strings, do a normal classification
+                if isinstance(labels, list) and isinstance(labels[0], str):
+                    classification = classifier(segment['text'], labels)
 
-                # reset the current_segment_passed_classification to True,
-                # until we find a label that doesn't pass
-                current_segment_passed_classification = True
-
-                # take each label groups, one by one and use them to classify the segment
-                for sub_labels in labels:
-
-                    # if the segment didn't pass the classification for the previous label check, skip it
-                    if not current_segment_passed_classification:
-                        continue
-
-                    # classify the segment using this label
-                    classification = classifier(segment['text'], sub_labels)
-
-                    # if the min_confidence is a list, use the index of the current label group
-                    # to get the corresponding min_confidence value
-                    if isinstance(min_confidence, list):
-                        min_confidence = min_confidence[labels.index(sub_labels)]
-
-                    # for a multi-label classification, we need to check if the confidence is high enough for each label
-                    # so if it isn't, we skip the segment - which means that all other remaining labels
-                    # will be skipped as well
-                    if classification['scores'][0] < min_confidence:
-                        current_segment_passed_classification = False
-                        logger.debug('Skipping segment classification for the following segment '
-                                     'because a confidence of {} is too low to classify it in any of the labels {}: \n{}\n\n'
-                                     .format(classification['scores'][0], sub_labels, segment['text']))
+                    # if the classification confidence is too low, skip the segment
+                    if min_confidence and classification['scores'][0] < min_confidence:
+                        logger.debug('Skipping segment classification because the confidence is too low {}: {}'
+                                     .format(classification['scores'][0], segment))
                         continue
 
                     # add it to the corresponding list, but first make sure the label exists
@@ -3837,9 +3996,68 @@ class ToolkitOps:
                     # clear classification to free up memory
                     del classification
 
-            else:
-                logger.error('Invalid labels for classification: {}'.format(labels))
-                continue
+                # if labels is a list of lists, do a multi-label classification
+                elif isinstance(labels, list) and isinstance(labels[0], list):
+
+                    # reset the current_segment_passed_classification to True,
+                    # until we find a label that doesn't pass
+                    current_segment_passed_classification = True
+
+                    # take each label groups, one by one and use them to classify the segment
+                    for sub_labels in labels:
+
+                        # if the segment didn't pass the classification for the previous label check, skip it
+                        if not current_segment_passed_classification:
+                            continue
+
+                        # classify the segment using this label
+                        classification = classifier(segment['text'], sub_labels)
+
+                        # if the min_confidence is a list, use the index of the current label group
+                        # to get the corresponding min_confidence value
+                        if isinstance(min_confidence, list):
+                            min_confidence = min_confidence[labels.index(sub_labels)]
+
+                        # for a multi-label classification,
+                        # we need to check if the confidence is high enough for each label
+                        # so if it isn't, we skip the segment - which means that all other remaining labels
+                        # will be skipped as well
+                        if classification['scores'][0] < min_confidence:
+                            current_segment_passed_classification = False
+                            logger.debug('Skipping segment classification for the following segment '
+                                         'because a confidence of {}'
+                                         'is too low to classify it in any of the labels {}: \n{}\n\n'
+                                         .format(classification['scores'][0], sub_labels, segment['text']))
+                            continue
+
+                        # add it to the corresponding list, but first make sure the label exists
+                        if classification['labels'][0] not in classified_segments:
+                            classified_segments[classification['labels'][0]] = []
+
+                        classified_segments[classification['labels'][0]].append(segment)
+
+                        # clear classification to free up memory
+                        del classification
+
+                else:
+                    logger.error('Invalid labels for classification: {}'.format(labels))
+                    continue
+
+                # update progress bar - this should be done after each segment is classified
+                # because the progress bar is based on the number of segments
+                pbar.update(1)
+
+                # get the percentage of progress
+                progress = int((i / len(segments)) * 100)
+
+                # if there's a queue_id, update the queue item with the progress and some output
+                if kwargs.get('queue_id'):
+                    self.processing_queue.update_queue_item(kwargs['queue_id'],
+                                                            progress=progress, output='', save_to_file=False)
+
+                    # cancel process if user requested it via queue
+                    if self.processing_queue.cancel_if_canceled(queue_id=kwargs.get('queue_id')):
+                        return None
 
         # if there are no segments to classify, return
         if not classified_segments:
@@ -3877,17 +4095,37 @@ class ToolkitOps:
 
         return classified_segments
 
-    def group_questions(self, segments, transcription_json_file_path, group_name="Questions"):
+    def group_questions(self, segments=None, transcription_file_path: str = None, group_name: str = "Questions",
+                        **kwargs):
         """
         This uses the classify_segments() method to detect questions and add them to a transcription group
         :param segments: the segments to classify
-        :param transcription_json_file_path: the path to the transcription json file
+        :param transcription_file_path: the path to the transcription json file
         :param group_name: the name of the group to save the questions in (default: Questions)
+        :param kwargs: this is not needed, but makes sure that any additional arguments are ignored
         :return: the questions_group
         """
 
+        # initialize the empty transcription data etc.
+        transcription_data = None
         questions_group = None
         transcript_groups = {}
+
+        # if no segments were provided, try to get them from the transcription file
+        if not segments:
+
+            transcription_data = self.get_transcription_file_data(transcription_file_path=transcription_file_path)
+
+            if not transcription_data:
+                logger.error('Unable to group questions - no segments provided and no transcription file found.')
+
+                if kwargs.get('queue_id'):
+                    self.processing_queue.update_status(kwargs['queue_id'], 'failed')
+
+                return None
+
+            segments = transcription_data['segments']
+
         # classify the segments as questions or statements
         # but use the existing transcription data if we have it
         classified_question_segments = self.classify_segments(
@@ -3899,8 +4137,14 @@ class ToolkitOps:
                 ['ask', 'tell'],
             ],
             multi_label_pass=['interrogative sentence', 'question', 'asking', 'ask'],
-            min_confidence=[0.5, 0.5, 0.7, 0.7]
+            min_confidence=[0.5, 0.5, 0.7, 0.7],
+            **kwargs
         )
+
+        # cancel if the process was canceled
+        if kwargs.get('queue_id'):
+            if self.processing_queue.cancel_if_canceled(queue_id=kwargs.get('queue_id')):
+                return None
 
         # if we have question segments, create a group with them
         # but save it later, after the transcription is saved
@@ -3910,7 +4154,11 @@ class ToolkitOps:
                 and len(classified_question_segments['_multi_label_pass_']) > 0:
 
             # get all the current groups using get_all_transcript_groups
-            transcript_groups = self.t_groups_obj.get_all_transcript_groups(transcription_json_file_path)
+            transcript_groups = self.t_groups_obj.get_all_transcript_groups(
+                # don't use the transcription data to force a reload of the groups in case they were updated externally
+                # transcription_data=transcription_data,
+                transcription_file_path=transcription_file_path
+            )
 
             # make sure we're not overwriting an existing group
             n = 1
@@ -3930,12 +4178,16 @@ class ToolkitOps:
                 group_name=group_name
             )
 
+        # if we have a queue_id, update the status to done
+        if kwargs.get('queue_id', None):
+            self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='done')
+
         # if this was successful, save the questions group to the transcription json file
         if questions_group is not None:
 
             # we're only passing the questions group to the save_transcript_groups method
             # so this will only save the questions group and not touch any existing ones
-            self.t_groups_obj.save_transcript_groups(transcription_json_file_path,
+            self.t_groups_obj.save_transcript_groups(transcription_file_path,
                                                      questions_group,
                                                      group_id=group_name)
 
@@ -4668,15 +4920,15 @@ class ToolkitOps:
             return None
 
         # perform question grouping if requested
-        if 'group_questions' in other_options and other_options['group_questions']:
-            logger.info('Grouping questions.')
-            self.processing_queue.update_queue_item(queue_id=queue_id, status='grouping', progress='')
-
-            # detect and group questions
-            self.group_questions(
-                segments=result['segments'] if not existing_transcription else transcription_data['segments'],
-                transcription_json_file_path=transcription_json_file_path
-            )
+        # if 'group_questions' in other_options and other_options['group_questions']:
+        #     logger.info('Grouping questions.')
+        #     self.processing_queue.update_queue_item(queue_id=queue_id, status='grouping', progress='')
+        #
+        #     # detect and group questions
+        #     self.group_questions(
+        #         segments=result['segments'] if not existing_transcription else transcription_data['segments'],
+        #         transcription_file_path=transcription_json_file_path
+        #     )
 
         # if there's a project_name and a timeline_name
         # link the transcription to the project and timeline
@@ -4686,17 +4938,15 @@ class ToolkitOps:
                                                 timeline_name=timeline_name,
                                                 link=True)
 
-        # when done, change the status in the transcription log, clear the progress
-        # and also add the file paths to the transcription log
+        # when done, change the status in the queue, clear the progress
+        # and also add the file paths to the queue item
         self.processing_queue.update_queue_item(
             queue_id=queue_id,
             status='done',
             progress='',
-            srt_file_path=transcription_data['srt_file_path']
-                if 'srt_file_path' in transcription_data else '',
-            txt_file_path=transcription_data['txt_file_path']
-                if 'txt_file_path' in transcription_data else '',
-            json_file_path=transcription_json_file_path
+            srt_file_path=transcription_data['srt_file_path'] if 'srt_file_path' in transcription_data else '',
+            txt_file_path=transcription_data['txt_file_path'] if 'txt_file_path' in transcription_data else '',
+            transcription_file_path=transcription_json_file_path
         )
 
         # todo: move this to the UI - maybe a monitor function that checks the queue window for events?
@@ -4793,7 +5043,7 @@ class ToolkitOps:
 
         # check if the transcription file contains word timings
         if len(transcription_json['segments']) > 0 and 'words' in transcription_json['segments'][0]:
-            logger.debug("Word level timings detected.")
+            logger.debug("Word level timings detected in transcription file data.")
 
         return transcription_json
 

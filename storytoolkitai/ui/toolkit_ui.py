@@ -1,3 +1,4 @@
+import os.path
 import platform
 import subprocess
 import webbrowser
@@ -1430,7 +1431,8 @@ class toolkit_UI:
             if len(transcription_data['segments']) > 15:
 
                 if messagebox.askyesno(title='Group Questions',
-                                           message='Detecting questions might take a while.\n'
+                                           message='Grouping Questions will be sent to the queue '
+                                                   'and might take a bit to complete.\n'
                                                    'Are you sure you want to continue?'
                                            ):
 
@@ -1442,6 +1444,7 @@ class toolkit_UI:
             # open transcription groups window
             self.toolkit_UI_obj.open_transcript_groups_window(window_id)
 
+            """
             # group questions in another thread
             save_return = self.toolkit_ops_obj.group_questions(transcription_data['segments'], transcription_file_path)
 
@@ -1473,8 +1476,25 @@ class toolkit_UI:
 
             # update the list of groups in the transcript groups window
             self.toolkit_UI_obj.update_transcript_groups_window(t_window_id=window_id)
+            
+            """
 
-            return True
+            # prepare the options for the processing queue
+            queue_item = dict()
+            queue_item['name'] = '{} {}'.format(
+                transcription_data['name']
+                if 'name' in transcription_data else os.path.basename(transcription_file_path),
+                '(Group Questions)')
+            queue_item['source_file_path'] = queue_item['transcription_file_path'] = transcription_file_path
+            queue_item['tasks'] = ['group_questions']
+            queue_item['device'] = self.toolkit_ops_obj.torch_device_type_select()
+
+            group_questions_queue_id = self.toolkit_ops_obj.processing_queue.add_to_queue(**queue_item)
+
+            # open the queue window
+            self.toolkit_UI_obj.open_queue_window()
+
+            return False
 
         def button_go_to_timecode(self, window_id, timecode=None):
 
@@ -6033,6 +6053,7 @@ class toolkit_UI:
             # UI - add the audio and video tabs
             audio_tab = middle_frame.add('Audio')
             #video_tab = middle_frame.add('Video')
+            analysis_tab = middle_frame.add('Analysis')
 
             # UI - add a scrollable frame to the audio and video tabs
             audio_tab_scrollable_frame = ctk.CTkScrollableFrame(audio_tab, **self.ctk_frame_transparent)
@@ -6084,6 +6105,7 @@ class toolkit_UI:
 
             # if something went wrong with the file selection, let's close the window
             if file_path_var is None:
+                logger.error('Something went wrong with the file options')
                 self.button_cancel_ingest(window_id=ingest_window_id, queue_id=queue_id, dont_ask=True)
                 return None
 
@@ -6092,11 +6114,23 @@ class toolkit_UI:
 
             # if something went wrong with the audio options tab, close the window
             if audio_form_vars is None:
+                logger.error('Something went wrong with the audio options')
                 self.button_cancel_ingest(window_id=ingest_window_id, queue_id=queue_id, dont_ask=True)
                 return None
 
-            # add the two variables to the form variables
-            form_vars = {**form_vars, **file_path_var, 'audio_form_vars': audio_form_vars}
+            # add the analysis options to the analysis tab (in the middle frame)
+            analysis_form_vars = self.add_analysis_form_elements(analysis_tab, **kwargs)
+
+            # if something went wrong with the analysis options tab, close the window
+            if analysis_form_vars is None:
+                logger.error('Something went wrong with the analysis options')
+                self.button_cancel_ingest(window_id=ingest_window_id, queue_id=queue_id, dont_ask=True)
+                return None
+
+            # add the variables from the added forms above to the form variables
+            form_vars = {**form_vars, **file_path_var,
+                         'audio_form_vars': audio_form_vars,
+                         'analysis_form_vars': analysis_form_vars}
 
             # UI - start button command
             # at this point, the kwargs should also contain the ingest_window_id
@@ -6371,8 +6405,6 @@ class toolkit_UI:
 
         # The file info label should be under the file path entry and the browse button
         # (but use the ext paddings to add a bit of space on the left and align it to the entry above)
-        # todo: make the label expand horizontally all the way
-        #  (probably need to add the file_selection form back to the grid)
         # file_info_label.grid(row=1, column=0, columnspan=3, sticky="w", **self.ctk_form_paddings_ext)
 
         # add the file selection form to the parent
@@ -6438,10 +6470,10 @@ class toolkit_UI:
         advanced_frame_label = ctk.CTkLabel(parent, text='Advanced Settings', **self.ctk_frame_label_settings)
         post_frame_label = ctk.CTkLabel(parent, text='Transcription Post-Processing', **self.ctk_frame_label_settings)
         # for the advanced settings, we will have a switch on a frame instead of the label
-        #advanced_frame_label = ctk.CTkFrame(parent, fg_color=frame_label_fg_color)
-        #advanced_frame_switch = ctk.CTkSwitch(advanced_frame_label, text='Advanced Settings')
-        #advanced_frame_switch.grid(row=0, column=0, sticky="ew", **self.ctk_frame_paddings)
-        #advanced_frame_label.columnconfigure(0, weight=1)
+        # advanced_frame_label = ctk.CTkFrame(parent, fg_color=frame_label_fg_color)
+        # advanced_frame_switch = ctk.CTkSwitch(advanced_frame_label, text='Advanced Settings')
+        # advanced_frame_switch.grid(row=0, column=0, sticky="ew", **self.ctk_frame_paddings)
+        # advanced_frame_label.columnconfigure(0, weight=1)
 
         # we're going to create the form_vars dict to store all the variables
         # we will use this dict at the end of the function to gather all the created tk variables
@@ -6746,7 +6778,7 @@ class toolkit_UI:
 
         # if word_timestamps_var is False, disable the max words per segment and max chars per segment inputs
         # but check on every change of the word_timestamps_var
-        def update_max_per_segment_inputs_visibility():
+        def update_max_per_segment_inputs_visibility(*f_args):
 
             if word_timestamps_var.get():
                 max_per_line_label.grid()
@@ -6759,8 +6791,7 @@ class toolkit_UI:
                 split_on_punctuation_input.grid_remove()
                 split_on_punctuation_label.grid_remove()
 
-        word_timestamps_var.trace('w', lambda: update_max_per_segment_inputs_visibility())
-
+        word_timestamps_var.trace('w', update_max_per_segment_inputs_visibility)
         update_max_per_segment_inputs_visibility()
 
         # Adding all the elements to THE GRID:
@@ -6801,13 +6832,18 @@ class toolkit_UI:
         # return all the gathered form variables
         return form_vars
 
-    def form_to_transcription_settings(self, form_audio_vars, **kwargs):
+    def form_to_transcription_settings(self, **kwargs):
         """
         This function takes the form variables and gets them into the transcription settings
         :param: form_audio_vars: the form variables (a dict of tkinter variables)
         :param: kwargs: additional keyword arguments
         :return: transcription_settings: the transcription settings formatted for add_transcription_to_queue function
         """
+
+        form_vars = kwargs.get('form_vars', None)
+
+        audio_form_vars = form_vars.get('audio_form_vars', None)
+        analysis_form_vars = form_vars.get('analysis_form_vars', None)
 
         transcription_settings = dict()
 
@@ -6821,27 +6857,27 @@ class toolkit_UI:
 
          # then, the transcription specific settings
         transcription_settings['audio_file_path'] = kwargs.get('file_path', None)
-        transcription_settings['transcription_task'] = form_audio_vars['transcription_task_var'].get()
-        transcription_settings['model_name'] = form_audio_vars['model_name_var'].get()
-        transcription_settings['device'] = form_audio_vars['device_var'].get()
-        transcription_settings['pre_detect_speech'] = form_audio_vars['pre_detect_speech_var'].get()
+        transcription_settings['transcription_task'] = audio_form_vars['transcription_task_var'].get()
+        transcription_settings['model_name'] = audio_form_vars['model_name_var'].get()
+        transcription_settings['device'] = audio_form_vars['device_var'].get()
+        transcription_settings['pre_detect_speech'] = audio_form_vars['pre_detect_speech_var'].get()
 
         # choose between max words or characters per line
-        if form_audio_vars['max_per_line_unit_var'].get() == 'words':
-            transcription_settings['max_words_per_segment'] = form_audio_vars['max_per_line_var'].get()
+        if audio_form_vars['max_per_line_unit_var'].get() == 'words':
+            transcription_settings['max_words_per_segment'] = audio_form_vars['max_per_line_var'].get()
         else:
-            transcription_settings['max_chars_per_segment'] = form_audio_vars['max_per_line_var'].get()
+            transcription_settings['max_chars_per_segment'] = audio_form_vars['max_per_line_var'].get()
 
-        transcription_settings['split_on_punctuation_marks'] = form_audio_vars['split_on_punctuation_var'].get()
-        transcription_settings['prevent_short_gaps'] = form_audio_vars['prevent_gaps_shorter_than_var'].get()
-        transcription_settings['time_intervals'] = form_audio_vars['time_intervals_var'].get()
-        transcription_settings['excluded_time_intervals'] = form_audio_vars['excluded_time_intervals_var'].get()
+        transcription_settings['split_on_punctuation_marks'] = audio_form_vars['split_on_punctuation_var'].get()
+        transcription_settings['prevent_short_gaps'] = audio_form_vars['prevent_gaps_shorter_than_var'].get()
+        transcription_settings['time_intervals'] = audio_form_vars['time_intervals_var'].get()
+        transcription_settings['excluded_time_intervals'] = audio_form_vars['excluded_time_intervals_var'].get()
 
         # validate the time intervals
         transcription_settings['time_intervals'] = \
             self.convert_text_to_time_intervals(transcription_settings['time_intervals'],
                                                 transcription_file_path= \
-                                                    kwargs.get('transcription_file_path', None),
+                                                kwargs.get('transcription_file_path', None),
                                                 ingest_window_id=kwargs.get('ingest_window_id'),
                                                 pop_error=True
                                                 )
@@ -6853,7 +6889,7 @@ class toolkit_UI:
         transcription_settings['excluded_time_intervals'] = \
             self.convert_text_to_time_intervals(transcription_settings['excluded_time_intervals'],
                                                 transcription_file_path= \
-                                                    kwargs.get('transcription_file_path', None),
+                                                kwargs.get('transcription_file_path', None),
                                                 ingest_window_id=kwargs.get('ingest_window_id'),
                                                 pop_error=True
                                                 )
@@ -6861,15 +6897,64 @@ class toolkit_UI:
         if not transcription_settings['excluded_time_intervals']:
             return False
 
-
         # the whisper options
         transcription_settings['whisper_options'] = dict()
-        transcription_settings['whisper_options']['language'] = form_audio_vars['source_language_var'].get()
-        transcription_settings['whisper_options']['initial_prompt'] = \
-            form_audio_vars['initial_prompt_var'].get()
-        transcription_settings['whisper_options']['word_timestamps'] = form_audio_vars['word_timestamps_var'].get()
+        transcription_settings['whisper_options']['language'] = audio_form_vars['source_language_var'].get()
+        transcription_settings['whisper_options']['initial_prompt'] = audio_form_vars['initial_prompt_var'].get()
+        transcription_settings['whisper_options']['word_timestamps'] = audio_form_vars['word_timestamps_var'].get()
+
+        # some options from the analysis form that
+        transcription_settings['transcription_group_questions'] = analysis_form_vars['group_questions_var'].get()
 
         return transcription_settings
+
+    def add_analysis_form_elements(self, parent: tk.Widget, **kwargs) -> dict or None:
+        """
+        This function adds the form elements for the analysis window
+        """
+
+        # create the frames
+        speech_analysis_frame = ctk.CTkFrame(parent,  **self.ctk_frame_transparent)
+
+        # create labels for the frames (and style them according to the theme)
+        speech_analysis_label = ctk.CTkLabel(parent, text='Speech Analysis', **self.ctk_frame_label_settings)
+
+        # we're going to create the form_vars dict to store all the variables
+        # we will use this dict at the end of the function to gather all the created tk variables
+        form_vars = {}
+
+        # add the labels and frames to the parent
+        speech_analysis_label.grid(row=0, column=0, sticky="ew", **self.ctk_frame_paddings)
+        speech_analysis_frame.grid(row=1, column=0, sticky="ew", **self.ctk_frame_paddings)
+
+        # make the column expandable
+        parent.columnconfigure(0, weight=1)
+        speech_analysis_frame.columnconfigure(1, weight=1)
+
+        # GROUP QUESTIONS
+        # get the group questions setting from the app settings
+        group_questions = \
+            kwargs.get('group_questions', None) \
+                if kwargs.get('group_questions', None) is not None \
+                else self.stAI.get_app_setting('transcription_group_questions', default_if_none=False)
+
+        # create the pre-detect speech variable, label and input
+        form_vars['group_questions_var'] = \
+            group_questions_var = tk.BooleanVar(speech_analysis_frame, value=group_questions)
+        group_questions_label = ctk.CTkLabel(speech_analysis_frame, text='Group Questions',
+                                             **self.ctk_form_label_settings)
+        group_questions_input = ctk.CTkSwitch(speech_analysis_frame,
+                                                variable=group_questions_var,
+                                                text='',
+                                                **self.ctk_form_entry_settings)
+
+        # Adding all the elemente to the grid
+
+        # TEXT ANALYSIS FRAME GRID
+        group_questions_label.grid(row=1, column=0, sticky="w", **self.ctk_form_paddings)
+        group_questions_input.grid(row=1, column=1, sticky="w", **self.ctk_form_paddings)
+
+        return form_vars
 
     def button_start_ingest(self, **kwargs):
         """
@@ -6902,16 +6987,11 @@ class toolkit_UI:
         video_indexing_settings = {}
 
         # convert the audio form variables to transcription settings
-        transcription_settings = self.form_to_transcription_settings(form_audio_vars=form_vars['audio_form_vars'], **kwargs)
+        transcription_settings = self.form_to_transcription_settings(**kwargs)
 
         # add the transcription job(s) to the queue
-        if self.toolkit_ops_obj.add_media_to_queue(source_file_paths=file_paths,
-                                                queue_id=queue_id,
-                                                video_indexing_settings=video_indexing_settings,
-                                                transcription_settings=transcription_settings
-                                                ):
-
-            # todo:  add group_questions on another job queue
+        if self.toolkit_ops_obj.add_media_to_queue(source_file_paths=file_paths, queue_id=queue_id,
+            video_indexing_settings=video_indexing_settings, transcription_settings=transcription_settings):
 
             # close the ingest window
             self.destroy_window_(windows_dict=self.windows, window_id=ingest_window_id)
