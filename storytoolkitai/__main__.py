@@ -106,9 +106,11 @@ from storytoolkitai.integrations.mots_resolve import MotsResolve
 from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_NAME, APP_LOG_FILE, initial_target_dir
 from storytoolkitai.core.toolkit_ops import ToolkitOps
 from storytoolkitai.ui.toolkit_ui import toolkit_UI
+from storytoolkitai.ui.toolkit_cli import toolkit_CLI
 from storytoolkitai.core.storytoolkitai import StoryToolkitAI
 
 from storytoolkitai.ui.toolkit_ui import run_gui
+from storytoolkitai.ui.toolkit_cli import run_cli
 
 def main():
 
@@ -120,12 +122,15 @@ def main():
     # stAI.connect_API()
 
     parser = argparse.ArgumentParser(description="Story Toolkit AI version {}".format(stAI.version))
-    parser.add_argument("--mode", choices=["gui"], default="gui", help="Choose the mode to run the application")
+    parser.add_argument("--mode", choices=["gui", "cli"], default="gui", help="Choose the mode to run the application")
     parser.add_argument("--debug", action='store_true', help="Enable debug mode")
     parser.add_argument("--noresolve", action='store_true', help="Disable Resolve API polling")
     parser.add_argument("--skip-python-check", action='store_true', help="Skips the Python version check")
-    #parser.add_argument("--host", default="localhost", help="Server host for server mode")
-    #parser.add_argument("--port", type=int, default=8000, help="Server port for server mode")
+
+    # cli args
+    parser.add_argument("--render-resolve-timeline", action='store_true', help="Render current Resolve timeline")
+    parser.add_argument("--output-dir", default=os.getcwd(), help="Target directory for the output files")
+
     args = parser.parse_args()
 
     # initialize operations object
@@ -137,16 +142,8 @@ def main():
     if args.mode == "gui":
         run_gui(toolkit_ops_obj=toolkit_ops_obj, stAI=stAI)
 
-    #elif args.mode == "cli":
-    #    run_cli(parser, toolkit_ops_obj=toolkit_ops_obj, stAI=stAI)
-    #
-    #elif args.mode == "server":
-    #
-    #    try:
-    #        from storytoolkitai.server.server import run_server
-    #        run_server(args.host, args.port)
-    #    except ImportError:
-    #        logger.error('Server mode is not supported in this version of StoryToolkitAI.')
+    elif args.mode == "cli":
+        run_cli(args, toolkit_ops_obj=toolkit_ops_obj, stAI=stAI)
 
     else:
         logger.error('Invalid mode selected. Please select a valid mode.')
