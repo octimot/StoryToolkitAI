@@ -89,11 +89,11 @@ except:
             time.sleep(1)
 
             try:
-                # restart the app
-                subprocess.call([sys.executable, os.path.abspath(__file__)] + sys.argv[1:])
-                sys.exit(0)
+                # restart the app while passing all the arguments
+                os.execl(sys.executable, sys.executable, *sys.argv)
             except:
                 logger.error('Could not restart StoryToolkitAI. Please restart the app manually.')
+
 
         else:
             # let the user know that the automatic installation failed
