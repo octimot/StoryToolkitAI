@@ -4013,6 +4013,8 @@ class toolkit_UI():
 
         self.ctk_button_size ={'width': 200, 'height': 45}
 
+        self.ctk_list_item = {'fg_color': ctk.ThemeManager.theme["CTkScrollableFrame"]["label_fg_color"]}
+
         # set some UI styling here
         # todo: check where these are used and replace all elements with ctk ones
         self.paddings = {'padx': 10, 'pady': 10}
@@ -5147,17 +5149,17 @@ class toolkit_UI():
             # create the left frame
             # (but don't add it - this needs to be added outside of this function, only if needed)
             self.windows[window_id].left_frame = \
-                left_frame = Frame(current_tk_window, name='left_frame')
+                left_frame = ctk.CTkFrame(current_tk_window)
             #left_frame.grid(row=0, column=0, sticky="ns")
 
             # create a frame for the text element
-            text_form_frame = tk.Frame(current_tk_window, name='text_form_frame')
+            text_form_frame = ctk.CTkFrame(current_tk_window)
             text_form_frame.grid(row=0, column=1, sticky="nsew")
 
             # create the right frame to hold other stuff, like transcript groups etc.
             # (but don't add it - this needs to be added outside of this function, only if needed)
             self.windows[window_id].right_frame = \
-                right_frame = Frame(current_tk_window, name="right_frame")
+                right_frame = ctk.CTkFrame(current_tk_window)
             #right_frame.grid(row=0, column=2, sticky="ns")
 
             # add a minimum size for the frame2 column
@@ -5227,14 +5229,14 @@ class toolkit_UI():
             if action_buttons:
 
                 # create a frame for the action buttons
-                action_buttons_frame = tk.Frame(self.windows[window_id], name='action_buttons_frame')
+                action_buttons_frame = ctk.CTkFrame(self.windows[window_id])
                 #action_buttons_frame.place(relwidth=1, anchor='sw', rely=1)
                 action_buttons_frame.grid(row=2, columnspan=3, sticky="sew")
 
                 # add the action buttons to the frame
                 for button in action_buttons:
                     # create the button
-                    action_button = tk.Button(action_buttons_frame, text=button['text'],
+                    action_button = ctk.CTkButton(action_buttons_frame, text=button['text'],
                                               command=button['command'])
 
                     # add the button to the frame
@@ -8783,11 +8785,22 @@ class toolkit_UI():
         # get the queue window
         queue_window = self.windows['queue']
 
+        # add the last_update attribute to the queue window if it doesn't exist
+        if not hasattr(self.windows['queue'], 'last_update'):
+            self.windows['queue'].last_update = time.time()
+
+        elif hasattr(self.windows['queue'], 'last_update') and not force_redraw:
+            # don't update the queue window if it was updated less than 0.5 seconds ago
+            if time.time() - self.windows['queue'].last_update < 0.5:
+                return
+
         # load all the queue items
         all_queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
 
         # redraw the queue list if needed
-        if force_redraw:
+        if force_redraw or \
+                not hasattr(queue_window, 'queue_items') \
+                or len(queue_window.queue_items) != len(all_queue_items):
             self.draw_queue_list(all_queue_items)
 
         for row_num, queue_id in enumerate(all_queue_items):
@@ -8828,7 +8841,7 @@ class toolkit_UI():
                 queue_window.queue_items[queue_id]['button_cancel'].grid_forget()
 
             # show the progress bar
-            if 'progress' in q_item and q_item['progress'] != '':
+            if 'progress' in q_item and q_item['progress'] and q_item['progress'] != '':
 
                 # the value of the progressbar is between 0 and 1
                 progress_bar_val = int(q_item['progress']) / 100
@@ -8861,45 +8874,72 @@ class toolkit_UI():
         # reset the queue items dict for this window
         queue_window.queue_items = {}
 
-        for row_num, queue_id in enumerate(all_queue_items):
+        # empty queue_items_frame from all widgets
+        for widget in queue_items_frame.winfo_children():
+            widget.destroy()
 
-            # create a frame to hold the queue item
-            queue_item_frame = ctk.CTkFrame(queue_items_frame)
+        # create a new frame to hold the queue items
+        #queue_items_frame = queue_window.queue_items_frame = ctk.CTkScrollableFrame(queue_window)
 
-            # add the queue item dict to the queue window
-            window_queue_item = queue_window.queue_items[queue_id] = {}
+        # if the queue is empty
+        if len(all_queue_items) == 0:
+            # add a label to the queue window
+            ctk.CTkLabel(queue_items_frame, text='The queue is empty').grid(row=0, column=0, sticky='w',
+                                                                            **self.ctk_form_paddings)
 
-            # add the name label
-            window_queue_item['name_var'] = \
-                name_var = ctk.StringVar(queue_window)
-            name_label = ctk.CTkLabel(queue_item_frame, textvariable=name_var)
+            # disable the cancel button
+            if hasattr(self.windows['queue'], 'button_cancel_all') \
+                    and self.windows['queue'].button_cancel_all.grid_info():
 
-            # expand the name label to fill the space
-            queue_item_frame.columnconfigure(0, weight=1)
+                self.windows['queue'].button_cancel_all.configure(state='disabled')
 
-            # add the status label
-            window_queue_item['status_var'] = \
-                status_var = ctk.StringVar(queue_window)
-            status_label = ctk.CTkLabel(queue_item_frame, textvariable=status_var)
 
-            # add the progress bar (under both the name and status labels)
-            window_queue_item['progress_bar'] = \
-                progress_bar = ctk.CTkProgressBar(queue_item_frame, height=5)
+        # if the queue is not empty
+        else:
+            for row_num, queue_id in enumerate(all_queue_items):
 
-            # add a button to cancel the transcription
-            window_queue_item['button_cancel'] = \
-                button_cancel = ctk.CTkButton(queue_item_frame, text='x', width=1)
+                # create a frame to hold the queue item
+                queue_item_frame = ctk.CTkFrame(queue_items_frame, **self.ctk_list_item)
 
-            # bind the button to the cancel_transcription function
-            button_cancel.bind("<Button-1>", lambda e, queue_id=queue_id, button_cancel=button_cancel:
-                self.on_button_cancel_queue_item(queue_id, button_cancel))
+                # add the queue item dict to the queue window
+                window_queue_item = queue_window.queue_items[queue_id] = {}
 
-            # add the name and status labels to the queue item frame (but don't add the progress bar yet)
-            name_label.grid(row=0, column=0, sticky='w', **self.ctk_form_paddings)
-            status_label.grid(row=0, column=1, sticky='e', **self.ctk_form_paddings)
+                # add the name label
+                window_queue_item['name_var'] = \
+                    name_var = ctk.StringVar(queue_window)
+                name_label = ctk.CTkLabel(queue_item_frame, textvariable=name_var)
 
-            # add the queue item to the queue items frame
-            queue_item_frame.grid(row=row_num, column=0, sticky='ew', **self.ctk_form_paddings)
+                # expand the name label to fill the space
+                queue_item_frame.columnconfigure(0, weight=1)
+
+                # add the status label
+                window_queue_item['status_var'] = \
+                    status_var = ctk.StringVar(queue_window)
+                status_label = ctk.CTkLabel(queue_item_frame, textvariable=status_var)
+
+                # add the progress bar (under both the name and status labels)
+                window_queue_item['progress_bar'] = \
+                    progress_bar = ctk.CTkProgressBar(queue_item_frame, height=5)
+
+                # add a button to cancel the transcription
+                window_queue_item['button_cancel'] = \
+                    button_cancel = ctk.CTkButton(queue_item_frame, text='x', width=1)
+
+                # bind the button to the cancel_transcription function
+                button_cancel.bind("<Button-1>", lambda e, queue_id=queue_id, button_cancel=button_cancel:
+                    self.on_button_cancel_queue_item(queue_id, button_cancel))
+
+                # add the name and status labels to the queue item frame (but don't add the progress bar yet)
+                name_label.grid(row=0, column=0, sticky='w', **self.ctk_form_paddings)
+                status_label.grid(row=0, column=1, sticky='e', **self.ctk_form_paddings)
+
+                # add the queue item to the queue items frame
+                queue_item_frame.grid(row=row_num, column=0, sticky='ew', **self.ctk_form_paddings)
+
+            # enable the cancel button
+            if hasattr(self.windows['queue'], 'button_cancel_all'):
+
+                self.windows['queue'].button_cancel_all.configure(state='normal')
 
         # add the queue items frame to the queue window
         queue_items_frame.grid(row=0, column=0, sticky='nsew')
@@ -8939,8 +8979,7 @@ class toolkit_UI():
             # add a frame to hold the footer
             bottom_footer = ctk.CTkFrame(queue_window)
 
-            # draw the list of items in the queue
-            self.draw_queue_list()
+            # the queue items are drawn on update
 
             # add the bottom footer to the queue window
             bottom_footer.grid(row=1, column=0, sticky='nsew')
@@ -8953,13 +8992,13 @@ class toolkit_UI():
             queue_window.minsize(600, 0)
 
             # add a cancel all button in the footer
-            button_cancel_all = ctk.CTkButton(bottom_footer, text='Cancel all')
+            self.windows['queue'].button_cancel_all = \
+                button_cancel_all = ctk.CTkButton(bottom_footer, text='Cancel all')
+
+            button_cancel_all.grid(row=0, column=0, sticky='e', **self.ctk_form_entry_paddings)
 
             # bind the button to the cancel_all_transcriptions function
             button_cancel_all.bind("<Button-1>", lambda e: self.on_button_cancel_queue())
-
-            # add the button to the footer
-            button_cancel_all.grid(row=0, column=0, sticky='e', **self.ctk_form_entry_paddings)
 
             # add an observer to the queue window to make sure it gets updated if any item changes
             self.add_observer_to_window(
@@ -9251,14 +9290,14 @@ class toolkit_UI():
         return True
 
     def advanced_search(self, prompt, search_item, search_window_id):
-        '''
+        """
         This is the callback function for the advanced search window.
         It calls the search function of the search item and passes the prompt as the search query.
         Then it updates the search window with the results.
 
         :param prompt:
         :return:
-        '''
+        """
 
         # is the user asking for help?
         if prompt.lower() == '[help]':

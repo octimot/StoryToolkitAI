@@ -1875,7 +1875,7 @@ class ToolkitOps:
                 if not self.get_item(queue_id=queue_id):
 
                     # add it to the queue history
-                    self.queue_history.append({'queue_id': queue_id, name: '', 'status': 'pending'})
+                    self.queue_history.append({'queue_id': queue_id, 'name': '', 'status': 'pending'})
 
                     logger.debug('Added queue id {} to queue history'.format(queue_id))
 
@@ -1891,6 +1891,7 @@ class ToolkitOps:
                          task_data=None,
                          device=None,
                          required_device_type=None,
+                         ping=True,
                          **kwargs
                          ) -> str or bool:
             """
@@ -1909,6 +1910,7 @@ class ToolkitOps:
             :param device: the device to use for processing the task, if empty,
                             we will use the next available device suitable for the task (device_required must be passed)
             :param required_device_type: the device type required for processing the task (cpu, cuda, etc.)
+            :param ping: whether to ping the queue manager to start processing the queue
             :param kwargs: any other key-value pairs to be added to the queue item
             :return: the queue id of the task or False if something went wrong
 
@@ -1990,7 +1992,8 @@ class ToolkitOps:
             logger.debug('Added item {} to queue'.format(queue_id))
 
             # ping the queue to start processing
-            self.ping_queue()
+            if ping:
+                self.ping_queue()
 
             # save the queue to a file
             self.save_queue_to_file()
@@ -2029,7 +2032,7 @@ class ToolkitOps:
             # return the item
             return item
 
-        def pass_dependency_data(self, queue_id, dependency_id, override=False, save_to_file=False):
+        def pass_dependency_data(self, queue_id, dependency_id, override=False, save_to_file=False, only_done=True):
             """
             This passes all the data from the item with the dependency_id to the item with the queue_id
             (all except the queue_id and name)
@@ -2055,6 +2058,11 @@ class ToolkitOps:
             if not dependency_item:
                 logger.error('Unable to pass dependency data - dependency id {} not found in queue history'
                              .format(dependency_id))
+                return False
+
+            # if only_done is set to True, check if the dependency item is done
+            if only_done and 'status' in dependency_item and dependency_item['status'] != 'done':
+                logger.error('Unable to pass dependency data - dependency id {} is not done'.format(dependency_id))
                 return False
 
             # if the dependency item exists, pass all the data from the dependency item to the item
@@ -2098,6 +2106,9 @@ class ToolkitOps:
 
             # make sure to always pass the queue id too
             new_item['queue_id'] = queue_id
+
+            # add the last_update timestamp
+            new_item['last_update'] = time.time()
 
             # find the item index in the queue history according to its queue id
             for index, item in enumerate(self.queue_history):
@@ -2248,8 +2259,12 @@ class ToolkitOps:
             so that item is canceled when the current task is finished
 
             :param queue_id: the queue id of the item to check
-            :return True if the item was canceled, False otherwise
+            :return True if the item was canceled, False if not, None if the passed queue id is None
             """
+
+            if queue_id is None:
+                logger.debug('Unable to cancel item - queue id is None')
+                return None
 
             queue_item = self.get_item(queue_id=queue_id)
 
@@ -2541,31 +2556,29 @@ class ToolkitOps:
 
                     logger.debug('Finished execution of {} for queue item {}'.format(task.__name__, queue_id))
 
-                    # remove the thread from the queue threads to free up the device
-                    self.remove_thread_from_queue_threads(device=device)
-
-                    # notify all the observers that the queue has been updated
-                    self.toolkit_ops_obj.notify_observers('update_queue')
-
-                    # then ping the queue again
-                    self.ping_queue()
+                    executed = True
 
                 except Exception as e:
-                    import traceback
 
-                    # add the error to the logger
-                    logger.error(traceback.format_exc())
-
-                    logger.error('Unable to execute task {} for queue item {}'.format(task, queue_id))
+                    logger.error('Unable to execute task {} for queue item {}'.format(task, queue_id), exc_info=True)
 
                     # update the status of the queue item to 'failed'
                     self.update_status(queue_id=queue_id, status='failed')
 
                     # stop the execution
-                    return False
+                    executed = False
+
+            # remove the thread from the queue threads to free up the device
+            self.remove_thread_from_queue_threads(device=device)
+
+            # notify all the observers that the queue has been updated
+            self.toolkit_ops_obj.notify_observers('update_queue')
+
+            # then ping the queue again
+            self.ping_queue()
 
             # if we get here, the execution was successful
-            return True
+            return executed
 
         def update_status(self, queue_id, status):
             """
@@ -2580,8 +2593,8 @@ class ToolkitOps:
             item['status'] = status
 
             # also reset the progress if the status update is 'done', 'failed', 'canceled' or 'canceling'
-            if status in ['done', 'failed', 'canceled', 'canceling']:
-                item['progress'] = ''
+            if status in ['done', 'failed', 'canceled', 'canceling'] and 'progress' in item:
+                del item['progress']
 
             self.update_queue_item(**item)
 
@@ -2615,22 +2628,33 @@ class ToolkitOps:
 
             # if there are no items in the queue, return False
             if len(self.queue) == 0:
-
-                logger.debug('No items left in the queue. Ping the queue again to restart processing.')
-
-                #logger.info('No items in the queue. Checking again in {}'
-                #             .format(str(self.queue_check_interval)
-                #                     + ' seconds' if self.queue_check_interval == 1 else 'second'))
-                #
-                # start a timer to check the queue again according to the queue check interval
-                #threadingTimer(self.queue_check_interval, self.ping_queue).start()
-
+                logger.debug('No items left in the queue. Try to ping the queue again later.')
                 return False
 
             # get the first item in the queue
             queue_index = 0
             queue_id = self.queue[queue_index]
             reorder_queue = False
+
+            # try to start the next item from the queue that can be started
+            while not self._item_can_start(queue_id=queue_id):
+
+                logger.debug('Item {} cannot start. Trying the next one.'.format(queue_id))
+
+                # add +1 to the queue index
+                queue_index += 1
+
+                # check if the queue index is out of range
+                if queue_index >= len(self.queue):
+
+                    # and abort if it is
+                    logger.debug('None of the queue items are ready to start. Try again later.')
+                    return False
+
+                # get the next item in the queue
+                queue_id = self.queue[queue_index]
+
+
 
             # todo: fix this
             """
@@ -2678,8 +2702,16 @@ class ToolkitOps:
                 logger.debug('Device busy. Try again later.')
                 return False
 
+            # check all the kwargs and make sure that all their keys are strings
+            # otherwise the thread will fail to start
+            filtered_kwargs = {}
+            for key, value in kwargs.items():
+
+                if isinstance(key, str):
+                    filtered_kwargs[key] = value
+
             # create a thread to execute the tasks for this item
-            thread = Thread(target=self.execute_item_tasks, kwargs=kwargs)
+            thread = Thread(target=self.execute_item_tasks, kwargs=filtered_kwargs)
 
             # add the thread to the threads dictionary so that other processes know that the device is busy
             self.add_thread_to_queue_threads(device=kwargs['device'], queue_id=kwargs['queue_id'], thread=thread)
@@ -2687,12 +2719,28 @@ class ToolkitOps:
             # start the thread
             thread.start()
 
-            # remove the first item from the queue
-            self.queue.pop(0)
+            # once the thread has started, we can remove the item from the queue
+            queue_index = self._get_item_queue_index(queue_id=queue_id)
+            if queue_index is not None:
+                self.queue.pop(queue_index)
 
             return True
 
-        def _item_can_start(self, queue_id, item_data = None):
+        def _get_item_queue_index(self, queue_id):
+            """
+            This returns the index of a queue item in the queue list based on its queue_id
+            """
+
+            # self.queue is a list of queue_ids
+            # so we can just return the index of the queue_id in the list
+            try:
+                return self.queue.index(queue_id)
+
+            # if the queue_id is not found, return None
+            except ValueError:
+                return None
+
+        def _item_can_start(self, queue_id, item_data=None):
             """
             This determines if a certain item can start based on its dependencies
             If any of its dependencies has failed, this will return None
@@ -2710,21 +2758,29 @@ class ToolkitOps:
 
                 dependency_item_data = self.get_item(queue_id=dependency_id)
 
-                # return None if the dependency item is not found
-                # since it's impossible to determine if the dependency finished or not
-                if not dependency_item_data:
+                # if the dependency has failed or doesn't exist, return None
+                # and mark the current item as failed as well
+                if not dependency_item_data \
+                    or ('status' in dependency_item_data
+                        and dependency_item_data['status'] == 'failed'):
+
+                    logger.warning('Dependency {} failed or not available. '
+                                 'Item {} will fail too.'.format(dependency_id, queue_id))
+
+                    # the current item will also fail
+                    self.update_queue_item(queue_id=queue_id, status='failed')
+
+                    # remove it from the queue
+                    queue_index = self._get_item_queue_index(queue_id=queue_id)
+                    if queue_index is not None:
+                        self.queue.pop(queue_index)
+
                     return None
 
                 # if the status of the dependency is not in the item data,
-                if 'status' not in dependency_item_data:
-                    return False
-
-                # if the dependency has failed, return None
-                if dependency_item_data['status'] == 'failed':
-                    return None
-
-                # if the dependency is not completed, return False
-                if dependency_item_data['status'] != 'done':
+                # it could be that the dependency is still running or has not been started yet
+                elif 'status' not in dependency_item_data or dependency_item_data['status'] != 'done':
+                    logger.debug('Dependency {} not completed yet. Try again later.'.format(dependency_id))
                     return False
 
             return True
@@ -2875,14 +2931,16 @@ class ToolkitOps:
                         continue
 
                     # reset any progress
-                    item['progress'] = ''
+                    if 'progress' in item:
+                        del item['progress']
 
                     # if it has no status, just queue it
                     if 'status' not in item:
                         item['status'] = 'queued'
 
                         # add to the queue
-                        self.add_to_queue(**item)
+                        # (but don't ping the queue yet)
+                        self.add_to_queue(**item, ping=False)
 
                         continue
 
@@ -2892,10 +2950,13 @@ class ToolkitOps:
                         continue
 
                     # if the status is not ['done', 'failed', 'canceled'] add it to the queue
+                    # (but don't ping the queue yet)
                     if item['status'] not in ['done', 'failed', 'canceled']:
-                        self.add_to_queue(**item)
+                        self.add_to_queue(**item, ping=False)
 
                 # once we finished re-building the queue, we need to ping it
+                # it's important to ping it after we're done adding all items to the queue
+                # since some items that depend on others might fail if they can't find the other items
                 self.ping_queue()
 
                 # if we processed the queue, we've resumed it
