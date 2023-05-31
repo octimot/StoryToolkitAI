@@ -20,6 +20,19 @@ logger.debug('\n--------------\n'
     ' '.join(map(str, platform.win32_ver() + platform.mac_ver())),
     '.'.join(map(str, sys.version_info))))
 
+# check if the user is running the any version of Python 3.10
+if sys.version_info.major != 3 or sys.version_info.minor != 10:
+
+    logger.warning('You are running Python {}.{}.{}.\n'.format(*sys.version_info) +
+                   'StoryToolkitAI is now optimized to run on Python 3.10.\n' +
+                   'Please download and install the latest version of Python 3.10 '
+                   'from: https://www.python.org/downloads/\nand then re-install the '
+                   'tool with a new environment.\n '
+                   'More info: https://github.com/octimot/StoryToolkitAI/blob/main/INSTALLATION.mdn\n')
+
+    # keep this message in the console for a bit
+    time.sleep(5)
+
 # get the current path of this file
 file_path = os.path.abspath(__file__)
 
