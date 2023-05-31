@@ -4004,10 +4004,6 @@ class toolkit_UI():
             **{'fg_color': ctk.ThemeManager.theme["CTkScrollableFrame"]["label_fg_color"],'anchor': 'w'},
             **self.ctk_frame_paddings
         }
-        self.ctk_main_window_label_settings = {
-                **self.ctk_frame_label_settings, **self.ctk_frame_transparent,
-                **{'anchor': 'center', 'padx': 10, 'width': 150}
-        }
 
         self.ctk_button_size ={'width': 200, 'height': 45}
 
@@ -4015,6 +4011,9 @@ class toolkit_UI():
 
         self.ctk_full_textbox_paddings = {'padx': 15, 'pady': 15}
         self.ctk_full_textbox_frame_paddings = {'padx': (10, 0), 'pady': 5}
+
+        self.ctk_side_frame_button_paddings = {'padx': 10, 'pady': 10}
+        self.ctk_side_frame_button_size = {'width': 200}
 
         # set some UI styling here
         # todo: check where these are used and replace all elements with ctk ones
@@ -4054,9 +4053,12 @@ class toolkit_UI():
         self.ctk_default_font_size = ctk.ThemeManager.theme["CTkFont"]["size"]
 
         # get the font size, but scale them for the machine
+        font_scale = 1.2
         self.default_font_size = self.UI_scale(self.ctk_default_font_size)
-        self.transcript_font_size = self.UI_scale(self.stAI.get_app_setting('transcript_font_size', default_if_none=15))
-        self.console_font_size = self.UI_scale(self.stAI.get_app_setting('console_font_size', default_if_none=13))
+        self.transcript_font_size = self.UI_scale(self.stAI.get_app_setting('transcript_font_size', default_if_none=15)
+                                                  *font_scale)
+        self.console_font_size = self.UI_scale(self.stAI.get_app_setting('console_font_size', default_if_none=13)
+                                               *font_scale)
 
         # set platform independent transcript font
         self.transcript_font = ctk.CTkFont(family=courier_font_family, size=self.transcript_font_size)
@@ -4065,7 +4067,7 @@ class toolkit_UI():
         self.console_font = ctk.CTkFont(family='TkFixedFont', size=self.console_font_size)
 
         # set the default font size
-        self.default_font_size = self.UI_scale(self.default_font_size)
+        self.default_font_size = self.UI_scale(self.default_font_size*font_scale)
 
         # set the platform independent default font (and variants)
         self.default_font = ctk.CTkFont(family=self.ctk_default_font_family, size=self.default_font_size)
@@ -9210,32 +9212,40 @@ class toolkit_UI():
         # add the button to the left frame of the search window
 
         # SEARCH BUTTONS
-        self._add_button_to_side_frames_of_text_window(search_window_id, side='left',
+        self._add_button_to_side_frames_of_window(search_window_id, side='left',
                                                        button_text='Change model',
                                                        button_command=
                                                        lambda search_window_id=search_window_id:
                                                         self.button_search_change_model(search_window_id),
                                                        sub_frame="Search")
 
-        self._add_button_to_side_frames_of_text_window(search_window_id, side='left',
+        self._add_button_to_side_frames_of_window(search_window_id, side='left',
                                                        button_text='List files',
                                                        button_command=
                                                        lambda search_window_id=search_window_id:
                                                         self.button_search_list_files(search_window_id),
                                                        sub_frame="Search")
 
+        # SPACY BUTTONS
+        # self._add_switch_to_side_frames_of_window(search_window_id, side='left',
+        #                                               switch_text='Cluster phrases',
+        #                                               switch_command=
+        #                                               lambda search_window_id=search_window_id:
+        #                                                print(search_window_id),
+        #                                               sub_frame="Source Text")
+
         # TRANSCRIPT RESULTS BUTTONS
-        #self._add_button_to_side_frames_of_text_window(search_window_id, side='left',
+        #self._add_button_to_side_frames_of_window(search_window_id, side='left',
         #                                               button_text='Show results',
         #                                               button_command=button_no_command,
         #                                               sub_frame="Results")
 
-        #self._add_button_to_side_frames_of_text_window(search_window_id, side='left',
+        #self._add_button_to_side_frames_of_window(search_window_id, side='left',
         #                                               button_text='Select results',
         #                                               button_command=button_no_command,
         #                                               sub_frame="Results")
 
-        #self._add_button_to_side_frames_of_text_window(search_window_id, side='left',
+        #self._add_button_to_side_frames_of_window(search_window_id, side='left',
         #                                               button_text='Select group results',
         #                                               button_command=button_no_command,
         #                                               sub_frame="Results")
@@ -9270,12 +9280,54 @@ class toolkit_UI():
                                          'file' if len(search_item.search_file_paths) == 1 else 'files'))
         self._text_window_update(search_window_id, search_file_list)
 
-    def _add_button_to_side_frames_of_text_window(self,
-                                                    window_id: str,
-                                                    side: str,
-                                                    button_text: str,
-                                                    button_command: callable,
-                                                    sub_frame: str = None):
+    def _add_side_subframe_to_window(self, parent_frame, sub_frame: str):
+        """
+        This adds a sub-frame to the left or right frame of a window.
+
+        :param window_id: the id of the text window
+        :param side: the side of the window where the button should be added (left or right)
+        :param sub_frame: the name of the sub-frame where the button should be added
+        """
+
+        # we call this "button_parent_frame" because we will mostly buttons, switches etc.
+        new_frame = parent_frame
+
+        # if the sub-frame doesn't exist as an attribute of the frame
+        if sub_frame is not None and not hasattr(parent_frame, 'frame_{}'.format(sub_frame.strip().lower())):
+
+            # create a new sub-frame
+            new_frame = ctk.CTkFrame(parent_frame)
+
+            # add a label to it
+            ctk.CTkLabel(new_frame, text=sub_frame, anchor='n') \
+                .pack(fill='x', expand=True, **self.ctk_side_frame_button_paddings, anchor='nw')
+
+            # add the new sub_frame to the parent frame
+            new_frame.pack(fill='x', expand=True, **self.ctk_side_frame_button_paddings, anchor='nw')
+
+            # add the new sub_frame as an attribute of the parent frame
+            # so we can access it later
+            setattr(parent_frame, 'frame_{}'.format(sub_frame.strip().lower()), new_frame)
+
+        # if the sub_frame already exists, just use it for the return value
+        elif sub_frame is not None and hasattr(parent_frame, 'frame_{}'.format(sub_frame.strip().lower())):
+
+            new_frame = getattr(parent_frame, 'frame_{}'.format(sub_frame.strip().lower()))
+
+        return new_frame
+
+    def _add_button_to_side_frames_of_window(self, window_id: str, side: str,
+                                             button_text: str, button_command: callable,
+                                             sub_frame: str = None):
+        """
+        This adds a button to the left or right frame of a window. It also creates a sub-frame for it if needed.
+        :param window_id: the id of the text window
+        :param side: the side of the window where the button should be added (left or right)
+        :param button_text: the text of the button
+        :param button_command: the command of the button
+        :param sub_frame: the name of the sub-frame where the button should be added
+        :return: True if the button was added successfully, False otherwise
+        """
 
         # we can pass the side as a string (either 'left' or 'right')
         if side == 'left':
@@ -9286,43 +9338,75 @@ class toolkit_UI():
             frame = self.windows[window_id].right_frame
             frame_column = 2
         else:
-            logger.error('Invalid side {} for search window {}.'.format(side, window_id))
+            logger.error('Invalid side {} for window {}.'.format(side, window_id))
             return False
 
-        # for now, use the side frame as a parent for the button
-        button_parent_frame = frame
-
-        # if this button is supposed to be in a sub-frame and the sub-frame doesn't exist as a child of the frame
-        # add the frame
-        if sub_frame is not None and sub_frame.strip().lower() not in frame.children:
-
-            background_color = self.resolve_theme_colors['black']
-            foreground_color = self.resolve_theme_colors['normal']
-
-            new_buttons_frame = Frame(frame, name=sub_frame.strip().lower(),
-                                      highlightbackground=background_color, highlightthickness=1)
-            Label(new_buttons_frame, text=sub_frame, anchor='n', fg=foreground_color) \
-                .pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
-
-            new_buttons_frame.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
-
-            # use this newly created frame as the parent for the button
-            button_parent_frame = new_buttons_frame
-
-        # if the sub_frame already exists, use it as the parent for the button
-        elif sub_frame is not None and sub_frame.strip().lower() in frame.children:
-            button_parent_frame = frame.children[sub_frame.strip().lower()]
+        # this will be the frame we use to add the button
+        button_parent_frame = self._add_side_subframe_to_window(frame, sub_frame)
 
         # finally, add the button
         # but only if another button with the same text doesn't already exist
-        if button_text.strip().lower() in button_parent_frame.children:
+        if hasattr(button_parent_frame, 'button_{}'.format(button_text.strip().lower())):
             return False
 
         # add the button
-        new_button = Button(button_parent_frame,
-                            name=button_text.strip().lower(), text=button_text,
-                            command=button_command)
-        new_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
+        new_button = ctk.CTkButton(button_parent_frame, text=button_text, command=button_command,
+                                   **self.ctk_side_frame_button_size
+                                   )
+        new_button.pack(fill='x', expand=True, **self.ctk_side_frame_button_paddings, anchor='nw')
+
+        # add the new button as an attribute of the sub-frame
+        setattr(button_parent_frame, 'button_{}'.format(button_text.strip().lower()), new_button)
+
+        # is the frame in the grid?
+        if not frame.grid_info():
+            # if not, add it so that it's visible
+            frame.grid(row=0, column=frame_column, sticky="ns")
+
+        return True
+
+    def _add_switch_to_side_frames_of_window(self, window_id: str, side: str,
+                                             switch_text: str, switch_command: callable, sub_frame: str = None):
+        """
+        This adds a switch to the left or right frame of a window. It also creates a sub-frame for it if needed.
+        :param window_id: the id of the text window
+        :param side: the side of the window where the button should be added (left or right)
+        :param switch_text: the text of the button
+        :param switch_command: the command of the button
+        :param sub_frame: the name of the sub-frame where the button should be added
+        :return: True if the button was added successfully, False otherwise
+        """
+
+        # we can pass the side as a string (either 'left' or 'right')
+        if side == 'left':
+            frame = self.windows[window_id].left_frame
+            frame_column = 0
+
+        elif side == 'right':
+            frame = self.windows[window_id].right_frame
+            frame_column = 2
+        else:
+            logger.error('Invalid side {} for window {}.'.format(side, window_id))
+            return False
+
+        # this will be the frame we use to add the switch
+        switch_parent_frame = self._add_side_subframe_to_window(frame, sub_frame)
+
+        # finally, add the button
+        # but only if another switch with the same text doesn't already exist
+        if hasattr(switch_parent_frame, 'switch_{}'.format(switch_text.strip().lower())):
+            return False
+
+        # add the button
+        new_button = ctk.CTkSwitch(switch_parent_frame,
+                                   text=switch_text,
+                                   command=switch_command,
+                                   **self.ctk_side_frame_button_size
+                                   )
+        new_button.pack(fill='x', expand=True, **self.ctk_side_frame_button_paddings, anchor='nw')
+
+        # add the new button as an attribute of the sub-frame
+        setattr(switch_parent_frame, 'switch_{}'.format(switch_text.strip().lower()), new_button)
 
         # is the frame in the grid?
         if not frame.grid_info():
