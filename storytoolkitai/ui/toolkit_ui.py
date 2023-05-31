@@ -17,16 +17,13 @@ from storytoolkitai.core.toolkit_ops import *
 
 import tkinter as tk
 import customtkinter as ctk
-from storytoolkitai.ui.CTkMessagebox import CTkMessagebox as CTkMessagebox
+
 from tkinter import filedialog, simpledialog, messagebox, font, ttk
 from tkinter import *
-
-from storytoolkitai.ui.ctk_tooltip import CTkToolTip
 
 from whisper import available_models as whisper_available_models
 
 from .menu import UImenus
-
 
 class toolkit_UI():
     '''
@@ -845,7 +842,8 @@ class toolkit_UI():
             # then we call the ask_dialogue function
             user_input = self.toolkit_UI_obj.AskDialog(title='Markers to Selection',
                                                        input_widgets=input_widgets,
-                                                       parent=self.toolkit_UI_obj.windows[window_id]
+                                                       parent=self.toolkit_UI_obj.windows[window_id],
+                                                       toolkit_UI_obj=self.toolkit_UI_obj
                                                        ).value()
 
             # if the user didn't cancel add the group
@@ -960,7 +958,8 @@ class toolkit_UI():
                 # then we call the ask_dialogue function
                 user_input = self.toolkit_UI_obj.AskDialog(title='Add Markers from Selection',
                                                            input_widgets=input_widgets,
-                                                           parent=self.toolkit_UI_obj.windows[window_id]
+                                                           parent=self.toolkit_UI_obj.windows[window_id],
+                                                           toolkit_UI_obj=self.toolkit_UI_obj
                                                            ).value()
 
                 # if the user didn't cancel add the group
@@ -1746,7 +1745,8 @@ class toolkit_UI():
                         user_input = self.toolkit_UI_obj.AskDialog(title='Go To Timecode',
                                                                    input_widgets=input_widgets,
                                                                    parent=self.toolkit_UI_obj.windows[window_id],
-                                                                   cancel_return=None
+                                                                   cancel_return=None,
+                                                                   toolkit_UI_obj=self.toolkit_UI_obj
                                                                    ).value()
 
                         # if the user canceled, return None
@@ -1828,13 +1828,15 @@ class toolkit_UI():
                     user_input = self.toolkit_UI_obj.AskDialog(title='Timeline Timecode Info',
                                                                input_widgets=input_widgets,
                                                                parent=self.toolkit_UI_obj.windows[window_id],
-                                                               cancel_return=None
+                                                               cancel_return=None,
+                                                               toolkit_UI_obj=self.toolkit_UI_obj
                                                                ).value()
 
                     # if the user clicked cancel, stop the loop
                     if user_input is None:
                         return None, None
                 except:
+                    logger.error('Error while asking for timecode data.', exc_info=True)
                     return None, None
 
                 # validate the user input
@@ -2936,7 +2938,7 @@ class toolkit_UI():
             self.on_press_merge_segments(e, window_id=window_id, text=text, merge='next'))
 
             if status_label is not None:
-                status_label.config(text='Not saved.', foreground=self.toolkit_UI_obj.resolve_theme_colors['red'])
+                status_label.configure(text='Not saved.', text_color=self.toolkit_UI_obj.theme_colors['red'])
 
             text.config(state=NORMAL)
 
@@ -3122,22 +3124,22 @@ class toolkit_UI():
             if save_status is True:
                 # show the user that the transcript was saved
                 if status_label is not None:
-                    status_label.config(text='Saved.',
-                                        foreground=self.toolkit_UI_obj.resolve_theme_colors['normal'])
+                    status_label.configure(text='Saved.',
+                                        text_color=self.toolkit_UI_obj.theme_colors['normal'])
 
             # in case anything went wrong while saving,
             # let the user know about it
             elif save_status == 'fail':
                 if status_label is not None:
-                    status_label.config(text='Save Failed.',
-                                        foreground=self.toolkit_UI_obj.resolve_theme_colors['red'])
+                    status_label.configure(text='Save Failed.',
+                                        text_color=self.toolkit_UI_obj.theme_colors['red'])
 
             # in case the save status is False
             # assume that nothing needed saving
             else:
                 if status_label is not None:
-                    status_label.config(text='Nothing changed.',
-                                        foreground=self.toolkit_UI_obj.resolve_theme_colors['normal'])
+                    status_label.configure(text='Nothing changed.',
+                                        text_color=self.toolkit_UI_obj.theme_colors['normal'])
 
         def save_transcript(self, window_id=None, text=None, skip_verification=False):
             '''
@@ -3993,7 +3995,6 @@ class toolkit_UI():
         self.ctk_form_paddings_ext = {'padx': 10, 'pady': 5}
         self.ctk_form_entry_paddings = {'padx': 10, 'pady': 10}
         self.ctk_frame_transparent = {'fg_color': 'transparent'}
-        self.ctk_frame_invisible_paddings = {'padx': 0, 'pady': 0}
         self.ctk_form_entry_settings = {'width': 120}
         self.ctk_form_entry_settings_half = {'width': self.ctk_form_entry_settings['width'] / 2}
         self.ctk_form_entry_settings_quarter = {'width': self.ctk_form_entry_settings['width'] / 4}
@@ -4015,6 +4016,12 @@ class toolkit_UI():
         self.ctk_side_frame_button_paddings = {'padx': 10, 'pady': 10}
         self.ctk_side_frame_button_size = {'width': 200}
 
+        self.ctk_popup_frame_paddings = {'padx': 5, 'pady': 5}
+        self.ctk_popup_input_paddings = {'padx': 5}
+        self.ctk_askdialog_input_size = {'width': 200}
+        self.ctk_askdialog_frame_paddings = {'padx': 10, 'pady': 10}
+        self.ctk_askdialog_input_paddings = {'padx': 10, 'pady': 10}
+
         # set some UI styling here
         # todo: check where these are used and replace all elements with ctk ones
         self.paddings = {'padx': 10, 'pady': 10}
@@ -4028,8 +4035,6 @@ class toolkit_UI():
         self.entry_settings = {'width': 30}
         self.entry_settings_half = {'width': 20}
         self.entry_settings_quarter = {'width': 8}
-        self.dialog_paddings = {'padx': 0, 'pady': 0}
-        self.dialog_entry_settings = {'width': 30}
 
         # scrollbars
         self.scrollbar_settings = {'width': 10}
@@ -5230,7 +5235,7 @@ class toolkit_UI():
             scrollbar.pack(side=tk.RIGHT, fill='y', pady=5)
 
             # configure the text element to use the scrollbar
-            text.config(yscrollcommand=scrollbar.set)
+            text.configure(yscrollcommand=scrollbar.set)
 
             # add the initial text to the text element
             if initial_text:
@@ -5499,17 +5504,17 @@ class toolkit_UI():
             self.text_windows[parent_window_id]['find_window_id'] = window_id
 
             # create a frame for the find input
-            find_frame = tk.Frame(self.windows[window_id], name='find_frame')
-            find_frame.pack(pady=5, padx=5, expand=True, fill='both')
+            find_frame = ctk.CTkFrame(self.windows[window_id], name='find_frame', **self.ctk_frame_transparent)
+            find_frame.pack(expand=True, fill='both', **self.ctk_popup_frame_paddings)
 
             # create a label for the find input
-            find_label = tk.Label(find_frame, text='Find:', name='find_label')
-            find_label.pack(side=tk.LEFT, padx=5)
+            find_label = ctk.CTkLabel(find_frame, text='Find:', name='find_label')
+            find_label.pack(side=tk.LEFT, **self.ctk_popup_input_paddings)
 
             # create the find input
             find_str = tk.StringVar()
-            find_input = tk.Entry(find_frame, textvariable=find_str, name='find_input')
-            find_input.pack(side=tk.LEFT, padx=5, expand=True, fill='x')
+            find_input = ctk.CTkEntry(find_frame, textvariable=find_str, name='find_input')
+            find_input.pack(side=tk.LEFT, expand=True, fill='x', **self.ctk_popup_input_paddings)
 
             parent_text_widget = self.text_windows[parent_window_id]['text_widget']
 
@@ -5518,7 +5523,7 @@ class toolkit_UI():
 
                 # only create the button here and add the lambda function later in the _find_text_in_widget function
                 kwargs['select_all_button'] = \
-                    tk.Button(find_frame, text='Select All', name='select_all_button')
+                    ctk.CTkButton(find_frame, text='Select All', name='select_all_button')
 
             # if the user presses a key in the find input,
             # call the _find_text_in_widget function
@@ -5544,36 +5549,40 @@ class toolkit_UI():
             # todo: add replace field when needed
             if replace_field:
                 # create a frame for the replace input
-                replace_frame = tk.Frame(self.windows[window_id], name='replace_frame')
-                replace_frame.pack(expand=True, fill='both')
+                replace_frame = ctk.CTkFrame(self.windows[window_id], name='replace_frame',
+                                             **self.ctk_frame_transparent)
+                replace_frame.pack(expand=True, fill='both', **self.ctk_popup_frame_paddings)
 
                 # create a label for the replace input
-                replace_label = tk.Label(replace_frame, text='Replace:', name='replace_label')
-                replace_label.pack(side=tk.LEFT, padx=5)
+                replace_label = ctk.CTkLabel(replace_frame, text='Replace:', name='replace_label')
+                replace_label.pack(side=tk.LEFT, **self.ctk_popup_input_paddings)
 
                 # create the replace input
-                replace_input = tk.Entry(replace_frame, name='replace_input')
-                replace_input.pack(side=tk.LEFT, padx=5, expand=True, fill='x')
+                replace_input = ctk.CTkEntry(replace_frame, name='replace_input')
+                replace_input.pack(side=tk.LEFT, expand=True, fill='x', **self.ctk_popup_input_paddings)
 
                 # if a replace text is given, add it to the replace input
                 if replace_text:
                     replace_input.insert(0, replace_text)
 
-                replace_button = tk.Button(replace_frame, text='Replace', name='replace_button',
-                                           command=lambda: self._replace_text_in_widget(window_id=window_id,
-                                                                                        text_widget=text_widget,
-                                                                                        post_replace_action=post_replace_action,
-                                                                                        post_replace_action_args=post_replace_action_args))
-                replace_button.pack(side=tk.LEFT, padx=5)
+                replace_button = ctk.CTkButton(replace_frame, text='Replace', name='replace_button',
+                                               command=lambda: self._replace_text_in_widget(
+                                                   window_id=window_id,
+                                                   text_widget=text_widget,
+                                                   post_replace_action=post_replace_action,
+                                                   post_replace_action_args=post_replace_action_args
+                                                   )
+                                               )
+                replace_button.pack(side=tk.LEFT, **self.ctk_popup_input_paddings)
 
             # create a footer frame that holds stuff on the bottom of the window
-            footer_frame = tk.Frame(self.windows[window_id], name='footer_frame')
-            footer_frame.pack(expand=True, fill='both')
+            footer_frame = ctk.CTkFrame(self.windows[window_id], name='footer_frame', **self.ctk_frame_transparent)
+            footer_frame.pack(expand=True, fill='both', **self.ctk_popup_frame_paddings)
 
             # add a status label to the footer frame
-            status_label = Label(footer_frame, name='status_label',
-                                 text="", anchor='w', foreground=self.resolve_theme_colors['normal'])
-            status_label.pack(side=tk.LEFT, **self.paddings)
+            status_label = ctk.CTkLabel(footer_frame, name='status_label',
+                                 text="", anchor='w', text_color=self.theme_colors['normal'])
+            status_label.pack(side=tk.LEFT, **self.ctk_popup_input_paddings)
 
             # add the status label to the find_windows dict so we can update it later
             self.find_windows[window_id]['status_label'] = status_label
@@ -5654,14 +5663,14 @@ class toolkit_UI():
                         # add the select_all_action to the select_all_button
                         # but also send the transcription window id, the text widget and the result indexes
                         kwargs.get('select_all_button') \
-                            .config(command=lambda window_id=window_id, text_widget=text_widget:
+                            .configure(command=lambda window_id=window_id, text_widget=text_widget:
                         select_all_action(
                                 window_id=window_id,
                                 text_element=text_widget,
                                 text_indices=self.find_result_indexes[window_id])
                                     )
 
-                        kwargs.get('select_all_button').pack(side=tk.LEFT, padx=5)
+                        kwargs.get('select_all_button').pack(side=tk.LEFT, **self.ctk_popup_input_paddings)
 
                 # if we don't have results, hide the select all button (if there is any)
                 else:
@@ -5669,14 +5678,14 @@ class toolkit_UI():
                         kwargs.get('select_all_button').pack_forget()
 
                 # mark located string with red
-                text_widget.tag_config('found', foreground=self.resolve_theme_colors['red'])
+                text_widget.tag_config('found', foreground=self.theme_colors['red'])
 
                 # update the status label in the find window
 
                 if 'find_window_id' in self.text_windows[window_id]:
                     find_window_id = self.text_windows[window_id]['find_window_id']
                     self.find_windows[find_window_id]['status_label'] \
-                        .config(text=f'{len(self.find_result_indexes[window_id])} results found')
+                        .configure(text=f'{len(self.find_result_indexes[window_id])} results found')
 
                 return
 
@@ -5686,7 +5695,7 @@ class toolkit_UI():
 
             find_window_id = self.text_windows[window_id]['find_window_id']
             self.find_windows[find_window_id]['status_label'] \
-                .config(text='')
+                .configure(text='')
 
             if kwargs.get('select_all_button', False):
                 kwargs.get('select_all_button').pack_forget()
@@ -5854,15 +5863,20 @@ class toolkit_UI():
             if not always_connect:
                 self.toolkit_ops_obj.stAI.save_config('disable_resolve_api', True)
 
-    class AskDialog(tk.Toplevel):
+    class AskDialog(ctk.CTkToplevel):
         '''
         This is a simple dialogue window that asks the user for input before continuing with the task
         But it also halts the execution of the main window until the user closes the dialogue window
         When the user closes the dialogue window, it will return the user input to the main window
         '''
 
-        def __init__(self, parent, title, input_widgets, **kwargs):
-            tk.Toplevel.__init__(self, parent)
+        def __init__(self, parent, title, input_widgets, toolkit_UI_obj, **kwargs):
+            super().__init__(parent)
+
+            self.toolkit_UI_obj = toolkit_UI_obj
+
+            # todo: check the icon for this window
+            self.toolkit_UI_obj.UI_set_icon(self)
 
             self.parent = parent
             self.title(title)
@@ -5910,7 +5924,7 @@ class toolkit_UI():
             row = 0
 
             # create a frame for the input widgets
-            input_frame = tk.Frame(self)
+            input_frame = ctk.CTkFrame(self, **self.toolkit_UI_obj.ctk_frame_transparent)
 
             # take all the entry widgets and add them to the window
             for widget in input_widgets:
@@ -5925,7 +5939,7 @@ class toolkit_UI():
                 widget_default_value = widget['default_value']
 
                 # add the label
-                label = tk.Label(input_frame, text=widget_label)
+                label = ctk.CTkLabel(input_frame, text=widget_label)
 
                 input_widget = None
                 input_value = None
@@ -5936,37 +5950,26 @@ class toolkit_UI():
                 # entry widget
                 if widget['type'] == 'entry':
                     input_value = StringVar(input_frame, widget_default_value)
-                    input_widget = tk.Entry(input_frame, textvariable=input_value)
+                    input_widget = ctk.CTkEntry(input_frame, textvariable=input_value,
+                                                **self.toolkit_UI_obj.ctk_askdialog_input_size)
 
                 # selection widget
                 elif widget['type'] == 'option_menu' and 'options' in widget:
-                    input_value = StringVar(input_frame, widget_default_value)
-                    input_widget = tk.OptionMenu(input_frame, input_value, *widget['options'])
-                    input_widget.config(takefocus=True)
+                    input_value = tk.StringVar(input_frame, widget_default_value)
+                    input_widget = ctk.CTkOptionMenu(input_frame, variable=input_value, values=widget['options'],
+                                                **self.toolkit_UI_obj.ctk_askdialog_input_size)
+                    #input_widget.configure(takefocus=True)
 
                 # checkbox widget
                 elif widget['type'] == 'checkbutton':
                     input_value = BooleanVar(input_frame, widget_default_value)
-                    input_widget = tk.Checkbutton(input_frame, variable=input_value)
+                    input_widget = ctk.CTkCheckBox(input_frame, variable=input_value)
 
                 # text widget
                 elif widget['type'] == 'text':
-                    input_value = StringVar(input_frame, widget_default_value)
+                    input_value = tk.StringVar(input_frame, widget_default_value)
                     input_widget = tk.Text(input_frame, height=5, width=30)
                     input_widget.insert(1.0, widget_default_value)
-
-                # listbox widget
-                elif widget['type'] == 'listbox':
-                    input_value = StringVar(input_frame, widget_default_value)
-                    input_widget = tk.Listbox(input_frame, height=5, width=30,
-                                              selectmode=widget['selectmode'] if 'selectmode' in widget else 'single')
-                    input_widget.insert(1.0, widget_default_value)
-
-                # spinbox widget
-                elif widget['type'] == 'spinbox':
-                    input_value = IntVar(input_frame, widget_default_value)
-                    input_widget = tk.Spinbox(input_frame, from_=widget['from'], to=widget['to'],
-                                              textvariable=input_value)
 
                 # if we don't have a valid widget, skip
                 if input_widget is None:
@@ -5976,8 +5979,8 @@ class toolkit_UI():
                 have_input_widgets = True
 
                 # add the widget to the window
-                label.grid(row=row, column=0, sticky='e', padx=5, pady=5)
-                input_widget.grid(row=row, column=1, sticky='w', padx=5, pady=5)
+                label.grid(row=row, column=0, sticky='e', **self.toolkit_UI_obj.ctk_askdialog_input_paddings)
+                input_widget.grid(row=row, column=1, sticky='w', **self.toolkit_UI_obj.ctk_askdialog_input_paddings)
 
                 # add the widget to the user_input dictionary
                 self.return_value[widget_name] = input_value
@@ -5992,19 +5995,19 @@ class toolkit_UI():
                 return None
 
             # pack the input frame
-            input_frame.pack(side=TOP, fill=BOTH, expand=True, padx=5, pady=5)
+            input_frame.pack(side=TOP, fill=BOTH, expand=True, **self.toolkit_UI_obj.ctk_askdialog_frame_paddings)
 
-            buttons_frame = tk.Frame(self)
+            buttons_frame = ctk.CTkFrame(self, **self.toolkit_UI_obj.ctk_frame_transparent)
 
             # add the OK button
-            w = tk.Button(buttons_frame, text="OK", width=10, command=self.ok, takefocus=True)
-            w.pack(side=LEFT, padx=5, pady=5)
+            ok_button = ctk.CTkButton(buttons_frame, text="OK", command=self.ok)
+            ok_button.pack(side=LEFT, **self.toolkit_UI_obj.ctk_askdialog_input_paddings)
             self.bind("<Return>", self.ok)
 
             # if we have a cancel_action, add the Cancel button
             if 'cancel_return' in kwargs:
-                w = tk.Button(buttons_frame, text="Cancel", width=10, command=self.cancel, takefocus=True)
-                w.pack(side=LEFT, padx=5, pady=5)
+                cancel_button = ctk.CTkButton(buttons_frame, text="Cancel", command=self.cancel)
+                cancel_button.pack(side=LEFT, **self.toolkit_UI_obj.ctk_askdialog_input_paddings)
 
                 # add the cancel action
                 self.cancel_return = kwargs['cancel_return']
@@ -6013,7 +6016,7 @@ class toolkit_UI():
                 self.bind("<Escape>", self.cancel)
 
             # pack the buttons frame
-            buttons_frame.pack(side=TOP, fill=BOTH, expand=True, padx=5, pady=5)
+            buttons_frame.pack(side=TOP, fill=BOTH, expand=True, **self.toolkit_UI_obj.ctk_askdialog_frame_paddings)
 
         def center_window(self):
 
@@ -7918,16 +7921,17 @@ class toolkit_UI():
             current_tk_window = self.windows[t_window_id]
 
             # create the left frame
-            left_frame = Frame(current_tk_window, name='left_frame')
+            left_frame = ctk.CTkFrame(current_tk_window, name='left_frame', **self.ctk_frame_transparent)
             left_frame.grid(row=0, column=0, sticky="ns")
 
             # create a frame for the text element
-            text_form_frame = tk.Frame(self.windows[t_window_id], name='text_form_frame')
+            text_form_frame = ctk.CTkFrame(self.windows[t_window_id], name='text_form_frame',
+                                           **self.ctk_frame_transparent)
             text_form_frame.grid(row=0, column=1, sticky="nsew")
 
             # create the right frame to hold other stuff, like transcript groups etc.
-            right_frame = Frame(current_tk_window)
-            right_frame.grid(row=0, column=2, sticky="ns")
+            #right_frame = ctk.CTkFrame(current_tk_window, **self.ctk_frame_transparent)
+            #right_frame.grid(row=0, column=2, sticky="ns")
 
             # add a minimum size for the frame2 column
             current_tk_window.grid_columnconfigure(1, weight=1, minsize=200)
@@ -7935,41 +7939,35 @@ class toolkit_UI():
             # Add column and row configuration for resizing
             current_tk_window.grid_rowconfigure(0, weight=1)
 
-            background_color = self.resolve_theme_colors['black']
-            foreground_color = self.resolve_theme_colors['normal']
-
             # LEFT FRAME SUB-FRAMES (with their respective labels)
-            left_t_buttons_frame = Frame(left_frame, name='t_buttons_frame',
-                                         highlightbackground=background_color, highlightthickness=1)
-            Label(left_t_buttons_frame, text='Transcript', anchor='n', fg=foreground_color)\
+            left_t_buttons_frame = ctk.CTkFrame(left_frame, name='t_buttons_frame')
+            ctk.CTkLabel(left_t_buttons_frame, text='Transcript', anchor='n')\
                 .pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
 
-            left_s_buttons_frame = Frame(left_frame, name='s_buttons_frame',
-                                         highlightbackground=background_color, highlightthickness=1)
-            Label(left_s_buttons_frame, text='Selection', anchor='n', fg=foreground_color)\
+            left_s_buttons_frame = ctk.CTkFrame(left_frame, name='s_buttons_frame')
+            ctk.CTkLabel(left_s_buttons_frame, text='Selection', anchor='n')\
                 .pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
 
-            left_r_buttons_frame = Frame(left_frame, name='r_buttons_frame',
-                                         highlightbackground=background_color, highlightthickness=1)
-            Label(left_r_buttons_frame, text='Resolve', anchor='n', fg=foreground_color)\
+            left_r_buttons_frame = ctk.CTkFrame(left_frame, name='r_buttons_frame')
+            ctk.CTkLabel(left_r_buttons_frame, text='Resolve', anchor='n')\
                 .pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
 
             left_t_buttons_frame.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
 
             # add the segment buttons to the left frame
             # SEND TO ASSISTANT BUTTON
-            send_to_assistant_button = Button(left_s_buttons_frame, text='Send to Assistant',
+            send_to_assistant_button = ctk.CTkButton(left_s_buttons_frame, text='Send to Assistant',
                                                 command=lambda: self.t_edit_obj.button_send_to_assistant(window_id=t_window_id),
                                                 name='send_to_assistant_button')
             send_to_assistant_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
 
-            send_to_assistant_with_tc_button = Button(left_s_buttons_frame, text='Send to Assistant with TC',
+            send_to_assistant_with_tc_button = ctk.CTkButton(left_s_buttons_frame, text='Send to Assistant with TC',
                     command=lambda: self.t_edit_obj.button_send_to_assistant(window_id=t_window_id, with_timecodes=True),
                     name='send_to_assistant_button_with_tc')
             send_to_assistant_with_tc_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
 
             # ADD TO GROUP BUTTON
-            add_to_group_button = Button(left_s_buttons_frame, text='Add to Group',
+            add_to_group_button = ctk.CTkButton(left_s_buttons_frame, text='Add to Group',
                                                 command=lambda: self.t_edit_obj.button_add_to_group(window_id=t_window_id, only_add=True),
                                                 name='add_to_group_button')
             add_to_group_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
@@ -7977,13 +7975,13 @@ class toolkit_UI():
 
             # COPY TO BUTTONS
 
-            copy_to_clipboard_with_tc_button = Button(left_s_buttons_frame, text='Copy with TC',
+            copy_to_clipboard_with_tc_button = ctk.CTkButton(left_s_buttons_frame, text='Copy with TC',
                                                 command=lambda: self.t_edit_obj.button_copy_segments_to_clipboard(t_window_id, with_timecodes=True, per_line=True),
                                                 name='copy_to_clipboard_with_tc_button')
 
             copy_to_clipboard_with_tc_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
 
-            copy_to_clipboard_with_block_tc_button = Button(left_s_buttons_frame, text='Copy with Block TC',
+            copy_to_clipboard_with_block_tc_button = ctk.CTkButton(left_s_buttons_frame, text='Copy with Block TC',
                                                 command=lambda: self.t_edit_obj.button_copy_segments_to_clipboard(t_window_id, with_timecodes=True, per_line=False),
                                                 name='copy_to_clipboard_with_block_tc_button')
 
@@ -7991,7 +7989,7 @@ class toolkit_UI():
 
 
             # RE-TRANSCRIBE BUTTON
-            retranscribe_button = Button(left_s_buttons_frame, text='Re-transcribe',
+            retranscribe_button = ctk.CTkButton(left_s_buttons_frame, text='Re-transcribe',
                                                 command=lambda: self.t_edit_obj.button_retranscribe(window_id=t_window_id),
                                                 name='retranscribe_button')
 
@@ -8009,15 +8007,18 @@ class toolkit_UI():
                     {k: v for k, v in transcription_json.items() if k != 'segments' and k != 'text'}
 
                 # set up the text element where we'll add the actual transcript
-                text = Text(text_form_frame, name='transcript_text',
-                            font=(self.transcript_font), width=45, height=30, padx=5, pady=5, wrap=tk.WORD,
-                            background=background_color,
-                            foreground=foreground_color)
+                text = tk.Text(text_form_frame, name='transcript_text',
+                            font=(self.transcript_font),
+                            width=45, height=30,
+                            **self.ctk_full_textbox_paddings,
+                            wrap=tk.WORD,
+                            background=self.theme_colors['black'],
+                            foreground=self.theme_colors['normal'])
 
                 # add a scrollbar to the text element
-                text_scrollbar = Scrollbar(text_form_frame, **self.scrollbar_settings)
-                text_scrollbar.config(command=text.yview)
-                text_scrollbar.pack(side=RIGHT, fill=Y)
+                text_scrollbar = ctk.CTkScrollbar(text_form_frame)
+                text_scrollbar.configure(command=text.yview)
+                text_scrollbar.pack(side=RIGHT, fill=Y, pady=5)
 
                 # configure the text element to use the scrollbar
                 text.config(yscrollcommand=text_scrollbar.set)
@@ -8092,15 +8093,17 @@ class toolkit_UI():
                 text.config(spacing1=0, spacing2=0.2, spacing3=5)
 
                 # then show the text element
-                text.pack(anchor='w', pady=(0,42), expand=True, fill='both')
+                text.pack(anchor='w', expand=True, fill='both', **self.ctk_full_textbox_frame_paddings)
 
                 # create a footer frame that holds stuff on the bottom of the transcript window
-                footer_frame = tk.Frame(self.windows[t_window_id], name='footer_frame')
-                footer_frame.place(relwidth=1, anchor='sw', rely=1)
+                footer_frame = ctk.CTkFrame(self.windows[t_window_id], name='footer_frame', **self.ctk_frame_transparent)
+                #footer_frame.place(relwidth=1, anchor='sw', rely=1)
+                #footer_frame.pack(side=tk.BOTTOM, fill=tk.X, **self.paddings)
+                footer_frame.grid(row=1, column=0, columnspan=3, sticky="ew")
 
                 # add a status label to print out current transcription status
-                status_label = Label(footer_frame, name='status_label',
-                                     text="", anchor='w', foreground=self.resolve_theme_colors['normal'])
+                status_label = ctk.CTkLabel(footer_frame, name='status_label',
+                                     text="", anchor='w', **self.ctk_frame_transparent)
                 status_label.pack(side=tk.LEFT, **self.paddings)
 
                 # bind shift click events to the text
@@ -8149,7 +8152,7 @@ class toolkit_UI():
 
                 # FIND BUTTON
 
-                find_button = tk.Button(left_t_buttons_frame, text='Find', name='find_replace_button',
+                find_button = ctk.CTkButton(left_t_buttons_frame, text='Find', name='find_replace_button',
                                         command=lambda:
                                         self.open_find_replace_window(parent_window_id=t_window_id,
                                                                       title="Find in {}".format(title),
@@ -8174,7 +8177,7 @@ class toolkit_UI():
 
                 # ADVANCED SEARCH
                 # this button will open a new window with advanced search options
-                advanced_search_button = tk.Button(left_t_buttons_frame, text='Advanced Search', name='advanced_search_button',
+                advanced_search_button = ctk.CTkButton(left_t_buttons_frame, text='Advanced Search', name='advanced_search_button',
                                                    command=lambda:
                                                    self.open_advanced_search_window(transcription_window_id=t_window_id,
                                                                                     search_file_path= \
@@ -8183,7 +8186,7 @@ class toolkit_UI():
                 advanced_search_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='nw')
 
                 # GROUPS BUTTON
-                groups_button = tk.Button(left_t_buttons_frame, text='Groups', name='groups_button',
+                groups_button = ctk.CTkButton(left_t_buttons_frame, text='Groups', name='groups_button',
                                           command=lambda:
                                           self.open_transcript_groups_window(transcription_window_id=t_window_id)
                                           )
@@ -8191,7 +8194,7 @@ class toolkit_UI():
 
                 # GROUP QUESTIONS BUTTON
                 group_questions_button = \
-                    tk.Button(left_t_buttons_frame, text='Group Questions', name='group_questions_button',
+                    ctk.CTkButton(left_t_buttons_frame, text='Group Questions', name='group_questions_button',
                               command=lambda:
                               self.t_edit_obj.button_group_questions(window_id=t_window_id)
                               )
@@ -8199,10 +8202,10 @@ class toolkit_UI():
 
                 # IMPORT SRT BUTTON
                 if srt_file_path:
-                    import_srt_button = tk.Button(left_r_buttons_frame,
+                    import_srt_button = ctk.CTkButton(left_r_buttons_frame,
                                                   name='import_srt_button',
                                                   text="Import SRT into Bin",
-                                                  takefocus=False,
+                                                  #takefocus=False,
                                                   command=lambda:
                                                   self.toolkit_ops_obj.resolve_api.import_media(srt_file_path)
                                                   )
@@ -8216,8 +8219,8 @@ class toolkit_UI():
 
                 # SYNC BUTTON
 
-                sync_button = tk.Button(left_r_buttons_frame, name='sync_button', takefocus=False)
-                sync_button.config(command=lambda sync_button=sync_button, window_id=t_window_id:
+                sync_button = ctk.CTkButton(left_r_buttons_frame, name='sync_button')
+                sync_button.configure(command=lambda sync_button=sync_button, window_id=t_window_id:
                 self.t_edit_obj.sync_with_playhead_button(
                     button=sync_button,
                     window_id=t_window_id)
@@ -8228,8 +8231,8 @@ class toolkit_UI():
                 # is this transcript linked to the current timeline?
 
                 # prepare an empty link button for now, and only show it when/if resolve starts
-                link_button = tk.Button(left_r_buttons_frame, name='link_button')
-                link_button.config(command=lambda link_button=link_button,
+                link_button = ctk.CTkButton(left_r_buttons_frame, name='link_button')
+                link_button.configure(command=lambda link_button=link_button,
                                                   transcription_file_path=transcription_file_path:
                 self.t_edit_obj.link_to_timeline_button(
                     button=link_button,
@@ -8239,19 +8242,19 @@ class toolkit_UI():
 
                 # RESOLVE SEGMENTS + MARKERS BUTTONS
 
-                selection_to_markers_button = tk.Button(left_r_buttons_frame, text='Selection to Markers',
+                selection_to_markers_button = ctk.CTkButton(left_r_buttons_frame, text='Selection to Markers',
                                                          name='selection_to_markers_button')
 
-                selection_to_markers_button.config(command=lambda:
+                selection_to_markers_button.configure(command=lambda:
                         self.t_edit_obj.button_segments_to_markers(window_id=t_window_id, prompt=True)
                                                                 )
 
                 selection_to_markers_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='sw')
 
-                markers_to_selection_button = tk.Button(left_r_buttons_frame, text='Markers to Selection',
+                markers_to_selection_button = ctk.CTkButton(left_r_buttons_frame, text='Markers to Selection',
                                                             name='markers_to_selection_button')
 
-                markers_to_selection_button.config(command=lambda:
+                markers_to_selection_button.configure(command=lambda:
                         self.t_edit_obj.button_markers_to_segments(window_id=t_window_id))
 
                 markers_to_selection_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='sw')
@@ -8474,7 +8477,7 @@ class toolkit_UI():
                     # update_attr['error_label'].config(text='Timeline mismatch')
 
                 # update the link button on the transcription window
-                update_attr['link_button'].config(text=link_button_text)
+                update_attr['link_button'].configure(text=link_button_text)
                 update_attr['link_button']\
                     .pack(side=tk.BOTTOM, fill='x', **self.left_frame_button_paddings, anchor='sw')
 
@@ -8490,7 +8493,7 @@ class toolkit_UI():
                     sync_button_text = "Sync with Playhead"
 
                 # update the sync button on the transcription window
-                update_attr['sync_button'].config(text=sync_button_text)
+                update_attr['sync_button'].configure(text=sync_button_text)
                 update_attr['sync_button']\
                     .pack(side=tk.BOTTOM, fill='x', **self.left_frame_button_paddings, anchor='sw')
 
@@ -8521,16 +8524,16 @@ class toolkit_UI():
         # if there are no segments selected, disable the buttons in the s_buttons_frame
         for button in update_attr['s_buttons_frame'].winfo_children():
             if not show_selection_buttons:
-                button.config(state=tk.DISABLED)
+                button.configure(state=tk.DISABLED)
             else:
-                button.config(state=tk.NORMAL)
+                button.configure(state=tk.NORMAL)
 
         # also disable the segments-related buttons in the r_buttons_frame
         for button in [update_attr['selection_to_markers_button']]:
             if not show_selection_buttons:
-                button.config(state=tk.DISABLED)
+                button.configure(state=tk.DISABLED)
             else:
-                button.config(state=tk.NORMAL)
+                button.configure(state=tk.NORMAL)
 
         if show_resolve_buttons:
             update_attr['r_buttons_frame'].pack(fill='x', expand=True, padx=5, pady=42, anchor='sw')
@@ -9741,7 +9744,8 @@ class toolkit_UI():
         # then we call the ask_dialogue function
         user_input = self.AskDialog(title='Change Advanced Search Model',
                                                    input_widgets=input_widgets,
-                                                   parent=self.windows[search_window_id]
+                                                   parent=self.windows[search_window_id],
+                                                   toolkit_UI_obj=self
                                                    ).value()
 
         if not user_input or 'model_name' not in user_input or not user_input['model_name']:
