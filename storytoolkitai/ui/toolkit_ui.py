@@ -3902,16 +3902,12 @@ class toolkit_UI():
         # what happens when the user tries to close the main window
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
 
-        UI_folder = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', '..', 'UI')
+        self.UI_folder = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', '..', 'UI')
 
         # add icon
         try:
-            photo = tk.PhotoImage(file=os.path.join(UI_folder, 'StoryToolkitAI.png'))
-            self.root.wm_iconphoto(False, photo)
-
-            # set bar icon for windows
-            if sys.platform == 'win32':
-                self.root.iconbitmap(os.path.join(UI_folder, 'StoryToolkitAI.ico'))
+            # set window/bar icon
+            self.UI_set_icon(self.root)
 
         except:
             logger.debug('Could not load StoryToolkitAI icon.')
@@ -3990,6 +3986,8 @@ class toolkit_UI():
         # what to call before exiting the app
         self.before_exit = None
 
+        self.OS_scale_factor = self.UI_get_OS_scale_factor()
+
         # new ctk UI styling here
         self.ctk_frame_paddings = {'padx': 5, 'pady': 5}
         self.ctk_form_paddings_ext = {'padx': 10, 'pady': 5}
@@ -4015,6 +4013,9 @@ class toolkit_UI():
 
         self.ctk_list_item = {'fg_color': ctk.ThemeManager.theme["CTkScrollableFrame"]["label_fg_color"]}
 
+        self.ctk_full_textbox_paddings = {'padx': 15, 'pady': 15}
+        self.ctk_full_textbox_frame_paddings = {'padx': (10, 0), 'pady': 5}
+
         # set some UI styling here
         # todo: check where these are used and replace all elements with ctk ones
         self.paddings = {'padx': 10, 'pady': 10}
@@ -4034,69 +4035,44 @@ class toolkit_UI():
         # scrollbars
         self.scrollbar_settings = {'width': 10}
 
-        # the font size ratio
-        if sys.platform == "darwin":
-            font_size_ratio = 1.30
-        else:
-            font_size_ratio = 0.7
-
-        # we're calculating the size based on the screen size
-        screen_width, screen_height = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        font_size_ratio *= (screen_width if screen_width > screen_height else screen_height) / 1920
-
-        # set platform independent transcript font
-        self.transcript_font = font.Font()
-
         # first - find out if there is any "courier" font installed
         # and select one of the versions
         available_fonts = font.families()
         if 'Courier' in available_fonts:
-            self.transcript_font.configure(family='Courier')
+            courier_font_family = 'Courier'
         elif 'Courier New' in available_fonts:
-            self.transcript_font.configure(family='Courier New')
+            courier_font_family = 'Courier New'
         else:
             logger.debug('No "Courier" font found. Using default fixed font.')
-            self.transcript_font = font.nametofont(name='TkFixedFont')
+            courier_font_family = 'TkFixedFont'
 
-        # get transcript font size
-        transcript_font_size = self.stAI.get_app_setting('transcript_font_size', default_if_none=15)
+        # lock to dark mode
+        ctk.set_appearance_mode("dark")
 
-        # set the transcript font size based on the font ratio
-        self.transcript_font.configure(size=int(transcript_font_size * font_size_ratio))
+        # customtkinter font defaults:
+        self.ctk_default_font_family = ctk.ThemeManager.theme["CTkFont"]["family"]
+        self.ctk_default_font_size = ctk.ThemeManager.theme["CTkFont"]["size"]
 
-        # self.transcript_font.configure(size=16)
+        # get the font size, but scale them for the machine
+        self.default_font_size = self.UI_scale(self.ctk_default_font_size)
+        self.transcript_font_size = self.UI_scale(self.stAI.get_app_setting('transcript_font_size', default_if_none=15))
+        self.console_font_size = self.UI_scale(self.stAI.get_app_setting('console_font_size', default_if_none=13))
 
-        # get console font size
-        console_font_size = self.stAI.get_app_setting('console_font_size', default_if_none=13)
+        # set platform independent transcript font
+        self.transcript_font = ctk.CTkFont(family=courier_font_family, size=self.transcript_font_size)
 
         # set the platform independent fixed font (for console)
-        self.console_font = ctk.CTkFont(family='TkFixedFont', size=int(console_font_size * font_size_ratio))
+        self.console_font = ctk.CTkFont(family='TkFixedFont', size=self.console_font_size)
 
         # set the default font size
-        default_font_size = 13
-        default_font_size_after_ratio = int(default_font_size * font_size_ratio)
+        self.default_font_size = self.UI_scale(self.default_font_size)
 
-        self.default_font_size_after_ratio = default_font_size_after_ratio
-
-        # set the platform independent default font
-        self.default_font = ctk.CTkFont(family='TkDefaultFont', size=default_font_size_after_ratio)
-
-        # set the platform independent default link font
-        self.default_font_link = ctk.CTkFont(family='TkDefaultFont', size=default_font_size_after_ratio, underline=True)
-
-        # set the platform independent default font for headings
-        self.default_font_h1 = ctk.CTkFont(family='TkHeadingFont', size=int(default_font_size_after_ratio + 3))
-
-        # set the platform independent default font for headings
-        self.default_font_h2 = ctk.CTkFont(family='TkHeadingFont', size=int(default_font_size_after_ratio + 2))
-
-        # set the platform independent default font for headings
-        self.default_font_h3 = ctk.CTkFont(family='TkHeadingFont', size=int(default_font_size_after_ratio + 1))
-
-        # define the pixel size for buttons
-        # pixel = tk.PhotoImage(width=1, height=1)
-
-        # self.blank_img_button_settings = {'image': pixel, 'compound': 'c'}
+        # set the platform independent default font (and variants)
+        self.default_font = ctk.CTkFont(family=self.ctk_default_font_family, size=self.default_font_size)
+        self.default_font_link = ctk.CTkFont(family=self.ctk_default_font_family, size=self.default_font_size)
+        self.default_font_h1 = ctk.CTkFont(family=self.ctk_default_font_family, size=int(self.default_font_size + 7))
+        self.default_font_h2 = ctk.CTkFont(family=self.ctk_default_font_family, size=int(self.default_font_size + 3))
+        self.default_font_h3 = ctk.CTkFont(family=self.ctk_default_font_family, size=int(self.default_font_size + 1))
 
         # these are the marker colors used in Resolve
         self.resolve_marker_colors = {
@@ -4118,23 +4094,22 @@ class toolkit_UI():
             "Cream": "#F5EBE1"
         }
 
-        # these are the theme colors used in Resolve
-        self.resolve_theme_colors = {
-            'white': '#ffffff',
-            'supernormal': '#C2C2C2',
-            'normal': '#929292',
-            'black': '#1F1F1F',
-            'superblack': '#000000',
-            'dark': '#282828',
-            'red': '#E64B3D'
-        }
-
-        # other colors
+        # define StoryToolkit theme colors here
+        # (the customtkinter theme colors are defined in the theme file)
         self.theme_colors = {}
+        self.theme_colors['black'] = '#1F1F1F'
+        self.theme_colors['supernormal'] = '#C2C2C2',
+        self.theme_colors['white'] = '#ffffff'
+        self.theme_colors['normal'] = '#929292'
+        self.theme_colors['superblack'] = '#000000'
+        self.theme_colors['dark'] = '#282828'
         self.theme_colors['blue'] = '#1E90FF'
         self.theme_colors['red'] = '#800020'
+        self.theme_colors['resolve_red'] = '#E64B3D'
         self.theme_colors['error'] = self.theme_colors['red']
         self.theme_colors['error_text'] = self.theme_colors['red']
+
+        self.resolve_theme_colors = self.theme_colors
 
         # CMD or CTRL?
         # use CMD for Mac
@@ -4262,11 +4237,11 @@ class toolkit_UI():
                     if packaging.version.parse(version_no) <= packaging.version.parse(current_version):
                         break
 
-                    changelog_new_versions_info += f'\n## {version_no}\n\n{text}\n'
+                    changelog_new_versions_info += f'\n## Version {version_no}\n\n{text}\n'
 
                 # add the changelog to the message
                 if changelog_new_versions_info != '':
-                    changelog_new_versions += '# What\'s new?\n' + changelog_new_versions_info
+                    changelog_new_versions += '# What\'s new since you last updated?\n' + changelog_new_versions_info
 
                 # add the skip and later buttons to the action buttons
                 action_buttons.append({'text': 'Skip this version',
@@ -4311,6 +4286,65 @@ class toolkit_UI():
         # open the Queue window if something is up in the transcription queue
         if len(self.toolkit_ops_obj.processing_queue.get_all_queue_items()) > 0:
             self.open_queue_window()
+
+    def UI_scale(self, value: int) -> int:
+        """
+        Applies the OS scale factor to the value.
+        """
+
+        if self.OS_scale_factor is None:
+            self.UI_get_OS_scale_factor()
+
+        return int(value * self.OS_scale_factor)
+
+    def UI_get_OS_scale_factor(self) -> int:
+        """
+        Get the OS scale factor.
+        """
+
+        if sys.platform == "win32":
+            import ctypes
+
+            # this only gets the scaling of the primary monitor on Windows (device 0)
+            self.OS_scale_factor = ctypes.windll.shcore.GetScaleFactorForDevice(0) / 100
+
+        elif sys.platform == "darwin":
+
+            # on MacOs, we keep the scaling factor at 1
+            self.OS_scale_factor = 1
+
+        elif sys.platform == "linux":
+
+            # weirdness for Linux
+            self.OS_scale_factor = self.UI_global_scaling_factor()
+
+        else:
+            self.OS_scale_factor = 1
+
+        return self.OS_scale_factor
+
+    def UI_global_scaling_factor(self):
+        try:
+            from gi.repository import Gdk
+            return Gdk.Display.get_default().get_monitor(0).get_scale_factor()
+        except:
+            logger.warning("Scaling not possible on this system.")
+            return 1
+
+    def UI_set_icon(self, window):
+        """
+        Sets the bar icon for the window (only for windows)
+        """
+
+        photo = tk.PhotoImage(file=os.path.join(self.UI_folder, 'StoryToolkitAI.png'))
+        window.wm_iconphoto(False, photo)
+
+        # set bar icon for windows
+        if sys.platform == 'win32':
+            window.iconbitmap(os.path.join(self.UI_folder, 'StoryToolkitAI.ico'))
+
+            # this hack is needed to override the 200ms icon replacement done by customtkinter
+            window.after(300, lambda: window.iconbitmap(os.path.join(self.UI_folder, 'StoryToolkitAI.ico')))
 
     def only_allow_integers(self, value):
         '''
@@ -4470,6 +4504,9 @@ class toolkit_UI():
 
             # add the window to the toolkit UI windows dictionary
             self.windows[window_id] = ctk.CTkToplevel(parent_element)
+
+            # set bar icon for windows
+            self.UI_set_icon(self.windows[window_id])
 
             # keep track of the window type
             if type is not None:
@@ -5172,17 +5209,22 @@ class toolkit_UI():
 
             # create the text widget
             # set up the text element where we'll add the actual transcript
-            text = Text(text_form_frame, name='window_text',
-                        font=(self.console_font),
-                        width=kwargs.get('window_width', 45),
-                        height=kwargs.get('window_height', 30),
-                        padx=5, pady=5, wrap=tk.WORD,
-                        background=self.resolve_theme_colors['black'],
-                        foreground=self.resolve_theme_colors['normal'])
+            self.windows[window_id].textbox = \
+                text = tk.Text(text_form_frame,
+                            font=(self.console_font),
+                            width=kwargs.get('window_width', 45),
+                            height=kwargs.get('window_height', 30),
+                            wrap=tk.WORD,
+                            **self.ctk_full_textbox_paddings,
+                            background=self.theme_colors['black'],
+                            foreground=self.theme_colors['normal'])
+
+            # make the widget highlight color the same as the background color
+            text.configure(highlightbackground=self.theme_colors['black'], highlightcolor=self.theme_colors['normal'])
 
             # add a scrollbar to the text element
-            scrollbar = Scrollbar(text_form_frame, orient="vertical", **self.scrollbar_settings)
-            scrollbar.config(command=text.yview)
+            scrollbar = ctk.CTkScrollbar(text_form_frame)
+            scrollbar.configure(command=text.yview)
             scrollbar.pack(side=tk.RIGHT, fill='y', pady=5)
 
             # configure the text element to use the scrollbar
@@ -5194,13 +5236,13 @@ class toolkit_UI():
 
             # change the color of text to supernormal (almost white)
             text.tag_add('reply', '1.0', 'end-1c')
-            text.tag_config('reply', foreground=self.resolve_theme_colors['supernormal'])
+            text.tag_config('reply', foreground=self.theme_colors['supernormal'])
 
             # set the top, in-between and bottom text spacing
-            text.config(spacing1=0, spacing2=0.2, spacing3=5)
+            text.configure(spacing1=0, spacing2=0.2, spacing3=5)
 
             # then show the text element
-            text.pack(anchor='w', expand=True, fill='both')
+            text.pack(anchor='w', expand=True, fill='both', **self.ctk_full_textbox_frame_paddings)
 
             # if the user can enter text, enable the text field and process any input
             if user_prompt:
@@ -5223,7 +5265,7 @@ class toolkit_UI():
 
             # otherwise, disable the text field
             else:
-                text.config(state=tk.DISABLED)
+                text.configure(state=tk.DISABLED)
 
             # if action buttons are given, add them to the window
             if action_buttons:
@@ -5269,7 +5311,7 @@ class toolkit_UI():
         text = text_widget.get('1.0', tk.END)
 
         # change the font to default_font
-        text_widget.config(font=(self.default_font))
+        text_widget.configure(font=(self.default_font))
 
         # if the text is empty, return
         if not text:
@@ -5279,7 +5321,7 @@ class toolkit_UI():
         initial_state = text_widget.cget('state')
 
         # make widget writeable
-        text_widget.config(state=tk.NORMAL)
+        text_widget.configure(state=tk.NORMAL)
 
         # take each line of text and format it
         lines = text.split('\n')
@@ -5365,17 +5407,17 @@ class toolkit_UI():
             text_widget.insert(tk.INSERT, '\n')
 
         # turn the text widget back to its initial state
-        text_widget.config(state=initial_state)
+        text_widget.configure(state=initial_state)
 
         # set the color of the text to supernormal (almost white)
-        text_widget.config(foreground=self.resolve_theme_colors['supernormal'])
+        #text_widget.configure(text_color=self.resolve_theme_colors['supernormal'])
 
         # set the headers font
-        text_widget.tag_config('h1', font=(self.default_font_h1, int(self.default_font_size_after_ratio * 1.5)),
+        text_widget.tag_config('h1', font=self.default_font_h1,
                                foreground=self.resolve_theme_colors['white'])
-        text_widget.tag_config('h2', font=(self.default_font_h2, int(self.default_font_size_after_ratio * 1.25)),
+        text_widget.tag_config('h2', font=self.default_font_h2,
                                foreground=self.resolve_theme_colors['white'])
-        text_widget.tag_config('h3', font=(self.default_font_h3, int(self.default_font_size_after_ratio * 1.1)),
+        text_widget.tag_config('h3', font=self.default_font_h3,
                                foreground=self.resolve_theme_colors['white'])
 
         # add a bit of space between the headers and the text
@@ -5392,8 +5434,8 @@ class toolkit_UI():
         # change the color of the url
         text_widget.tag_config('url-color', foreground=self.theme_colors['blue'])
 
-        text_widget.tag_bind('url-color', '<Enter>', lambda event: text_widget.config(cursor='hand2'))
-        text_widget.tag_bind('url-color', '<Leave>', lambda event: text_widget.config(cursor=''))
+        text_widget.tag_bind('url-color', '<Enter>', lambda event: text_widget.configure(cursor='hand2'))
+        text_widget.tag_bind('url-color', '<Leave>', lambda event: text_widget.configure(cursor=''))
 
     def inject_prompt(self, window_id: str, prompt: str, execute=True, clear_line=True):
         '''
