@@ -9,6 +9,9 @@ import webbrowser
 from storytoolkitai.core.logger import *
 from storytoolkitai.core.toolkit_ops import NLE
 
+from customtkinter import AppearanceModeTracker
+from customtkinter import ThemeManager
+
 
 class UImenus:
 
@@ -68,6 +71,11 @@ class UImenus:
         # we should also check for Linux at some point...
         else:
             self.current_window_id = None
+
+        # if the window doesn't exist, set it to 'main'
+        # - this is to prevent errors when closing windows
+        if self.current_window_id not in self.toolkit_UI_obj.windows:
+            self.current_window_id = 'main'
 
         # stop here if we don't have a window id
         if self.current_window_id is None:

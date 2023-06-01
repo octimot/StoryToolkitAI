@@ -3337,423 +3337,631 @@ class toolkit_UI():
 
             return
 
-        def open_preferences_window(self):
+        def open_preferences_window(self, **kwargs):
             '''
             Opens the preferences window.
             :return:
             '''
 
             # create a window for the transcription settings if one doesn't already exist
-            if pref_window := self.toolkit_UI_obj.create_or_open_window(parent_element=self.root,
+            if window_id := self.toolkit_UI_obj.create_or_open_window(parent_element=self.root,
                                                                         window_id='preferences',
-                                                                        title='Preferences', resizable=True,
-                                                                        type='preferences',
-                                                                        return_window=True):
+                                                                        title='Preferences', resizable=(False, True),
+                                                                        type='preferences'):
 
-                form_grid_and_paddings = {**self.toolkit_UI_obj.input_grid_settings,
-                                          **self.toolkit_UI_obj.form_paddings}
+                # get the window
+                pref_window = self.toolkit_UI_obj.windows[window_id]
 
-                label_settings = self.toolkit_UI_obj.label_settings
-                if 'width' in label_settings:
-                    del label_settings['width']
+                # UI - escape key closes the window
+                # pref_window.bind('<Escape>', lambda event: close_ingest_window())
 
-                entry_settings = self.toolkit_UI_obj.entry_settings
-                entry_settings_quarter = self.toolkit_UI_obj.entry_settings_quarter
+                # UI - create the top frame
+                top_frame = ctk.CTkFrame(pref_window)
 
-                # the settings for the heading labels
-                h1_font = {'font': self.toolkit_UI_obj.default_font_h1, 'justify': 'center',
-                           'pady': self.toolkit_UI_obj.form_paddings['pady']}
+                # UI - create the middle frame (it's a tab view)
+                middle_frame = ctk.CTkTabview(pref_window)
 
-                # add a canvas that will hold the form which has a scrollbar
-                pref_form_frame_canvas = tk.Canvas(pref_window, borderwidth=0, width=600, height=600)
-                pref_form_frame_canvas.pack(side='left', fill='both', expand=True)
+                # UI - create the bottom frame
+                bottom_frame = ctk.CTkFrame(pref_window, **self.toolkit_UI_obj.ctk_frame_transparent)
 
-                # make the canvas as large as possible, without it going off the screen
-                pref_form_frame_canvas.pack_propagate(False)
+                # UI - middle and bottom frames
+                middle_frame.grid(row=1, column=0, sticky="nsew", **self.toolkit_UI_obj.ctk_frame_paddings)
+                bottom_frame.grid(row=2, column=0, sticky="ew", **self.toolkit_UI_obj.ctk_frame_paddings)
 
-                # add a scrollbar to the canvas
-                pref_form_frame_scrollbar = tk.Scrollbar(pref_window, orient='vertical',
-                                                         ** self.toolkit_UI_obj.scrollbar_settings,
-                                                            command=pref_form_frame_canvas.yview)
-                pref_form_frame_scrollbar.pack(side='right', fill='y')
+                # UI - grid configure the middle frame so that it expands with the window
+                pref_window.grid_rowconfigure(1, weight=1)
 
-                # configure the canvas to use the scrollbar
-                pref_form_frame_canvas.configure(yscrollcommand=pref_form_frame_scrollbar.set)
+                # UI - the columns should expand with the window
+                pref_window.grid_columnconfigure(0, weight=1, minsize=500)
 
-                # update the canvas to allow scrolling
-                pref_form_frame_canvas.bind('<Configure>', lambda e, pref_form_frame_canvas=pref_form_frame_canvas:
-                    pref_form_frame_canvas.configure(scrollregion=pref_form_frame_canvas.bbox('all')))
+                # TOP FRAME ELEMENTS
+                # these will be added a few lines below
 
-                # scroll when the mouse wheel is used or the pad is dragged
-                pref_form_frame_canvas.bind_all('<MouseWheel>', lambda e, pref_form_frame_canvas=pref_form_frame_canvas:
-                    pref_form_frame_canvas.yview_scroll(int(-1 * (e.delta / 120)), 'units'))
+                # MIDDLE FRAME ELEMENTS
 
-                # add a frame to the canvas
-                pref_form_frame = tk.Frame(pref_form_frame_canvas)
-                pref_form_frame.pack()
+                # UI - add the audio and video tabs
+                general_tab = middle_frame.add('General')
+                integrations_tab = middle_frame.add('Integrations')
+                ingest_tab = middle_frame.add('Transcriptions')
+                search_tab = middle_frame.add('Search')
+                assistant_tab = middle_frame.add('Assistant')
 
-                # the frame needs to be added to the canvas
-                pref_form_frame_canvas.create_window((0, 0), window=pref_form_frame, anchor='nw')
+                # UI - add the scrollable frames for each tab
+                general_tab_scrollable_frame = ctk.CTkScrollableFrame(general_tab,
+                                                                     **self.toolkit_UI_obj.ctk_frame_transparent)
+                general_tab_scrollable_frame.pack(fill='both', expand=True)
 
-                # these are the app settings that can be changed
+                ingest_tab_scrollable_frame = ctk.CTkScrollableFrame(ingest_tab,
+                                                                     **self.toolkit_UI_obj.ctk_frame_transparent)
+                ingest_tab_scrollable_frame.pack(fill='both', expand=True)
 
-                # take all the customizable app settings and create a variable for each one
+                integrations_tab_scrollable_frame = ctk.CTkScrollableFrame(integrations_tab,
+                                                            **self.toolkit_UI_obj.ctk_frame_transparent)
+                integrations_tab_scrollable_frame.pack(fill='both', expand=True)
+                search_tab_scrollable_frame = ctk.CTkScrollableFrame(search_tab,
+                                                      **self.toolkit_UI_obj.ctk_frame_transparent)
+                search_tab_scrollable_frame.pack(fill='both', expand=True)
+                assistant_tab_scrollable_frame = ctk.CTkScrollableFrame(assistant_tab,
+                                                      **self.toolkit_UI_obj.ctk_frame_transparent)
+                assistant_tab_scrollable_frame.pack(fill='both', expand=True)
 
-                console_font_size_var \
-                    = tk.IntVar(pref_form_frame,
-                                value=self.stAI.get_app_setting('console_font_size', default_if_none=13))
+                # UI - set the visibility on the audio tab
+                middle_frame.set('General')
+                middle_frame.columnconfigure(0, weight=1)
 
-                show_welcome_var \
-                    = tk.BooleanVar(pref_form_frame,
-                                    value=self.stAI.get_app_setting('show_welcome', default_if_none=True))
+                # UI - create another frame for the buttons
+                buttons_frame = ctk.CTkFrame(bottom_frame, **self.toolkit_UI_obj.ctk_frame_transparent)
 
-                api_token_var \
-                    = tk.StringVar(pref_form_frame,
-                                   value=self.stAI.get_app_setting('api_token', default_if_none=None))
+                # UI - create the start button
+                start_button = ctk.CTkButton(buttons_frame, text='Save')
 
-                openai_api_key_var \
-                    = tk.StringVar(pref_form_frame,
-                                   value=self.stAI.get_app_setting('openai_api_key', default_if_none=''))
+                # UI - create the cancel button
+                cancel_button = ctk.CTkButton(buttons_frame, text='Cancel')
 
-                disable_resolve_api_var \
-                    = tk.BooleanVar(pref_form_frame,
-                                    value=self.stAI.get_app_setting('disable_resolve_api', default_if_none=False))
-                default_marker_color_var \
-                    = tk.StringVar(pref_form_frame,
-                                   value=self.stAI.get_app_setting('default_marker_color', default_if_none='Blue'))
+                # UI - add the start button, the cancel button
+                buttons_frame.grid(row=0, column=0, sticky="w", **self.toolkit_UI_obj.ctk_frame_paddings)
 
-                open_transcript_groups_window_on_open_var \
-                    = tk.BooleanVar(pref_form_frame,
-                                    value=self.stAI.get_app_setting('show_welcome', default_if_none=True))
+                # UI - the buttons should be next to each other, so we'll use a pack layout
+                start_button.pack(side='left', **self.toolkit_UI_obj.ctk_frame_paddings)
+                cancel_button.pack(side='left', **self.toolkit_UI_obj.ctk_frame_paddings)
 
-                close_transcripts_on_timeline_change_var \
-                    = tk.BooleanVar(pref_form_frame,
-                                    value=self.stAI.get_app_setting('close_transcripts_on_timeline_change',
-                                                                    default_if_none=True))
+                # add the buttons to the kwargs so we can pass them to future functions
+                kwargs['start_button'] = start_button
+                kwargs['cancel_button'] = cancel_button
 
-                whisper_model_name_var \
-                    = tk.StringVar(pref_form_frame,
-                                   value=self.stAI.get_app_setting('whisper_model_name', default_if_none='medium'))
+                # GENERAL PREFERENCES
+                # add the general preferences form elements
+                general_prefs_form_vars = self.add_general_prefs_form_elements(
+                    general_tab_scrollable_frame)
 
-                whisper_device_var \
-                    = tk.StringVar(pref_form_frame,
-                                   value=self.stAI.get_app_setting('whisper_device', default_if_none='auto'))
+                # INGEST PREFERENCES
+                # add the audio ingest form elements (but without the time intervals)
+                audio_form_vars = self.toolkit_UI_obj.add_ingest_audio_form_elements(
+                    ingest_tab_scrollable_frame, show_time_intervals=False, show_custom_punctuation_marks=True)
 
-                transcription_default_language_var \
-                    = tk.StringVar(pref_form_frame,
-                                   value=self.stAI.get_app_setting('transcription_default_language',
-                                                                   default_if_none=''))
+                # add the analysis form elements
+                analysis_form_vars = self.toolkit_UI_obj.add_analysis_form_elements(
+                    ingest_tab_scrollable_frame)
 
-                transcription_pre_detect_speech_var \
-                    = tk.BooleanVar(pref_form_frame,
-                                    value=self.stAI.get_app_setting('transcription_pre_detect_speech',
-                                                                    default_if_none=True))
+                # add the other ingest form elements
+                other_ingest_form_vars = self.add_other_ingest_prefs(
+                    ingest_tab_scrollable_frame)
 
-                transcription_word_timestamps_var \
-                    = tk.BooleanVar(pref_form_frame,
-                                    value=self.stAI.get_app_setting('transcription_word_timestamps',
-                                                                    default_if_none=True))
+                # INTEGRATIONS PREFERENCES
+                # add the integrations form elements
+                integrations_form_vars = self.add_integrations_prefs(
+                    integrations_tab_scrollable_frame)
 
-                transcription_max_chars_per_segment_var \
-                    = tk.StringVar(pref_form_frame,
-                                   value=self.stAI.get_app_setting('transcription_max_chars_per_segment',
-                                                                   default_if_none=''))
+                # SEARCH PREFERENCES
+                search_form_vars = self.add_search_prefs(
+                    search_tab_scrollable_frame)
 
-                transcription_max_words_per_segment_var \
-                    = tk.StringVar(pref_form_frame,
-                                   value=self.stAI.get_app_setting('transcription_max_words_per_segment',
-                                                                   default_if_none=''))
+                # ASSISTANT PREFERENCES
+                assistant_form_vars = self.add_assistant_prefs(
+                    assistant_tab_scrollable_frame)
 
-                transcription_split_on_punctuation_marks_var \
-                    = tk.StringVar(pref_form_frame,
-                                   value=self.stAI.get_app_setting('transcription_split_on_punctuation_marks',
-                                                                   default_if_none=False))
+                # create the giant dictionary that contains all the form variables
+                form_vars = {**general_prefs_form_vars, **audio_form_vars, **analysis_form_vars,
+                             **other_ingest_form_vars, **integrations_form_vars, **search_form_vars,
+                                **assistant_form_vars}
 
-                # the custom punctuation marks are stored as list in the app settings
-                custom_punctuation_marks_str \
-                    = self.stAI.get_app_setting('transcription_custom_punctuation_marks',
-                                                                        default_if_none=['.', '!', '?', '…'])
+                # UI - start button command
+                # at this point, the kwargs should also contain the ingest_window_id
+                start_button.configure(
+                    command=lambda:
+                    self.save_preferences(input_variables=form_vars)
+                )
 
-                # convert the list to a string with spaces between the punctuation marks
-                custom_punctuation_marks_str = ' '.join(custom_punctuation_marks_str)
+                # UI - cancel button command
+                cancel_button.configure(
+                    command=lambda:
+                    self.toolkit_UI_obj.destroy_window_(window_id=window_id)
+                )
 
-                transcription_custom_punctuation_marks_var \
-                    = tk.StringVar(pref_form_frame,
-                                      value=custom_punctuation_marks_str)
+                # UI - configure the bottom columns and rows so that the elements expand with the window
+                bottom_frame.columnconfigure(0, weight=1)
+                bottom_frame.columnconfigure(1, weight=1)
+                bottom_frame.rowconfigure(1, weight=1)
+                bottom_frame.rowconfigure(2, weight=1)
 
-                transcription_group_questions_var \
-                    = tk.BooleanVar(pref_form_frame,
-                                    value=self.stAI.get_app_setting('transcription_group_questions',
-                                                                    default_if_none=False))
+                # UI - add a minimum height to the window
+                pref_window.minsize(500, 700
+                if pref_window.winfo_screenheight() > 700 else pref_window.winfo_screenheight())
 
-                transcription_prevent_short_gaps_var \
-                    = tk.StringVar(pref_form_frame,
-                                      value=self.stAI.get_app_setting('transcription_prevent_short_gaps',
-                                                                        default_if_none=''))
+                # UI- add a maximum height to the window (to prevent it from being bigger than the screen)
+                pref_window.maxsize(600, pref_window.winfo_screenheight())
 
-                transcription_render_preset_var \
-                    = tk.StringVar(pref_form_frame,
-                                   value=self.stAI.get_app_setting('transcription_render_preset',
-                                                                   default_if_none='transcription_WAV'))
+        def add_general_prefs_form_elements(self, parent: tk.Widget, **kwargs) -> dict or None:
+            """
+            This function adds the form elements for the general preferences tab
+            """
 
-                transcript_font_size_var \
-                    = tk.IntVar(pref_form_frame,
-                                value=self.stAI.get_app_setting('transcript_font_size', default_if_none=15))
+            # create the frames
+            general_prefs_frame = ctk.CTkFrame(parent, **self.toolkit_UI_obj.ctk_frame_transparent)
+            api_frame = ctk.CTkFrame(parent, **self.toolkit_UI_obj.ctk_frame_transparent)
 
-                transcripts_always_on_top_var \
-                    = tk.BooleanVar(pref_form_frame,
-                                    value=self.stAI.get_app_setting('transcripts_always_on_top', default_if_none=False))
+            # create labels for the frames (and style them according to the theme)
+            general_prefs_label = ctk.CTkLabel(parent, text='General Preferences',
+                                               **self.toolkit_UI_obj.ctk_frame_label_settings)
+            api_label = ctk.CTkLabel(parent, text='StoryToolkit API', **self.toolkit_UI_obj.ctk_frame_label_settings)
 
-                transcripts_skip_settings_var \
-                    = tk.BooleanVar(pref_form_frame,
-                                    value=self.stAI.get_app_setting('transcripts_skip_settings', default_if_none=False))
+            # we're going to create the form_vars dict to store all the variables
+            # we will use this dict at the end of the function to gather all the created tk variables
+            form_vars = {}
 
-                # ffmpeg_path_var\
-                #    = tk.StringVar(pref_form_frame,
-                #                    value=self.stAI.get_app_setting('ffmpeg_path', default_if_none=''))
+            # get the last grid row for the parent
+            l_row = parent.grid_size()[1]
 
-                # now create the form for all of the above settings
-                # general settings
-                tk.Label(pref_form_frame, text='General Settings', **h1_font).grid(row=0, column=0, columnspan=2,
-                                                                                   **form_grid_and_paddings)
+            # add the labels and frames to the parent
+            general_prefs_label.grid(row=l_row + 1, column=0, sticky="ew", **self.toolkit_UI_obj.ctk_frame_paddings)
+            general_prefs_frame.grid(row=l_row + 2, column=0, sticky="ew", **self.toolkit_UI_obj.ctk_frame_paddings)
+            api_label.grid(row=l_row + 3, column=0, sticky="ew", **self.toolkit_UI_obj.ctk_frame_paddings)
+            api_frame.grid(row=l_row + 4, column=0, sticky="ew", **self.toolkit_UI_obj.ctk_frame_paddings)
 
-                # the font size for the console
-                tk.Label(pref_form_frame, text='Console Font Size', **label_settings).grid(row=2, column=0,
-                                                                                           **form_grid_and_paddings)
-                console_font_size_input = tk.Entry(pref_form_frame, textvariable=console_font_size_var,
-                                                   **entry_settings_quarter)
-                console_font_size_input.grid(row=2, column=1, **form_grid_and_paddings)
+            # make the column expandable
+            parent.columnconfigure(0, weight=1)
+            general_prefs_frame.columnconfigure(1, weight=1)
+            api_frame.columnconfigure(1, weight=1)
 
-                # show the welcome window on startup
-                tk.Label(pref_form_frame, text='Show Welcome Window', **label_settings).grid(row=3, column=0,
-                                                                                             **form_grid_and_paddings)
-                show_welcome_input = tk.Checkbutton(pref_form_frame, variable=show_welcome_var)
-                show_welcome_input.grid(row=3, column=1, **form_grid_and_paddings)
+            # CONSOLE FONT SIZE
+            # get the console font size setting from the app settings
+            console_font_size = \
+                kwargs.get('console_font_size', None) \
+                    if kwargs.get('console_font_size', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('console_font_size', default_if_none=13)
 
-                # the show window can only be updated if the user has a valid API token
-                if not self.stAI.api_token_valid:
-                    show_welcome_input.config(state='disabled')
-                else:
-                    show_welcome_input.config(state='normal')
+            # create the pre-detect speech variable, label and input
+            form_vars['console_font_size_var'] = \
+                console_font_size_var = tk.IntVar(general_prefs_frame, value=console_font_size)
+            console_font_size_label = ctk.CTkLabel(general_prefs_frame, text='Console Font Size',
+                                                   **self.toolkit_UI_obj.ctk_form_label_settings)
+            console_font_size_input = ctk.CTkEntry(general_prefs_frame,
+                                                   textvariable=console_font_size_var,
+                                                   **self.toolkit_UI_obj.ctk_form_entry_settings_half)
 
-                # api token
-                tk.Label(pref_form_frame, text='StoryToolkitAI API Token', **label_settings).grid(row=4, column=0,
-                                                                                                  **form_grid_and_paddings)
-                api_token_input = tk.Entry(pref_form_frame, textvariable=api_token_var, **entry_settings)
-                api_token_input.grid(row=4, column=1, **form_grid_and_paddings)
+            # TRANSCRIPT FONT SIZE
+            # get the transcript font size setting from the app settings
+            transcript_font_size = \
+                kwargs.get('transcript_font_size', None) \
+                    if kwargs.get('transcript_font_size', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('transcript_font_size', default_if_none=15)
 
-                # OpenAI API key
-                tk.Label(pref_form_frame, text='OpenAI API Key', **label_settings).grid(row=5, column=0,
-                                                                                        **form_grid_and_paddings)
-                openai_api_key_input = tk.Entry(pref_form_frame, show="*", textvariable=openai_api_key_var,
-                                                **entry_settings)
-                openai_api_key_input.grid(row=5, column=1, **form_grid_and_paddings)
+            # create the pre-detect speech variable, label and input
+            form_vars['transcript_font_size_var'] = \
+                transcript_font_size_var = tk.IntVar(general_prefs_frame, value=transcript_font_size)
+            transcript_font_size_label = ctk.CTkLabel(general_prefs_frame, text='Transcript Font Size',
+                                                      **self.toolkit_UI_obj.ctk_form_label_settings)
+            transcript_font_size_input = ctk.CTkEntry(general_prefs_frame,
+                                                      textvariable=transcript_font_size_var,
+                                                      **self.toolkit_UI_obj.ctk_form_entry_settings_half)
 
-                # Integrations
-                tk.Label(pref_form_frame, text='Integrations', **h1_font).grid(row=14, column=0, columnspan=2,
-                                                                               **form_grid_and_paddings)
+            # SHOW WELCOME WINDOW
+            # get the show welcome setting from the app settings
+            show_welcome = \
+                kwargs.get('show_welcome', None) \
+                    if kwargs.get('show_welcome', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('show_welcome', default_if_none=True)
 
-                # disable the resolve API
-                tk.Label(pref_form_frame, text='Disable Resolve API', **label_settings).grid(row=15, column=0,
-                                                                                             **form_grid_and_paddings)
-                disable_resolve_api_input = tk.Checkbutton(pref_form_frame, variable=disable_resolve_api_var)
-                disable_resolve_api_input.grid(row=15, column=1, **form_grid_and_paddings)
+            # create the show welcome variable, label and input
+            form_vars['show_welcome_var'] = \
+                show_welcome_var = tk.BooleanVar(general_prefs_frame, value=show_welcome)
+            show_welcome_label = ctk.CTkLabel(general_prefs_frame, text='Show Welcome Window',
+                                              **self.toolkit_UI_obj.ctk_form_label_settings)
+            show_welcome_input = ctk.CTkSwitch(general_prefs_frame,
+                                               variable=show_welcome_var,
+                                               text='',
+                                               **self.toolkit_UI_obj.ctk_form_entry_settings)
 
-                # auto open the transcript groups window on timeline open
-                tk.Label(pref_form_frame, text='Open Linked Transcripts', **label_settings).grid(row=16, column=0,
-                                                                                                 **form_grid_and_paddings)
-                open_transcript_groups_window_on_open_input = tk.Checkbutton(pref_form_frame,
-                                                                             variable=open_transcript_groups_window_on_open_var)
-                open_transcript_groups_window_on_open_input.grid(row=16, column=1, **form_grid_and_paddings)
+            # TRANSCRIPTS ALWAYS ON TOP
+            # get the transcripts_always_on_top setting from the app settings
+            transcripts_always_on_top = \
+                kwargs.get('transcripts_always_on_top', None) \
+                    if kwargs.get('transcripts_always_on_top', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('transcripts_always_on_top', default_if_none=False)
 
-                # close transcripts on timeline change
-                tk.Label(pref_form_frame, text='Close Transcripts on Timeline Change', **label_settings).grid(row=17,
-                                                                                                              column=0,
-                                                                                                              **form_grid_and_paddings)
-                close_transcripts_on_timeline_change_input = tk.Checkbutton(pref_form_frame,
-                                                                            variable=close_transcripts_on_timeline_change_var)
-                close_transcripts_on_timeline_change_input.grid(row=17, column=1, **form_grid_and_paddings)
+            # create the transcripts_always_on_top variable, label and input
+            form_vars['transcripts_always_on_top_var'] = \
+                transcripts_always_on_top_var = tk.BooleanVar(general_prefs_frame, value=transcripts_always_on_top)
+            transcripts_always_on_top_label = ctk.CTkLabel(general_prefs_frame, text='Transcripts Always on Top',
+                                                           **self.toolkit_UI_obj.ctk_form_label_settings)
+            transcripts_always_on_top_input = ctk.CTkSwitch(general_prefs_frame,
+                                                            variable=transcripts_always_on_top_var,
+                                                            text='',
+                                                            **self.toolkit_UI_obj.ctk_form_entry_settings)
 
-                # the default marker color
-                tk.Label(pref_form_frame, text='Default Marker Color', **label_settings).grid(row=18, column=0,
-                                                                                              **form_grid_and_paddings)
+            # STORYTOOLKIT API TOKEN
+            # get the api token from the app settings
+            api_token = \
+                kwargs.get('api_token', None) \
+                    if kwargs.get('api_token', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('api_token', default_if_none=None)
 
-                # the dropdown for the default marker color
-                default_marker_color_input = tk.OptionMenu(pref_form_frame,
-                                                           default_marker_color_var,
-                                                           *self.toolkit_UI_obj.resolve_marker_colors)
-                default_marker_color_input.grid(row=18, column=1, **form_grid_and_paddings)
+            # create the api token variable, label and input
+            form_vars['api_token_var'] = \
+                api_token_var = tk.StringVar(api_frame, value=api_token if api_token else '')
+            api_token_label = ctk.CTkLabel(api_frame, text='StoryToolkit API Token',
+                                           **self.toolkit_UI_obj.ctk_form_label_settings)
+            api_token_input = ctk.CTkEntry(api_frame, show="*",
+                                           textvariable=api_token_var,
+                                           **self.toolkit_UI_obj.ctk_form_entry_settings_double)
 
-                # the render preset for transcriptions
-                tk.Label(pref_form_frame, text='Transcription Render Preset', **label_settings).grid(row=19, column=0,
-                                                                                                     **form_grid_and_paddings)
-                transcription_render_preset_input = tk.Entry(pref_form_frame,
+            # Adding all the elemente to the grid
+
+            # GENERAL PREFERENCES FRAME GRID
+            console_font_size_label.grid(row=1, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            console_font_size_input.grid(row=1, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            transcript_font_size_label.grid(row=2, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            transcript_font_size_input.grid(row=2, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            show_welcome_label.grid(row=3, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            show_welcome_input.grid(row=3, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            transcripts_always_on_top_label.grid(row=4, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            transcripts_always_on_top_input.grid(row=4, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+
+            # STORYTOOLKIT API FRAME GRID
+            api_token_label.grid(row=0, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            api_token_input.grid(row=0, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+
+            return form_vars
+
+        def add_other_ingest_prefs(self, parent: tk.Widget, **kwargs) -> dict or None:
+            """
+            This function adds the other ingest preferences to the ingest preferences frame
+            """
+
+            # create the frames
+            other_ingest_prefs_frame = ctk.CTkFrame(parent, **self.toolkit_UI_obj.ctk_frame_transparent)
+
+            # create labels for the frames (and style them according to the theme)
+            other_ingest_prefs_label = ctk.CTkLabel(parent, text='Other', **self.toolkit_UI_obj.ctk_frame_label_settings)
+
+            # we're going to create the form_vars dict to store all the variables
+            # we will use this dict at the end of the function to gather all the created tk variables
+            form_vars = {}
+
+            # get the last grid row for the parent
+            l_row = parent.grid_size()[1]
+
+            # add the labels and frames to the parent
+            other_ingest_prefs_label.grid(row=l_row + 1, column=0, sticky="ew", **self.toolkit_UI_obj.ctk_frame_paddings)
+            other_ingest_prefs_frame.grid(row=l_row + 2, column=0, sticky="ew", **self.toolkit_UI_obj.ctk_frame_paddings)
+
+            # make the column expandable
+            parent.columnconfigure(0, weight=1)
+            other_ingest_prefs_frame.columnconfigure(1, weight=1)
+
+            # TRANSCRIPTS SKIP SETTINGS
+            transcripts_skip_settings = kwargs.get('transcripts_skip_settings', None) if kwargs.get(
+                'transcripts_skip_settings', None) is not None else self.toolkit_UI_obj.stAI.get_app_setting(
+                'transcripts_skip_settings',
+                default_if_none=False)
+            form_vars['transcripts_skip_settings_var'] \
+                = transcripts_skip_settings_var = tk.BooleanVar(other_ingest_prefs_frame,
+                                                                value=transcripts_skip_settings)
+
+            transcripts_skip_settings_label = ctk.CTkLabel(other_ingest_prefs_frame, text='Skip Transcription Settings',
+                                                           **self.toolkit_UI_obj.ctk_form_label_settings)
+            transcripts_skip_settings_input = ctk.CTkSwitch(other_ingest_prefs_frame,
+                                                            variable=transcripts_skip_settings_var,
+                                                            text='', **self.toolkit_UI_obj.ctk_form_entry_settings)
+
+            # INGEST MAX FILES
+            prevent_gaps_shorter_than = kwargs.get('ingest_file_limit', None) \
+                if kwargs.get('ingest_file_limit', None) is not None \
+                else self.toolkit_UI_obj.stAI.get_app_setting('ingest_file_limit', default_if_none=30)
+
+            form_vars['ingest_file_limit_var'] = \
+                ingest_file_limit_var = tk.StringVar(other_ingest_prefs_frame,
+                                                     value=prevent_gaps_shorter_than)
+            ingest_file_limit_label = ctk.CTkLabel(other_ingest_prefs_frame, text='Ingest Maximum',
+                                                   **self.toolkit_UI_obj.ctk_form_label_settings)
+
+            ingest_file_limit_frame = ctk.CTkFrame(other_ingest_prefs_frame, **self.toolkit_UI_obj.ctk_frame_transparent)
+            ingest_file_limit_input = ctk.CTkEntry(ingest_file_limit_frame,
+                                                   textvariable=ingest_file_limit_var,
+                                                   **self.toolkit_UI_obj.ctk_form_entry_settings_half)
+            ingest_file_limit_unit_label = ctk.CTkLabel(ingest_file_limit_frame, text='files per ingest')
+            ingest_file_limit_input.pack(side=tk.LEFT)
+            ingest_file_limit_unit_label.pack(side=tk.LEFT, **self.toolkit_UI_obj.ctk_form_paddings)
+
+            # only allow floats in the prevent_gaps_shorter_than_input
+            ingest_file_limit_input.configure(
+                validate="key",
+                validatecommand=(ingest_file_limit_input.register(self.toolkit_UI_obj.only_allow_integers), '%P')
+            )
+
+            # ADD ELEMENTS TO GRID
+            transcripts_skip_settings_label.grid(row=1, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            transcripts_skip_settings_input.grid(row=1, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            ingest_file_limit_label.grid(row=2, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            ingest_file_limit_frame.grid(row=2, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+
+            return form_vars
+
+        def add_integrations_prefs(self, parent: tk.Widget, **kwargs) -> dict or None:
+            """
+            This function adds the integrations preferences to the ingest preferences frame
+            """
+
+            # create the frames
+            resolve_prefs_frame = ctk.CTkFrame(parent, **self.toolkit_UI_obj.ctk_frame_transparent)
+
+            # create labels for the frames (and style them according to the theme)
+            resolve_prefs_label = ctk.CTkLabel(parent, text='DaVinci Resolve Studio', **self.toolkit_UI_obj.ctk_frame_label_settings)
+
+            # we're going to create the form_vars dict to store all the variables
+            # we will use this dict at the end of the function to gather all the created tk variables
+            form_vars = {}
+
+            # get the last grid row for the parent
+            l_row = parent.grid_size()[1]
+
+            # add the labels and frames to the parent
+            resolve_prefs_label.grid(row=l_row + 1, column=0, sticky="ew", **self.toolkit_UI_obj.ctk_frame_paddings)
+            resolve_prefs_frame.grid(row=l_row + 2, column=0, sticky="ew", **self.toolkit_UI_obj.ctk_frame_paddings)
+
+            # make the column expandable
+            parent.columnconfigure(0, weight=1)
+            resolve_prefs_frame.columnconfigure(1, weight=1)
+
+            # DISABLE RESOLVE API
+            disable_resolve_api = \
+                kwargs.get('disable_resolve_api', None) \
+                    if kwargs.get('disable_resolve_api', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('disable_resolve_api', default_if_none=False)
+
+            form_vars['disable_resolve_api_var'] = \
+                disable_resolve_api_var = tk.BooleanVar(resolve_prefs_frame, value=disable_resolve_api)
+            disable_resolve_api_label = ctk.CTkLabel(resolve_prefs_frame, text='Disable Resolve API',
+                                                     **self.toolkit_UI_obj.ctk_form_label_settings)
+            disable_resolve_api_input = ctk.CTkSwitch(resolve_prefs_frame,
+                                                      variable=disable_resolve_api_var,
+                                                      text='',
+                                                      **self.toolkit_UI_obj.ctk_form_entry_settings)
+
+            # OPEN TRANSCRIPTS ON TIMELINE CHANGE
+            open_transcripts_on_timeline_change = \
+                kwargs.get('open_transcripts_on_timeline_change', None) \
+                    if kwargs.get('open_transcripts_on_timeline_change', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('open_transcripts_on_timeline_change', default_if_none=True)
+
+            form_vars['open_transcripts_on_timeline_change_var'] = \
+                open_transcripts_on_timeline_change_var = tk.BooleanVar(resolve_prefs_frame,
+                                                                        value=open_transcripts_on_timeline_change)
+            open_transcripts_on_timeline_change_label = ctk.CTkLabel(resolve_prefs_frame,
+                                                                     text='Open Transcripts on Timeline',
+                                                                     **self.toolkit_UI_obj.ctk_form_label_settings)
+            open_transcripts_on_timeline_change_input = ctk.CTkSwitch(resolve_prefs_frame,
+                                                                      variable=open_transcripts_on_timeline_change_var,
+                                                                      text='',
+                                                                      **self.toolkit_UI_obj.ctk_form_entry_settings)
+
+            # CLOSE TRANSCRIPTS ON TIMELINE CHANGE
+            close_transcripts_on_timeline_change = \
+                kwargs.get('close_transcripts_on_timeline_change', None) \
+                    if kwargs.get('close_transcripts_on_timeline_change', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('close_transcripts_on_timeline_change', default_if_none=True)
+
+            form_vars['close_transcripts_on_timeline_change_var'] = \
+                close_transcripts_on_timeline_change_var = tk.BooleanVar(resolve_prefs_frame,
+                                                                         value=close_transcripts_on_timeline_change)
+            close_transcripts_on_timeline_change_label = ctk.CTkLabel(resolve_prefs_frame,
+                                                                      text='Close Transcripts on Timeline',
+                                                                      **self.toolkit_UI_obj.ctk_form_label_settings)
+            close_transcripts_on_timeline_change_input = ctk.CTkSwitch(resolve_prefs_frame,
+                                                                       variable=close_transcripts_on_timeline_change_var,
+                                                                       text='',
+                                                                       **self.toolkit_UI_obj.ctk_form_entry_settings)
+
+            # DEFAULT MARKER COLOR
+            default_marker_color = \
+                kwargs.get('default_marker_color', None) \
+                    if kwargs.get('default_marker_color', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('default_marker_color', default_if_none='Blue')
+
+            form_vars['default_marker_color_var'] = \
+                default_marker_color_var = tk.StringVar(resolve_prefs_frame, value=default_marker_color)
+            default_marker_color_label = ctk.CTkLabel(resolve_prefs_frame, text='Default Marker Color',
+                                                      **self.toolkit_UI_obj.ctk_form_label_settings)
+            default_marker_color_input = ctk.CTkOptionMenu(resolve_prefs_frame,
+                                                           variable=default_marker_color_var,
+                                                           values=list(self.toolkit_UI_obj.resolve_marker_colors.keys()),
+                                                           **self.toolkit_UI_obj.ctk_form_entry_settings)
+            # TRANSCRIPTION RENDER PRESET
+            transcription_render_preset = \
+                kwargs.get('transcription_render_preset', None) \
+                    if kwargs.get('transcription_render_preset', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('transcription_render_preset', default_if_none='transcription_WAV')
+
+            form_vars['transcription_render_preset_var'] = \
+                transcription_render_preset_var = tk.StringVar(resolve_prefs_frame, value=transcription_render_preset)
+            transcription_render_preset_label = ctk.CTkLabel(resolve_prefs_frame, text='Transcription Render Preset',
+                                                             **self.toolkit_UI_obj.ctk_form_label_settings)
+            transcription_render_preset_input = ctk.CTkEntry(resolve_prefs_frame,
                                                              textvariable=transcription_render_preset_var,
-                                                             **entry_settings)
-                transcription_render_preset_input.grid(row=19, column=1, **form_grid_and_paddings)
+                                                             **self.toolkit_UI_obj.ctk_form_entry_settings_double)
+            # INGEST RENDER PRESET
+            ingest_render_preset = \
+                kwargs.get('ingest_render_preset', None) \
+                    if kwargs.get('ingest_render_preset', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('ingest_render_preset', default_if_none='ingest_MP4')
 
-                # transcriptions
-                tk.Label(pref_form_frame, text='Transcriptions', **h1_font).grid(row=21, column=0, columnspan=2,
-                                                                                 **form_grid_and_paddings)
+            form_vars['ingest_render_preset_var'] = \
+                ingest_render_preset_var = tk.StringVar(resolve_prefs_frame, value=ingest_render_preset)
+            ingest_render_preset_label = ctk.CTkLabel(resolve_prefs_frame, text='Ingest Render Preset',
+                                                      **self.toolkit_UI_obj.ctk_form_label_settings)
+            ingest_render_preset_input = ctk.CTkEntry(resolve_prefs_frame,
+                                                      textvariable=ingest_render_preset_var,
+                                                      **self.toolkit_UI_obj.ctk_form_entry_settings_double)
 
-                # the whisper model name
-                tk.Label(pref_form_frame, text='Whisper Model', **label_settings).grid(row=22, column=0,
-                                                                                       **form_grid_and_paddings)
-                whisper_model_name_input = tk.OptionMenu(pref_form_frame, whisper_model_name_var,
-                                                         *whisper_available_models())
-                whisper_model_name_input.grid(row=22, column=1, **form_grid_and_paddings)
+            # ADD ELEMENTS TO GRID
+            disable_resolve_api_label.grid(row=1, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            disable_resolve_api_input.grid(row=1, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            open_transcripts_on_timeline_change_label.grid(row=2, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            open_transcripts_on_timeline_change_input.grid(row=2, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            close_transcripts_on_timeline_change_label.grid(row=3, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            close_transcripts_on_timeline_change_input.grid(row=3, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            default_marker_color_label.grid(row=4, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            default_marker_color_input.grid(row=4, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            transcription_render_preset_label.grid(row=5, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            transcription_render_preset_input.grid(row=5, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            ingest_render_preset_label.grid(row=6, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            ingest_render_preset_input.grid(row=6, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
 
-                # the whisper device
-                available_devices = ['auto'] + self.toolkit_ops_obj.queue_devices
+            return form_vars
 
-                tk.Label(pref_form_frame, text='Whisper Device', **label_settings).grid(row=23, column=0,
-                                                                                        **form_grid_and_paddings)
-                whisper_device_input = tk.OptionMenu(pref_form_frame, whisper_device_var, *available_devices)
-                whisper_device_input.grid(row=23, column=1, **form_grid_and_paddings)
+        def add_assistant_prefs(self, parent: tk.Widget, **kwargs) -> dict or None:
+            """
+            This function adds the assistant preferences
+            """
 
-                # the default language for transcriptions
-                # first get the list of languages, but also add an empty string to the list
-                available_languages = [''] + self.toolkit_ops_obj.get_whisper_available_languages()
+            # create the frames
+            assistant_prefs_frame = ctk.CTkFrame(parent, **self.toolkit_UI_obj.ctk_frame_transparent)
 
-                tk.Label(pref_form_frame, text='Default Language', **label_settings).grid(row=24, column=0,
-                                                                                          **form_grid_and_paddings)
-                transcription_default_language_input = tk.OptionMenu(pref_form_frame,
-                                                                     transcription_default_language_var,
-                                                                     *available_languages)
-                transcription_default_language_input.grid(row=24, column=1, **form_grid_and_paddings)
+            # create labels for the frames (and style them according to the theme)
+            assistant_prefs_label = ctk.CTkLabel(parent, text='OpenAI Settings', **self.toolkit_UI_obj.ctk_frame_label_settings)
 
-                # pre-detect speech
-                tk.Label(pref_form_frame, text='Pre-Detect Speech', **label_settings).grid(row=25, column=0,
-                                                                                           **form_grid_and_paddings)
-                transcription_pre_detect_speech_input = tk.Checkbutton(pref_form_frame,
-                                                                       variable=transcription_pre_detect_speech_var)
-                transcription_pre_detect_speech_input.grid(row=25, column=1, **form_grid_and_paddings)
+            # we're going to create the form_vars dict to store all the variables
+            # we will use this dict at the end of the function to gather all the created tk variables
+            form_vars = {}
 
-                # word timestamps (use "increased time precision" for now)
-                tk.Label(pref_form_frame, text='Increased Time Precision', **label_settings).grid(row=26, column=0,
-                                                                                                  **form_grid_and_paddings)
-                transcription_word_timestamps_input = tk.Checkbutton(pref_form_frame,
-                                                                     variable=transcription_word_timestamps_var)
-                transcription_word_timestamps_input.grid(row=26, column=1, **form_grid_and_paddings)
+            # get the last grid row for the parent
+            l_row = parent.grid_size()[1]
 
-                # max characters per line
-                tk.Label(pref_form_frame, text='Max. Characters Per Line', **label_settings).grid(row=27, column=0,
-                                                                                                  **form_grid_and_paddings)
-                max_chars_per_segment_input = tk.Entry(pref_form_frame,
-                                                       textvariable=transcription_max_chars_per_segment_var,
-                                                       **entry_settings_quarter)
-                max_chars_per_segment_input.grid(row=27, column=1, **form_grid_and_paddings)
+            # add the labels and frames to the parent
+            assistant_prefs_label.grid(row=l_row + 1, column=0, sticky="ew", **self.toolkit_UI_obj.ctk_frame_paddings)
+            assistant_prefs_frame.grid(row=l_row + 2, column=0, sticky="ew", **self.toolkit_UI_obj.ctk_frame_paddings)
 
-                # only allow integers
-                max_chars_per_segment_input.config(validate="key",
-                                                   validatecommand=
-                                                   (max_chars_per_segment_input.register(
-                                                       self.toolkit_UI_obj.only_allow_integers), '%P'))
+            # make the column expandable
+            parent.columnconfigure(0, weight=1)
+            assistant_prefs_frame.columnconfigure(1, weight=1)
 
-                # max characters per line
-                tk.Label(pref_form_frame, text='Max. Words Per Line', **label_settings).grid(row=28, column=0,
-                                                                                             **form_grid_and_paddings)
-                max_words_per_segment_input = tk.Entry(pref_form_frame,
-                                                       textvariable=transcription_max_words_per_segment_var,
-                                                       **entry_settings_quarter)
-                max_words_per_segment_input.grid(row=28, column=1, **form_grid_and_paddings)
+            # OPENAI openai_openai_api_key_key KEY
+            # get the api token from the app settings
+            openai_api_key = \
+                kwargs.get('openai_api_key', None) \
+                    if kwargs.get('openai_api_key', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('openai_api_key', default_if_none=None)
 
-                # only allow integers
-                max_words_per_segment_input.config(validate="key",
-                                                   validatecommand=
-                                                   (max_words_per_segment_input.register(
-                                                       self.toolkit_UI_obj.only_allow_integers), '%P'))
+            # create the api token variable, label and input
+            form_vars['openai_api_key_var'] = \
+                openai_api_key_var = tk.StringVar(assistant_prefs_frame, value=openai_api_key if openai_api_key else '')
+            openai_api_key_label = ctk.CTkLabel(assistant_prefs_frame, text='OpenAI API Key',
+                                                **self.toolkit_UI_obj.ctk_form_label_settings)
+            openai_api_key_input = ctk.CTkEntry(assistant_prefs_frame, show="*",
+                                                textvariable=openai_api_key_var, **self.toolkit_UI_obj.ctk_form_entry_settings_double)
 
-                # split on punctuation
-                tk.Label(pref_form_frame, text='Split On Punctuation', **label_settings).grid(row=29, column=0,
-                                                                                              **form_grid_and_paddings)
-                split_on_punctuation_marks_input = tk.Checkbutton(pref_form_frame,
-                                                                  variable=transcription_split_on_punctuation_marks_var)
-                split_on_punctuation_marks_input.grid(row=29, column=1, **form_grid_and_paddings)
+            # OPENAI MODEL
+            # assistant_model = \
+            #     kwargs.get('assistant_model', None) \
+            #         if kwargs.get('assistant_model', None) is not None \
+            #         else self.toolkit_UI_obj.stAI.get_app_setting('assistant_model', default_if_none='gpt-3.5-turbo')
 
-                # custom punctuation marks
-                tk.Label(pref_form_frame, text='Punctuation Marks', **label_settings).grid(row=30, column=0,
-                                                                                                    **form_grid_and_paddings)
-                custom_punctuation_marks_input = tk.Entry(pref_form_frame,
-                                                            textvariable=transcription_custom_punctuation_marks_var,
-                                                            **entry_settings_quarter)
-                custom_punctuation_marks_input.grid(row=30, column=1, **form_grid_and_paddings)
+            # assistant_model_list = ['gpt-3.5-turbo', 'gpt-4']
 
-                # group questions
-                tk.Label(pref_form_frame, text='Group Questions', **label_settings).grid(row=32, column=0,
-                                                                                                    **form_grid_and_paddings)
-                group_questions_input = tk.Checkbutton(pref_form_frame,
-                                                                    variable=transcription_group_questions_var)
-                group_questions_input.grid(row=32, column=1, **form_grid_and_paddings)
+            # form_vars['assistant_model_var'] = \
+            #     assistant_model_var = tk.StringVar(assistant_prefs_frame, value=assistant_model)
+            # assistant_model_label = ctk.CTkLabel(assistant_prefs_frame, text='Default Assistant Model',
+            #                                      **self.toolkit_UI_obj.ctk_form_label_settings)
+            # assistant_model_input = ctk.CTkOptionMenu(assistant_prefs_frame,
+            #                                           variable=assistant_model_var,
+            #                                          values=assistant_model_list,
+            #                                           **self.toolkit_UI_obj.ctk_form_entry_settings)
 
-                # prevent short gaps between segments
-                tk.Label(pref_form_frame, text='Prevent Gaps Shorter Than', **label_settings)\
-                    .grid(row=31, column=0, **form_grid_and_paddings)
-                prevent_short_gaps_input = tk.Entry(pref_form_frame, textvariable=transcription_prevent_short_gaps_var,
-                                                    **entry_settings_quarter)
-                prevent_short_gaps_input.grid(row=31, column=1, **form_grid_and_paddings)
+            # ADD ELEMENTS TO GRID
+            openai_api_key_label.grid(row=1, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            openai_api_key_input.grid(row=1, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            # assistant_model_label.grid(row=2, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            # assistant_model_input.grid(row=2, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
 
-                # only allow floats
-                prevent_short_gaps_input.config(validate="key",
-                                                validatecommand=
-                                                (prevent_short_gaps_input.register(
-                                                    self.toolkit_UI_obj.only_allow_floats), '%P'))
+            return form_vars
 
-                # the transcript font size
-                tk.Label(pref_form_frame, text='Transcript Font Size', **label_settings).grid(row=40, column=0,
-                                                                                              **form_grid_and_paddings)
-                transcript_font_size_input = tk.Entry(pref_form_frame, textvariable=transcript_font_size_var,
-                                                      **entry_settings_quarter)
-                transcript_font_size_input.grid(row=40, column=1, **form_grid_and_paddings)
+        def add_search_prefs(self, parent: tk.Widget, **kwargs) -> dict or None:
+            """
+            This function adds the search preferences
+            """
 
-                # transcripts always on top
-                tk.Label(pref_form_frame, text='Transcript Always On Top', **label_settings).grid(row=41, column=0,
-                                                                                                  **form_grid_and_paddings)
-                transcripts_always_on_top_input = tk.Checkbutton(pref_form_frame,
-                                                                 variable=transcripts_always_on_top_var)
-                transcripts_always_on_top_input.grid(row=41, column=1, **form_grid_and_paddings)
+            # create the frames
+            search_prefs_frame = ctk.CTkFrame(parent, **self.toolkit_UI_obj.ctk_frame_transparent)
 
-                # skip transcription settings
-                tk.Label(pref_form_frame, text='Skip Transcription Settings', **label_settings).grid(row=42, column=0,
-                                                                                                     **form_grid_and_paddings)
-                transcripts_skip_settings_input = tk.Checkbutton(pref_form_frame,
-                                                                 variable=transcripts_skip_settings_var)
-                transcripts_skip_settings_input.grid(row=42, column=1, **form_grid_and_paddings)
+            # create labels for the frames (and style them according to the theme)
+            search_prefs_label = ctk.CTkLabel(parent, text='Search Models', **self.toolkit_UI_obj.ctk_frame_label_settings)
 
-                # SAVE BUTTON
+            # we're going to create the form_vars dict to store all the variables
+            # we will use this dict at the end of the function to gather all the created tk variables
+            form_vars = {}
 
-                # keep track of all the input variables above
-                input_variables = {
-                    'default_marker_color': default_marker_color_var,
-                    'console_font_size': console_font_size_var,
-                    'show_welcome': show_welcome_var,
-                    'api_token': api_token_var,
-                    'openai_api_key': openai_api_key_var,
-                    'disable_resolve_api': disable_resolve_api_var,
-                    'open_transcript_groups_window_on_open': open_transcript_groups_window_on_open_var,
-                    'close_transcripts_on_timeline_change': close_transcripts_on_timeline_change_var,
-                    'whisper_model_name': whisper_model_name_var,
-                    'whisper_device': whisper_device_var,
-                    'transcription_default_language': transcription_default_language_var,
-                    'transcription_pre_detect_speech': transcription_pre_detect_speech_var,
-                    'transcription_word_timestamps': transcription_word_timestamps_var,
-                    'transcription_max_chars_per_segment': transcription_max_chars_per_segment_var,
-                    'transcription_max_words_per_segment': transcription_max_words_per_segment_var,
-                    'transcription_split_on_punctuation_marks': transcription_split_on_punctuation_marks_var,
-                    'transcription_custom_punctuation_marks': transcription_custom_punctuation_marks_var,
-                    'transcription_group_questions': transcription_group_questions_var,
-                    'transcription_prevent_short_gaps': transcription_prevent_short_gaps_var,
-                    'transcription_render_preset': transcription_render_preset_var,
-                    'transcript_font_size': transcript_font_size_var,
-                    'transcripts_always_on_top': transcripts_always_on_top_var,
-                    'transcripts_skip_settings': transcripts_skip_settings_var,
-                    # 'ffmpeg_path': ffmpeg_path_var
-                }
+            # get the last grid row for the parent
+            l_row = parent.grid_size()[1]
 
-                Label(pref_form_frame, text="", **label_settings).grid(row=50, column=0, **form_grid_and_paddings)
-                start_button = tk.Button(pref_form_frame, text='Save')
-                start_button.grid(row=60, column=1, **form_grid_and_paddings)
-                start_button.config(command=lambda: self.save_preferences(input_variables))
+            # add the labels and frames to the parent
+            search_prefs_label.grid(row=l_row + 1, column=0, sticky="ew", **self.toolkit_UI_obj.ctk_frame_paddings)
+            search_prefs_frame.grid(row=l_row + 2, column=0, sticky="ew", **self.toolkit_UI_obj.ctk_frame_paddings)
+
+            # make the column expandable
+            parent.columnconfigure(0, weight=1)
+            search_prefs_frame.columnconfigure(1, weight=1)
+
+            # SEMANTIC SEARCH MODEL
+            # get the api token from the app settings
+            s_semantic_search_model_name = \
+                kwargs.get('s_semantic_search_model_name', None) \
+                    if kwargs.get('s_semantic_search_model_name', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('s_semantic_search_model_name', default_if_none=None)
+
+            # create the api token variable, label and input
+            form_vars['s_semantic_search_model_name_var'] = \
+                s_semantic_search_model_name_var = tk.StringVar(
+                search_prefs_frame, value=s_semantic_search_model_name if s_semantic_search_model_name else '')
+            s_semantic_search_model_name_label = ctk.CTkLabel(search_prefs_frame, text='Semantic Search Model',
+                                                              **self.toolkit_UI_obj.ctk_form_label_settings)
+            s_semantic_search_model_name_input = ctk.CTkEntry(search_prefs_frame,
+                                                              textvariable=s_semantic_search_model_name_var,
+                                                              **self.toolkit_UI_obj.ctk_form_entry_settings_double)
+
+            # TEXT CLASSIFIER MODEL
+            # get the api token from the app settings
+            text_classifier_model = \
+                kwargs.get('text_classifier_model', None) \
+                    if kwargs.get('text_classifier_model', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('text_classifier_model', default_if_none=None)
+
+            # create the api token variable, label and input
+            form_vars['text_classifier_model_var'] = \
+                text_classifier_model_var = tk.StringVar(search_prefs_frame,
+                                                         value=text_classifier_model if text_classifier_model else '')
+            text_classifier_model_label = ctk.CTkLabel(search_prefs_frame, text='Text Classification Model',
+                                                       **self.toolkit_UI_obj.ctk_form_label_settings)
+            text_classifier_model_input = ctk.CTkEntry(search_prefs_frame,
+                                                       textvariable=text_classifier_model_var,
+                                                       **self.toolkit_UI_obj.ctk_form_entry_settings_double)
+
+            # ADD ELEMENTS TO GRID
+            s_semantic_search_model_name_label.grid(row=1, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            s_semantic_search_model_name_input.grid(row=1, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            text_classifier_model_label.grid(row=2, column=0, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+            text_classifier_model_input.grid(row=2, column=1, sticky="w", **self.toolkit_UI_obj.ctk_form_paddings)
+
+            return form_vars
 
         def save_preferences(self, input_variables: dict) -> bool:
             '''
@@ -3762,21 +3970,24 @@ class toolkit_UI():
             :return:
             '''
 
-            # if the user has entered a new API token, check if it's valid
-            if input_variables['api_token'].get() != '' \
-                    and input_variables['api_token'].get() != self.stAI.config['api_token']:
+            # PROCESS THE VARIABLES HERE FIRST
 
-                if not self.stAI.check_api_token(input_variables['api_token'].get()):
+
+            # if the user has entered a new API token, check if it's valid
+            if input_variables['api_token_var'].get() != '' \
+                    and input_variables['api_token_var'].get() != self.stAI.config['api_token']:
+
+                if not self.stAI.check_api_token(input_variables['api_token_var'].get()):
                     self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Error', message='Invalid API token.')
                     return False
 
             # if the user has entered transcription_custom_punctuation_marks,
-            if input_variables['transcription_custom_punctuation_marks'].get() != '':
+            if input_variables['transcription_custom_punctuation_marks_var'].get() != '':
 
                 # convert the string to a list, but use each space as a delimiter
                 # but make sure it's a list
                 transcription_custom_punctuation_marks = \
-                    list(input_variables['transcription_custom_punctuation_marks'].get().strip().split(' '))
+                    list(input_variables['transcription_custom_punctuation_marks_var'].get().strip().split(' '))
 
                 # remove any empty strings
                 transcription_custom_punctuation_marks = [x for x in transcription_custom_punctuation_marks if x != '']
@@ -3796,15 +4007,79 @@ class toolkit_UI():
                 self.stAI.config['transcription_custom_punctuation_marks'] = transcription_custom_punctuation_marks
 
                 # and remove it from the input_variables dict so we don't iterate over it later
-                del input_variables['transcription_custom_punctuation_marks']
+                del input_variables['transcription_custom_punctuation_marks_var']
 
             # if the transcription_custom_punctuation_marks is empty, set it as an empty list
             else:
                 del input_variables['transcription_custom_punctuation_marks']
-                self.stAI.config['transcription_custom_punctuation_marks'] = []
+                self.stAI.config['transcription_custom_punctuation_marks_var'] = []
+
+            # depending on the unit,
+            # we will either fill this variable with the max characters or the max words from the app settings / kwargs
+            if input_variables['max_per_line_unit_var'].get() != '':
+
+                max_per_line_setting_name = \
+                    'transcription_max_words_per_segment' \
+                    if input_variables['max_per_line_unit_var'].get() == 'words' \
+                    else 'transcription_max_chars_per_segment'
+
+                # set the config variables to save them later
+                self.stAI.config['transcription_max_per_line_unit'] = max_per_line_setting_name
+                self.stAI.config[max_per_line_setting_name] = input_variables['max_per_line_var'].get()
+
+                del input_variables['max_per_line_unit_var']
+
+            # delete this variable since we already used it if we had to
+            del input_variables['max_per_line_var']
+
+            # source language becomes transcription default language
+            self.stAI.config['transcription_default_language'] = input_variables['source_language_var'].get()
+            del input_variables['source_language_var']
+
+            # model_name becomes whisper_model_name
+            self.stAI.config['whisper_model_name'] = input_variables['model_name_var'].get()
+            del input_variables['model_name_var']
+
+            # device becomes whisper device
+            self.stAI.config['whisper_device'] = input_variables['device_var'].get()
+            del input_variables['device_var']
+
+            # pre_detect_speech becomes transcription_pre_detect_speech
+            self.stAI.config['transcription_pre_detect_speech'] = input_variables['pre_detect_speech_var'].get()
+            del input_variables['pre_detect_speech_var']
+
+            # word_timestamps_var becomes transcription_word_timestamps
+            self.stAI.config['transcription_word_timestamps'] = input_variables['word_timestamps_var'].get()
+            del input_variables['word_timestamps_var']
+
+            # pre_detect_speech becomes initial_prompt_var
+            self.stAI.config['transcription_initial_prompt'] = input_variables['initial_prompt_var'].get()
+            del input_variables['initial_prompt_var']
+
+            # split_on_punctuation becomes transcription_split_on_punctuation_marks
+            self.stAI.config['transcription_split_on_punctuation_marks'] \
+                = input_variables['split_on_punctuation_var'].get()
+            del input_variables['split_on_punctuation_var']
+
+            # prevent_gaps_shorter_than becomes transcription_prevent_short_gaps
+            self.stAI.config['transcription_prevent_short_gaps'] \
+                = input_variables['prevent_gaps_shorter_than_var'].get()
+            del input_variables['prevent_gaps_shorter_than_var']
+
+            # group_questions becomes transcription_group_questions
+            self.stAI.config['transcription_group_questions'] = input_variables['group_questions_var'].get()
+            del input_variables['group_questions_var']
+
+            # SAVE THE VARIABLES FROM HERE ON
 
             # save all the variables to the config file
             for key, value in input_variables.items():
+
+                # if the key ends with "_var", remove it
+                if key.endswith('_var'):
+                    # remove the "_var" from the key
+                    key = key[:-4]
+
                 self.stAI.config[key] = value.get()
 
             # save the config file
@@ -4009,6 +4284,7 @@ class toolkit_UI():
         self.ctk_form_entry_paddings = {'padx': 10, 'pady': 10}
         self.ctk_frame_transparent = {'fg_color': 'transparent'}
         self.ctk_form_entry_settings = {'width': 120}
+        self.ctk_form_entry_settings_double = {'width': 240}
         self.ctk_form_entry_settings_half = {'width': self.ctk_form_entry_settings['width'] / 2}
         self.ctk_form_entry_settings_quarter = {'width': self.ctk_form_entry_settings['width'] / 4}
         self.ctk_form_textbox = {'width': 300, 'height': 100}
@@ -4818,6 +5094,10 @@ class toolkit_UI():
         main_window.t_ingest = ctk.CTkButton(main_window.tool_buttons_frame,
                                                  **self.ctk_button_size,
                                                  text="Transcribe Audio", command=self.button_transcribe)
+
+        # add the shift+click binding to the button
+        main_window.t_ingest.bind('<Shift-Button-1>',
+                                          lambda event: self.button_transcribe(select_dir=True))
 
         main_window.t_open_transcript = ctk.CTkButton(main_window.tool_buttons_frame,
                                                  **self.ctk_button_size,
@@ -6612,8 +6892,9 @@ class toolkit_UI():
         advanced_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
 
         # create labels for the frames (and style them according to the theme)
-        basic_frame_label = ctk.CTkLabel(parent, text='Basic Settings', **self.ctk_frame_label_settings)
-        advanced_frame_label = ctk.CTkLabel(parent, text='Advanced Settings', **self.ctk_frame_label_settings)
+        basic_frame_label = ctk.CTkLabel(parent, text='Basic Transcription Settings', **self.ctk_frame_label_settings)
+        advanced_frame_label = ctk.CTkLabel(parent, text='Advanced Transcription Settings',
+                                            **self.ctk_frame_label_settings)
         post_frame_label = ctk.CTkLabel(parent, text='Transcription Post-Processing', **self.ctk_frame_label_settings)
         # for the advanced settings, we will have a switch on a frame instead of the label
         # advanced_frame_label = ctk.CTkFrame(parent, fg_color=frame_label_fg_color)
@@ -6625,13 +6906,16 @@ class toolkit_UI():
         # we will use this dict at the end of the function to gather all the created tk variables
         form_vars = {}
 
+        # get the last grid row for the parent
+        l_row = parent.grid_size()[1]
+
         # add the labels and frames to the parent
-        basic_frame_label.grid(row=0, column=0, sticky="ew", **self.ctk_frame_paddings)
-        basic_frame.grid(row=1, column=0, sticky="ew", **self.ctk_frame_paddings)
-        advanced_frame_label.grid(row=2, column=0, sticky="ew", **self.ctk_frame_paddings)
-        advanced_frame.grid(row=3, column=0, sticky="ew", **self.ctk_frame_paddings)
-        post_frame_label.grid(row=4, column=0, sticky="ew", **self.ctk_frame_paddings)
-        post_frame.grid(row=5, column=0, sticky="ew", **self.ctk_frame_paddings)
+        basic_frame_label.grid(row=l_row+1, column=0, sticky="ew", **self.ctk_frame_paddings)
+        basic_frame.grid(row=l_row+2, column=0, sticky="ew", **self.ctk_frame_paddings)
+        advanced_frame_label.grid(row=l_row+3, column=0, sticky="ew", **self.ctk_frame_paddings)
+        advanced_frame.grid(row=l_row+4, column=0, sticky="ew", **self.ctk_frame_paddings)
+        post_frame_label.grid(row=l_row+5, column=0, sticky="ew", **self.ctk_frame_paddings)
+        post_frame.grid(row=l_row+6, column=0, sticky="ew", **self.ctk_frame_paddings)
 
         # make the column expandable
         parent.columnconfigure(0, weight=1)
@@ -6659,9 +6943,10 @@ class toolkit_UI():
                                                   **self.ctk_form_entry_settings)
 
         # TASK DROPDOWN
-        transcription_task = kwargs.get('transcription_task', None)
-        if transcription_task is None:
-            kwargs['transcription_task'] = transcription_task = 'transcribe'
+        transcription_task = \
+            kwargs.get('transcription_task', None) \
+                if kwargs.get('transcription_task', None) is not None \
+                else self.stAI.get_app_setting('transcription_task', default_if_none='transcribe')
 
         tasks_available = ['transcribe', 'translate', 'transcribe+translate']
 
@@ -6757,86 +7042,90 @@ class toolkit_UI():
         initial_prompt_input.bind('<KeyRelease>', update_initial_prompt)
 
         # TIME INTERVALS
-        # get the time intervals setting from the kwargs if any
-        # (we don't need to get them from the app settings because they're unique to each transcription task)
-        time_intervals = \
-            kwargs.get('time_intervals', None) if kwargs.get('time_intervals', None) is not None else ''
+        # only show time intervals if we're not supposed to hide them
+        if kwargs.get('show_time_intervals', True):
 
-        # create the time intervals variable, label and input
-        form_vars['time_intervals_var'] = \
-            time_intervals_var = tk.StringVar(advanced_frame, value=time_intervals)
-        time_intervals_label = ctk.CTkLabel(advanced_frame, text='Time Intervals', **self.ctk_form_label_settings)
-        time_intervals_input = ctk.CTkTextbox(advanced_frame, **self.ctk_form_textbox)
-        time_intervals_input.insert(tk.END, time_intervals)
+            # get the time intervals setting from the kwargs if any
+            # (we don't need to get them from the app settings because they're unique to each transcription task)
+            time_intervals = \
+                kwargs.get('time_intervals', None) if kwargs.get('time_intervals', None) is not None else ''
 
-        # we will use this function for the exclude time intervals input validation too
-        def time_intervals_are_invalid(name, **kwargs):
+            # create the time intervals variable, label and input
+            form_vars['time_intervals_var'] = \
+                time_intervals_var = tk.StringVar(advanced_frame, value=time_intervals)
+            time_intervals_label = ctk.CTkLabel(advanced_frame, text='Time Intervals', **self.ctk_form_label_settings)
+            time_intervals_input = ctk.CTkTextbox(advanced_frame, **self.ctk_form_textbox)
+            time_intervals_input.insert(tk.END, time_intervals)
 
-            # add this to the form_invalid attribute of the window
-            self.add_form_invalid(window_id=kwargs.get('ingest_window_id'), key=name,
-                                  **kwargs)
+            # we will use this function for the exclude time intervals input validation too
+            def time_intervals_are_invalid(name, **kwargs):
 
-            # style the time interval input as invalid
-            self.style_input_as_invalid(input=kwargs.get('input'), label=kwargs.get('label'))
+                # add this to the form_invalid attribute of the window
+                self.add_form_invalid(window_id=kwargs.get('ingest_window_id'), key=name,
+                                      **kwargs)
 
-        def time_intervals_are_valid(name, **kwargs):
+                # style the time interval input as invalid
+                self.style_input_as_invalid(input=kwargs.get('input'), label=kwargs.get('label'))
 
-            # remove this from the form_invalid attribute of the window
-            self.remove_form_invalid(window_id=kwargs.get('ingest_window_id'), key=name,
-                                     **kwargs)
+            def time_intervals_are_valid(name, **kwargs):
 
-            # style the time interval input as valid
-            self.style_input_as_valid(input=kwargs.get('input'), label=kwargs.get('label'))
+                # remove this from the form_invalid attribute of the window
+                self.remove_form_invalid(window_id=kwargs.get('ingest_window_id'), key=name,
+                                         **kwargs)
 
-        # if the time intervals input changes, update the time intervals variable
-        def update_time_intervals(*args):
-            time_intervals_var.set(time_intervals_input.get('1.0', tk.END))
-        time_intervals_input.bind('<KeyRelease>', update_time_intervals)
+                # style the time interval input as valid
+                self.style_input_as_valid(input=kwargs.get('input'), label=kwargs.get('label'))
 
-        # validate when we're leaving the exclude time intervals input
-        time_intervals_input.bind(
-            '<FocusOut>',
-            lambda e, time_intervals_var=time_intervals_var,
-                   kwargs=kwargs:
-            self.validate_time_interval_var(name='time_intervals',
-                                            var=time_intervals_var,
-                                            input=time_intervals_input, label=time_intervals_label,
-                                            valid_callback=time_intervals_are_valid,
-                                            invalid_callback=time_intervals_are_invalid, **kwargs)
-            )
+            # if the time intervals input changes, update the time intervals variable
+            def update_time_intervals(*args):
+                time_intervals_var.set(time_intervals_input.get('1.0', tk.END))
+            time_intervals_input.bind('<KeyRelease>', update_time_intervals)
 
-        # EXCLUDE TIME INTERVALS
-        # get the exclude time intervals setting from the kwargs if any
-        # (we don't need to get them from the app settings because they're unique to each transcription task)
-        excluded_time_intervals = \
-            kwargs.get('excluded_time_intervals', None) \
-                if kwargs.get('excluded_time_intervals', None) is not None else ''
+            # validate when we're leaving the exclude time intervals input
+            time_intervals_input.bind(
+                '<FocusOut>',
+                lambda e, time_intervals_var=time_intervals_var,
+                       kwargs=kwargs:
+                self.validate_time_interval_var(name='time_intervals',
+                                                var=time_intervals_var,
+                                                input=time_intervals_input, label=time_intervals_label,
+                                                valid_callback=time_intervals_are_valid,
+                                                invalid_callback=time_intervals_are_invalid, **kwargs)
+                )
 
-        # create the time intervals variable, label and input
-        form_vars['excluded_time_intervals_var'] = \
-            excluded_time_intervals_var = tk.StringVar(advanced_frame,
-                                                      value=excluded_time_intervals)
-        excluded_time_intervals_label = ctk.CTkLabel(advanced_frame, text='Exclude Time Intervals', **self.ctk_form_label_settings)
-        excluded_time_intervals_input = ctk.CTkTextbox(advanced_frame, **self.ctk_form_textbox)
-        excluded_time_intervals_input.insert(tk.END, excluded_time_intervals)
+            # EXCLUDE TIME INTERVALS
+            # get the exclude time intervals setting from the kwargs if any
+            # (we don't need to get them from the app settings because they're unique to each transcription task)
+            excluded_time_intervals = \
+                kwargs.get('excluded_time_intervals', None) \
+                    if kwargs.get('excluded_time_intervals', None) is not None else ''
 
-        # if the time intervals input changes, update the time intervals variable
-        def update_time_intervals(*kwargs):
-            excluded_time_intervals_var.set(excluded_time_intervals_input.get('1.0', tk.END))
+            # create the time intervals variable, label and input
+            form_vars['excluded_time_intervals_var'] = \
+                excluded_time_intervals_var = tk.StringVar(advanced_frame,
+                                                          value=excluded_time_intervals)
+            excluded_time_intervals_label = ctk.CTkLabel(advanced_frame, text='Exclude Time Intervals',
+                                                         **self.ctk_form_label_settings)
+            excluded_time_intervals_input = ctk.CTkTextbox(advanced_frame, **self.ctk_form_textbox)
+            excluded_time_intervals_input.insert(tk.END, excluded_time_intervals)
 
-        excluded_time_intervals_input.bind('<KeyRelease>', update_time_intervals)
+            # if the time intervals input changes, update the time intervals variable
+            def update_time_intervals(*kwargs):
+                excluded_time_intervals_var.set(excluded_time_intervals_input.get('1.0', tk.END))
 
-        # validate when we're leaving the exclude time intervals input
-        excluded_time_intervals_input.bind(
-            '<FocusOut>',
-            lambda e, exclude_time_intervals_var=excluded_time_intervals_var,
-                   kwargs=kwargs:
-            self.validate_time_interval_var(name='excluded_time_intervals',
-                                            var=exclude_time_intervals_var,
-                                            input=excluded_time_intervals_input, label=excluded_time_intervals_label,
-                                            valid_callback=time_intervals_are_valid,
-                                            invalid_callback=time_intervals_are_invalid, **kwargs)
-            )
+            excluded_time_intervals_input.bind('<KeyRelease>', update_time_intervals)
+
+            # validate when we're leaving the exclude time intervals input
+            excluded_time_intervals_input.bind(
+                '<FocusOut>',
+                lambda e, exclude_time_intervals_var=excluded_time_intervals_var,
+                       kwargs=kwargs:
+                self.validate_time_interval_var(name='excluded_time_intervals',
+                                                var=exclude_time_intervals_var,
+                                                input=excluded_time_intervals_input, label=excluded_time_intervals_label,
+                                                valid_callback=time_intervals_are_valid,
+                                                invalid_callback=time_intervals_are_invalid, **kwargs)
+                )
 
 
 
@@ -6896,6 +7185,30 @@ class toolkit_UI():
                                                   **self.ctk_form_label_settings)
         split_on_punctuation_input = ctk.CTkSwitch(post_frame, variable=split_on_punctuation_var,
                                                    text='', **self.ctk_form_entry_settings)
+
+
+        # CUSTOM PUNCTUATION MARKS
+        # only show this if split_on_punctuation is True
+        if kwargs.get('show_custom_punctuation_marks', False):
+
+            custom_punctuation_marks_str = \
+                kwargs.get('transcription_custom_punctuation_marks', None) \
+                if kwargs.get('transcription_custom_punctuation_marks', None) is not None \
+                else self.stAI.get_app_setting('transcription_custom_punctuation_marks',
+                                               default_if_none=['.', '!', '?', '…'])
+
+            # convert the list to a string with spaces between the punctuation marks
+            custom_punctuation_marks_str = ' '.join(custom_punctuation_marks_str)
+
+            form_vars['transcription_custom_punctuation_marks_var'] = \
+                transcription_custom_punctuation_marks = tk.StringVar(post_frame,
+                                                                      value=custom_punctuation_marks_str)
+
+            custom_punctuation_marks_label = ctk.CTkLabel(post_frame, text='Custom punctuation marks',
+                                                              **self.ctk_form_label_settings)
+            custom_punctuation_marks_input = ctk.CTkEntry(post_frame,
+                                                          textvariable=transcription_custom_punctuation_marks,
+                                                          **self.ctk_form_entry_settings)
 
         # PREVENT GAPS SHORTER THAN
         prevent_gaps_shorter_than = kwargs.get('transcription_prevent_short_gaps', None) \
@@ -6961,10 +7274,13 @@ class toolkit_UI():
         word_timestamps_input.grid(row=3, column=1, sticky="w", **self.ctk_form_paddings)
         initial_prompt_label.grid(row=4, column=0, sticky="w", **self.ctk_form_paddings)
         initial_prompt_input.grid(row=4, column=1, sticky="w", **self.ctk_form_paddings)
-        time_intervals_label.grid(row=5, column=0, sticky="w", **self.ctk_form_paddings)
-        time_intervals_input.grid(row=5, column=1, sticky="w", **self.ctk_form_paddings)
-        excluded_time_intervals_label.grid(row=6, column=0, sticky="w", **self.ctk_form_paddings)
-        excluded_time_intervals_input.grid(row=6, column=1, sticky="w", **self.ctk_form_paddings)
+
+        # don't show the time intervals if hide_time_intervals is True
+        if kwargs.get('show_time_intervals', True):
+            time_intervals_label.grid(row=5, column=0, sticky="w", **self.ctk_form_paddings)
+            time_intervals_input.grid(row=5, column=1, sticky="w", **self.ctk_form_paddings)
+            excluded_time_intervals_label.grid(row=6, column=0, sticky="w", **self.ctk_form_paddings)
+            excluded_time_intervals_input.grid(row=6, column=1, sticky="w", **self.ctk_form_paddings)
 
         # POST PROCESSING FRAME GRID
         # add all elements to the grid of the post processing frame
@@ -6972,8 +7288,13 @@ class toolkit_UI():
         max_per_line_frame.grid(row=1, column=1, sticky="w", **self.ctk_form_paddings)
         split_on_punctuation_label.grid(row=2, column=0, sticky="w", **self.ctk_form_paddings)
         split_on_punctuation_input.grid(row=2, column=1, sticky="w", **self.ctk_form_paddings)
-        prevent_gaps_shorter_than_label.grid(row=3, column=0, sticky="w", **self.ctk_form_paddings)
-        prevent_gaps_shorter_than_frame.grid(row=3, column=1, sticky="w", **self.ctk_form_paddings)
+
+        if kwargs.get('show_custom_punctuation_marks', False):
+            custom_punctuation_marks_label.grid(row=3, column=0, sticky="w", **self.ctk_form_paddings)
+            custom_punctuation_marks_input.grid(row=3, column=1, sticky="w", **self.ctk_form_paddings)
+
+        prevent_gaps_shorter_than_label.grid(row=4, column=0, sticky="w", **self.ctk_form_paddings)
+        prevent_gaps_shorter_than_frame.grid(row=4, column=1, sticky="w", **self.ctk_form_paddings)
 
         # return all the gathered form variables
         return form_vars
@@ -7069,9 +7390,12 @@ class toolkit_UI():
         # we will use this dict at the end of the function to gather all the created tk variables
         form_vars = {}
 
+        # get the last grid row for the parent
+        l_row = parent.grid_size()[1]
+
         # add the labels and frames to the parent
-        speech_analysis_label.grid(row=0, column=0, sticky="ew", **self.ctk_frame_paddings)
-        speech_analysis_frame.grid(row=1, column=0, sticky="ew", **self.ctk_frame_paddings)
+        speech_analysis_label.grid(row=l_row+1, column=0, sticky="ew", **self.ctk_frame_paddings)
+        speech_analysis_frame.grid(row=l_row+2, column=0, sticky="ew", **self.ctk_frame_paddings)
 
         # make the column expandable
         parent.columnconfigure(0, weight=1)
@@ -7284,7 +7608,9 @@ class toolkit_UI():
 
         # ask the user for the target files if none were passed
         if target_files is None:
-            target_files = self.ask_for_file_or_dir_for_var(self.root, multiple=True)
+            target_files = self.ask_for_file_or_dir_for_var(self.root,
+                                                            select_dir=kwargs.get('select_dir'),
+                                                            multiple=True)
 
         # add it to the transcription list
         if target_files:
@@ -7481,7 +7807,6 @@ class toolkit_UI():
 
         # return false if the time interval is invalid
         return False
-
 
     def convert_time_to_seconds(self, time, **kwargs):
         '''
@@ -7932,7 +8257,7 @@ class toolkit_UI():
 
             # create the left frame
             left_frame = ctk.CTkFrame(current_tk_window, name='left_frame', **self.ctk_frame_transparent)
-            left_frame.grid(row=0, column=0, sticky="ns")
+            left_frame.grid(row=0, column=0, sticky="ns", **self.ctk_side_frame_button_paddings)
 
             # create a frame for the text element
             text_form_frame = ctk.CTkFrame(self.windows[t_window_id], name='text_form_frame',
@@ -7940,8 +8265,8 @@ class toolkit_UI():
             text_form_frame.grid(row=0, column=1, sticky="nsew")
 
             # create the right frame to hold other stuff, like transcript groups etc.
-            #right_frame = ctk.CTkFrame(current_tk_window, **self.ctk_frame_transparent)
-            #right_frame.grid(row=0, column=2, sticky="ns")
+            right_frame = ctk.CTkFrame(current_tk_window, **self.ctk_frame_transparent)
+            right_frame.grid(row=0, column=2, sticky="ns", **self.ctk_side_frame_button_paddings)
 
             # add a minimum size for the frame2 column
             current_tk_window.grid_columnconfigure(1, weight=1, minsize=200)
@@ -7968,18 +8293,18 @@ class toolkit_UI():
             # SEND TO ASSISTANT BUTTON
             send_to_assistant_button = ctk.CTkButton(left_s_buttons_frame, text='Send to Assistant',
                                                 command=lambda: self.t_edit_obj.button_send_to_assistant(window_id=t_window_id),
-                                                name='send_to_assistant_button')
+                                                name='send_to_assistant_button', **self.ctk_side_frame_button_size)
             send_to_assistant_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
 
             send_to_assistant_with_tc_button = ctk.CTkButton(left_s_buttons_frame, text='Send to Assistant with TC',
                     command=lambda: self.t_edit_obj.button_send_to_assistant(window_id=t_window_id, with_timecodes=True),
-                    name='send_to_assistant_button_with_tc')
+                    name='send_to_assistant_button_with_tc', **self.ctk_side_frame_button_size)
             send_to_assistant_with_tc_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
 
             # ADD TO GROUP BUTTON
             add_to_group_button = ctk.CTkButton(left_s_buttons_frame, text='Add to Group',
                                                 command=lambda: self.t_edit_obj.button_add_to_group(window_id=t_window_id, only_add=True),
-                                                name='add_to_group_button')
+                                                name='add_to_group_button', **self.ctk_side_frame_button_size)
             add_to_group_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
 
 
@@ -7987,7 +8312,7 @@ class toolkit_UI():
 
             copy_to_clipboard_with_tc_button = ctk.CTkButton(left_s_buttons_frame, text='Copy with TC',
                                                 command=lambda: self.t_edit_obj.button_copy_segments_to_clipboard(t_window_id, with_timecodes=True, per_line=True),
-                                                name='copy_to_clipboard_with_tc_button')
+                                                name='copy_to_clipboard_with_tc_button', **self.ctk_side_frame_button_size)
 
             copy_to_clipboard_with_tc_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
 
@@ -8001,7 +8326,7 @@ class toolkit_UI():
             # RE-TRANSCRIBE BUTTON
             retranscribe_button = ctk.CTkButton(left_s_buttons_frame, text='Re-transcribe',
                                                 command=lambda: self.t_edit_obj.button_retranscribe(window_id=t_window_id),
-                                                name='retranscribe_button')
+                                                name='retranscribe_button', **self.ctk_side_frame_button_size)
 
             retranscribe_button.pack(fill='x', expand=True, **self.left_frame_button_paddings, anchor='nw')
 
@@ -8167,7 +8492,7 @@ class toolkit_UI():
                                         self.open_find_replace_window(parent_window_id=t_window_id,
                                                                       title="Find in {}".format(title),
                                                                       select_all_action=self.t_edit_obj.text_indices_to_selection
-                                                                      ))
+                                                                      ), **self.ctk_side_frame_button_size)
 
                 find_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='nw')
 
@@ -8191,14 +8516,16 @@ class toolkit_UI():
                                                    command=lambda:
                                                    self.open_advanced_search_window(transcription_window_id=t_window_id,
                                                                                     search_file_path= \
-                                                                                        transcription_file_path))
+                                                                                        transcription_file_path)
+                                                       , **self.ctk_side_frame_button_size)
 
                 advanced_search_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='nw')
 
                 # GROUPS BUTTON
                 groups_button = ctk.CTkButton(left_t_buttons_frame, text='Groups', name='groups_button',
                                           command=lambda:
-                                          self.open_transcript_groups_window(transcription_window_id=t_window_id)
+                                          self.open_transcript_groups_window(transcription_window_id=t_window_id),
+                                              **self.ctk_side_frame_button_size
                                           )
                 groups_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='nw')
 
@@ -8206,7 +8533,8 @@ class toolkit_UI():
                 group_questions_button = \
                     ctk.CTkButton(left_t_buttons_frame, text='Group Questions', name='group_questions_button',
                               command=lambda:
-                              self.t_edit_obj.button_group_questions(window_id=t_window_id)
+                              self.t_edit_obj.button_group_questions(window_id=t_window_id),
+                                  **self.ctk_side_frame_button_size
                               )
                 group_questions_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='nw')
 
@@ -8217,7 +8545,8 @@ class toolkit_UI():
                                                   text="Import SRT into Bin",
                                                   #takefocus=False,
                                                   command=lambda:
-                                                  self.toolkit_ops_obj.resolve_api.import_media(srt_file_path)
+                                                  self.toolkit_ops_obj.resolve_api.import_media(srt_file_path),
+                                                      **self.ctk_side_frame_button_size
                                                   )
                     import_srt_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='sw')
 
@@ -8229,7 +8558,7 @@ class toolkit_UI():
 
                 # SYNC BUTTON
 
-                sync_button = ctk.CTkButton(left_r_buttons_frame, name='sync_button')
+                sync_button = ctk.CTkButton(left_r_buttons_frame, name='sync_button', **self.ctk_side_frame_button_size)
                 sync_button.configure(command=lambda sync_button=sync_button, window_id=t_window_id:
                 self.t_edit_obj.sync_with_playhead_button(
                     button=sync_button,
@@ -8241,7 +8570,7 @@ class toolkit_UI():
                 # is this transcript linked to the current timeline?
 
                 # prepare an empty link button for now, and only show it when/if resolve starts
-                link_button = ctk.CTkButton(left_r_buttons_frame, name='link_button')
+                link_button = ctk.CTkButton(left_r_buttons_frame, name='link_button', **self.ctk_side_frame_button_size)
                 link_button.configure(command=lambda link_button=link_button,
                                                   transcription_file_path=transcription_file_path:
                 self.t_edit_obj.link_to_timeline_button(
@@ -8253,7 +8582,8 @@ class toolkit_UI():
                 # RESOLVE SEGMENTS + MARKERS BUTTONS
 
                 selection_to_markers_button = ctk.CTkButton(left_r_buttons_frame, text='Selection to Markers',
-                                                         name='selection_to_markers_button')
+                                                            name='selection_to_markers_button',
+                                                            **self.ctk_side_frame_button_size)
 
                 selection_to_markers_button.configure(command=lambda:
                         self.t_edit_obj.button_segments_to_markers(window_id=t_window_id, prompt=True)
@@ -8261,8 +8591,10 @@ class toolkit_UI():
 
                 selection_to_markers_button.pack(side=tk.TOP, fill='x', **self.left_frame_button_paddings, anchor='sw')
 
-                markers_to_selection_button = ctk.CTkButton(left_r_buttons_frame, text='Markers to Selection',
-                                                            name='markers_to_selection_button')
+                markers_to_selection_button = ctk.CTkButton(left_r_buttons_frame,
+                                                            text='Markers to Selection',
+                                                            name='markers_to_selection_button',
+                                                            **self.ctk_side_frame_button_size)
 
                 markers_to_selection_button.configure(command=lambda:
                         self.t_edit_obj.button_markers_to_segments(window_id=t_window_id))
@@ -9851,8 +10183,8 @@ class toolkit_UI():
             # is the user asking for help?
             if prompt.lower() == '[help]':
 
-                help_reply = "StoryToolkitAI Assistant uses gpt-3.5-turbo.\n" \
-                             "You might be billed by OpenAI around $0.002 for every 1000 tokens. " \
+                help_reply = "StoryToolkitAI Assistant uses gpt-3.5-turbo by default.\n" \
+                             "For that model, you might be billed by OpenAI around $0.002 for every 1000 tokens. " \
                              "See openai https://openai.com/pricing for more info. \n\n" \
                              "Every time you ask something, the OpenAI will receive the entire conversation. " \
                              "The longer the conversation, the more tokens you are using on each request.\n" \
@@ -10810,7 +11142,7 @@ class toolkit_UI():
             # otherwise, show an error
             messagebox.showerror('Error', 'File not found: {}'.format(file_path))
 
-    def ask_for_target_dir(self, title=None, target_dir=None):
+    def ask_for_target_dir(self, title=None, target_dir=None, **kwargs):
 
         # if an initial target dir was passed
         if target_dir is not None:
@@ -10822,8 +11154,8 @@ class toolkit_UI():
         self.root.lift()
 
         # ask the user via os dialog where can we find the directory
-        if title == None:
-            title = "Where should we save the files?"
+        title = "Where should we save the files?" if title is None else title
+
         target_dir = filedialog.askdirectory(title=title, initialdir=self.stAI.initial_target_dir)
 
         # what happens if the user cancels
@@ -10831,13 +11163,19 @@ class toolkit_UI():
             return False
 
         # remember which directory the user selected for next time
-        self.stAI.initial_target_dir = target_dir
+        if isinstance(target_dir, str):
+            self.stAI.initial_target_dir = target_dir
+
+        # use the first directory in the tuple
+        elif isinstance(target_dir, tuple):
+            self.stAI.initial_target_dir = target_dir[0]
 
         return target_dir
 
     def ask_for_file_or_dir_for_var(self, parent=None, var=None, **kwargs):
         """
-        This function asks the user for target files and then updates the variable passed to it with the file path(s)
+        This function asks the user for files or a folder
+        and then updates the variable passed to it with the file path(s)
         """
 
         # default to multiple files if not specified
@@ -10845,7 +11183,14 @@ class toolkit_UI():
             kwargs['multiple'] = True
 
         # ask the user for the target file
-        target_path = self.ask_for_target_file(**kwargs)
+        if kwargs.get('select_dir', None) is None:
+            target_path = self.ask_for_target_file(**kwargs)
+        else:
+            target_path = self.ask_for_target_dir(**kwargs)
+
+            # turn it into a list, if it isn't already
+            if isinstance(target_path, str):
+                target_path = [target_path]
 
         # if the user canceled
         if not target_path:
@@ -10885,7 +11230,8 @@ class toolkit_UI():
             # return the file path(s)
             return target_path
 
-    def ask_for_target_file(self, filetypes=[("Audio files", ".mov .mp4 .wav .mp3")], target_dir=None, multiple=False):
+    def ask_for_target_file(self, filetypes=[("Audio files", ".mov .mp4 .wav .mp3")], target_dir=None, multiple=False,
+                            **kwargs):
 
         # if an initial target_dir was passed
         if target_dir is not None:

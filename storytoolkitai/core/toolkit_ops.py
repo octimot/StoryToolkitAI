@@ -271,8 +271,11 @@ class ToolkitOps:
             # save the model provider for internal use
             self.model_provider = 'openai'
 
-            # get all the attributes from the kwargs
-            self.model_name = kwargs.get('model_name', "gpt-3.5-turbo")
+            # get the model from the kwargs or from the config file if not passed
+            self.model_name = kwargs.get(
+                'model_name',
+                self.stAI.get_app_setting('assistant_model', default_if_none='gpt-3.5-turbo')
+            )
 
             # store the number of tokens used for the assistant
             self.usage = 0
@@ -3063,17 +3066,25 @@ class ToolkitOps:
         elif os.path.isdir(dir_path):
 
             # get all the files in the directory
-            # either reccursively
+            # either recursively
             if not recursive:
                 all_files = os.listdir(dir_path)
             else:
                 all_files = []
+                reached_limit = False
                 for root, dirs, files in os.walk(dir_path):
                     for file in files:
                         all_files.append(os.path.join(root, file))
 
-                        if len(all_files) > self.stAI.get_app_setting('ingest_files_limit', default_if_none=30):
-                            logger.error('Too many files in the directory. Aborting.')
+                        if len(all_files) > int(self.stAI.get_app_setting('ingest_file_limit', default_if_none=30)):
+                            logger.warning('Going over the ingest files limit. Stopping at {} files.'
+                                           .format(len(all_files)))
+
+                            reached_limit = True
+                            break
+
+                    if reached_limit:
+                        break
 
             # filter out the valid media files
             valid_media_files \
@@ -6340,16 +6351,19 @@ class ToolkitOps:
                 )
 
                 # close all the transcript windows that aren't linked with this timeline
-                if self.stAI.get_app_setting('close_transcripts_on_timeline_change'):
+                if self.stAI.get_app_setting('close_transcripts_on_timeline_change', default_if_none=True):
                     if self.toolkit_UI_obj is not None:
                         self.toolkit_UI_obj.close_inactive_transcription_windows(timeline_transcription_file_paths)
 
                 # and open a transcript window for each of them
-                if timeline_transcription_file_paths \
-                        and timeline_transcription_file_paths is not None \
-                        and self.toolkit_UI_obj is not None:
-                    for transcription_file_path in timeline_transcription_file_paths:
-                        self.toolkit_UI_obj.open_transcription_window(transcription_file_path=transcription_file_path)
+                if self.stAI.get_app_setting('open_transcripts_on_timeline_change', default_if_none=True):
+                    if timeline_transcription_file_paths \
+                            and timeline_transcription_file_paths is not None \
+                            and self.toolkit_UI_obj is not None:
+
+                        for transcription_file_path in timeline_transcription_file_paths:
+                            self.toolkit_UI_obj.open_transcription_window(
+                                transcription_file_path=transcription_file_path)
 
         # when the playhead has moved
         elif event_name == 'tc_changed':

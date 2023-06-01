@@ -277,12 +277,21 @@ class StoryToolkitAI:
         if os.path.exists(self.config_file_path):
             logger.debug('Loading config file {}.'.format(self.config_file_path))
 
-            # read the app config
-            with open(self.config_file_path, 'r') as json_file:
-                self.config = json.load(json_file)
+            try:
+                # read the app config
+                with open(self.config_file_path, 'r') as json_file:
+                    self.config = json.load(json_file)
 
-            # and return the config
-            return self.config
+                # and return the config
+                return self.config
+
+            except:
+                logger.error('Unable to read config file {}.'.format(self.config_file_path))
+                logger.error('Make sure that it is a valid json file. '
+                             'If you are not sure, delete it or rename it and restart the tool. '
+                             'But keep in mind that you will lose all your settings.')
+
+                sys.exit()
 
         # if the config file doesn't exist, return an empty dict
         else:
