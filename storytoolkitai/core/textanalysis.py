@@ -14,13 +14,38 @@ import requests
 
 class TextAnalysis:
 
-    def __init__(self):
+    def __init__(self, torch_device_name=None):
 
         self.spacy_model_name = None
 
         # initialize an empty spacy model
         # the processing function will load the model if needed
         self.spacy_model = None
+
+        # the device to use for spacy processing
+        self.spacy_device = self.torch_device_to_spacy_device(torch_device_name=torch_device_name)
+
+    def torch_device_to_spacy_device(self, torch_device_name: str):
+        """
+        By default, spacy is not using PyTorch, so we can use this function
+        to convert the PyTorch device name (cpu, cuda) to spacy's device
+
+        :param torch_device_name: the name of the PyTorch device (or the type and device number, eg. cuda:0)
+        :return: 'cpu', 'gpu' or None for invalid device name
+
+        """
+
+        # if the device name is cpu, return 'cpu'
+        if str(torch_device_name) == "cpu":
+            return "cpu"
+
+        # if the device name starts with cuda, return 'gpu'
+        elif str(torch_device_name).startswith("cuda"):
+            return "gpu"
+        else:
+            logger.error("Invalid torch device name provided: {}".format(torch_device_name))
+            return None
+
 
     def detect_language(self, text: str):
         # create a factory for the LanguageDetector
@@ -42,7 +67,7 @@ class TextAnalysis:
         # run the text through the pipeline
         doc = nlp(text)
 
-        # get the language code
+        # get the 2 character language code
         lang_code = doc._.language['language']
 
         logger.debug("Detected language: " + lang_code)
@@ -61,6 +86,11 @@ class TextAnalysis:
         '''
         models = []
 
+        # todo: if the language parameter is longer than 2 characters, convert it to the 2 character code
+        if len(language) > 2:
+            logger.warning("Skipping the spaCy model lookup - the provided language code is longer than 2 characters.")
+            return None
+
         def fetch_models(url):
 
             response = requests.get(url)
@@ -76,12 +106,13 @@ class TextAnalysis:
             if next_link:
                 fetch_models(next_link['url'])
 
+        logger.info("Checking spaCy models repository for models available for \"{}\".".format(language))
+        url = "https://api.github.com/repos/explosion/spacy-models/releases?per_page=100"
         try:
-            logger.info("Checking spaCy models repository for models available for your language...")
-            url = "https://api.github.com/repos/explosion/spacy-models/releases?per_page=100"
             fetch_models(url)
         except:
-            logger.error('Could not fetch the list of available spaCy models. Please check your internet connection.')
+            logger.error('Could not fetch the list of available spaCy models from {}. '
+                         'Please check your internet connection.'.format(url))
             return None
 
         return models
@@ -96,6 +127,7 @@ class TextAnalysis:
 
         if models is not None:
 
+            # the large model is the best, so try to use it first
             size_priority = ["lg", "md", "sm"]
 
             for size in size_priority:
@@ -142,8 +174,13 @@ class TextAnalysis:
             logger.error('Could not load the spaCy model. Please specify a language.')
             return None
 
+        logger.debug('Using {} for spaCy model.'.format(self.spacy_device))
+        if self.spacy_device is not None and self.spacy_device != 'cpu':
+            spacy.prefer_gpu()
+
         # try to load the model
         try:
+
             model = spacy.load(spacy_model_name)
 
         # if there's an IOError, try to download the model
@@ -595,18 +632,22 @@ class TextAnalysis:
             # add the cache dir to form the full path
             cache_file_path = os.path.join(cache_dir, cache_file_name)
 
-            # if the cache file exists, load it and return it
+            # if the cache file exists, load it and return now without processing the segments
             if os.path.isfile(cache_file_path):
                 logger.info(f'Using analyzed text from cache {cache_file_path}')
                 with open(cache_file_path, 'r') as f:
+
+                    # return the cached segments
                     return json.load(f)
 
         # the resulting segments will only contain the segments that were not merged
-        # and only their text, start and end times, words and an segments key to keep track which of the original segments were merged
+        # and only their text, start and end times, words and a segments key
+        # to keep track which of the original segments were merged
         resulting_segments = []
 
         # make sure we assign an index to each segment so we know where we started from
-        # but we use a list, in case we need to merge the segment with others and we need to keep track of the original segments
+        # but we use a list, in case we need to merge the segment with others
+        # and if we need to keep track of the original segments
         for segment_idx, segment in enumerate(segments):
             segment['idx'] = [segment_idx]
 
@@ -617,7 +658,6 @@ class TextAnalysis:
                 # merge the additional info with the segment
                 segments[segment_idx] = {**segment, **kwargs['additional_segment_info']}
 
-        #for segment_idx, segment in enumerate(segments):
         # use tqdm to show a progress bar
         for segment_idx, segment in tqdm.tqdm(enumerate(segments), total=len(segments), desc='Analyzing text'):
 
@@ -700,7 +740,9 @@ class TextAnalysis:
 
         # if caching is enabled, save the resulting segments to the cache file
         if cache_dir and cache_file_path and os.path.isdir(os.path.dirname(cache_file_path)):
+
             logger.debug(f'Saving analyzed segments to cache file {cache_file_path}')
+
             with open(cache_file_path, 'w') as f:
                 json.dump(resulting_segments, f)
 

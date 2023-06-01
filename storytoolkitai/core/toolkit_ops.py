@@ -700,7 +700,10 @@ class ToolkitOps:
                 logger.debug('Reading search corpus from files.')
 
                 # load the TextAnalysis object
-                ta = TextAnalysis()
+                ta = TextAnalysis(torch_device_name=self.toolkit_ops_obj.torch_device)
+
+                # sort the search file paths alphabetically
+                search_file_paths.sort()
 
                 # take each file path and load the search data
                 for s_file_path in search_file_paths:
@@ -724,7 +727,10 @@ class ToolkitOps:
                                 and type(transcription_file_data['segments']) is list:
 
                             # detect the language of the transcription if we don't know it already
-                            if 'language' not in transcription_file_data:
+                            # also make sure we have a language code that is 2 characters long (ISO 639-1)
+                            if 'language' not in transcription_file_data \
+                                    or len(transcription_file_data['language']) != 2:
+
                                 transcription_language \
                                     = ta.detect_language(''.join([segment['text']
                                                                   for segment in transcription_file_data['segments']]))
@@ -750,6 +756,8 @@ class ToolkitOps:
                             spacy_models_per_language \
                                 = self.stAI.get_app_setting(setting_name='spacy_models_per_language',
                                                             default_if_none={})
+
+                            # todo: do the language to language code conversion here
 
                             if transcription_language in spacy_models_per_language:
                                 selected_model_name = spacy_models_per_language[transcription_language]
@@ -1114,7 +1122,9 @@ class ToolkitOps:
             # load the sentence transformer model if it hasn't been loaded yet
             if self.search_model is None:
                 logger.info(
-                    'Loading sentence transformer model {}.'.format(self.model_name))
+                    'Loading sentence transformer model "{}" on {}.'
+                    .format(self.model_name, self.toolkit_ops_obj.torch_device)
+                )
 
                 # if the sentence transformer model was never downloaded, log that we're downloading it
                 model_downloaded_before = True
@@ -1126,8 +1136,11 @@ class ToolkitOps:
                                    )
                     model_downloaded_before = False
 
-                self.search_model \
-                    = SentenceTransformer(self.model_name)
+                # load the sentence transformer model
+                self.search_model = SentenceTransformer(self.model_name)
+
+                # set the torch device to the same device as the toolkit
+                self.search_model.to(self.toolkit_ops_obj.torch_device)
 
                 # once the model has been loaded, we can note that in the app settings
                 # this is a wat to keep track if the model has been downloaded or not
@@ -1215,13 +1228,27 @@ class ToolkitOps:
 
             return self.corpus_cache_file_path
 
-        def save_corpus_embeddings_to_file(self, embeddings, file_path=None):
+        def save_corpus_embeddings_to_file(self, embeddings, model, file_path=None):
+            """
+            This function saves the corpus embeddings to a file,
+            but changes the device to cpu temporarily to make the embedding file compatible with all systems
+            """
 
+            # only save the embeddings if they and the model are valid
+            if embeddings is None:
+                logger.warning('Cannot save encoded corpus to file - invalid embeddings.')
+                return
+
+            if model is None:
+                logger.warning('Cannot save encoded corpus to file - invalid model.')
+                return
+
+            # if no file path was passed, try to use the one from the class
             if file_path is None:
                 file_path = self.corpus_cache_file_path
 
             if file_path is None:
-                logger.debug('Aborting. No cache file path specified.')
+                logger.warning('Cannot save encoded corpus to file - no cache file path specified.')
                 return
 
             try:
@@ -1230,6 +1257,20 @@ class ToolkitOps:
                 if not os.path.exists(os.path.dirname(file_path)):
                     # otherwise, create it
                     os.makedirs(os.path.dirname(file_path))
+
+                # get the current device of the embedder
+                model_device = model.device
+
+                # move the model to the cpu for saving to ensure compatibility with all systems
+                if str(model_device) != 'cpu':
+
+                    # move the model to the cpu
+                    logger.debug('Moving embedder from "{}" to cpu temporarily to save embeddings to file.'
+                                 .format(model_device))
+                    model.to('cpu')
+
+                    # get the embeddings from the model again
+                    embeddings = embeddings.to('cpu')
 
                 # save the corpus embeddings to a file
                 with open(file_path, 'wb') as f:
@@ -1243,14 +1284,18 @@ class ToolkitOps:
 
                 logger.debug('Saved encoded search corpus to {}'.format(file_path))
 
+                # move the model back to the original device
+                if str(model_device) != 'cpu':
+                    logger.debug('Moving model back to {}.'.format(model_device))
+                    model.to(model_device)
+                    embeddings = embeddings.to(model_device)
+
+
                 return True
 
             except Exception as e:
 
-                import traceback
-                traceback.print_exc()
-
-                logger.error('Could not save search embeddings to file {}'.format(file_path))
+                logger.error('Could not save search embeddings to file:'.format(file_path), exc_info=True)
                 return False
 
         def search_semantic(self):
@@ -1314,9 +1359,29 @@ class ToolkitOps:
             # check if we have them in a file
             if (search_id is None or search_id not in self.search_embeddings) \
                     and os.path.exists(corpus_cache_file_path):
+
+                # get the current device of the embedder
+                transformer_embedder_device = embedder.device
+
+                # if the embedder device is not cpu, move it to cpu temporarily
+                # to ensure compatibility with all systems - basically the embeddings saved to files must be on cpu
+                if str(transformer_embedder_device) != 'cpu':
+                    logger.debug('Moving embedder from "{}" to "cpu" to temporarily load embeddings from file.'
+                                 .format(transformer_embedder_device))
+                    embedder.to('cpu')
+
+                logger.debug('Loading encoded search corpus from {}'.format(corpus_cache_file_path))
+
                 # load the corpus embeddings from the file
                 with open(corpus_cache_file_path, 'rb') as f:
                     corpus_embeddings = pickle.load(f)
+
+                # move the embeddings from the file to the same device as the model
+                corpus_embeddings = corpus_embeddings.to(transformer_embedder_device)
+
+                # move the embedder back to the original device
+                if str(transformer_embedder_device) != 'cpu':
+                    embedder.to(transformer_embedder_device)
 
                 # touch the file to update the last modified time
                 # this will be useful if we want to ever clean up the cache
@@ -1325,8 +1390,6 @@ class ToolkitOps:
 
                 # add the corpus embeddings to the memory cache
                 self.search_embeddings[search_id] = corpus_embeddings
-
-                logger.debug('Loaded encoded search corpus from {}'.format(corpus_cache_file_path))
 
             # if we haven't found the search corpus embeddings in the cache or in a file
             # then we need to encode it now
@@ -1342,7 +1405,7 @@ class ToolkitOps:
                 self.search_embeddings[search_id] = corpus_embeddings
 
                 # save the embeddings to the file cache for later use
-                self.save_corpus_embeddings_to_file(corpus_embeddings)
+                self.save_corpus_embeddings_to_file(corpus_embeddings, model=embedder)
 
             else:
                 # load the embeddings from the cache
@@ -2973,6 +3036,7 @@ class ToolkitOps:
         # and add cuda to the available devices, if it is available
         if torch.cuda.is_available():
             available_devices.append('CUDA')
+
 
         return available_devices
 
