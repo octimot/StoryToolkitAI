@@ -586,7 +586,7 @@ class toolkit_UI():
             if event.keysym == 'equal':
                 self.button_go_to_timecode(window_id=window_id)
 
-
+            # todo: this is very un-necessary because it's redrawing the whole window on each segment move
             # final step, update the window
             self.toolkit_UI_obj.update_transcription_window(window_id=window_id)
 
@@ -790,6 +790,7 @@ class toolkit_UI():
 
             # ask the user if they want to re-transcribe
             retranscribe = messagebox.askyesno(title='Re-transcribe',
+                                               parent=self.toolkit_UI_obj.windows[window_id],
                                                message=ask_message)
 
             # if the user cancels re-transcribe or no segments were selected, cancel
@@ -917,9 +918,11 @@ class toolkit_UI():
             if not is_linked:
 
                 # warn the user that the transcription is not linked to the timeline
-                user_response = messagebox.askyesnocancel(title='Transcription not linked to timeline',
+                user_response = messagebox.askyesnocancel(
+                    parent=self.toolkit_UI_obj.windows[window_id],
+                    title='Transcription not linked to timeline',
                     message='The transcription is not linked to the current timeline.\n\n'
-                                                'Do you want to link it before adding the markers?')
+                            'Do you want to link it before adding the markers?')
 
                 # if the user wants to link the transcription to the timeline
                 if user_response:
@@ -1018,14 +1021,16 @@ class toolkit_UI():
 
                         # give up if the duration is under a frame:
                         if marker_duration_tc.frames <= 1:
-                            self.notify_via_messagebox(title='Cannot add marker',
+                            self.toolkit_UI_obj.notify_via_messagebox(title='Cannot add marker',
                                                        message='Not enough space to add marker on timeline.',
-                                                       type='warning'
+                                                       type='warning',
+                                                       parent=self.toolkit_UI_obj.windows[window_id]
                                                        )
                             return False
 
                         # notify the user that the index is blocked by another marker
-                        add_frame = messagebox.askyesno(title='Cannot add marker',
+                        add_frame = messagebox.askyesno(parent=self.toolkit_UI_obj.windows[window_id],
+                                                        title='Cannot add marker',
                                                         message="Another marker exists at {}.\n\n"
                                                                 "Do you want to place the new marker one frame later?"
                                                         .format(start_tc))
@@ -1434,7 +1439,8 @@ class toolkit_UI():
                                                    'and might take a bit to complete.\n\n'
                                                    'Working on this transcription while the grouping is in progress '
                                                    'is not recommended.\n\n'
-                                                   'Are you sure you want to continue?'
+                                                   'Are you sure you want to continue?',
+                                            parent=self.toolkit_UI_obj.windows[window_id]
                                            ):
 
                     # wait for a second after the user has confirmed to allow the message box to close
@@ -1517,7 +1523,9 @@ class toolkit_UI():
 
             # ask the user if they are sure
             if messagebox.askyesno(title='Delete line',
-                                   message='Are you sure you want to delete this line?'):
+                                   message='Are you sure you want to delete this line?',
+                                   parent=self.toolkit_UI_obj.windows[window_id],
+                                   ):
                 # get the line
                 tkinter_line_index = '{}.0'.format(line_no), '{}.0'.format(int(line_no) + 1).split(' ')
 
@@ -1572,7 +1580,8 @@ class toolkit_UI():
             move_playhead = messagebox.askokcancel(title='Move playhead',
                                                    message='Move the Resolve playhead exactly '
                                                            'where you want to align the {} of this segment, '
-                                                           'then press OK to align.'.format(position)
+                                                           'then press OK to align.'.format(position),
+                                                   parent=self.toolkit_UI_obj.windows[window_id]
                                                    )
 
             if not move_playhead:
@@ -1912,10 +1921,13 @@ class toolkit_UI():
             if timecode_data is False:
 
                 # ask the user if they want to enter the timecode data manually
-                if messagebox.askyesno('Timecode data not found',
+                if messagebox.askyesno(title='Timecode data not found',
+                                       message= \
                                        'Frame rate or start timecode not found in transcription.\n\n'
                                        'Would you like to enter the timecode data manually?\n\n'
-                                       'This would save it to the transcription for future use.'):
+                                       'This would save it to the transcription for future use.',
+                                        parent=self.toolkit_UI_obj.windows[window_id],
+                                       ):
 
                     # ask the user for the timecode data
                     timecode_data = self.ask_for_transcription_timecode_data(window_id=window_id)
@@ -2615,8 +2627,11 @@ class toolkit_UI():
                 elif add is False and group_name is not None and group_name_lower in transcript_groups_lower:
 
                     # ask the user if they're sure they want to overwrite the existing group
-                    overwrite = messagebox.askyesno(message='Group already exists\nDo you want to overwrite it?\n\n'
-                                                            'This will also empty the group notes.')
+                    overwrite = messagebox.askyesno(
+                        message='Group already exists\nDo you want to overwrite it?\n\n'
+                                'This will also empty the group notes.',
+                        parent=self.toolkit_UI_obj.windows[window_id],
+                    )
 
                     # if the user didn't confirm, abort
                     if not overwrite:
@@ -2672,16 +2687,6 @@ class toolkit_UI():
                     # get the group id
                     group_id = self.toolkit_UI_obj._get_selected_group_id(t_window_id=t_window_id)
 
-                    if confirm:
-                        # ask the user if they're sure they want to add the segments to the group
-                        if not messagebox.askyesno(message='You\'re about to select many segments '
-                                                           'and auto-add them to the group.\n\n'
-                                                           'Are you sure you want to do this?'):
-
-                            logger.debug('User canceled auto-add segments to group. Aborting.')
-
-                            return
-
                     # create a reference to this function so we can use for select events below
                     self.group_selected(window_id=t_window_id, group_name=group_id, add=True,
                                         keep_name=True, keep_notes=True)
@@ -2731,7 +2736,9 @@ class toolkit_UI():
                 if not no_confirmation:
                     delete = messagebox.askyesno(message=
                                                  'Are you sure you want to delete '
-                                                 'the group "{}"?'.format(group_name))
+                                                 'the group "{}"?'.format(group_name),
+                                                 parent=self.toolkit_UI_obj.windows[t_window_id]
+                                                 )
 
                     # if the user didn't confirm, abort
                     if not delete:
@@ -2810,7 +2817,9 @@ class toolkit_UI():
                 move_playhead = messagebox.askokcancel(title='Move playhead',
                                                        message='Move the Resolve playhead exactly '
                                                                'where the new segment starts, '
-                                                               'then press OK to split.'
+                                                               'then press OK to split.',
+                                                        parent=self.toolkit_UI_obj.windows[window_id]
+                                                        if window_id is not None else None
                                                        )
 
                 if not move_playhead:
@@ -3259,9 +3268,13 @@ class toolkit_UI():
                         or modified_transcription_file_data['srt_file_path'] == '':
 
                     # ask the user if they want to create an srt file
-                    create_srt = messagebox.askyesno('Create SRT file?',
-                                                     'An SRT file doesn\'t exist for this transcription.\n'
-                                                     'Do you want to create one?')
+                    create_srt = messagebox.askyesno(
+                        title='Create SRT file?',
+                        message='An SRT file doesn\'t exist for this transcription.\n'
+                                'Do you want to create one?',
+                        parent=self.toolkit_UI_obj.windows[window_id]
+                        if window_id is not None else self.toolkit_UI_obj.root
+                    )
 
                     # if the user wants to create an srt file
                     if create_srt:
@@ -4387,9 +4400,11 @@ class toolkit_UI():
         '''
 
         # confirm the action
-        if not messagebox.askyesno(title="Skip update", message="Are you sure you want to skip this update?\n\n"
-                                                                "You will only be notified again when a new update "
-                                                                "is available."):
+        if not messagebox.askyesno(title="Skip update",
+                                   message="Are you sure you want to skip this update?\n\n"
+                                           "You will only be notified again when a new update "
+                                           "is available.",
+                                   parent=self.windows[window_id] if window_id is not None else self.root):
             return False
 
         # if the window id is specified
@@ -4458,6 +4473,9 @@ class toolkit_UI():
 
         # bring the window to the top
         window.lift()
+
+        # bring it to the front again after 100ms
+        window.after(100, window.lift)
 
         # then focus on it
         window.focus_set()
@@ -4547,6 +4565,9 @@ class toolkit_UI():
 
             # what happens when the user focuses on this window
             self.windows[window_id].bind("<FocusIn>", lambda event: self._focused_window(window_id))
+
+            # focus on the window after 100ms
+            self.windows[window_id].after(100, lambda window_id=window_id: self.focus_window(window_id=window_id))
 
             # return the window_id or the window object
             if return_window:
@@ -6297,11 +6318,6 @@ class toolkit_UI():
             # add the form variables to the window
             ingest_window.form_vars = form_vars
 
-            # UI - place the window on top for a moment so that the user sees that he has to interact
-            ingest_window.wm_attributes('-topmost', True)
-            ingest_window.wm_attributes('-topmost', False)
-            ingest_window.lift()
-
             # and focus on the window
             self.focus_window(window=ingest_window)
 
@@ -7133,7 +7149,11 @@ class toolkit_UI():
 
     def button_cancel_ingest(self, window_id, queue_id, parent_element=None, dont_ask=False):
 
-        if dont_ask or messagebox.askyesno(title="Cancel Ingest", message='Are you sure you want to cancel?'):
+        if dont_ask or messagebox.askyesno(
+                title="Cancel Ingest",
+                message='Are you sure you want to cancel?',
+                parent=self.windows[window_id]
+                ):
 
             # assume the window is references in the windows dict
             if parent_element is None:
@@ -7457,7 +7477,7 @@ class toolkit_UI():
 
         # pop an error message if we need to
         if pop_error:
-            messagebox.showerror("Error", "Invalid time interval: " + time_interval_str)
+            messagebox.showerror(title="Error", message="Invalid time interval: " + time_interval_str)
 
         # return false if the time interval is invalid
         return False
@@ -7621,22 +7641,6 @@ class toolkit_UI():
 
         # open the processing queue window
         self.open_queue_window()
-
-    def destroy_transcription_settings_window(self, window_id, queue_id, parent_element=None):
-
-        if (messagebox.askyesno(title="Cancel Transcription",
-                                message='Are you sure you want to cancel this transcription?')):
-
-            # assume the window is references in the windows dict
-            if parent_element is None:
-                parent_element = self.windows
-
-            self.toolkit_ops_obj.processing_queue.update_queue_item(queue_id=queue_id, status='canceled')
-
-            # call the default destroy window function
-            self.destroy_window_(windows_dict=self.windows, window_id=window_id)
-
-        return False
 
     def destroy_transcription_window(self, window_id):
 
@@ -10880,7 +10884,6 @@ class toolkit_UI():
 
             # return the file path(s)
             return target_path
-
 
     def ask_for_target_file(self, filetypes=[("Audio files", ".mov .mp4 .wav .mp3")], target_dir=None, multiple=False):
 
