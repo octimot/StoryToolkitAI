@@ -1366,30 +1366,42 @@ class ToolkitOps:
                 # if the embedder device is not cpu, move it to cpu temporarily
                 # to ensure compatibility with all systems - basically the embeddings saved to files must be on cpu
                 if str(transformer_embedder_device) != 'cpu':
-                    logger.debug('Moving embedder from "{}" to "cpu" to temporarily load embeddings from file.'
+                    logger.debug('Moving embedder from "{}" to "cpu" temporarily to load embeddings from file.'
                                  .format(transformer_embedder_device))
                     embedder.to('cpu')
 
                 logger.debug('Loading encoded search corpus from {}'.format(corpus_cache_file_path))
 
-                # load the corpus embeddings from the file
-                with open(corpus_cache_file_path, 'rb') as f:
-                    corpus_embeddings = pickle.load(f)
+                # if the try fails, we can assume that the cache file is corrupted
+                try:
 
-                # move the embeddings from the file to the same device as the model
-                corpus_embeddings = corpus_embeddings.to(transformer_embedder_device)
+                    # load the corpus embeddings from the file
+                    with open(corpus_cache_file_path, 'rb') as f:
+                        corpus_embeddings = pickle.load(f)
 
-                # move the embedder back to the original device
-                if str(transformer_embedder_device) != 'cpu':
-                    embedder.to(transformer_embedder_device)
+                    # move the embeddings from the file to the same device as the model
+                    corpus_embeddings = corpus_embeddings.to(transformer_embedder_device)
 
-                # touch the file to update the last modified time
-                # this will be useful if we want to ever clean up the cache
-                # (e.g. delete files unused for 90 days)
-                os.utime(corpus_cache_file_path, None)
+                    # move the embedder back to the original device
+                    if str(transformer_embedder_device) != 'cpu':
+                        embedder.to(transformer_embedder_device)
 
-                # add the corpus embeddings to the memory cache
-                self.search_embeddings[search_id] = corpus_embeddings
+                    # touch the file to update the last modified time
+                    # this will be useful if we want to ever clean up the cache
+                    # (e.g. delete files unused for 90 days)
+                    os.utime(corpus_cache_file_path, None)
+
+                    # add the corpus embeddings to the memory cache
+                    self.search_embeddings[search_id] = corpus_embeddings
+
+                except:
+
+                    logger.warning('Could not load encoded search corpus from file: {}'.format(corpus_cache_file_path),
+                                   exc_info=True)
+
+                    # move the embedder back to the original device
+                    if str(transformer_embedder_device) != 'cpu':
+                        embedder.to(transformer_embedder_device)
 
             # if we haven't found the search corpus embeddings in the cache or in a file
             # then we need to encode it now
