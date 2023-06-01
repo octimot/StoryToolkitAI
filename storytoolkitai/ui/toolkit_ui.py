@@ -4463,7 +4463,7 @@ class toolkit_UI():
         window.focus_set()
 
     def create_or_open_window(self, parent_element: tk.Toplevel or tk = None, window_id: str = None,
-                              title: str = None, resizable: bool = False,
+                              title: str = None, resizable: tuple or bool = False,
                               type: str = None,
                               close_action=None,
                               open_multiple: bool = False, return_window: bool = False) \
@@ -4528,6 +4528,9 @@ class toolkit_UI():
             # is it resizable?
             if not resizable:
                 self.windows[window_id].resizable(False, False)
+
+            elif isinstance(resizable, tuple) and len(resizable) == 2:
+                self.windows[window_id].resizable(resizable[0], resizable[1])
 
             # use the default destroy_window function in case something else wasn't passed
             if close_action is None:
@@ -5299,6 +5302,11 @@ class toolkit_UI():
             # add the window to the text_windows dict
             self.text_windows[window_id]['window'] = self.windows[window_id]
 
+            # UI - place the window on top for a moment so that the user sees that he has to interact
+            self.windows[window_id].wm_attributes('-topmost', True)
+            self.windows[window_id].wm_attributes('-topmost', False)
+            self.windows[window_id].lift()
+
         return window_id
 
     def text_window_format_md(self, window_id: str, text_widget: Text = None):
@@ -5875,7 +5883,7 @@ class toolkit_UI():
 
             self.toolkit_UI_obj = toolkit_UI_obj
 
-            # todo: check the icon for this window
+            # set the icon
             self.toolkit_UI_obj.UI_set_icon(self)
 
             self.parent = parent
@@ -6121,7 +6129,8 @@ class toolkit_UI():
         form_vars = {}
 
         if self.create_or_open_window(parent_element=self.root, window_id=ingest_window_id, type='ingest',
-                                      title=title, open_multiple=True, close_action=close_ingest_window
+                                      title=title, open_multiple=True, close_action=close_ingest_window,
+                                      resizable=(False, True)
                                       ):
 
             # update the queue item status to 'waiting user'
@@ -6139,9 +6148,6 @@ class toolkit_UI():
 
             # add the ingest_window_id to the kwargs
             kwargs['ingest_window_id'] = ingest_window_id
-
-            # UI - make the window resizable only in the vertical direction
-            ingest_window.resizable(width=False, height=True)
 
             # UI - escape key closes the window
             ingest_window.bind('<Escape>', lambda event: close_ingest_window())
