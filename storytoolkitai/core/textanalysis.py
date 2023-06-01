@@ -37,14 +37,19 @@ class TextAnalysis:
 
         # if the device name is cpu, return 'cpu'
         if str(torch_device_name) == "cpu":
-            return "cpu"
+            spacy_device = "cpu"
 
         # if the device name starts with cuda, return 'gpu'
         elif str(torch_device_name).startswith("cuda"):
-            return "gpu"
+            spacy_device = "gpu"
         else:
             logger.error("Invalid torch device name provided: {}".format(torch_device_name))
-            return None
+            spacy_device = None
+
+        if spacy_device:
+            logger.debug('Using {} for spaCy whenever possible.'.format(spacy_device))
+
+        return spacy_device
 
 
     def detect_language(self, text: str):
@@ -86,7 +91,6 @@ class TextAnalysis:
         '''
         models = []
 
-        # todo: if the language parameter is longer than 2 characters, convert it to the 2 character code
         if len(language) > 2:
             logger.warning("Skipping the spaCy model lookup - the provided language code is longer than 2 characters.")
             return None
@@ -174,7 +178,6 @@ class TextAnalysis:
             logger.error('Could not load the spaCy model. Please specify a language.')
             return None
 
-        logger.debug('Using {} for spaCy model.'.format(self.spacy_device))
         if self.spacy_device is not None and self.spacy_device != 'cpu':
             spacy.prefer_gpu()
 

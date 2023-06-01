@@ -757,8 +757,6 @@ class ToolkitOps:
                                 = self.stAI.get_app_setting(setting_name='spacy_models_per_language',
                                                             default_if_none={})
 
-                            # todo: do the language to language code conversion here
-
                             if transcription_language in spacy_models_per_language:
                                 selected_model_name = spacy_models_per_language[transcription_language]
                             else:
@@ -779,11 +777,11 @@ class ToolkitOps:
                             if selected_model_name is None:
                                 selected_model_name = ta.get_model_name()
 
-                            # and if it's not empty, add it to the config so we know it for next time
-                            if selected_model_name is not None:
-                                spacy_models_per_language[transcription_language] = selected_model_name
-                                self.stAI.save_config(setting_name='spacy_models_per_language',
-                                                      setting_value=spacy_models_per_language)
+                                # and if it's not empty, add it to the config so we know it for next time
+                                if selected_model_name is not None:
+                                    spacy_models_per_language[transcription_language] = selected_model_name
+                                    self.stAI.save_config(setting_name='spacy_models_per_language',
+                                                          setting_value=spacy_models_per_language)
 
                             transcription_file_path = s_file_path
 
