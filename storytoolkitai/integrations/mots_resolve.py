@@ -742,9 +742,24 @@ class MotsResolve:
                                            {},
                                        }
 
-    RESOLVE_MARKER_COLORS = ["Blue", "Cyan", "Green", "Yellow", "Red", "Pink",
-                             "Purple", "Fuchsia", "Rose", "Lavender", "Sky",
-                             "Mint", "Lemon", "Sand", "Cocoa", "Cream"]
+    RESOLVE_MARKER_COLORS = {
+        "Blue": "#0000FF",
+        "Cyan": "#00CED0",
+        "Green": "#00AD00",
+        "Yellow": "#F09D00",
+        "Red": "#E12401",
+        "Pink": "#FF44C8",
+        "Purple": "#9013FE",
+        "Fuchsia": "#C02E6F",
+        "Rose": "#FFA1B9",
+        "Lavender": "#A193C8",
+        "Sky": "#92E2FD",
+        "Mint": "#72DB00",
+        "Lemon": "#DCE95A",
+        "Sand": "#C4915E",
+        "Cocoa": "#6E5143",
+        "Cream": "#F5EBE1"
+    }
 
     def render_markers(self, marker_color, target_dir, add_timestamp=False, stills=False, start_render=False,
                        render_preset='h264_LQ3000', save_marker_data=False, marker_id=None, starts_with=None):
