@@ -7,7 +7,7 @@ import subprocess
 import webbrowser
 
 from storytoolkitai.core.logger import *
-from storytoolkitai.core.toolkit_ops import NLE
+from storytoolkitai.core.toolkit_ops.toolkit_ops import NLE
 
 from customtkinter import AppearanceModeTracker
 from customtkinter import ThemeManager

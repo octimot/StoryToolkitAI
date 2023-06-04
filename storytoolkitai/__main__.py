@@ -114,12 +114,8 @@ except:
     # keep this message in the console for a bit
     time.sleep(5)
 
-from storytoolkitai.integrations.mots_resolve import MotsResolve
 
-from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_NAME, APP_LOG_FILE, initial_target_dir
-from storytoolkitai.core.toolkit_ops import ToolkitOps
-from storytoolkitai.ui.toolkit_ui import toolkit_UI
-from storytoolkitai.ui.toolkit_cli import toolkit_CLI
+from storytoolkitai.core.toolkit_ops.toolkit_ops import ToolkitOps
 from storytoolkitai.core.storytoolkitai import StoryToolkitAI
 
 from storytoolkitai.ui.toolkit_ui import run_gui

@@ -1,3 +1,4 @@
+import copy
 import os.path
 import platform
 import subprocess
@@ -13,17 +14,17 @@ from timecode import Timecode
 from storytoolkitai.core.logger import *
 from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_NAME
 
-from storytoolkitai.core.toolkit_ops import *
+from storytoolkitai.core.toolkit_ops.toolkit_ops import *
 
 import tkinter as tk
 import customtkinter as ctk
 
-from tkinter import filedialog, simpledialog, messagebox, font, ttk
-from tkinter import *
+from tkinter import filedialog, simpledialog, messagebox, font
 
 from whisper import available_models as whisper_available_models
 
 from .menu import UImenus
+
 
 class toolkit_UI():
     '''
@@ -74,6 +75,8 @@ class toolkit_UI():
 
     ctk_side_frame_button_paddings = {'padx': 10, 'pady': 10}
     ctk_side_frame_button_size = {'width': 200}
+    ctk_fake_listbox_label_paddings = {'padx': 5, 'pady': 0}
+    ctk_fake_listbox_paddings = {'padx': 5, 'pady': 0}
 
     ctk_popup_frame_paddings = {'padx': 5, 'pady': 5}
     ctk_popup_input_paddings = {'padx': 5}
@@ -83,8 +86,12 @@ class toolkit_UI():
     ctk_list_paddings = {'padx': 3, 'pady': 3}
 
     ctk_footer_button_paddings = {'padx': 10, 'pady': 10}
-    ctk_footer_status_paddings = {'padx': 20, 'pady': 10}
+    ctk_footer_status_paddings = {'padx': 10, 'pady': (5, 10)}
     ctk_secondary_button_paddings = ctk_footer_button_paddings
+
+    ctk_selected_color = ctk.ThemeManager.theme["CTkSegmentedButton"]["selected_color"]
+    ctk_unselected_color = 'transparent'
+
 
     ctk_main_paddings = {'padx': 10, 'pady': 10}
 
@@ -456,8 +463,8 @@ class toolkit_UI():
                                                    textvariable=ingest_file_limit_var,
                                                    **toolkit_UI.ctk_form_entry_settings_half)
             ingest_file_limit_unit_label = ctk.CTkLabel(ingest_file_limit_frame, text='files per ingest')
-            ingest_file_limit_input.pack(side=tk.LEFT)
-            ingest_file_limit_unit_label.pack(side=tk.LEFT, **toolkit_UI.ctk_form_paddings)
+            ingest_file_limit_input.pack(side=ctk.LEFT)
+            ingest_file_limit_unit_label.pack(side=ctk.LEFT, **toolkit_UI.ctk_form_paddings)
 
             # only allow floats in the prevent_gaps_shorter_than_input
             ingest_file_limit_input.configure(
@@ -895,7 +902,7 @@ class toolkit_UI():
                                                                          title='About StoryToolkitAI', resizable=False,
                                                                          return_window=True):
                 # the text justify
-                justify = {'justify': tk.LEFT}
+                justify = {'justify': ctk.LEFT}
 
                 # create a frame for the about window
                 about_frame = ctk.CTkFrame(about_window, **toolkit_UI.ctk_frame_transparent)
@@ -916,12 +923,12 @@ class toolkit_UI():
                 # create the made by label
                 made_by_label = ctk.CTkLabel(made_by_frame, text='made by ', font=self.toolkit_UI_obj.default_font,
                                              **justify)
-                made_by_label.pack(side=tk.LEFT)
+                made_by_label.pack(side=ctk.LEFT)
 
                 # create the mots link label
                 mots_label = ctk.CTkLabel(made_by_frame, text='mots', font=self.toolkit_UI_obj.default_font_link,
                                           **justify)
-                mots_label.pack(side=tk.LEFT)
+                mots_label.pack(side=ctk.LEFT)
 
                 # make the made by text clickable
                 mots_label.bind('<Button-1>', self.UI_menus.open_mots)
@@ -933,12 +940,12 @@ class toolkit_UI():
                 # add the project page label
                 project_page_label = ctk.CTkLabel(project_page_frame, text='Project page: ',
                                            font=self.toolkit_UI_obj.default_font, **justify)
-                project_page_label.pack(side=tk.LEFT)
+                project_page_label.pack(side=ctk.LEFT)
 
                 # create the project page link label
                 project_page_link_label = ctk.CTkLabel(project_page_frame, text='github.com/octimot/StoryToolkitAI',
                                                 font=self.toolkit_UI_obj.default_font_link, **justify)
-                project_page_link_label.pack(side=tk.LEFT)
+                project_page_link_label.pack(side=ctk.LEFT)
 
                 # make the project page text clickable
                 project_page_link_label.bind('<Button-1>', self.UI_menus.open_project_page)
@@ -1002,7 +1009,7 @@ class toolkit_UI():
         # if self.stAI.get_app_setting('show_welcome', default_if_none=True):
         #    self.open_welcome_window()
 
-        # keep all the window references here to find them easy by window_id
+        # keep all the window references here to find them easily by window_id
         self.windows = {}
 
         # keep track of which window is what type by window_id
@@ -1411,6 +1418,17 @@ class toolkit_UI():
 
     # GENERAL WINDOW FUNCTIONS
 
+    def get_window_by_id(self, window_id):
+        """
+        Simple function to get a window by its id from the windows dict.
+        """
+
+        if window_id and window_id in self.windows:
+            return self.windows[window_id]
+
+        # if the window id is not found, return None
+        return None
+
     def focus_window(self, window_id=None, window=None):
         '''
         This function focuses a window. Requires either a window_id or a window
@@ -1607,10 +1625,14 @@ class toolkit_UI():
         # also remove any observers that are registered for this window
         self.remove_observer_from_window(window_id=window_id)
 
-    def add_observer_to_window(self, window_id, action, callback):
+    def add_observer_to_window(self, window_id, action, callback, dettach_after_call=False):
         """
         This adds an observer to a window, so that the callback can be called
         when the action is triggered from toolkit_ops_obj
+        :param window_id: The window id
+        :param action: The action to be observed
+        :param callback: The callback function to be called when the Observer is notified
+        :param dettach_after_call: If True, the observer will be dettached after the callback is called
         """
 
         # if the window_id is not in the windows_observers dictionary, add it
@@ -1619,12 +1641,29 @@ class toolkit_UI():
 
         # if the action is already in the windows_observers dictionary, return
         if action in self.windows_observers[window_id]:
-            logger.debug('Observer already exists for action: ' + action + ' (window ' + window_id + ')')
+            # logger.debug('Observer already exists for action: ' + action + ' (window ' + window_id + ')')
             return False
 
         # add an Observer to the transcription window
         window_observer = Observer()
-        window_observer.update = callback
+
+        # if the dettach_after_call is True, execute the callback and then dettach the observer
+        if dettach_after_call:
+
+            # create a new callback which contains the callback and the dettach function
+            def callback_with_dettach(*args, **kwargs):
+
+                # call the callback
+                callback(*args, **kwargs)
+
+                # dettach the observer
+                self.toolkit_ops_obj.dettach_observer(action=action, observer=window_observer)
+
+            # set the new callback
+            window_observer.update = callback_with_dettach
+
+        else:
+            window_observer.update = callback
 
         # attach the observer to update_transcription action
         self.toolkit_ops_obj.attach_observer(action=action, observer=window_observer)
@@ -1854,6 +1893,57 @@ class toolkit_UI():
 
         return True
 
+    def reset_status_label_after(self, window_id, seconds=5):
+        """
+        This checks the last time the status label was updated via window.status_label_last_update
+        and sets it to '' if it was more than X seconds ago.
+        """
+
+        if (window := self.get_window_by_id(window_id)) is None:
+            logger.warning('Cannot reset status label for window with id {} - window not found.'.format(window_id))
+            return False
+
+        if hasattr(window, 'status_last_update'):
+            if time.time() - window.status_last_update > seconds:
+                self.update_window_status_label(window_id=window_id, text='')
+                return True
+
+        return None
+
+    def update_window_status_label(self, window_id, text='', color=None):
+
+        if (window := self.get_window_by_id(window_id)) is None:
+            logger.warning('Cannot update status label for window with id {} - window not found.'.format(window_id))
+            return False
+
+        if hasattr(window, 'status_label'):
+
+            color = self.theme_colors['normal'] \
+                if color is None else self.theme_colors[color]
+
+            # if the text in the status label is the same as the text we want to set it to
+            # add a dot to the end of the text (but only up to 50 dots)
+            if text != '' and window.status_label.cget('text').split('.')[0].lower() == text.split('.')[0].lower():
+
+                # get the length of the text from the first dot to the end
+                dots = len(window.status_label.cget('text')) - len(window.status_label.cget('text').split('.')[0])
+
+                # add a dot to the end of the text if there are less than 50 dots
+                text = window.status_label.cget('text') + '.' if dots < 50 else text
+
+            window.status_label.configure(text=text, text_color=color)
+
+            # reset the last update time if the text is not empty
+            if text != '':
+                window.status_last_update = time.time()
+
+            return True
+
+        logger.error\
+            ('Cannot update status label for window with id {} - label attribute not found.'.format(window_id))
+        return False
+
+
     # MAIN WINDOW
 
     def hide_main_window_frame(self, frame_name):
@@ -1885,7 +1975,7 @@ class toolkit_UI():
         # only attempt to show the frame from the main window if it's known not to be visible
         if frame_name not in self.windows['main'].main_window_visible_frames:
             # first show it
-            self.windows['main'].__dict__[frame_name].pack(expand=True, fill=X)
+            self.windows['main'].__dict__[frame_name].pack(expand=True, fill=tk.X)
 
             # then add it to the visible frames list
             self.windows['main'].main_window_visible_frames.append(frame_name)
@@ -2381,7 +2471,7 @@ class toolkit_UI():
             text_form_frame = ctk.CTkFrame(current_tk_window)
             text_form_frame.grid(row=0, column=1, sticky="nsew")
 
-            # create the right frame to hold other stuff, like transcript groups etc.
+            # create the right frame to hold other stuff
             # (but don't add it - this needs to be added outside of this function, only if needed)
             self.windows[window_id].right_frame = \
                 right_frame = ctk.CTkFrame(current_tk_window)
@@ -2419,7 +2509,7 @@ class toolkit_UI():
 
             # add the initial text to the text element
             if initial_text:
-                text.insert(tk.END, initial_text + '\n\n')
+                text.insert(ctk.END, initial_text + '\n\n')
 
             # change the color of text to supernormal (almost white)
             text.tag_add('reply', '1.0', 'end-1c')
@@ -2436,7 +2526,7 @@ class toolkit_UI():
 
                 # if a command prefix is given, add it to the text element
                 if prompt_prefix:
-                    text.insert(tk.END, prompt_prefix)
+                    text.insert(ctk.END, prompt_prefix)
 
                 # any keypress in the text element will call the _text_window_entry function
                 text.bind('<KeyPress>',
@@ -2468,7 +2558,7 @@ class toolkit_UI():
                                               command=button['command'])
 
                     # add the button to the frame
-                    action_button.pack(side=button['side'] if 'side' in button else tk.LEFT,
+                    action_button.pack(side=button['side'] if 'side' in button else ctk.LEFT,
                                        anchor=button['anchor'] if 'anchor' in button else tk.W,
                                        **self.ctk_footer_button_paddings)
 
@@ -2506,7 +2596,7 @@ class toolkit_UI():
         # call the default destroy window function
         self.destroy_window_(windows_dict=self.windows, window_id=window_id)
 
-    def text_window_format_md(self, window_id: str, text_widget: Text = None):
+    def text_window_format_md(self, window_id: str, text_widget: tk.Text = None):
         '''
         This function will format markdown text in a text window.
         It will add url links and do header formatting
@@ -2520,7 +2610,7 @@ class toolkit_UI():
             text_widget = self.text_windows[window_id]['text_widget']
 
         # get the text from the text widget
-        text = text_widget.get('1.0', tk.END)
+        text = text_widget.get('1.0', ctk.END)
 
         # change the font to default_font
         text_widget.configure(font=(self.default_font))
@@ -2539,7 +2629,7 @@ class toolkit_UI():
         lines = text.split('\n')
 
         # clear the text widget
-        text_widget.delete('1.0', tk.END)
+        text_widget.delete('1.0', ctk.END)
 
         for line in lines:
 
@@ -2557,13 +2647,13 @@ class toolkit_UI():
                 header_text = line.split('# ')[1]
 
                 # get current insert position
-                start_index = text_widget.index(tk.INSERT)
+                start_index = text_widget.index(ctk.INSERT)
 
                 # replace the line with the header text
-                text_widget.insert(tk.INSERT, header_text)
+                text_widget.insert(ctk.INSERT, header_text)
 
                 # add the header tag
-                text_widget.tag_add(header_type, start_index, tk.INSERT)
+                text_widget.tag_add(header_type, start_index, ctk.INSERT)
 
                 md = True
 
@@ -2586,7 +2676,7 @@ class toolkit_UI():
                     text_before_url = line.split(url_md)[0]
 
                     # insert the text before the url
-                    text_widget.insert(tk.INSERT, text_before_url)
+                    text_widget.insert(ctk.INSERT, text_before_url)
 
                     # remove the text before the url from the line
                     line = line.replace(text_before_url, '')
@@ -2595,28 +2685,28 @@ class toolkit_UI():
                     line = line.replace(url_md, '')
 
                     # get current insert position for the url_text
-                    start_index = text_widget.index(tk.INSERT)
+                    start_index = text_widget.index(ctk.INSERT)
 
-                    text_widget.insert(tk.INSERT, url_text)
+                    text_widget.insert(ctk.INSERT, url_text)
 
                     # add the url tags
-                    text_widget.tag_add('url-color', start_index, tk.INSERT)
-                    text_widget.tag_add('url-' + str(start_index), start_index, tk.INSERT)
+                    text_widget.tag_add('url-color', start_index, ctk.INSERT)
+                    text_widget.tag_add('url-' + str(start_index), start_index, ctk.INSERT)
 
                     # on click, open the url in the default browser
                     text_widget.tag_bind('url-' + str(start_index), '<Button-1>',
                                          lambda event, url=url: webbrowser.open(url))
 
                 # finally, insert the rest of the line
-                text_widget.insert(tk.INSERT, line)
+                text_widget.insert(ctk.INSERT, line)
 
                 md = True
 
             if not md:
-                text_widget.insert(tk.INSERT, line)
+                text_widget.insert(ctk.INSERT, line)
 
             # add a new line
-            text_widget.insert(tk.INSERT, '\n')
+            text_widget.insert(ctk.INSERT, '\n')
 
         # turn the text widget back to its initial state
         text_widget.configure(state=initial_state)
@@ -2670,10 +2760,10 @@ class toolkit_UI():
             text_widget.delete('insert linestart', 'insert lineend')
 
         # insert the prompt
-        text_widget.insert(tk.END, prompt)
+        text_widget.insert(ctk.END, prompt)
 
         # move the cursor to the end
-        text_widget.see(tk.END)
+        text_widget.see(ctk.END)
 
         # focus on the text widget
         text_widget.focus()
@@ -2715,7 +2805,7 @@ class toolkit_UI():
             # remove existing tags
             text_widget.tag_delete('find_result_tag')
 
-            tag_index = text_widget.search(tag_text, 1.0, nocase=True, stopindex=END)
+            tag_index = text_widget.search(tag_text, 1.0, nocase=True, stopindex=ctk.END)
 
             # if we have a tag_index, tag the text
             if tag_index != -1:
@@ -2765,12 +2855,12 @@ class toolkit_UI():
 
             # create a label for the find input
             find_label = ctk.CTkLabel(find_frame, text='Find:', name='find_label')
-            find_label.pack(side=tk.LEFT, **self.ctk_popup_input_paddings)
+            find_label.pack(side=ctk.LEFT, **self.ctk_popup_input_paddings)
 
             # create the find input
             find_str = tk.StringVar()
             find_input = ctk.CTkEntry(find_frame, textvariable=find_str, name='find_input')
-            find_input.pack(side=tk.LEFT, expand=True, fill='x', **self.ctk_popup_input_paddings)
+            find_input.pack(side=ctk.LEFT, expand=True, fill='x', **self.ctk_popup_input_paddings)
 
             parent_text_widget = self.text_windows[parent_window_id]['text_widget']
 
@@ -2811,11 +2901,11 @@ class toolkit_UI():
 
                 # create a label for the replace input
                 replace_label = ctk.CTkLabel(replace_frame, text='Replace:', name='replace_label')
-                replace_label.pack(side=tk.LEFT, **self.ctk_popup_input_paddings)
+                replace_label.pack(side=ctk.LEFT, **self.ctk_popup_input_paddings)
 
                 # create the replace input
                 replace_input = ctk.CTkEntry(replace_frame, name='replace_input')
-                replace_input.pack(side=tk.LEFT, expand=True, fill='x', **self.ctk_popup_input_paddings)
+                replace_input.pack(side=ctk.LEFT, expand=True, fill='x', **self.ctk_popup_input_paddings)
 
                 # if a replace text is given, add it to the replace input
                 if replace_text:
@@ -2829,7 +2919,7 @@ class toolkit_UI():
                                                    post_replace_action_args=post_replace_action_args
                                                    )
                                                )
-                replace_button.pack(side=tk.LEFT, **self.ctk_popup_input_paddings)
+                replace_button.pack(side=ctk.LEFT, **self.ctk_popup_input_paddings)
 
             # create a footer frame that holds stuff on the bottom of the window
             footer_frame = ctk.CTkFrame(self.windows[window_id], name='footer_frame', **self.ctk_frame_transparent)
@@ -2838,7 +2928,7 @@ class toolkit_UI():
             # add a status label to the footer frame
             status_label = ctk.CTkLabel(footer_frame, name='status_label',
                                  text="", anchor='w', text_color=self.theme_colors['normal'])
-            status_label.pack(side=tk.LEFT, **self.ctk_popup_input_paddings)
+            status_label.pack(side=ctk.LEFT, **self.ctk_popup_input_paddings)
 
             # add the status label to the find_windows dict so we can update it later
             self.find_windows[window_id]['status_label'] = status_label
@@ -2888,11 +2978,11 @@ class toolkit_UI():
             logger.error('Aborting. Unable to find text in widget without a search string, text widget, and window id.')
             return False
 
-        # remove tag 'found' from index 1 to END
-        text_widget.tag_remove('found', '1.0', END)
+        # remove tag 'found' from index 1 to ctk.END
+        text_widget.tag_remove('found', '1.0', ctk.END)
 
-        # remove tag 'current_result_tag' from index 1 to END
-        text_widget.tag_remove('current_result_tag', '1.0', END)
+        # remove tag 'current_result_tag' from index 1 to ctk.END
+        text_widget.tag_remove('current_result_tag', '1.0', ctk.END)
 
         # reset the search result indexes and the result position
         self.find_result_indexes[window_id] = []
@@ -2914,7 +3004,7 @@ class toolkit_UI():
                 while 1:
 
                     # searches for desired string from index 1
-                    idx = text_widget.search(search_str, idx, nocase=True, stopindex=END)
+                    idx = text_widget.search(search_str, idx, nocase=True, stopindex=ctk.END)
 
                     # stop the loop when we run out of results (indexes)
                     if not idx:
@@ -2955,7 +3045,7 @@ class toolkit_UI():
                                 text_indices=self.find_result_indexes[window_id])
                                     )
 
-                        kwargs.get('select_all_button').pack(side=tk.LEFT, **self.ctk_popup_input_paddings)
+                        kwargs.get('select_all_button').pack(side=ctk.LEFT, **self.ctk_popup_input_paddings)
 
                 # if we don't have results, hide the select all button (if there is any)
                 else:
@@ -3057,10 +3147,17 @@ class toolkit_UI():
         When the user closes the dialogue window, it will return the user input to the main window
         '''
 
-        def __init__(self, parent, title, input_widgets, toolkit_UI_obj=None, **kwargs):
-            super().__init__(parent)
+        def __init__(self, parent: str or tk.Tk, title, input_widgets, toolkit_UI_obj=None, **kwargs):
 
             self.toolkit_UI_obj = toolkit_UI_obj
+
+            # if the parent is a string
+            if isinstance(parent, str):
+
+                # we need to get the parent window object from toolkit_UI_obj
+                parent = self.toolkit_UI_obj.get_window_by_id(window_id=parent)
+
+            super().__init__(parent)
 
             # set the icon
             self.toolkit_UI_obj.UI_set_icon(self)
@@ -3136,7 +3233,7 @@ class toolkit_UI():
                 # add the input widget, depending on the type
                 # entry widget
                 if widget['type'] == 'entry':
-                    input_value = StringVar(input_frame, widget_default_value)
+                    input_value = tk.StringVar(input_frame, widget_default_value)
                     input_widget = ctk.CTkEntry(input_frame, textvariable=input_value,
                                                 **toolkit_UI.ctk_askdialog_input_size)
 
@@ -3149,7 +3246,7 @@ class toolkit_UI():
 
                 # checkbox widget
                 elif widget['type'] == 'checkbutton':
-                    input_value = BooleanVar(input_frame, widget_default_value)
+                    input_value = tk.BooleanVar(input_frame, widget_default_value)
                     input_widget = ctk.CTkCheckBox(input_frame, variable=input_value)
 
                 # text widget
@@ -3182,19 +3279,19 @@ class toolkit_UI():
                 return None
 
             # pack the input frame
-            input_frame.pack(side=TOP, fill=BOTH, expand=True, **toolkit_UI.ctk_askdialog_frame_paddings)
+            input_frame.pack(side=ctk.TOP, fill=ctk.BOTH, expand=True, **toolkit_UI.ctk_askdialog_frame_paddings)
 
             buttons_frame = ctk.CTkFrame(self, **toolkit_UI.ctk_frame_transparent)
 
             # add the OK button
             ok_button = ctk.CTkButton(buttons_frame, text="OK", command=self.ok)
-            ok_button.pack(side=LEFT, **toolkit_UI.ctk_askdialog_input_paddings)
+            ok_button.pack(side=ctk.LEFT, **toolkit_UI.ctk_askdialog_input_paddings)
             self.bind("<Return>", self.ok)
 
             # if we have a cancel_action, add the Cancel button
             if 'cancel_return' in kwargs:
                 cancel_button = ctk.CTkButton(buttons_frame, text="Cancel", command=self.cancel)
-                cancel_button.pack(side=LEFT, **toolkit_UI.ctk_askdialog_input_paddings)
+                cancel_button.pack(side=ctk.LEFT, **toolkit_UI.ctk_askdialog_input_paddings)
 
                 # add the cancel action
                 self.cancel_return = kwargs['cancel_return']
@@ -3203,7 +3300,7 @@ class toolkit_UI():
                 self.bind("<Escape>", self.cancel)
 
             # pack the buttons frame
-            buttons_frame.pack(side=TOP, fill=BOTH, expand=True, **toolkit_UI.ctk_askdialog_frame_paddings)
+            buttons_frame.pack(side=ctk.TOP, fill=ctk.BOTH, expand=True, **toolkit_UI.ctk_askdialog_frame_paddings)
 
         def center_window(self):
 
@@ -3730,7 +3827,7 @@ class toolkit_UI():
         # file_info_label.grid(row=1, column=0, columnspan=3, sticky="w", **self.ctk_form_paddings_ext)
 
         # add the file selection form to the parent
-        file_selection_form.pack(fill=X, expand=True, **self.ctk_frame_paddings)
+        file_selection_form.pack(fill=ctk.X, expand=True, **self.ctk_frame_paddings)
 
         # disable the file selection form if we have a transcription path
         if kwargs.get('transcription_file_path', None) is not None:
@@ -4059,8 +4156,8 @@ class toolkit_UI():
                                           **self.ctk_form_entry_settings_half)
         max_per_line_unit_input = ctk.CTkSegmentedButton(max_per_line_frame, variable=max_per_line_unit_var,
                                                          values=['characters', 'words'], dynamic_resizing=True)
-        max_per_line_input.pack(side=tk.LEFT)
-        max_per_line_unit_input.pack(side=tk.LEFT, **self.ctk_form_paddings)
+        max_per_line_input.pack(side=ctk.LEFT)
+        max_per_line_unit_input.pack(side=ctk.LEFT, **self.ctk_form_paddings)
 
         # only allow integers in the max_per_line_input
         max_per_line_input.configure(
@@ -4122,8 +4219,8 @@ class toolkit_UI():
                                                        textvariable=prevent_gaps_shorter_than_var,
                                                        **self.ctk_form_entry_settings_half)
         prevent_gaps_shorter_than_unit_label = ctk.CTkLabel(prevent_gaps_shorter_than_frame, text='seconds')
-        prevent_gaps_shorter_than_input.pack(side=tk.LEFT)
-        prevent_gaps_shorter_than_unit_label.pack(side=tk.LEFT, **self.ctk_form_paddings)
+        prevent_gaps_shorter_than_input.pack(side=ctk.LEFT)
+        prevent_gaps_shorter_than_unit_label.pack(side=ctk.LEFT, **self.ctk_form_paddings)
 
         # only allow floats in the prevent_gaps_shorter_than_input
         prevent_gaps_shorter_than_input.configure(
@@ -4920,16 +5017,6 @@ class toolkit_UI():
             # save other data from the transcription file for each window here
             self.transcription_data = {}
 
-            # save transcription groups of each transcription window here
-            self.transcript_groups = {}
-
-            # save the selected groups of each transcription window here
-            # (multiple selections allowed)
-            self.selected_groups = {}
-
-            # keep track if we're auto adding selected segments to selected groups
-            self.auto_add_to_group = self.stAI.get_app_setting('transcript_auto_add_to_group', default_if_none=False)
-
             # all the selected transcript segments of each window
             # the selected segments dict will use the text element line number as an index, for eg:
             # self.selected_segments[window_id][line] = transcript_segment
@@ -4950,6 +5037,8 @@ class toolkit_UI():
 
             # this keeps track of which transcription window is in sync with the resolve playhead
             self.sync_with_playhead = {}
+
+
 
         def link_to_timeline_button(self, button: tk.Button = None, transcription_file_path: str = None,
                                     link=None, timeline_name: str = None, window_id: str = None):
@@ -4982,10 +5071,6 @@ class toolkit_UI():
 
             # make the UI link (or unlink) the transcript to the timeline
             if link_result and link_result is not None:
-
-                # check if the data in the transcription file is valid
-                if window_id is not None and window_id in self.transcript_segments:
-                    transcription_data = self.transcription_data[window_id]
 
                 # if the reply is true, it means that the transcript is linked
                 # therefore the button needs to read the opposite action
@@ -5085,10 +5170,10 @@ class toolkit_UI():
                 return False
 
             # remove tag 'found' from index 1 to END
-            text_element.tag_remove('found', '1.0', END)
+            text_element.tag_remove('found', '1.0', ctk.END)
 
-            # remove tag 'current_result_tag' from index 1 to END
-            text_element.tag_remove('current_result_tag', '1.0', END)
+            # remove tag 'current_result_tag' from index 1 to ctk.END
+            text_element.tag_remove('current_result_tag', '1.0', ctk.END)
 
             # reset the search result indexes and the result position
             self.search_result_indexes[window_id] = []
@@ -5104,7 +5189,7 @@ class toolkit_UI():
 
                 while 1:
                     # searches for desired string from index 1
-                    idx = text_element.search(search_str, idx, nocase=True, stopindex=END)
+                    idx = text_element.search(search_str, idx, nocase=True, stopindex=ctk.END)
 
                     # stop the loop when we run out of results (indexes)
                     if not idx:
@@ -5238,11 +5323,23 @@ class toolkit_UI():
             if text_element is None or window_id is None:
                 return False
 
+            # temporary solution, until we clean this mess up
+            # get the currently focused widget
+            focused_widget = self.toolkit_UI_obj.root.focus_get()
+
+            transcript_focused = False
+            # check if the focused widget is the transcript text widget
+            if str(focused_widget).endswith('middle_frame.text_form_frame.transcript_text'):
+                transcript_focused = True
+
             # if special_key is not None:
             #     print(special_key)
 
             # HERE ARE SOME USEFUL SHORTCUTS FOR THE TRANSCRIPTION WINDOW:
             # see the shortcuts in the README file
+
+            # get the current window
+            transcription_window = self.toolkit_UI_obj.get_window_by_id(window_id)
 
             # initialize the active segment number
             self.active_segment[window_id] = self.get_active_segment(window_id, 1)
@@ -5253,17 +5350,23 @@ class toolkit_UI():
             # UP key events
             if event.keysym == 'Up':
 
-                # move cursor (active segment) on the previous segment on the transcript
-                self.set_active_segment(window_id, text_element, line_calc=-1)
+                if str(focused_widget).endswith('transcriptgroupsmodule'):
+                    focused_widget.select_previous()
+                else:
+                    # move cursor (active segment) on the previous segment on the transcript
+                    self.set_active_segment(window_id, text_element, line_calc=-1)
 
             # DOWN key events
             elif event.keysym == 'Down':
 
-                # move cursor (active segment) on the next segment on the transcript
-                self.set_active_segment(window_id, text_element, line_calc=1)
+                if str(focused_widget).endswith('transcriptgroupsmodule'):
+                    focused_widget.select_next()
+                else:
+                    # move cursor (active segment) on the next segment on the transcript
+                    self.set_active_segment(window_id, text_element, line_calc=1)
 
             # APOSTROPHE key events
-            elif event.keysym == 'apostrophe':
+            if event.keysym == 'apostrophe':
                 # go_to_time end time of the last selected segment
                 self.go_to_selected_time(window_id=window_id, position='end')
 
@@ -5297,7 +5400,7 @@ class toolkit_UI():
             # these are the events that might require the new line and segment numbers
 
             # v key events
-            if event.keysym == 'v':
+            if event.keysym == 'v' and transcript_focused:
                 # add/remove active segment to selection
                 # if it's not in the selection
                 self.segment_to_selection(window_id, text_element, line)
@@ -5311,7 +5414,7 @@ class toolkit_UI():
             #    self.clear_selection(window_id, text_element)
 
             # CMD+A key (select/deselect all)
-            if event.keysym == 'a' and special_key == 'cmd':
+            if event.keysym == 'a' and special_key == 'cmd' and transcript_focused:
                 return self.button_select_deselect_all(window_id, text_element)
 
             # Shift+A key (select between current and last active segment)
@@ -5366,27 +5469,21 @@ class toolkit_UI():
                 # self.sync_with_playhead_update(window_id=window_id)
                 self.sync_with_playhead_button(window_id=window_id)
 
-            # CMD+G and CMD+SHIFT+G key events
-            # (group selected - adds new group or updates segments of existing group)
-            if (event.keysym == 'g' or event.keysym == 'G') and special_key == 'cmd':
+            # CMD+G adds the selected segments to a new group
+            if (event.keysym == 'g') and special_key == 'cmd':
+                self.button_add_to_new_group(window_id=window_id, only_add=False)
 
-                # if the user pressed CMD+G, replace the current segments with the selected ones
-                if event.keysym == 'g':
-                    self.button_add_to_group(window_id=window_id, only_add=False)
-
-                elif event.keysym == 'G':
-                    self.button_add_to_group(window_id=window_id, only_add=True)
-
-            # SHIFT+G opens group window
-            elif event.keysym == 'G':
-                self.toolkit_UI_obj.open_transcript_groups_window(transcription_window_id=window_id)
+            # SHIFT+G shows the group module
+            #elif event.keysym == 'G':
+            #    self.button_toggle_groups_module(window_id=window_id)
+            #    return 'break'
 
             # colon key event (align current segment start to playhead)
-            if event.keysym == 'colon':
+            if event.keysym == 'colon' and transcript_focused:
                 self.align_line_to_playhead(window_id=window_id, position='start', line_index=line)
 
             # double quote key event (align current segment end to playhead)
-            if event.keysym == 'quotedbl':
+            if event.keysym == 'quotedbl' and transcript_focused:
                 self.align_line_to_playhead(window_id=window_id, position='end', line_index=line)
 
             # 't' key event (re-transcribe selected segments)
@@ -5395,7 +5492,7 @@ class toolkit_UI():
 
             # 'o' key sends active segment as context to the Assistant window
             # Shift+O also includes a time column
-            if event.keysym == 'o' or event.keysym == 'O':
+            if (event.keysym == 'o' or event.keysym == 'O') and transcript_focused:
 
                 # Shift+O includes a time column
                 if event.keysym == 'O':
@@ -5403,10 +5500,15 @@ class toolkit_UI():
                 else:
                     self.button_send_to_assistant(window_id=window_id, with_timecodes=False)
 
-            # BackSpace key event (delete selected)
-            if event.keysym == 'BackSpace':
+            # BackSpace key event to delete selected segments
+            if event.keysym == 'BackSpace' and transcript_focused:
                 self.delete_line(window_id=window_id, text_element=text_element,
                                  line_no=line, status_label=status_label)
+
+            # BackSpace key event to delete selected group
+            elif event.keysym == 'BackSpace' and str(focused_widget).endswith('transcriptgroupsmodule'):
+                focused_widget.delete_selected_group()
+
 
             # CMD/CTRL+Shift+s key event (Export transcription as...)
             if event.keysym == 'S' and special_key == 'cmd':
@@ -5433,7 +5535,7 @@ class toolkit_UI():
             if text_element is None and window_id in self.toolkit_UI_obj.windows:
                 # try to find it in the transcript text elements
                 text_element = self.toolkit_UI_obj.windows[window_id] \
-                    .nametowidget('text_form_frame.transcript_text')
+                    .nametowidget('middle_frame.text_form_frame.transcript_text')
 
             if text_element is None:
                 logger.error('Could not find transcript text element in window {}'.format(window_id))
@@ -5461,8 +5563,7 @@ class toolkit_UI():
             self.segment_to_selection(window_id, text_element, segment_list)
 
             # call auto add to group function
-            self.auto_add_selection_to_group(window_id,
-                                             confirm=True if len(segment_list) > 10 else False)
+            self.auto_add_selection_to_group(window_id, confirm=True if len(segment_list) > 10 else False)
 
             return 'break'
 
@@ -5510,8 +5611,7 @@ class toolkit_UI():
                 n = n + 1
 
             # and also call auto add to group function
-            self.auto_add_selection_to_group(window_id,
-                                             confirm=True if num_segments > 10 else False)
+            self.auto_add_selection_to_group(window_id, confirm=True if num_segments > 10 else False)
 
         def button_send_to_assistant(self, window_id, with_timecodes=False):
             '''
@@ -5530,46 +5630,32 @@ class toolkit_UI():
             self.toolkit_UI_obj.open_assistant_window(assistant_window_id='assistant',
                                                       transcript_text=full_text.strip())
 
-        def button_add_to_group(self, window_id, only_add=True):
+        def button_add_to_new_group(self, window_id, only_add=True):
             '''
             Adds the selected segments to a group
             '''
 
-            # if a group is selected, just update it
-            if window_id in self.selected_groups and len(self.selected_groups[window_id]) == 1:
+            # the transcription window
+            t_window = self.toolkit_UI_obj.get_window_by_id(window_id)
 
-                # use the selected group id
-                group_id = self.selected_groups[window_id][0]
+            # the groups module for this window
+            window_groups_module = t_window.transcript_groups_module
 
-                # completely replace all current segments with the selected ones
-                if only_add == False:
+            # add the new group (and group all the selected segments in it)
+            window_groups_module.add_new_group()
 
-                    # update group
-                    self.toolkit_UI_obj.on_group_update_press(t_window_id=window_id,
-                                                              t_group_window_id=window_id + '_transcript_groups',
-                                                              group_id=group_id)
+            return
 
-                    logger.debug('Segments added to group {}.'.format(group_id))
+        def button_toggle_groups_module(self, window_id):
 
-                # if the user pressed CMD+SHIFT+G,
-                # add selected segments to the group, without removing any existing one
-                elif only_add == True:
+            # the transcription window
+            t_window = self.toolkit_UI_obj.get_window_by_id(window_id)
 
-                    # add selected segments to the group, but keep the name and the notes
-                    self.group_selected(window_id=window_id, group_name=group_id, add=True,
-                                        keep_name=True, keep_notes=True)
+            # the groups module for this window
+            window_groups_module = t_window.transcript_groups_module
 
-                    logger.debug('Only new segments added to group {}.'.format(group_id))
-
-                    # update group
-                    # self.toolkit_UI_obj.on_group_update_press(t_window_id=window_id,
-                    #                                           t_group_window_id=window_id+'_transcript_groups',
-                    #                                           group_id=group_id)
-
-            # otherwise create a new group
-            else:
-                if self.group_selected(window_id=window_id):
-                    logger.info('Group added')
+            # toggle the groups module
+            window_groups_module.toggle_groups_module_visibility()
 
         def button_copy_segments_to_clipboard(self, window_id, with_timecodes=False, per_line=False):
             '''
@@ -5655,7 +5741,8 @@ class toolkit_UI():
 
             # if no text_element is provided, try to get it from the window
             if text_element is None:
-                text_element = self.toolkit_UI_obj.windows[window_id].nametowidget('text_form_frame.transcript_text')
+                text_element = self.toolkit_UI_obj.windows[window_id]\
+                    .nametowidget('middle_frame.text_form_frame.transcript_text')
 
             # get the marker colors from all the markers in the current_timeline['markers'] dict
             marker_colors = [' '] + sorted(list(set([NLE.current_timeline['markers'][marker]['color']
@@ -5733,7 +5820,8 @@ class toolkit_UI():
 
             # if no text_element is provided, try to get it from the window
             if text_element is None:
-                text_element = self.toolkit_UI_obj.windows[window_id].nametowidget('text_form_frame.transcript_text')
+                text_element = self.toolkit_UI_obj.windows[window_id]\
+                    .nametowidget('middle_frame.text_form_frame.transcript_text')
 
             # check if the user is trying to add markers
             # to a timeline that is not connected to the transcription in this window
@@ -5783,7 +5871,7 @@ class toolkit_UI():
                     {'name': 'color', 'label': 'Color:', 'type': 'option_menu',
                      'default_value': self.stAI.get_app_setting('default_marker_color',
                                                                 default_if_none='Blue'),
-                     'options': self.toolkit_UI_obj.resolve_marker_colors.keys()}
+                     'options': list(self.toolkit_UI_obj.resolve_marker_colors.keys())}
                 ]
 
                 # then we call the ask_dialogue function
@@ -6276,43 +6364,18 @@ class toolkit_UI():
                 else:
                     return False
 
-            # open transcription groups window
-            self.toolkit_UI_obj.open_transcript_groups_window(window_id)
+            # ask the user for the name of the new group
+            user_input = self.toolkit_UI_obj.AskDialog(
+                title='Questions Group Name',
+                input_widgets=[
+                    {'name': 'group_name', 'label': 'Group Name:', 'type': 'entry', 'default_value': ''}
+                ],
+                parent=window_id,
+                toolkit_UI_obj=self.toolkit_UI_obj) \
+                .value()
 
-            """
-            # group questions in another thread
-            save_return = self.toolkit_ops_obj.group_questions(transcription_data['segments'], transcription_file_path)
-
-            if not save_return:
+            if not user_input or 'group_name' not in user_input or not user_input['group_name']:
                 return False
-
-            # if the group add was successful, update the transcript groups dictionary
-            if type(save_return) is dict:
-
-                # initialize the empty group if it doesn't exist
-                if window_id not in self.transcript_groups:
-                    self.transcript_groups[window_id] = {}
-
-                # if the returned value is a dictionary, it means that the window groups have been updated
-                # so we need to update the groups of this window
-                # but get all the groups from the transcription again!
-                self.transcript_groups[window_id] = \
-                    self.toolkit_ops_obj.t_groups_obj.get_all_transcript_groups(transcription_file_path)
-
-            else:
-                logger.debug('Something may have went wrong while saving the group to the transcription file')
-                return False
-
-            # update the list of groups in the transcript groups window
-            self.toolkit_UI_obj.update_transcript_groups_window(t_window_id=window_id)
-
-            # select the group and the segments in the transcript window
-            self.toolkit_UI_obj.on_group_press(None, t_window_id=window_id, group_id='questions')
-
-            # update the list of groups in the transcript groups window
-            self.toolkit_UI_obj.update_transcript_groups_window(t_window_id=window_id)
-
-            """
 
             # prepare the options for the processing queue
             queue_item = dict()
@@ -6323,13 +6386,14 @@ class toolkit_UI():
             queue_item['source_file_path'] = queue_item['transcription_file_path'] = transcription_file_path
             queue_item['tasks'] = ['group_questions']
             queue_item['device'] = self.toolkit_ops_obj.torch_device_type_select()
+            queue_item['group_name'] = user_input['group_name']
 
             group_questions_queue_id = self.toolkit_ops_obj.processing_queue.add_to_queue(**queue_item)
 
             # open the queue window
             self.toolkit_UI_obj.open_queue_window()
 
-            return False
+            return True
 
         def button_go_to_timecode(self, window_id, timecode=None):
 
@@ -6358,14 +6422,14 @@ class toolkit_UI():
                 tkinter_line_index = '{}.0'.format(line_no), '{}.0'.format(int(line_no) + 1).split(' ')
 
                 # enable editing on the text element
-                text_element.config(state=NORMAL)
+                text_element.config(state=ctk.NORMAL)
 
                 # delete the line - doesn't work!
                 # remove the line from the text widget
                 text_element.delete(tkinter_line_index[0], tkinter_line_index[1])
 
                 # disable editing on the text element
-                text_element.config(state=DISABLED)
+                text_element.config(state=ctk.DISABLED)
 
                 # calculate the segment index
                 segment_index = int(line_no) - 1
@@ -6380,7 +6444,7 @@ class toolkit_UI():
                 save_status = self.save_transcript(window_id=window_id, text=False, skip_verification=True)
 
                 # let the user know what happened via the status label
-                self.update_status_label_after_save(status_label=status_label, save_status=save_status)
+                self.update_status_label_after_save(window_id=window_id, save_status=save_status)
 
                 return True
 
@@ -6520,6 +6584,10 @@ class toolkit_UI():
             if timeline_start_tc is not None:
                 transcription_file_data['timeline_start_tc'] = timeline_start_tc
 
+            # update the transcription file data of the window
+            if window_id is not None:
+                self.set_window_transcription_data(window_id=window_id, transcription_data=transcription_file_data)
+
             # finally, save the transcription file
             if self.toolkit_ops_obj.save_transcription_file(transcription_file_path=transcription_file_path,
                                                             transcription_data=transcription_file_data,
@@ -6545,13 +6613,13 @@ class toolkit_UI():
                     and self.toolkit_UI_obj.window_types[window_id] == 'transcription':
 
                 # do we have any transcription data for this window?
-                if window_id not in self.transcription_data:
+                if (transcription_data := self.get_window_transcription_data(window_id=window_id)) is None:
                     logger.warn('No transcription data found for window id: {}'.format(window_id))
                     return False
 
                 # do we have timecode data for this transcription?
                 timecode_data = self.toolkit_ops_obj.transcription_has_timecode_data \
-                    (transcription_data=self.transcription_data[window_id])
+                    (transcription_data=transcription_data)
 
                 # if we don't have timecode data, we'll ask the user to enter it
                 if not timecode_data:
@@ -6628,19 +6696,19 @@ class toolkit_UI():
                     and self.toolkit_UI_obj.window_types[window_id] == 'transcription':
 
                 # do we have any transcription data for this window?
-                if window_id not in self.transcription_data:
+                if (transcription_data := self.get_window_transcription_data(window_id)) is None:
                     logger.warn('No transcription data found for window id: {}'.format(window_id))
                     return None, None
 
                 # try to get the default start timecode from the transcription data, if the passed default is empty
                 if (default_start_tc == '' or not default_start_tc) \
-                        and 'timeline_start_tc' in self.transcription_data[window_id]:
-                    default_start_tc = self.transcription_data[window_id]['timeline_start_tc']
+                        and 'timeline_start_tc' in transcription_data:
+                    default_start_tc = transcription_data['timeline_start_tc']
 
                 # try to get the default framerate from the transcription data, if the passed default is empty
                 if (default_fps == '' or not default_fps) \
-                        and 'timeline_fps' in self.transcription_data[window_id]:
-                    default_fps = self.transcription_data[window_id]['timeline_fps']
+                        and 'timeline_fps' in transcription_data:
+                    default_fps = transcription_data['timeline_fps']
 
             # create a list of widgets for the input dialogue
             input_widgets = [
@@ -6680,13 +6748,8 @@ class toolkit_UI():
                     # update transcription data only if window id represents a transcription window
                     if window_id in self.toolkit_UI_obj.window_types \
                             and self.toolkit_UI_obj.window_types[window_id] == 'transcription':
-                        # set the start_tc in the transcription data to the user input
-                        self.transcription_data[window_id]['timeline_fps'] \
-                            = user_input['timeline_fps']
 
-                        # set the start_tc in the transcription data to the user input
-                        self.transcription_data[window_id]['timeline_start_tc'] \
-                            = user_input['timeline_start_tc']
+                        # todo: test if this saves the timecode data and notifies the update_transcription observers
 
                         # now try to save the transcription data to the file
                         self.save_timecode_data_to_transcription(window_id=window_id,
@@ -6721,10 +6784,10 @@ class toolkit_UI():
             timecode_data = None
 
             # get timecode data from the transcription data dict
-            if window_id in self.transcription_data:
+            if (transcription_data := self.get_window_transcription_data(window_id)) is not None:
                 timecode_data = \
                     self.toolkit_ops_obj.transcription_has_timecode_data(
-                        transcription_data=self.transcription_data[window_id])
+                        transcription_data=transcription_data)
 
             # if the transcription data is None, it means that the transcription data is invalid
             # there's not much to do, so notify the user
@@ -6763,6 +6826,24 @@ class toolkit_UI():
 
             # last resort, just return None, None
             return None, None
+
+        def get_window_selected_segments(self, window_id, list_only=False):
+            """
+            This returns the list of selected segments for the given window_id
+
+            :param window_id: the window id
+            :param list_only: if True, will return only the list of selected segments,
+                               otherwise will return the full dict containing {line: segment} pairs
+            """
+
+            # if the window has selected segments
+            if window_id in self.selected_segments:
+
+                # return either the list or the full dict
+                return list(self.selected_segments[window_id].values()) \
+                    if list_only else self.selected_segments[window_id]
+
+            return None
 
         def has_selected_segments(self, window_id):
             """
@@ -7083,17 +7164,16 @@ class toolkit_UI():
                 logger.error('No window id was passed.')
                 return None
 
-            # search through all the elements in the window until we find the transcript text element
-            for child in self.toolkit_UI_obj.windows[window_id].winfo_children():
+            # try to get the text widget from the window by name
+            try:
+                text_element = \
+                    self.toolkit_UI_obj.windows[window_id].nametowidget('middle_frame.text_form_frame.transcript_text')
 
-                # go another level deeper, since we are expecting the transcript text element to be inside a frame
-                if len(child.winfo_children()) > 0:
-                    for child2 in child.winfo_children():
-                        if child2.winfo_name() == 'transcript_text':
-                            return child2
+            except Exception as e:
+                logger.error('Could not get the text widget from the window {}'.format(window_id), exc_info=True)
+                return None
 
-            # if we get here, we didn't find the transcript text element
-            return None
+            return text_element
 
         def set_active_segment(self, window_id=None, text_element=None, line=None, line_calc=None):
 
@@ -7150,6 +7230,9 @@ class toolkit_UI():
 
             # also scroll the text element to the line
             text_element.see(str(line) + ".0")
+
+            # make the text element the currently focusd widget
+            text_element.focus_set()
 
         def clear_selection(self, window_id=None, text_element=None):
             '''
@@ -7221,8 +7304,8 @@ class toolkit_UI():
                     and window_id in self.toolkit_UI_obj.windows:
                 text_element = self.get_transcription_window_text_element(window_id=window_id)
 
-            if window_id is None or text_element is None or line is None:
-                logger.warning('Unable to select segment because no window id, text element or line was passed.')
+            if text_element is None or line is None:
+                logger.warning('Unable to select segment - no text element or line was passed.')
                 return False
 
             # if there is no selected_segments dict for the current window, create one
@@ -7297,6 +7380,28 @@ class toolkit_UI():
 
             return True
 
+        def go_to_first_selected_segment(self, window_id=None):
+            """
+            This function will go to the first selected segment in the transcript,
+            but only if there's no active segment
+
+            :param window_id:
+
+            """
+
+            # get the text element
+            text_element = self.get_transcription_window_text_element(window_id=window_id)
+
+            # get the first selected segment by looking at the l_selected tag
+            first_selected_segment = text_element.tag_ranges('l_selected')
+
+            # if there is a selected segment
+            if first_selected_segment:
+
+                # go to that segment using see
+                text_element.see(first_selected_segment[0])
+
+
         def on_selection(self, window_id):
             '''
             This is trigger when something is happening with the selection in the transcription window
@@ -7358,159 +7463,29 @@ class toolkit_UI():
             # if all fails return None
             return None
 
-        def group_selected(self, window_id: str, group_name: str = None, add: bool = False, **kwargs) -> bool:
-            '''
-            This adds the selected segments to a group based on their start and end times
-            :param window_id:
-            :param group_name: If this is passed, we're just adding the selected segments to the group
-            :param add: If this is True, we're adding the selected segments to the group,
-                        if it's False, we're keeping only what is selected in the group
-            :return:
-            '''
-
-            # group_name = 'another test group'
-            # group_notes = 'some test notes'
-
-            # this will not be preserved if this is an add operation
-            group_notes = kwargs.get('group_notes', '')
-
-            # if we have some selected segments, group them
-            if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0:
-
-                # if no group name is available, ask the user for one
-                if group_name is None:
-                    # ask the user for a group name
-                    group_name = simpledialog.askstring('Group name', 'Group name:')
-
-                    # if the user didn't enter anything or canceled, abort
-                    if not group_name:
-                        return False
-
-                # get the path of the window transcription file based on the window id
-                if window_id in self.transcription_file_paths:
-                    transcription_file_path = self.transcription_file_paths[window_id]
-                else:
-                    return False
-
-                # get the existing groups
-                if window_id in self.transcript_groups:
-                    transcript_groups = self.transcript_groups[window_id]
-
-                else:
-                    transcript_groups = {}
-
-                # the segments we pass for grouping need to be in a list format
-                segments_for_group = list(self.selected_segments[window_id].values())
-
-                # lowercase all dictionary keys for non-case sensitive comparison
-                transcript_groups_lower = {k.lower(): v for k, v in transcript_groups.items()}
-
-                group_name_lower = group_name.strip().lower()
-
-                # if this is an add operation and
-                # if the group name was passed and it exists in the groups of this transcription,
-                # add the selected segments to that group instead of creating a new one
-                # (so keep the old segments in the group too)
-                if add is True and group_name is not None and group_name_lower in transcript_groups_lower \
-                        and len(transcript_groups[group_name_lower]) > 0 \
-                        and 'time_intervals' in transcript_groups[group_name_lower] \
-                        and len(transcript_groups[group_name_lower]['time_intervals']) > 0:
-
-                    # keep the notes if they exist and we're supposed to keep them
-                    if 'notes' in transcript_groups[group_name_lower] and kwargs.get('keep_notes', False):
-                        group_notes = transcript_groups[group_name_lower]['notes']
-
-                    # keep the name if we're supposed to keep it
-                    if kwargs.get('keep_name', False):
-                        group_name = transcript_groups[group_name_lower]['name']
-
-                    # but we first need to get the existing segments in the group
-                    # by going through the time intervals of the group and getting the corresponding segments
-                    existing_group_segments = \
-                        self.toolkit_ops_obj.time_intervals_to_transcript_segments(
-                            transcript_groups[group_name_lower]['time_intervals'],
-                            self.transcript_segments[window_id]
-                        )
-
-                    if existing_group_segments is not None:
-                        # then we add the new segments to the existing ones
-                        # don't worry if there are duplicates, the save function will take care of that
-                        segments_for_group += existing_group_segments
-
-                    logger.debug('Adding segments to group: {}'.format(group_name))
-
-                # but if this is not an add operation, yet the group exists in the groups of this transcription
-                # make sure the user understands that we're overwriting the existing group
-                # BTW to simplify things we're now using the lower case version of the group name as a group_id
-                elif add is False and group_name is not None and group_name_lower in transcript_groups_lower:
-
-                    # ask the user if they're sure they want to overwrite the existing group
-                    overwrite = messagebox.askyesno(
-                        message='Group already exists\nDo you want to overwrite it?\n\n'
-                                'This will also empty the group notes.',
-                        parent=self.toolkit_UI_obj.windows[window_id],
-                    )
-
-                    # if the user didn't confirm, abort
-                    if not overwrite:
-                        return False
-
-                    logger.debug('Overwriting group: {}'.format(group_name))
-
-                else:
-                    logger.debug('Creating new group: {}'.format(group_name))
-
-                # save the segments to the transcription file
-                save_return = self.toolkit_ops_obj.t_groups_obj \
-                    .save_segments_as_group_in_transcription_file(
-                    transcription_file_path=transcription_file_path,
-                    segments=segments_for_group,
-                    group_name=group_name,
-                    group_notes=group_notes,
-                    existing_transcript_groups=transcript_groups,
-                    overwrite_existing=True
-                )
-
-                if type(save_return) is dict:
-
-                    # initialize the empty group if it doesn't exist
-                    if window_id not in self.transcript_groups:
-                        self.transcript_groups[window_id] = {}
-
-                    # if the returned value is a dictionary, it means that the window groups have been updated
-                    # so we need to update the groups of this window
-                    self.transcript_groups[window_id] = save_return
-
-                else:
-                    logger.debug('Something may have went wrong while saving the group to the transcription file')
-                    return False
-
-                # update the list of groups in the transcript groups window
-                self.toolkit_UI_obj.update_transcript_groups_window(t_window_id=window_id)
-
-                return True
-
         def auto_add_selection_to_group(self, t_window_id: str, confirm=False, auto_add_button=None) -> None:
             '''
             This function checks if the auto add to group option is enabled in the UI
             and if it is, it will add the selected segments to the group that is selected in the UI
             '''
 
-            # is the auto add to group option enabled?
-            if self.auto_add_to_group:
+            # the transcription window
+            t_window = self.toolkit_UI_obj.get_window_by_id(t_window_id)
 
-                # get the group id that is selected right now
-                if t_window_id in self.selected_groups and len(self.selected_groups[t_window_id]) > 0:
+            window_groups_module = t_window.transcript_groups_module
 
-                    # get the group id
-                    group_id = self.toolkit_UI_obj._get_selected_group_id(t_window_id=t_window_id)
+            # if a group is selected
+            # and the auto add to group option is enabled
+            if window_groups_module.selected_group_id is not None and window_groups_module.update_segments:
 
-                    # create a reference to this function so we can use for select events below
-                    self.group_selected(window_id=t_window_id, group_name=group_id, add=True,
-                                        keep_name=True, keep_notes=True)
+                window_groups_module.update_group_segments()
 
-                else:
-                    logger.debug('No group is selected. Aborting auto-add segments to group.')
+            # if a group is selected
+            # but the auto add to group option is disabled
+            elif window_groups_module.selected_group_id is not None and not window_groups_module.update_segments:
+
+                # deselect the group to avoid confusion
+                window_groups_module.deselect_group(keep_segment_selection=True)
 
             return
 
@@ -7619,7 +7594,7 @@ class toolkit_UI():
             new_line['end'] = self.transcript_segments[window_id][int(line) - 1]['end']
 
             # get the text that is supposed to go on the next line
-            new_line['text'] = text.get(INSERT, "{}.end".format(line))
+            new_line['text'] = text.get(ctk.INSERT, "{}.end".format(line))
 
             # the id of the new line is the next available id in the transcript
             new_line['id'] = self.next_segment_id(window_id=window_id)
@@ -7711,7 +7686,7 @@ class toolkit_UI():
                 return False
 
             # get all the lines of this text widget
-            text_lines = text.get('1.0', END).splitlines()
+            text_lines = text.get('1.0', ctk.END).splitlines()
 
             # reset self.transcript_segments_ids[window_id]
             self.transcript_segments_ids[window_id] = {}
@@ -7764,10 +7739,9 @@ class toolkit_UI():
             text.bind('<Delete>', lambda e:
             self.on_press_merge_segments(e, window_id=window_id, text=text, merge='next'))
 
-            if status_label is not None:
-                status_label.configure(text='Not saved.', text_color=self.toolkit_UI_obj.theme_colors['bright_red'])
+            self.toolkit_UI_obj.update_window_status_label(window_id=window_id, text='Transcript not saved.', color='bright_red')
 
-            text.config(state=NORMAL)
+            text.config(state=ctk.NORMAL)
 
         def unbind_editing_keys(self, text):
             '''
@@ -7783,7 +7757,7 @@ class toolkit_UI():
         def get_current_segment_chars(self, text):
 
             # get the position of the cursor
-            line, char = text.index(INSERT).split('.')
+            line, char = text.index(ctk.INSERT).split('.')
 
             # get the index of the last character of the line where the cursor is
             _, last_char = text.index("{}.end".format(line)).split('.')
@@ -7931,7 +7905,7 @@ class toolkit_UI():
                 return False
 
             # disable text editing again
-            text.config(state=DISABLED)
+            text.config(state=ctk.DISABLED)
 
             # unbind all the editing keys
             self.unbind_editing_keys(text)
@@ -7944,29 +7918,26 @@ class toolkit_UI():
             save_status = self.save_transcript(window_id=window_id, text=text)
 
             # let the user know what happened via the status label
-            self.update_status_label_after_save(status_label=status_label, save_status=save_status)
+            self.update_status_label_after_save(window_id=window_id, save_status=save_status)
 
-        def update_status_label_after_save(self, save_status, status_label):
+        def update_status_label_after_save(self, window_id, save_status):
 
             if save_status is True:
                 # show the user that the transcript was saved
-                if status_label is not None:
-                    status_label.configure(text='Saved.',
-                                           text_color=self.toolkit_UI_obj.theme_colors['normal'])
+                self.toolkit_UI_obj.update_window_status_label(
+                    window_id=window_id, text='Transcript saved.', color='normal')
 
             # in case anything went wrong while saving,
             # let the user know about it
             elif save_status == 'fail':
-                if status_label is not None:
-                    status_label.configure(text='Save Failed.',
-                                           text_color=self.toolkit_UI_obj.theme_colors['bright_red'])
+                self.toolkit_UI_obj.update_window_status_label(
+                    window_id=window_id, text='Transcript save failed.', color='bright_red')
 
             # in case the save status is False
             # assume that nothing needed saving
             else:
-                if status_label is not None:
-                    status_label.configure(text='Nothing changed.',
-                                           text_color=self.toolkit_UI_obj.theme_colors['normal'])
+                self.toolkit_UI_obj.update_window_status_label(
+                    window_id=window_id, text='Transcript unchanged.', color='normal')
 
         def save_transcript(self, window_id=None, text=None, skip_verification=False):
             '''
@@ -8005,7 +7976,7 @@ class toolkit_UI():
             if not skip_verification or text is not False:
 
                 # compare the edited lines with the existing transcript lines
-                text_lines = text.get('1.0', END).splitlines()
+                text_lines = text.get('1.0', ctk.END).splitlines()
 
                 segment_no = 0
                 full_text = ''
@@ -8125,7 +8096,7 @@ class toolkit_UI():
             # returning false means that no changes were made
             return False
 
-        def get_transcription_path_from_window(self, window_id):
+        def get_window_transcription_path(self, window_id):
             """
             This looks into self.transcription_file_paths and returns the transcription path for the window_id if it exists
             """
@@ -8135,6 +8106,102 @@ class toolkit_UI():
 
             # if we didn't find the transcription path, return None
             return None
+
+        def set_window_transcription_data_from_path(self, window_id):
+            """
+            This sets the transcription data for the window_id based on the transcription file path for that window_id
+            """
+
+            # get the transcription file path for the window_id
+            transcription_file_path = self.get_window_transcription_path(window_id=window_id)
+
+            # if we found the transcription file path
+            if transcription_file_path is None:
+                logger.error('Unable to set transcription data from path '
+                             '- transcription path for window_id {} not found.'.format(str(window_id)))
+                return False
+
+            # load the transcription file
+            transcription_file_data = \
+                self.toolkit_ops_obj.get_transcription_file_data(transcription_file_path=transcription_file_path)
+
+            # if we found the transcription file path
+            if transcription_file_data is None:
+                logger.error('Unable to set transcription data from path '
+                             '- invalid transcription file {}.'.format(str(transcription_file_path)))
+                return False
+
+            # set the transcription data for the window_id
+            # add everything except the segments and the text to the transcription data of this window
+            transcription_data = {k: v for k, v in transcription_file_data.items() if k != 'segments' and k != 'text'}
+
+            # set the transcription data for the window_id
+            return self.set_window_transcription_data(window_id=window_id, transcription_data=transcription_data)
+
+        def set_window_transcription_data(self, window_id, transcription_data=None, key=None, value=None):
+            """
+            This updates the transcription data for the window_id
+            By default, it excludes the segments from the transcription data (old school, must be changed!)
+            """
+
+            # if the window_id is not in the transcription data, add it
+            if window_id not in self.transcription_data:
+                self.transcription_data[window_id] = {}
+
+            # if a key and a value were provided, it means that we want to update only one key
+            if key is not None and value is not None:
+                self.transcription_data[window_id][key] = value
+
+            else:
+                # if no key and value were provided, update the entire transcription data
+                self.transcription_data[window_id] = transcription_data
+
+            # notify observers of the transcription data update
+            self.toolkit_ops_obj.notify_observers(action='update_transcription_data_{}'.format(window_id))
+
+            return True
+
+        def get_window_transcription_data(self, window_id, key=None):
+            """
+            This returns the transcription data for the window_id
+            """
+
+            # if the window_id is not in the transcription data, return None
+            if window_id not in self.transcription_data:
+                return None
+
+            # if a key was provided, return the value for that key
+            if key is not None:
+
+                # if the key is not in the transcription data, return None
+                if key not in self.transcription_data[window_id]:
+                    return None
+
+                # otherwise return the value for the key
+                return self.transcription_data[window_id][key]
+
+            # return the transcription data
+            return self.transcription_data[window_id]
+
+        def get_window_transcript_groups(self, window_id: str):
+            """
+            This gets the transcript groups from the window id
+            """
+
+            # get the groups via get_transcription_data
+            return self.get_window_transcription_data(window_id=window_id, key='transcript_groups')
+
+        def get_window_transcript_segments(self, window_id: str):
+            """
+            This gets the transcript segments using the window id
+            """
+
+            if window_id not in self.transcript_segments:
+                logger.error('Unable to get transcript segments - window_id {} not found.'.format(window_id))
+                return None
+
+            return self.transcript_segments[window_id]
+
 
     def open_transcript(self, **options):
         '''
@@ -8275,20 +8342,32 @@ class toolkit_UI():
             self.t_edit_obj.transcript_segments_ids[t_window_id] = {}
 
             # THE THREE WINDOW COLUMN FRAMES
-            current_tk_window = self.windows[t_window_id]
+            current_tk_window = self.get_window_by_id(t_window_id)
 
             # create the left frame
             left_frame = ctk.CTkFrame(current_tk_window, name='left_frame', **self.ctk_frame_transparent)
             left_frame.grid(row=0, column=0, sticky="ns", **self.ctk_side_frame_button_paddings)
 
-            # create a frame for the text element
-            text_form_frame = ctk.CTkFrame(self.windows[t_window_id], name='text_form_frame',
+            # create the middle frame to hold the text element
+            middle_frame = ctk.CTkFrame(current_tk_window, name='middle_frame', **self.ctk_frame_transparent)
+            middle_frame.grid(row=0, column=1, sticky="nsew")
+
+            # create a frame for the text element inside the middle frame
+            text_form_frame = ctk.CTkFrame(middle_frame, name='text_form_frame',
                                            **self.ctk_frame_transparent)
-            text_form_frame.grid(row=0, column=1, sticky="nsew")
+            text_form_frame.grid(row=0, column=0, sticky="nsew")
+
+            # make the text_form_frame expand to fill the middle_frame
+            middle_frame.grid_rowconfigure(0, weight=1)
+            middle_frame.grid_columnconfigure(0, weight=1)
 
             # create the right frame to hold other stuff, like transcript groups etc.
-            right_frame = ctk.CTkFrame(current_tk_window, **self.ctk_frame_transparent)
+            right_frame = ctk.CTkFrame(current_tk_window, name='right_frame', **self.ctk_frame_transparent)
             right_frame.grid(row=0, column=2, sticky="ns", **self.ctk_side_frame_button_paddings)
+
+            # add a footer frame
+            footer_frame = ctk.CTkFrame(current_tk_window, name='footer_frame', **self.ctk_frame_transparent)
+            footer_frame.grid(row=1, column=0, columnspan=3, sticky="ew", **self.ctk_frame_paddings)
 
             # add a minimum size for the frame2 column
             current_tk_window.grid_columnconfigure(1, weight=1, minsize=200)
@@ -8309,7 +8388,7 @@ class toolkit_UI():
             ctk.CTkLabel(left_r_buttons_frame, text='Resolve', anchor='n')\
                 .pack(fill='x', expand=True, **self.ctk_side_frame_button_paddings, anchor='nw')
 
-            left_t_buttons_frame.pack(fill='x', expand=True, **self.ctk_side_frame_button_paddings, anchor='nw')
+            left_t_buttons_frame.grid(row=0, column=0, **self.ctk_side_frame_button_paddings)
 
             # add the segment buttons to the left frame
             # SEND TO ASSISTANT BUTTON
@@ -8324,8 +8403,9 @@ class toolkit_UI():
             send_to_assistant_with_tc_button.pack(fill='x', expand=True, **self.ctk_side_frame_button_paddings, anchor='nw')
 
             # ADD TO GROUP BUTTON
-            add_to_group_button = ctk.CTkButton(left_s_buttons_frame, text='Add to Group',
-                                                command=lambda: self.t_edit_obj.button_add_to_group(window_id=t_window_id, only_add=True),
+            add_to_group_button = ctk.CTkButton(left_s_buttons_frame, text='Add to New Group',
+                                                command=lambda: self.t_edit_obj.button_add_to_new_group(
+                                                    window_id=t_window_id, only_add=True),
                                                 name='add_to_group_button', **self.ctk_side_frame_button_size)
             add_to_group_button.pack(fill='x', expand=True, **self.ctk_side_frame_button_paddings, anchor='nw')
 
@@ -8359,23 +8439,26 @@ class toolkit_UI():
             # does the json file actually contain transcript segments generated by whisper?
             if 'segments' in transcription_json:
 
-                # add everything except the segments and the text to the self.t_edit_obj.transcription_data dict
-                self.t_edit_obj.transcription_data[t_window_id] = \
-                    {k: v for k, v in transcription_json.items() if k != 'segments' and k != 'text'}
+                # add everything except the segments and the text to the transcription data of this window
+                transcription_data = {k: v for k, v in transcription_json.items() if k != 'segments' and k != 'text'}
 
-                # set up the text element where we'll add the actual transcript
-                text = tk.Text(text_form_frame, name='transcript_text',
-                            font=(self.transcript_font),
-                            width=45, height=30,
-                            **self.ctk_full_textbox_paddings,
-                            wrap=tk.WORD,
-                            background=self.theme_colors['black'],
-                            foreground=self.theme_colors['normal'])
+                # set the transcription data of this window
+                self.t_edit_obj.set_window_transcription_data(t_window_id, transcription_data)
+
+                # initialize the transcript text element
+                text = tk.Text(text_form_frame,
+                               name='transcript_text',
+                               font=(self.transcript_font),
+                               width=45, height=30,
+                               **self.ctk_full_textbox_paddings,
+                               wrap=tk.WORD,
+                               background=self.theme_colors['black'],
+                               foreground=self.theme_colors['normal'])
 
                 # add a scrollbar to the text element
                 text_scrollbar = ctk.CTkScrollbar(text_form_frame)
                 text_scrollbar.configure(command=text.yview)
-                text_scrollbar.pack(side=RIGHT, fill=Y, pady=5)
+                text_scrollbar.pack(side=ctk.RIGHT, fill=ctk.Y, pady=5)
 
                 # configure the text element to use the scrollbar
                 text.config(yscrollcommand=text_scrollbar.set)
@@ -8417,10 +8500,10 @@ class toolkit_UI():
 
                         # get the text index before inserting the new segment
                         # (where the segment will start)
-                        new_segment_start = text.index(INSERT)
+                        new_segment_start = text.index(ctk.INSERT)
 
                         # insert the text
-                        text.insert(END, t_segment['text'].strip() + ' ')
+                        text.insert(ctk.END, t_segment['text'].strip() + ' ')
 
                         # if this is the longest segment, keep that in mind
                         if len(t_segment['text']) > longest_segment_num_char:
@@ -8434,13 +8517,13 @@ class toolkit_UI():
                         end_start_time = t_segment['start']
 
                         # for now, just add 2 new lines after each segment:
-                        text.insert(END, '\n')
+                        text.insert(ctk.END, '\n')
 
                 # make the text read only
                 # and take into consideration the longest segment to adjust the width of the window
                 if longest_segment_num_char > 60:
                     longest_segment_num_char = 60
-                text.config(state=DISABLED, width=longest_segment_num_char)
+                text.config(state=ctk.DISABLED, width=longest_segment_num_char)
 
                 # add undo/redo
                 # this will not work for splitting/merging lines
@@ -8452,21 +8535,16 @@ class toolkit_UI():
                 # then show the text element
                 text.pack(anchor='w', expand=True, fill='both', **self.ctk_full_textbox_frame_paddings)
 
-                # create a footer frame that holds stuff on the bottom of the transcript window
-                footer_frame = ctk.CTkFrame(self.windows[t_window_id], name='footer_frame',
-                                            **self.ctk_frame_transparent)
-                #footer_frame.place(relwidth=1, anchor='sw', rely=1)
-                #footer_frame.pack(side=tk.BOTTOM, fill=tk.X, **self.paddings)
-                footer_frame.grid(row=1, column=0, columnspan=3, sticky="ew", **self.ctk_frame_paddings)
-
                 # add a status label to print out current transcription status
                 status_label = ctk.CTkLabel(footer_frame, name='status_label',
                                      text="", anchor='w', **self.ctk_frame_transparent)
-                status_label.pack(side=tk.LEFT, **self.ctk_footer_status_paddings)
+                status_label.grid(row=0, column=0, sticky='ew', **self.ctk_footer_status_paddings)
 
-                # bind shift click events to the text
-                # text.bind("<Shift-Button-1>", lambda e:
-                #         self.t_edit_obj.select_text_lines(event=e, text_element=text, window_id=t_window_id))
+                # add the status label to the window attributes
+                current_tk_window.status_label = status_label
+
+                # add status_last_update to the window attributes
+                current_tk_window.status_last_update = 0
 
                 select_options = {'window_id': t_window_id, 'text_element': text, 'status_label': status_label}
 
@@ -8517,7 +8595,6 @@ class toolkit_UI():
                                                                       select_all_action=self.t_edit_obj.text_indices_to_selection
                                                                       ), **self.ctk_side_frame_button_size)
 
-                find_button.pack(side=tk.TOP, fill='x', **self.ctk_side_frame_button_paddings, anchor='nw')
 
                 # bind CMD/CTRL + f to open find and replace window
                 self.windows[t_window_id].bind("<" + self.ctrl_cmd_bind + "-f>", lambda e:
@@ -8542,15 +8619,6 @@ class toolkit_UI():
                                                                                         transcription_file_path)
                                                        , **self.ctk_side_frame_button_size)
 
-                advanced_search_button.pack(side=tk.TOP, fill='x', **self.ctk_side_frame_button_paddings, anchor='nw')
-
-                # GROUPS BUTTON
-                groups_button = ctk.CTkButton(left_t_buttons_frame, text='Groups', name='groups_button',
-                                          command=lambda:
-                                          self.open_transcript_groups_window(transcription_window_id=t_window_id),
-                                              **self.ctk_side_frame_button_size
-                                          )
-                groups_button.pack(side=tk.TOP, fill='x', **self.ctk_side_frame_button_paddings, anchor='nw')
 
                 # GROUP QUESTIONS BUTTON
                 group_questions_button = \
@@ -8559,7 +8627,10 @@ class toolkit_UI():
                               self.t_edit_obj.button_group_questions(window_id=t_window_id),
                                   **self.ctk_side_frame_button_size
                               )
-                group_questions_button.pack(side=tk.TOP, fill='x', **self.ctk_side_frame_button_paddings, anchor='nw')
+
+                find_button.pack(side=ctk.TOP, fill='x', **self.ctk_side_frame_button_paddings, anchor='nw')
+                advanced_search_button.pack(side=ctk.TOP, fill='x', **self.ctk_side_frame_button_paddings, anchor='nw')
+                group_questions_button.pack(side=ctk.TOP, fill='x', **self.ctk_side_frame_button_paddings, anchor='nw')
 
                 # IMPORT SRT BUTTON
                 if srt_file_path:
@@ -8571,7 +8642,7 @@ class toolkit_UI():
                                                   self.toolkit_ops_obj.resolve_api.import_media(srt_file_path),
                                                       **self.ctk_side_frame_button_size
                                                   )
-                    import_srt_button.pack(side=tk.TOP, fill='x', **self.ctk_side_frame_button_paddings, anchor='sw')
+                    import_srt_button.pack(side=ctk.TOP, fill='x', **self.ctk_side_frame_button_paddings, anchor='sw')
 
                     if not NLE.is_connected():
                         import_srt_button.pack_forget()
@@ -8612,7 +8683,7 @@ class toolkit_UI():
                         self.t_edit_obj.button_segments_to_markers(window_id=t_window_id, prompt=True)
                                                                 )
 
-                selection_to_markers_button.pack(side=tk.TOP, fill='x', **self.ctk_side_frame_button_paddings, anchor='sw')
+                selection_to_markers_button.pack(side=ctk.TOP, fill='x', **self.ctk_side_frame_button_paddings, anchor='sw')
 
                 markers_to_selection_button = ctk.CTkButton(left_r_buttons_frame,
                                                             text='Markers to Selection',
@@ -8622,7 +8693,7 @@ class toolkit_UI():
                 markers_to_selection_button.configure(command=lambda:
                         self.t_edit_obj.button_markers_to_segments(window_id=t_window_id))
 
-                markers_to_selection_button.pack(side=tk.TOP, fill='x', **self.ctk_side_frame_button_paddings, anchor='sw')
+                markers_to_selection_button.pack(side=ctk.TOP, fill='x', **self.ctk_side_frame_button_paddings, anchor='sw')
 
                 # END RESOLVE SEGMENTS + MARKERS BUTTONS
 
@@ -8669,9 +8740,21 @@ class toolkit_UI():
                 callback=lambda: self.update_transcription_window(t_window_id)
             )
 
+            # add the transcript groups form to the right frame
+            transcript_groups_module = self.TranscriptGroupsModule(
+                master=right_frame, window_id=t_window_id, toolkit_UI_obj=self)
+
+            # and attach it to the window
+            current_tk_window.transcript_groups_module = transcript_groups_module
+
         # if the transcription window already exists,
         # we won't know the window id since it's not passed
         else:
+
+            # get the current window and the transcript groups module
+            current_tk_window = self.get_window_by_id(t_window_id)
+            transcript_groups_module = current_tk_window.transcript_groups_module
+
             # so update all the windows just to make sure that all the elements are in the right state
             self.update_all_transcription_windows()
 
@@ -8690,9 +8773,10 @@ class toolkit_UI():
                 # select the line in the text widget
                 self.t_edit_obj.segment_to_selection(window_id=t_window_id, line=selection_line_no)
 
-        self.update_window_transcript_groups(transcript_window_id=t_window_id,
-                                             transcription_data=transcription_json,
-                                             select_group=select_group, title=title)
+        # also select any group that may have been passed
+        if select_group is not None:
+            transcript_groups_module.select_group(group_id=select_group, show_first_segment=True)
+
 
     def update_transcription_window(self, window_id, update_all: bool = True, **update_attr):
         '''
@@ -8708,6 +8792,9 @@ class toolkit_UI():
         # ignore if the window doesn't exist
         if window_id not in self.windows:
             return
+
+        # reset the status_label if it's been more than 5 seconds since the last update
+        self.reset_status_label_after(window_id=window_id, seconds=5)
 
         # if the update_all attribute is True
         # try to get the following GUI elements from the window, if they were not passed in the update_attr dict
@@ -8742,7 +8829,7 @@ class toolkit_UI():
             if 'text' not in update_attr or type(update_attr['text']) is not tk.Text:
                 # so get the link button from the window by using the hard-coded name
                 update_attr['text'] \
-                    = self.windows[window_id].nametowidget('text_form_frame.transcript_text')
+                    = self.windows[window_id].nametowidget('middle_frame.text_form_frame.transcript_text')
 
             # if the resolve buttons frame was not passed
             if 'r_buttons_frame' not in update_attr or type(update_attr['r_buttons_frame']) is not tk.Frame:
@@ -8860,7 +8947,7 @@ class toolkit_UI():
         # finally, start showing the frames that need to be shown
         # if show_selection_buttons:
         #    # but also make sure that the s_buttons_frame is right after the t_buttons_frame
-        update_attr['s_buttons_frame'].pack(fill='x', expand=True, **self.ctk_side_frame_button_paddings, anchor='nw')
+        update_attr['s_buttons_frame'].grid(row=1, column=0, **self.ctk_side_frame_button_paddings)
 
         # if there are no segments selected, disable the buttons in the s_buttons_frame
         for button in update_attr['s_buttons_frame'].winfo_children():
@@ -8877,9 +8964,9 @@ class toolkit_UI():
                 button.configure(state=tk.NORMAL)
 
         if show_resolve_buttons:
-            update_attr['r_buttons_frame'].pack(fill='x', expand=True, padx=5, pady=42, anchor='sw')
+            update_attr['r_buttons_frame'].grid(row=2, column=0, padx=5, pady=42)
         else:
-            update_attr['r_buttons_frame'].pack_forget()
+            update_attr['r_buttons_frame'].grid_forget()
 
     def sync_current_tc_to_transcript(self, window_id, **update_attr):
 
@@ -8887,7 +8974,7 @@ class toolkit_UI():
         if 'text' not in update_attr or type(update_attr['text']) is not tk.Text:
             # so get the link button from the window by using the hard-coded name
             update_attr['text'] \
-                = self.windows[window_id].nametowidget('text_form_frame.transcript_text')
+                = self.windows[window_id].nametowidget('middle_frame.text_form_frame.transcript_text')
 
         # how many segments / lines does the transcript on this window contain?
         max_lines = len(self.t_edit_obj.transcript_segments[window_id])
@@ -9013,11 +9100,6 @@ class toolkit_UI():
         if window_id + '_search' in self.windows:
             self.destroy_window_(windows_dict=self.windows, window_id=window_id + '_search')
 
-        # also destroy the associated groups window (if it exists)
-        # - in the future, if were to have multiple search windows, we will need to do it differently
-        if window_id + '_transcript_groups' in self.windows:
-            self.destroy_transcript_groups_window(window_id=window_id + '_transcript_groups')
-
         # remove the transcription segments from the transcription_segments dict
         if window_id in self.t_edit_obj.transcript_segments:
             del self.t_edit_obj.transcript_segments[window_id]
@@ -9038,12 +9120,6 @@ class toolkit_UI():
 
         if window_id in self.t_edit_obj.transcription_data:
             del self.t_edit_obj.transcription_data[window_id]
-
-        if window_id in self.t_edit_obj.transcript_groups:
-            del self.t_edit_obj.transcript_groups[window_id]
-
-        if window_id in self.t_edit_obj.selected_groups:
-            del self.t_edit_obj.selected_groups[window_id]
 
         if window_id in self.t_edit_obj.selected_segments:
             del self.t_edit_obj.selected_segments[window_id]
@@ -9068,860 +9144,832 @@ class toolkit_UI():
 
     # TRANSCRIPT GROUP UI FUNCTIONS
 
-    def update_window_transcript_groups(self, transcript_window_id: str, transcription_data: dict,
-                                        select_group=False, title=''):
+    class TranscriptGroupsModule(ctk.CTkFrame):
 
-        # add the transcript groups to the transcript_groups dict
-        if 'transcript_groups' in transcription_data:
+        def __init__(self, master, window_id, toolkit_UI_obj, **kwargs):
 
-            self.t_edit_obj.transcript_groups[transcript_window_id] = transcription_data['transcript_groups']
+            if window_id is None or toolkit_UI_obj is None:
+                logger.error('Cannot add transcript groups module - window_id and toolkit_UI_obj must be provided')
+                raise ValueError('window_id and toolkit_UI_obj cannot be None')
 
-            # if the transcript groups are not empty
-            if transcription_data['transcript_groups']:
+            # we will need these
+            self.toolkit_UI_obj = toolkit_UI_obj
+            self.t_edit_obj = toolkit_UI_obj.t_edit_obj
+            self.toolkit_ops_obj = toolkit_UI_obj.toolkit_ops_obj
+            self.stAI = toolkit_UI_obj.stAI
 
-                # automatically open the transcript groups window if the setting is set to True
-                # or if a select_group was passed
-                if self.stAI.get_app_setting(setting_name='open_transcript_groups_window_on_open',
-                                             default_if_none=False) is True \
-                        or select_group is not None:
-                    # open the transcript groups window
-                    self.open_transcript_groups_window(transcription_window_id=transcript_window_id,
-                                                       transcription_name=title,
-                                                       select_group=select_group)
+            # create the CTKScrollableFrame
+            super().__init__(master, **kwargs)
 
-        else:
-            self.t_edit_obj.transcript_groups[transcript_window_id] = {}
+            # also create the label for the group frame on the same parent
+            self.groups_label = ctk.CTkLabel(self, text='Groups')
 
-    def _get_group_id_from_listbox(self, groups_listbox: tk.Listbox) -> str:
-        '''
-        Returns the group id of the selected group in the groups listbox
+            # keep track of the window id in the object too (until we implement window objects)
+            self.window_id = window_id
 
-        :param groups_listbox:
-        :return:
-        '''
+            # and the window itself (until we implement window objects)
+            self.window = self.toolkit_UI_obj.get_window_by_id(self.window_id)
 
-        return groups_listbox.get(tk.ANCHOR).strip().lower()
+            # we'll use another scrollable frame for the groups list because customtkinter doesn't support listboxes
+            self._groups_list_frame = ctk.CTkScrollableFrame(self, name='groups_list_frame')
+            self._groups_list_frame.bindtags(self._groups_list_frame.bindtags() + ('can_take_focus',))
 
-    def _select_group_in_listbox(self, groups_listbox: tk.Listbox, transcript_window_id: str, group_id: str, deselect_before=True):
-        '''
-        Selects the group in the groups listbox based on its group id
-        '''
+            # add the groups form (where we can edit the selected group)
+            self._groups_form = ctk.CTkFrame(self, name='groups_form')
 
-        # groups are stored in self.t_edit_obj.transcript_groups
-        # we need to find the group with the given group id
-        if transcript_window_id not in self.t_edit_obj.transcript_groups:
-            logger.warning('No transcript groups found for transcript window {}'.format(transcript_window_id))
-            return False
+            # add the form elements
+            self._group_form_label = ctk.CTkLabel(self._groups_form, text='Edit Group')
 
-        # get the index of the group with the given group id
-        group_index = None
-        if group_id in self.t_edit_obj.transcript_groups[transcript_window_id]:
+            self._group_name_var = tk.StringVar(self)
+            self._group_name_input = ctk.CTkEntry(self._groups_form, textvariable=self._group_name_var,
+                                                 fg_color=toolkit_UI.theme_colors['black'])
+            self._group_notes_var = tk.StringVar(self)
+            self._group_notes_input = ctk.CTkTextbox(self._groups_form, fg_color=toolkit_UI.theme_colors['black'],
+                                                    wrap=ctk.WORD)
 
-            # deselect all groups from the listbox before selecting the new one
-            if deselect_before:
-                groups_listbox.selection_clear(0, tk.END)
+            # add the buttons frame
+            self._group_buttons_frame = ctk.CTkFrame(self._groups_form, **toolkit_UI.ctk_frame_transparent)
 
-            # get the group index in the listbox by searching for the group id in the listbox items
-            for group_index, item in enumerate(groups_listbox.get(0, tk.END)):
-                if group_id == item.strip().lower():
-                    break
+            # get the default update_segments
+            self.update_segments = self.stAI.get_app_setting('transcript_update_group_segments', default_if_none=True)
 
-            if group_index is not None:
-                # the group index + 1 is also the line index in the listbox
-                # so, use that to select the group in the listbox
-                groups_listbox.selection_set(group_index)
-                groups_listbox.activate(group_index)
+            # add the auto-add CTkSwitch
+            self._group_update_segments_var = tk.BooleanVar(self, value=self.update_segments)
+            self._group_update_segments_switch = ctk.CTkSwitch(
+                self._group_buttons_frame,
+                text='Update segments',
+                variable=self._group_update_segments_var,
+                command=self._toggle_update_segments
+            )
 
-                # add the selected tag to the item in the listbox
-                #groups_listbox.itemconfig(group_index+1, {'bg': 'lightblue'})
+            # if the _group_notes_input changes, update the initial prompt variable too
+            def update_group_notes_input(*args):
 
-                # and scroll to the group
-                groups_listbox.see(group_index)
+                # update the group notes var
+                self._group_notes_var.set(self._group_notes_input.get('1.0', tk.END))
+
+            self._group_notes_input.bind('<KeyRelease>', update_group_notes_input)
+
+            # we need to set the typing attribute to True when the user is typing in the group name or notes
+            # so we don't trigger window shortcuts and other stuff
+            self._group_name_input.bind('<FocusIn>', self._on_group_form_input_focusin)
+            self._group_name_input.bind('<FocusOut>', self._on_group_form_input_focusout)
+            self._group_notes_input.bind('<FocusIn>', self._on_group_form_input_focusin)
+            self._group_notes_input.bind('<FocusOut>', self._on_group_form_input_focusout)
+
+            # defocus on ESC
+            self._group_name_input.bind('<Escape>', lambda event: self.focus_set())
+            self._group_notes_input.bind('<Escape>', lambda event: self.focus_set())
+
+            # same on ENTER
+            self._group_name_input.bind('<Return>', lambda event: self.focus_set())
+            self._group_notes_input.bind('<Return>', lambda event: self.focus_set())
+
+            # but not on CMD+ENTER
+            self._group_notes_input.bind('<Command-Return>', lambda event: None)
+
+            # done with UI stuff for now
+
+            # let's start with the data
+
+            # keep track of the groups that are listed in this module
+            # {'group id' = {group_data}, ...}
+            self._groups_data = {}
+
+            # keep track of the selected group id
+            # but use selected_group_id attribute - see @property below
+            self._selected_group_id = None
+            self._selected_group_list_idx = None
+            self._selected_group_label = None
+
+            # this says what happens with the segment selection on the window when we deselect a group
+            self._keep_segment_selection = False
+
+            # if this is True,
+            # we will show the first segment of the group in the text widget right after selection
+            self._show_first_segment = False
+
+            # this will determine whether self is on a grid or not
+            # set the module visibility to false for starters
+            self._visible = False
+
+            # on which row of the grid should the module be placed?
+            # if none was provided, place it on the next row
+            self._grid_row = kwargs.get('grid_row', self.master.grid_size()[1]+1)
+
+            # set the paddings, if not provided
+            self._module_paddings = dict()
+            self._module_paddings['padx'] = toolkit_UI.ctk_side_frame_button_paddings['padx'] \
+                if 'padx' not in kwargs else kwargs['padx']
+            self._module_paddings['padx'] = toolkit_UI.ctk_side_frame_button_paddings['pady'] \
+                if 'pady' not in kwargs else kwargs['pady']
+
+            # get the transcription file path using the window id
+            # we cannot open the groups module without a transcription file path to get the data from
+            if (transcription_file_path := self.t_edit_obj.get_window_transcription_path(self.window_id)) is None:
+                logger.error('Cannot open groups module - no transcription file path found for window id: {}'
+                             .format(self.window_id))
+                raise RuntimeError('Cannot open groups module - no transcription file path found for window id: {}')
+
+            # the transcription file path - this should be replaced with the window object
+            # that has the transcription object attached
+            self._transcription_file_path = transcription_file_path
+
+            # add transcript groups module to the parent frame
+            # this also adds the groups into the groups list
+            if self._add_transcript_groups_module() is None:
+                logger.error('Cannot add transcript groups module or window {}.'.format(self.window_id))
+                raise RuntimeError('Cannot add transcript groups module or window {}.'.format(self.window_id))
+
+            # add an OBSERVER - whenever the groups list changes, we need to update the transcript groups
+            self.update_observer = self.toolkit_UI_obj.add_observer_to_window(
+                window_id=self.window_id,
+                action='update_transcription_groups_{}'
+                .format(self.toolkit_ops_obj.get_transcription_id(self._transcription_file_path)),
+                callback=lambda: self.reload_list()
+            )
+
+        @property
+        def selected_group_id(self):
+            return self._selected_group_id
+
+        @selected_group_id.setter
+        def selected_group_id(self, value):
+
+            # once the group id is changed...
+            self._selected_group_id = value
+
+            # get the children of the groups list frame
+            children = self._groups_list_frame.winfo_children()
+
+            self._selected_group_label = None
+            group_y_pos = 0
+
+            # find the child that has the same group id as the selected group id
+            for idx, child in enumerate(children):
+
+                # if the child has the same name as the selected group id, set the selected group list idx
+                if child.group_id == self._selected_group_id:
+                    self._selected_group_list_idx = idx
+
+                    # set the fg_color to the "selected" color
+                    child.configure(fg_color=toolkit_UI.ctk_selected_color)
+
+                    # set the selected group label
+                    self._selected_group_label = child
+
+                    # make sure the selected group is in view
+                    if self._selected_group_label and not self._is_group_label_in_view(self._selected_group_label):
+                        # get the y position of the child and the height of the parent frame
+                        group_y_pos = self._selected_group_label.winfo_y() \
+                                      - (1 if self._selected_group_label.winfo_y() > 1 else 0)
+
+                        parent_frame_height = self._groups_list_frame.winfo_height()
+
+                        # illegally move the canvas of the groups list frame to the selected group
+                        self._groups_list_frame._parent_canvas.yview_moveto((group_y_pos / parent_frame_height))
+
+                    continue
+
+                # otherwise set the fg_color "unselected" color
+                child.configure(fg_color=toolkit_UI.ctk_unselected_color)
+
+            # select the transcript segments in the transcript window that are in the group
+            self._select_selected_group_segments()
+
+            # populate the group form with the selected group data
+            self._populate_group_form()
+
+        def _add_transcript_groups_module(self, **kwargs):
+            """
+            Adds the transcript groups module to the parent frame
+            """
+
+            # add the group frame to the grid and configure it so that it expands
+            self.grid(row=self._grid_row, column=0, sticky="nsew", **self._module_paddings)
+            self.columnconfigure(0, weight=1)
+
+            # add the group label and groups list in the main frame that we added above
+            self.groups_label.grid(row=1, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+            self._groups_list_frame.grid(row=2, column=0, sticky="nsew", **toolkit_UI.ctk_frame_paddings)
+
+            # add the buttons frame
+            self._group_buttons_frame.grid(row=3, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+
+            # add the buttons to the buttons frame
+            self._group_update_segments_switch.grid(row=0, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+
+            # extend the row we just created on the master as much as possible vertically
+            # keeping a weight of 1 will equal distribution of space among widgets
+            self.master.rowconfigure(self._grid_row, weight=1)
+
+            # extend the groups list frame as much as possible vertically
+            self.rowconfigure(2, weight=1)
+
+            # bind the _groups_list_frame to the press event
+            # so that we deselect the all groups if we click outside of them
+            # but for some reason we need to bind this to the master
+            self._groups_list_frame.master.bind('<Button-1>', lambda event: self._on_groups_list_frame_press(event))
+
+            # do an initial update of the groups list
+            self.update_list()
+
+            return True
+
+        def update_list(self):
+            """
+            This updates the groups list in the transcript groups module
+            """
+
+            # get the transcript groups for this window
+            if not self._set_groups_data():
+                # if nothing has changed, we don't need to do anything
+                return
+
+            self._populate_groups_list()
+
+        def reload_list(self):
+            """
+            This reloads the groups data from the transcription file and then updates the groups list
+            """
+
+            # reload the groups from the transcription file
+            self.t_edit_obj.set_window_transcription_data_from_path(window_id=self.window_id,)
+
+            # perform list update
+            self.update_list()
+
+            # update the status bar
+            self.toolkit_UI_obj.update_status_bar()
+
+        def _set_groups_data(self):
+            """
+            This asks the UI object to get the groups data from the transcription file
+            If the data we have is different to the data we have in the object, we update the object
+
+            :return: True if the groups data is different to the data we have in the object, False otherwise
+            """
+
+            new_transcript_groups_data = self.t_edit_obj.get_window_transcript_groups(self.window_id)
+
+            # compare the two dictionaries
+            if new_transcript_groups_data != self._groups_data:
+                # update the groups data in the object
+                self._groups_data = new_transcript_groups_data
 
                 return True
 
+            return False
+
+        def _populate_groups_list(self):
+            """
+            We're populating the groups list with the groups - which contains the id and the details of the group
+            """
+
+            # empty the groups list by destroying all the widgets in the groups frame
+            # get the children of the groups frame
+            children = self._groups_list_frame.winfo_children()
+
+            # remove all the children of the groups list frame
+            for child in children:
+                # destroy the child
+                child.destroy()
+
+            if isinstance(self._groups_data, dict):
+
+                # sort the groups data by ['name'] alphabetically
+                self._groups_data = {k: v for k, v in sorted(self._groups_data.items(), key=lambda x: x[1]['name'])}
+
+                row_num = 0
+
+                # loop through the groups
+                for group_id, group_details in self._groups_data.items():
+                    # increment the row number
+                    row_num += 1
+
+                    # add a label for the group
+                    group_label = ctk.CTkLabel(self._groups_list_frame, anchor="w", text=group_details['name'],
+                                               name=group_id, **toolkit_UI.ctk_fake_listbox_label_paddings)
+                    group_label.grid(row=row_num, column=0, sticky="ew", **toolkit_UI.ctk_fake_listbox_paddings)
+
+                    # add the group id to the group label
+                    group_label.group_id = group_id
+
+                    # bind a click event to the group label
+                    group_label.bind('<Button-1>',
+                                     lambda event, group_id=group_id: self._on_group_press(event, group_id))
+
+                # make sure the column is expanded
+                self._groups_list_frame.columnconfigure(0, weight=1)
+
+            # select the group that was already selected
+            self.select_group(self.selected_group_id)
+
+        def select_group(self, group_id: str = None, show_first_segment: bool = False):
+            """
+            This selects a group in the groups list
+            """
+
+            # set the show first segment flag
+            self._show_first_segment = show_first_segment
+
+            # change the selected_group_id property
+            # this will also trigger the selected_group_id setter
+            self.selected_group_id = group_id
+
+            # set the show first segment flag back to False
+            self._show_first_segment = False
+
+        def deselect_group(self, keep_segment_selection=False):
+            """
+            This deselects the currently selected group
+            :param keep_segment_selection: if True, the segments selected in the parent window will not be deselected
+            """
+
+            # toggle this flag to keep the segment selection if needed
+            self._keep_segment_selection = keep_segment_selection
+
+            # then, deselect the group
+            self.selected_group_id = None
+
+            # toggle the flag back to False
+            self._keep_segment_selection = False
+
+        def _select_first_group(self):
+
+            # get the first group id
+            group_id = list(self._groups_data.keys())[0]
+
+            # select the group
+            self.select_group(group_id)
+
+        def _select_last_group(self):
+
+            # get the last group id
+            group_id = list(self._groups_data.keys())[-1]
+
+            # select the group
+            self.select_group(group_id)
+
+        def select_next(self):
+            """
+            This selects the next group in the groups list
+            """
+
+            # if there are no groups, we can't select the next group
+            if not self._groups_data:
+                return
+
+            # if there is no selected group, we select the first group
+            if not self.selected_group_id:
+                self._select_first_group()
+                return
+
+            # increment the index of the selected group +1
+            # or if it's out of range, use 0
+            next_index = self._selected_group_list_idx + 1 \
+                if len(self._groups_data) > self._selected_group_list_idx + 1 else 0
+
+            # get the group id of the next group
+            group_id = list(self._groups_data.keys())[next_index]
+
+            # select the group
+            self.select_group(group_id)
+
+        def select_previous(self):
+            """
+            This selects the previous group in the groups list
+            """
+
+            # if there are no groups, we can't select the previous group
+            if not self._groups_data:
+                return
+
+            # if there is no selected group, we select the last group
+            if not self.selected_group_id:
+                self._select_last_group()
+                return
+
+            # decrement the index of the selected group -1
+            previous_index = self._selected_group_list_idx - 1 \
+                if self._selected_group_list_idx - 1 >= 0 else len(self._groups_data) - 1
+
+            # get the group id of the previous group
+            group_id = list(self._groups_data.keys())[previous_index]
+
+            # select the group
+            self.select_group(group_id)
+
+        def _on_group_press(self, event, group_id):
+            """
+            This is called when a group is pressed in the groups list
+            """
+
+            # deselect all other tkinter items on the window
+            self.toolkit_UI_obj.get_window_by_id(self.window_id).focus_set()
+
+            # if we're pressing the group that is already selected,
+            # deselect the group
+            if group_id == self.selected_group_id:
+                # deselect the group
+                self.select_group(group_id=None)
+                return 'break'
+
+            # otherwise
+            # select the group and show the first segment
+            self.select_group(group_id=group_id, show_first_segment=True)
+
+            # force focus on this widget
+            self.focus_set()
+
+            # don't propagate the event
+            return "break"
+
+        def _on_groups_list_frame_press(self, event):
+            """
+            When pressing the groups list frame, we want to deselect the group
+            """
+
+            # deselect all other tkinter items on the window
+            self.toolkit_UI_obj.get_window_by_id(self.window_id).focus_set()
+
+            # deselect all the groups
+            self.select_group(group_id=None)
+
+        def _select_selected_group_segments(self):
+            """
+            This selects the segments in the transcript window that are in the selected group
+            """
+
+            # don't do anything if we're supposed to keep the segment selection
+            if self._keep_segment_selection:
+                return
+
+            # if we don't have a selected group
+            if self.selected_group_id is None:
+
+                # clear the segment selection
+                self.t_edit_obj.clear_selection(self.window_id)
+                return
+
+            # get the time intervals from the group
+            time_intervals = self._groups_data[self.selected_group_id]['time_intervals']
+
+            self._select_window_segments(time_intervals)
+
+        def _select_window_segments(self, time_intervals):
+            """
+            This selects the segments in the transcript window that are in the given time intervals
+            """
+            # window transcript object
+            transcript_segments = self.t_edit_obj.get_window_transcript_segments(self.window_id)
+
+            # convert the time intervals to segments
+            group_segments = \
+                self.toolkit_ops_obj.time_intervals_to_transcript_segments(time_intervals, transcript_segments)
+
+            # clear the segment selection
+            self.t_edit_obj.clear_selection(self.window_id)
+
+            group_lines = []
+
+            # if we have group segments
+            if group_segments:
+
+                # go through the segments and get their line numbers
+                for segment in group_segments:
+                    # get the line number
+                    group_lines.append(self.t_edit_obj.segment_id_to_line(self.window_id, segment['id']))
+
+            # and select the segments
+            self.t_edit_obj.segment_to_selection(window_id=self.window_id, line=group_lines)
+
+            # if the show first segment flag is True, show the first selected segment in the transcript
+            if self._show_first_segment:
+                self.t_edit_obj.go_to_first_selected_segment(window_id=self.window_id)
+
+        def _populate_group_form(self):
+            """
+            This populates the group form with the details of the selected group
+            """
+
+            # if we don't have a selected group, grid forget the group form
+            if self.selected_group_id is None:
+
+                # grid forget the group form
+                self._groups_form.grid_forget()
+
+                return
+
             else:
-                logger.warning('Group index not found for group id {}'.format(group_id))
 
-        return False
+                # put the group details in the variable
+                self._group_name_var.set(self._groups_data[self.selected_group_id]['name'])
 
-    def _get_selected_group_id(self, t_window_id: str = None, groups_listbox: tk.Listbox = None) \
-            -> str or bool or None:
-        '''
-        Returns the group id of the selected group either from the selected groups dict or from in the group listbox
-        :param t_window_id: the id of the transcription window (optional, if groups_listbox is not None)
-        :param groups_listbox: the listbox with the groups (optional, if t_window_id is not None)
-        :return: group id
-        '''
+                # put the group notes in the variable
+                self._group_notes_var.set(self._groups_data[self.selected_group_id]['notes'])
 
-        # this gets the currently selected group id
-        # one thing to note is that in the listbox, we are using the group name
-        # so this means that we are basically using the group name as a group id (after lowercasing it)
-        # this is fine for now, but if things become more complex
-        # we need to develop a mapping between the currently selected list item and the group id
-        if t_window_id is not None:
+                # but also in the text, since the variable cannot be attached to the text widget
+                self._group_notes_input.delete('1.0', 'end')
+                self._group_notes_input.insert('1.0', self._groups_data[self.selected_group_id]['notes'])
 
-            if t_window_id not in self.t_edit_obj.selected_groups:
-                logger.error('No group is selected in transcription window {}'.format(t_window_id))
-                return None
+                # add the groups form elements to the groups form
+                self._group_form_label.grid(row=0, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+                self._group_name_input.grid(row=1, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+                self._group_notes_input.grid(row=2, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
 
-            if self.t_edit_obj.selected_groups[t_window_id] is None \
-                    or len(self.t_edit_obj.selected_groups[t_window_id]) == 0:
-                return None
+                # add the groups form to the grid
+                self._groups_form.grid(row=3, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
 
-            # get the selected group id from the selected groups dict
-            group_id = self.t_edit_obj.selected_groups[t_window_id][0]
+                return
 
-        elif groups_listbox is not None:
-            # get the selected group id from the listbox
-            group_id = self._get_group_id_from_listbox(groups_listbox)
+        def _on_group_form_input_focusin(self, *args, **kwargs):
+            """
+            Trigger this whenever you focus in the group form inputs
+            """
 
-        else:
-            logger.error('No transcription window id or groups listbox was provided. Aborting.')
-            return False
+            # the typing in window lock
+            self.t_edit_obj.set_typing_in_window(None, self.window_id, True)
 
-        return group_id.strip().lower()
+            # change the status of the transcription window
+            self.toolkit_UI_obj.update_window_status_label(
+                self.window_id, text='Group info not saved.', color='bright_red')
 
-    def on_group_update_press(self, t_window_id: str, t_group_window_id: str, group_id: str = None,
-                              groups_listbox: tk.Listbox = None):
-        '''
-        Do stuff and update the group data in the transcription file,
-        but only with the update_only_data (everything else will be left untouched in the group dict)
-        :param t_window_id:
-        :param t_group_window_id:
-        :param group_id:
-        :param groups_listbox:
-        :return:
-        '''
+        def _on_group_form_input_focusout(self, *args, **kwargs):
+            """
+            Trigger this whenever you focus out of the group form inputs
+            """
 
-        # get the fields from the group window
-        # (we're only need the group notes, and we'll update the time intervals based on the selected segments later)
-        form_update_data = self._get_form_data(t_group_window_id, inputs=['group_notes'])
+            # release the typing in window lock
+            self.t_edit_obj.set_typing_in_window(None, self.window_id, False)
 
-        # set the update data correctly
-        # (we're using group_notes as an input name, but need notes for the dict)
-        update_data = {'notes': form_update_data['group_notes'].strip()}
+            # save the group form
+            self._save_group_form()
 
-        # if group_id is None, get it from the listbox
-        if group_id is None and groups_listbox is not None:
+        def _save_group_form(self):
+            """
+            This saves the group form
+            """
 
-            # this gets the currently selected group id based on the selected group name
-            group_id = self._get_selected_group_id(t_window_id=t_window_id)
+            # if we don't have a selected group, return
+            if self.selected_group_id is None:
+                return
 
-            if group_id is None or not group_id:
-                logger.debug('No group is selected in transcription window {}'.format(t_window_id))
-                return False
+            # get the group name and notes
+            group_name = self._group_name_var.get().strip()
+            group_notes = self._group_notes_var.get().strip()
 
-        elif group_id is None and groups_listbox is None:
-            logger.debug('No group id or group listbox was not provided')
-            return False
+            # if the group name is different than the one in the group data
+            if group_name != self._groups_data[self.selected_group_id]['name']:
 
-        # get the current group data from the group window dict
-        if t_window_id in self.t_edit_obj.transcript_groups \
-                and group_id in self.t_edit_obj.transcript_groups[t_window_id]:
+                # check if there isn't already a group with this new name
+                # and have the user confirm if they want to proceed with having two groups with the same name
+                if not self._duplicate_name_confirm(group_name):
 
-            # get the current group data
-            group_data = self.t_edit_obj.transcript_groups[t_window_id][group_id]
+                    # if they don't want that, stop
+                    return
 
-            # update the current group data with the update_data
-            group_data.update(update_data)
+            # if the group name or notes are different than the ones in the group data
+            if group_name != self._groups_data[self.selected_group_id]['name'] \
+                    or group_notes != self._groups_data[self.selected_group_id]['notes']:
 
-            # get the selected segments for the group
-            segments_for_group = list(self.t_edit_obj.selected_segments[t_window_id].values())
+                # make a copy of the groups data
+                new_groups_data = copy.deepcopy(self._groups_data)
 
-            # get the transcription file path from the window transcription paths dict
-            if t_window_id in self.t_edit_obj.transcription_file_paths:
+                # add the group name and notes to the new groups data
+                new_groups_data[self.selected_group_id]['name'] = group_name
+                new_groups_data[self.selected_group_id]['notes'] = group_notes
 
-                transcription_file_path = self.t_edit_obj.transcription_file_paths[t_window_id]
+                # update transcription
+                self._push_group_change_to_transcription(new_groups_data)
 
-                # save the group data to the transcription file
-                # save_return = self.toolkit_ops_obj.t_groups_obj\
-                #                .save_transcript_groups(transcription_file_path=transcription_file_path,
-                #                                         transcript_groups=group_update_data,
-                #                                         group_id=group_id)
+                # update window status label
+                self.toolkit_UI_obj.update_window_status_label(self.window_id, 'Group info saved.')
 
-                # save the segments to the transcription file
-                save_return = self.toolkit_ops_obj.t_groups_obj \
-                    .save_segments_as_group_in_transcription_file(
-                    transcription_file_path=transcription_file_path,
-                    segments=segments_for_group,
-                    group_name=group_data['name'],
-                    group_notes=group_data['notes'],
-                    existing_transcript_groups=self.t_edit_obj.transcript_groups[t_window_id],
-                    overwrite_existing=True)
+                # update the group list
+                self.update_list()
 
-                if not save_return:
-                    logger.error('Could not save group {} data to transcription file {}'
-                                 .format(group_id, transcription_file_path))
+                return True
+
+            # update window status label
+            self.toolkit_UI_obj.update_window_status_label(self.window_id, '')
+
+        def _duplicate_name_confirm(self, group_name: str) -> bool:
+
+            # check if there isn't already a group with this new name
+            if self._groups_data and len(self._groups_data) > 0 \
+                and group_name.lower().strip() in \
+                    [self._groups_data[group_id]['name'].lower().strip() for group_id in self._groups_data]:
+                # and ask the user if they want to overwrite it
+
+                if not messagebox.askyesno(title='Duplicate name?',
+                                           message='There is already a group "{}" for this transcript.\n'
+                                                   'Are you sure you want to continue?'.format(group_name)):
+                    # if they don't want to overwrite it, focus on the group name input
+                    self._group_name_input.focus()
+
+                    # and stop the save process
                     return False
 
-                else:
-                    logger.debug('Group {} data updated in transcription file {}'
-                                 .format(group_id, transcription_file_path))
+            return True
 
-                    # replace the group data in the window dict with the updated data
-                    self.t_edit_obj.transcript_groups[t_window_id] = save_return
+        def delete_selected_group(self):
+            """
+            This deletes the selected group
+            """
 
-                    logger.info('Group updated')
+            # if we don't have a selected group, return
+            if self.selected_group_id is None:
+                return
 
-                return save_return
+            # ask the user if they are sure they want to delete the group
+            if not messagebox.askyesno(title='Delete group?',
+                                        message='Are you sure you want to delete the group "{}"?'.format(
+                                            self._groups_data[self.selected_group_id]['name'])):
+                return
+
+            # get a copy of the group data
+            new_groups_data = copy.deepcopy(self._groups_data)
+
+            # get the group name for the status label
+            group_name = new_groups_data[self.selected_group_id]['name']
+
+            # delete the group from the group data
+            del new_groups_data[self.selected_group_id]
+
+            # deselect the group
+            self.selected_group_id = None
+
+            # update transcription
+            self._push_group_change_to_transcription(new_groups_data)
+
+            # update window status label
+            self.toolkit_UI_obj.update_window_status_label(self.window_id, 'Group "{}" deleted.'.format(group_name))
+
+            # update the group list
+            self.update_list()
+
+            return
+
+        def update_group_segments(self):
+            """
+            This updates the group segments of the selected group
+            according to the the segments selected in the parent window
+            """
+
+            # if we don't have a selected group, return
+            if self.selected_group_id is None:
+                return
+
+            # collect the selected segments from the parent window
+            group_time_intervals = self._selected_segments_to_group_intervals()
+
+            # if the group time intervals are different than the ones in the group data
+            if group_time_intervals != self._groups_data[self.selected_group_id]['time_intervals']:
+
+                # make a copy of the groups data
+                new_groups_data = copy.deepcopy(self._groups_data)
+
+                # add the group time intervals to the new groups data
+                new_groups_data[self.selected_group_id]['time_intervals'] = group_time_intervals
+
+                # update transcription
+                self._push_group_change_to_transcription(new_groups_data)
+
+                # update window status label
+                self.toolkit_UI_obj.update_window_status_label(self.window_id, 'Group segments updated.')
+
+                # update the group list
+                self.update_list()
+
+
+            return
+
+        def _push_group_change_to_transcription(self, groups_data):
+            """
+            This pushes the group change to the transcription
+
+            :param: groups_data: the new groups data (must contain the all the groups, similar to self._groups_data)
+            """
+
+            # push this change to the toolkit_ops_obj
+            self.toolkit_ops_obj.t_groups_obj. \
+                save_transcript_groups(transcription_file_path=self._transcription_file_path,
+                                       transcript_groups=groups_data)
+
+            # update the transcript data of for the window too
+            self.t_edit_obj.set_window_transcription_data(
+                self.window_id, key='transcript_groups', value=groups_data)
+
+        def _toggle_update_segments(self):
+            """
+            This toggles the auto add to group option
+            """
+
+            # toggle the auto add to group option according to the _group_update_segments_var
+            self.update_segments = self._group_update_segments_var.get()
+
+        def _selected_segments_to_group_intervals(self):
+            """
+            This converts the segments selected in the parent window to intervals used for the group data
+            """
+
+            # get the segments selected in the parent window
+            selected_segments = self.t_edit_obj.get_window_selected_segments(
+                window_id=self.window_id, list_only=True)
+
+            # get a proper list of time intervals based on the segments
+            group_time_intervals = self.toolkit_ops_obj.transcript_segments_to_time_intervals(
+                segments=selected_segments)
+
+            return group_time_intervals
+
+        def add_new_group(self):
+            """
+            This adds a new group and then adds the segments selected in the parent window to it (if any are selected)
+            """
+
+            # ask for the group name
+            # create a list of widgets for the input dialogue
+            input_widgets = [
+                {'name': 'group_name', 'label': 'Group Name:', 'type': 'entry', 'default_value': ''}
+            ]
+
+            user_input = self.toolkit_UI_obj.AskDialog(
+                title='New Group', input_widgets=input_widgets, parent=self.window, toolkit_UI_obj=self.toolkit_UI_obj)\
+                .value()
+
+            if not user_input or 'group_name' not in user_input or not user_input['group_name']:
+                return False
+
+            # check if there isn't already a group with this new name
+            # and ask the user to confirm if they want to have multiple groups with the same name
+            if not self._duplicate_name_confirm(user_input['group_name']):
+                return False
+
+            # make a copy of the groups data
+            new_groups_data = copy.deepcopy(self._groups_data) if self._groups_data else {}
+
+            # collect the selected segments from the parent window
+            group_time_intervals = self._selected_segments_to_group_intervals()
+
+            # ask the user to confirm if they want to add an empty group
+            if not group_time_intervals or not isinstance(group_time_intervals, list) or len(group_time_intervals) == 0:
+                if not messagebox.askyesno(title="Empty group",
+                                           message="You haven't selected any segments to add to the group.\n"
+                                                   "Add new group anyway?"):
+                    return False
+
+            # prepare the new dict of the new group
+            # (this will return a dict looking like this {group_id: group_data})
+            new_group = self.toolkit_ops_obj.t_groups_obj.prepare_transcript_group(
+                group_name=user_input['group_name'],
+                time_intervals=group_time_intervals
+            )
+
+            # get the group id
+            new_group_id = list(new_group.keys())[0]
+
+            # add the new group to the group data
+            new_groups_data = {**new_groups_data, **new_group}
+
+            # update transcription
+            self._push_group_change_to_transcription(new_groups_data)
+
+            # update window status label
+            self.toolkit_UI_obj.update_window_status_label(self.window_id, 'New group added.')
+
+            # update the group list
+            self.update_list()
+
+            # finally, select the new group
+            self.select_group(group_id=new_group_id)
+
+            return
+
+        def _is_group_label_in_view(self, label_widget=None):
+            """
+            This checks if the group label is in view
+            """
+
+            scrollable_frame = self._groups_list_frame
+
+            label_coords = label_widget.winfo_x(), label_widget.winfo_y()
+            canvas_coords = scrollable_frame._parent_canvas.canvasx(0), scrollable_frame._parent_canvas.canvasy(0)
+            canvas_size = scrollable_frame._parent_canvas.winfo_width(), scrollable_frame._parent_canvas.winfo_height()
+            label_size = label_widget.winfo_width(), label_widget.winfo_height()
+
+            if scrollable_frame._orientation == "horizontal":
+                visible_range = (canvas_coords[0], canvas_coords[0] + canvas_size[0])
+                label_range = (label_coords[0], label_coords[0] + label_size[0])
+            elif scrollable_frame._orientation == "vertical":
+                visible_range = (canvas_coords[1], canvas_coords[1] + canvas_size[1])
+                label_range = (label_coords[1], label_coords[1] + label_size[1])
 
             else:
-                logger.error('No transcription file path was found for the current window id')
+                raise ValueError("Invalid orientation: {}".format(scrollable_frame._orientation))
 
-        return False
-
-    def on_group_delete_press(self, t_window_id: str, t_group_window_id: str, group_id: str = None,
-                              groups_listbox: tk.Listbox = None):
-        '''
-        Do stuff when the delete group button is pressed:
-        this will delete the group from the transcription data
-        and update the transcription groups window with the remaining groups
-
-        :param t_window_id:
-        :param t_group_window_id:
-        :param group_id:
-        :param groups_listbox:
-        :return:
-        '''
-
-        # if group_id is None, get it from the listbox
-        if group_id is None and groups_listbox is not None:
-
-            group_id = self._get_selected_group_id(t_window_id=t_window_id)
-
-        else:
-            logger.debug('No group id or group listbox was provided')
-            return False
-
-        # delete the group from the transcription data
-        # (by passing the transcription window id and the group id we're also updating the group window)
-        self.t_edit_obj.delete_group(t_window_id, group_id,
-                                     t_group_window_id=t_group_window_id, groups_listbox=groups_listbox)
-
-    def on_group_press(self, e, t_window_id: str, t_group_window_id: str = None, group_id: str = None,
-                       groups_listbox: tk.Listbox = None):
-        '''
-        Do stuff when the user presses a group somewhere
-        :param t_window_id:
-        :param t_group_window_id:
-        :param group_id: The group id (optional, if group_listbox is not None)
-        :param groups_listbox: The tk element that contains the groups (optional, if group_id is not None)
-        :return:
-        '''
-
-        passed_group = None if group_id is None else group_id
-
-        # get the group window id if it's not provided
-        if t_group_window_id is None:
-            t_group_window_id = t_window_id+'_transcript_groups'
-
-        # if group_id is None, get it from the listbox
-        if group_id is None and groups_listbox is not None:
-            group_id = self._get_group_id_from_listbox(groups_listbox=groups_listbox)
-
-        # if we have a group id but no groups_listbox
-        elif group_id is not None and groups_listbox is None:
-
-            # get the groups listbox from the tk window
-            groups_listbox = \
-                self.windows[t_group_window_id].nametowidget('transcript_groups_frame.groups_listbox')
-
-        else:
-            logger.debug('No group id or group listbox was provided')
-            return False
-
-        # if the group id matches the group id in the selected group
-        # it means that we are clicking on a group that was already selected
-        # so, deselect the group and all the segments from the window
-        # (but only if the group was not passed as an argument)
-        if t_window_id in self.t_edit_obj.selected_groups \
-                and group_id in self.t_edit_obj.selected_groups[t_window_id]\
-                and passed_group is None:
-
-            # empty the selected groups
-            self.t_edit_obj.selected_groups[t_window_id] = []
-
-            # clear the selected segments
-            self.t_edit_obj.clear_selection(t_window_id)
-
-            # clear the selection in the listbox
-            groups_listbox.selection_clear(0, tk.END)
-
-            # update the group window
-            self.update_transcript_group_form(t_window_id, t_group_window_id, group_id=None)
-
-            # hide the group_details_frame
-            self._hide_group_details_frame(t_group_window_id)
-
-        # otherwise it means that we want to select a group
-        else:
-
-            # create the selected groups for the transcription window if it doesn't exist
-            if t_window_id not in self.t_edit_obj.selected_groups:
-                self.t_edit_obj.selected_groups[t_window_id] = []
-
-            # empty the selected groups (deactivate when multiple groups can be selected)
-            self.t_edit_obj.selected_groups[t_window_id] = []
-
-            # add the group to the currently selected groups
-            self.t_edit_obj.selected_groups[t_window_id].append(group_id)
-
-            # if the user did not press on the listbox, it means that the request came from some place else
-            # so, select the group in the listbox (this prevents simulating a second click on the listbox)
-            if e is None or e.widget != groups_listbox:
-                self._select_group_in_listbox(groups_listbox=groups_listbox,
-                                              transcript_window_id=t_window_id,
-                                              group_id=group_id)
-
-            # select the segments in the transcription window
-            self.select_group_segments(t_window_id, group_id)
-
-            # update the group window
-            self.update_transcript_group_form(t_window_id, t_group_window_id, group_id)
-
-            # show the group_details_frame
-            self._show_group_details_frame(t_group_window_id)
-
-        return True
-
-    def select_group_segments(self, t_window_id: str, group_id: str, text_element: tk.Text = None):
-        '''
-        Select the segments in the transcription window according to the time_intervals in the group data
-        :param t_window_id:
-        :param group_id:
-        :param text_element: The text element to select the segments in (optional)
-        :return:
-        '''
-
-        # get the transcription group data
-        # if it exists in the dict
-        if t_window_id in self.t_edit_obj.transcript_groups \
-                and group_id in self.t_edit_obj.transcript_groups[t_window_id]:
-
-            group_data = self.t_edit_obj.transcript_groups[t_window_id][group_id]
-
-            # get the time intervals
-            if 'time_intervals' in group_data:
-                time_intervals = group_data['time_intervals']
-
-                # get the transcript segments
-                if t_window_id in self.t_edit_obj.transcript_segments:
-                    transcript_segments = self.t_edit_obj.transcript_segments[t_window_id]
-
-                    # convert the time intervals to segments
-                    group_segments = \
-                        self.toolkit_ops_obj.time_intervals_to_transcript_segments(time_intervals, transcript_segments)
-
-                    # if no text element was provided, get it from the transcription window
-                    if text_element is None:
-                        text_element = self.t_edit_obj.get_transcription_window_text_element(t_window_id)
-
-                        # now clear the selection
-                        self.t_edit_obj.clear_selection(t_window_id)
-
-                        group_lines = []
-
-                        # go through the segments and get their line numbers
-                        for segment in group_segments:
-                            # get the line number
-                            group_lines.append(self.t_edit_obj.segment_id_to_line(t_window_id, segment['id']))
-
-                        # and select the segments
-                        self.t_edit_obj.segment_to_selection(t_window_id, text_element=text_element, line=group_lines)
-
-                        return True
-
-        # if the above fails, just return False
-        return False
-
-    def update_transcript_group_form(self, t_window_id: str, t_group_window_id: str, group_id: str or None):
-        '''
-        This updates the transcript group form with the data stored in the transcript_groups dict
-        :param t_window_id: the id of the transcription window (needed to get the groups data)
-        :param t_group_window_id: the id of the group window
-        :param group_id: the id of the group to pull data from
-        :return:
-        '''
-
-        # initialize the group data that dict that will be pass to the populate function
-        update_group_data = {'group_notes': ''}
-
-        # get the transcription group data
-        # if it exists in the dict
-        if group_id is not None and \
-                t_window_id in self.t_edit_obj.transcript_groups \
-                and group_id in self.t_edit_obj.transcript_groups[t_window_id]:
-            # get the group data
-            group_data = self.t_edit_obj.transcript_groups[t_window_id][group_id]
-
-            # use the group data to populate the group form (just the notes here)
-            update_group_data = {'group_notes': group_data['notes']}
-
-        # populate the transcription group form
-        self._populate_form_data(window_id=t_group_window_id, form_data=update_group_data)
-
-    def _get_form_data(self, window_id: str, inputs: list = None) -> dict or bool:
-        '''
-        This gets the data from the form fields
-        :param window_id:
-        :param fields: The fields to get the data from (optional)
-        :return: A dict with the data from the form fields
-        '''
-
-        # keep track of the elements that we have found
-        found_inputs = []
-
-        # keep track of the data that we have found
-        form_data = {}
-
-        for key in inputs:
-            form_data[key] = None
-
-        # the window needs to be registered in the windows dict
-        if window_id not in self.windows:
-            logger.error('The window id provided was not found in the windows dict')
-            return False
-
-        # search through all the elements in the window until we find the elements that we need
-        # but since we are expecting the forms to be inside a frame, we'll only look at the second level
-        for child in self.windows[window_id].winfo_children():
-
-            # go another level deeper, since we are expecting the forms to be inside a frame
-            if len(child.winfo_children()) > 0:
-
-                for child2 in child.winfo_children():
-
-                    # if the child2 name is in the form_input_names dict
-                    if child2.winfo_name() in inputs:
-
-                        # add the input to the found inputs list
-                        found_inputs.append(child2.winfo_name())
-
-                        # get the tkinter value of the element depending on the type
-                        if child2.winfo_class() == 'Entry':
-
-                            # get the value of the entry
-                            form_data[child2.winfo_name()] = child2.get()
-
-                        elif child2.winfo_class() == 'Text':
-
-                            # get the whole value of the text input
-                            form_data[child2.winfo_name()] = child2.get(0.0, tk.END)
-
-                        else:
-                            # this is to let us know that we need to create a procedure for this input type
-                            logger.error('The tkinter input type {} for {} is not supported'
-                                         .format(child2.winfo_class(), child2.winfo_name()))
-
-        # if we didn't find all the inputs, log it
-        if len(found_inputs) != len(form_data):
-            logger.debug('Not all requested form inputs were not found in the window')
-
-        return form_data
-
-    def _populate_form_data(self, window_id, form_data):
-        '''
-        This populates the form data in the form with the data provided
-
-        It will automatically search for the elements in the window and if the elements are found, it will populate them
-
-        form_data needs to be a dict with the element names as keys and the values used to populate the elements
-
-        :param window_id:
-        :param form_data:
-        :return:
-        '''
-
-        # initialize empty inputs until we find them
-        form_input_names = {}
-
-        # keep track of the elements that we have found
-        all_inputs = list(form_data.keys())
-        found_inputs = []
-
-        for key in form_data:
-            form_input_names[key] = None
-
-        # the window needs to be registered in the windows dict
-        if window_id not in self.windows:
-            logger.error('The window id provided was not found in the windows dict')
-            return False
-
-        # search through all the elements in the window until we find the elements that we need
-        # but since we are expecting the forms to be inside a frame, we'll only look at the second level
-        for child in self.windows[window_id].winfo_children():
-
-            # go another level deeper, since we are expecting the forms to be inside a frame
-            if len(child.winfo_children()) > 0:
-
-                for child2 in child.winfo_children():
-
-                    # if the child2 name is in the form_input_names dict
-                    if child2.winfo_name() in form_input_names:
-                        form_input_names[key] = child2
-
-                        # add the input to the found inputs list
-                        found_inputs.append(child2.winfo_name())
-
-                        # update the input based on the tkinter input type
-                        if child2.winfo_class() == 'Entry':
-
-                            # clear the input
-                            child2.delete(0, tk.END)
-
-                            # then populate it with the data
-                            form_input_names[key].insert(0.0, form_data[key])
-
-                        elif child2.winfo_class() == 'Text':
-
-                            # clear the text input
-                            form_input_names[key].delete(0.0, tk.END)
-
-                            # then populate it with the data
-                            form_input_names[key].insert(0.0, form_data[key])
-
-                        else:
-                            # this is to let us know that we need to create a procedure for this input type
-                            logger.error('The tkinter input type {} for {} is not supported'
-                                         .format(child2.winfo_class(), child2.winfo_name()))
-
-        # if we didn't find all the inputs
-        if len(found_inputs) != len(all_inputs):
-            # get the inputs that we didn't find
-            missing_inputs = list(set(all_inputs) - set(found_inputs))
-
-            # log the missing inputs
-            # this is to let us know that maybe we need to name the inputs in the form so they're found
-            # this could also happen if, for instance, the input is not in the window frame
-            logger.error('The following inputs were not found while updating window {}: {}'
-                         .format(window_id, missing_inputs))
-
-    def update_transcript_groups_window(self, t_window_id: str, t_group_window_id: str = None,
-                                        groups_listbox: tk.Listbox = None, reload_groups: bool = False):
-
-        # if we're supposed to reload the groups, do it
-        if reload_groups:
-
-            # reload the transcription from disk
-            transcription_data = self.toolkit_ops_obj.get_transcription_file_data(
-                self.t_edit_obj.get_transcription_path_from_window(t_window_id)
-            )
-
-            if transcription_data:
-                self.update_window_transcript_groups(t_window_id, transcription_data)
-
-
-        # if the group window id is not provided, assume this:
-        if t_group_window_id is None:
-            t_group_window_id = t_window_id + '_transcript_groups'
-
-        # we'll definitely need the groups notes input
-        group_details_frame = None
-
-        # we need a valid groups window id to continue
-        if t_group_window_id not in self.windows:
-            return False
-
-        # search through all the elements in the window until we find some elements that we might need
-        for child in self.windows[t_group_window_id].winfo_children():
-
-            # go another level deeper, since we are expecting the forms to be inside a frame
-            if len(child.winfo_children()) > 0:
-
-                for child2 in child.winfo_children():
-
-                    # if no groups listbox was provided remember but we found one, remember it
-                    if child2.winfo_name() == 'groups_listbox' \
-                            and groups_listbox is None and t_group_window_id in self.windows:
-                        groups_listbox = child2
-
-                        # if we found the group notes input, break out from this loop
-                        break
-
-            if child.winfo_name() == 'group_details_frame':
-                group_details_frame = child
-
-        # if we haven't found the groups notes input or groups listbox, return False
-        if group_details_frame is None or groups_listbox is None:
-            return False
-
-        # clear the listbox
-        groups_listbox.delete(0, tk.END)
-
-        # get the groups data
-        if t_window_id in self.t_edit_obj.transcript_groups:
-            groups_data = self.t_edit_obj.transcript_groups[t_window_id]
-
-            # create a list with all the group names from the group data
-            # the group names are inside the group data dict
-            # and sort them alphabetically
-            group_names = sorted([group_data['name'] for group_id, group_data in groups_data.items()])
-
-            # then add the transcript groups to the listbox
-            for group_name in group_names:
-                groups_listbox.insert(END, group_name)
-
-        # if no group or more than a group is selected
-        # clear all the group form inputs
-        if t_window_id not in self.t_edit_obj.selected_groups \
-                or len(self.t_edit_obj.selected_groups[t_window_id]) != 1:
-
-            update_group_data = {'group_notes': ''}
-
-            # populate the transcription group form
-            self._populate_form_data(window_id=t_group_window_id, form_data=update_group_data)
-
-            self._hide_group_details_frame(t_group_window_id, group_details_frame)
-
-        # if a single group is selected
-        # populate the group form with the group data
-        elif t_window_id in self.t_edit_obj.selected_groups \
-                and len(self.t_edit_obj.selected_groups[t_window_id]) == 1:
-
-            # show the group details frame (form)
-            self._show_group_details_frame(t_group_window_id, group_details_frame)
-
-        # now, if there are any selected groups for this window
-        if t_window_id in self.t_edit_obj.selected_groups \
-            and self.t_edit_obj.selected_groups[t_window_id]:
-
-            # select the groups in the listbox
-            for group_name in self.t_edit_obj.selected_groups[t_window_id]:
-
-                # this should not happen, so if errors are reported, look into it!
-                if not group_name:
-                    continue
-
-                # select the group in the listbox, but using a case-insensitive search
-                # - this is because the listbox is case-sensitive, but the group names are not
-                group_name_lower = group_name.lower()
-                for i, item in enumerate(groups_listbox.get(0, tk.END)):
-                    if item.lower() == group_name_lower:
-                        groups_listbox.selection_set(i)
-                        groups_listbox.see(i)
-                        break
-
-                # select the segments in the transcription window
-                # - if multiple groups are selected, this will select the segments from the last group
-                # - so if we want to implement the multi-group selection in the future, we'll need to change this!
-                self.select_group_segments(t_window_id, group_name)
-
-        return True
-
-    def _get_group_details_frame(self, t_group_window_id: str):
-
-        # we need a valid groups window id to continue
-        if t_group_window_id not in self.windows:
-            return False
-
-        # search through all the elements in the window until we find some elements that we might need
-        for child in self.windows[t_group_window_id].winfo_children():
-
-            if child.winfo_name() == 'group_details_frame':
-                return child
-
-    def _show_group_details_frame(self, t_group_window_id: str, group_details_frame: tk.Frame = None):
-
-        if group_details_frame is None:
-            group_details_frame = self._get_group_details_frame(t_group_window_id)
-
-        # or show the group notes label and text input
-        group_details_frame.pack(side=tk.BOTTOM, expand=True, fill=tk.X, **self.ctk_secondary_button_paddings, anchor=tk.S)
-
-    def _hide_group_details_frame(self, t_group_window_id: str, group_details_frame: tk.Frame = None):
-
-        if group_details_frame is None:
-            group_details_frame = self._get_group_details_frame(t_group_window_id)
-
-        # now hide the group notes label and text input
-        group_details_frame.pack_forget()
-
-    def destroy_transcript_groups_window(self, window_id: str = None):
-
-        # call the default destroy window function
-        self.destroy_window_(windows_dict=self.windows, window_id=window_id)
-
-    def open_transcript_groups_window(self, transcription_window_id, transcription_name=None, select_group=None):
-
-        # the transcript groups window id
-        transcript_groups_window_id = '{}_transcript_groups'.format(transcription_window_id)
-
-        # the transcript groups window title
-        if transcription_name:
-            transcript_groups_window_title = 'Groups - {}'.format(transcription_name)
-        else:
-            transcript_groups_window_title = 'Groups'
-
-        # create a window for the transcript groups if one doesn't already exist
-        if self.create_or_open_window(parent_element=self.windows[transcription_window_id],
-                                        window_id=transcript_groups_window_id,
-                                        title=transcript_groups_window_title, resizable=True,
-                                        type='transcript_groups',
-                                        close_action=
-                                            lambda: self.destroy_transcript_groups_window(transcript_groups_window_id)
-                                        ):
-
-            # the current transcript groups window object
-            current_transcript_groups_window = self.windows[transcript_groups_window_id]
-
-            # use the transcript groups stored in the transcription window
-            if transcription_window_id in self.t_edit_obj.transcript_groups:
-
-                transcript_groups = self.t_edit_obj.transcript_groups[transcription_window_id]
-
-            # if they don't exist, create an empty dict
-            else:
-                self.t_edit_obj.transcript_groups[transcription_window_id] = {}
-                transcript_groups = {}
-
-            elements_width = 30
-
-            # add a header frame for future buttons
-            header_frame = tk.Frame(current_transcript_groups_window)
-            header_frame.pack(side=tk.TOP, expand=True, fill=tk.X, **self.ctk_frame_paddings)
-
-            # add the frame to hold the transcript groups
-            transcript_groups_frame = tk.Frame(self.windows[transcript_groups_window_id],
-                                               name="transcript_groups_frame")
-            transcript_groups_frame.pack(expand=True, fill=tk.BOTH, **self.ctk_frame_paddings)
-
-            # add a listbox that holds all the transcript groups
-            groups_listbox = Listbox(transcript_groups_frame, name="groups_listbox",
-                                     width=elements_width, height=10, selectmode='single', exportselection=False)
-            groups_listbox.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
-
-            # add a scrollbar to the listbox
-            scrollbar = ctk.CTkScrollbar(transcript_groups_frame)
-            scrollbar.configure(command=groups_listbox.yview)
-            scrollbar.pack(side=tk.RIGHT, fill='y')
-
-            # configure the listbox to use the scrollbar
-            groups_listbox.config(yscrollcommand=scrollbar.set)
-
-            # add a frame to hold the transcript group details under the listbox
-            transcript_group_details_frame = tk.Frame(current_transcript_groups_window, name='group_details_frame')
-
-            # do not pack the frame yet, it will be packed when a group is selected (in the update function)
-            # transcript_group_details_frame.pack(side=tk.BOTTOM, expand=True, fill=tk.X, **self.paddings, anchor=tk.S)
-
-            # inside the transcript group details frame, add the inputs
-            # for the transcript group name, notes and some buttons
-
-            # the transcript group notes text box
-            Label(transcript_group_details_frame, text="Group Notes:", anchor='nw') \
-                .pack(side=tk.TOP, expand=True, fill=tk.X)
-            transcript_group_notes = tk.StringVar()
-            transcript_group_notes_input = Text(transcript_group_details_frame, name='group_notes',
-                                                width=elements_width, height=5, wrap=tk.WORD)
-            transcript_group_notes_input.pack(side=tk.TOP, expand=True, fill=tk.X, anchor='nw')
-
-            # update the transcript group notes variable when the text box is changed
-            # transcript_group_notes_input.bind('<KeyRelease>', lambda e: transcript
-
-            # add a frame to hold the buttons
-            transcript_group_buttons_frame = tk.Frame(transcript_group_details_frame)
-            transcript_group_buttons_frame.pack(side=tk.TOP, expand=True, fill=tk.X)
-
-            # the transcript group update button
-            transcript_group_update = tk.Button(transcript_group_buttons_frame, text='Save',
-                                                command=lambda
-
-                                                    transcription_window_id=transcription_window_id,
-                                                    transcript_groups_window_id=transcript_groups_window_id,
-                                                    group_notes=transcript_group_notes_input.get(0.0, tk.END),
-                                                    groups_listbox=groups_listbox:
-                                                self.on_group_update_press(
-                                                    transcription_window_id,
-                                                    transcript_groups_window_id,
-                                                    groups_listbox=groups_listbox
-                                                ))
-            transcript_group_update.pack(side=tk.LEFT)
-
-
-            # AUTO ADD BUTTON
-            transcript_group_auto_add = tk.Button(transcript_group_buttons_frame, text='Auto Add')
-
-            self.button_group_auto_add_state(transcript_group_auto_add)
-
-            # bind the auto add button to the auto add function
-            transcript_group_auto_add.bind('<Button-1>', lambda e,transcript_group_auto_add=transcript_group_auto_add:
-                                                        self.on_group_auto_add_press(button=transcript_group_auto_add))
-
-            transcript_group_auto_add.pack(side=tk.LEFT)
-
-            # GROUP DELETE BUTTON
-            transcript_group_delete = tk.Button(transcript_group_buttons_frame, text="Delete",
-                                                command=lambda
-                                                    transcription_window_id=transcription_window_id,
-                                                    transcript_groups_window_id=transcript_groups_window_id,
-                                                    groups_listbox=groups_listbox:
-                                                self.on_group_delete_press(transcription_window_id,
-                                                                           transcript_groups_window_id,
-                                                                           groups_listbox=groups_listbox))
-            transcript_group_delete.pack(side=tk.RIGHT)
-
-            # when a user selects a transcript group from the listbox, update the transcript group details
-            groups_listbox.bind('<<ListboxSelect>>',
-                                lambda e,
-                                       transcription_window_id=transcription_window_id,
-                                       transcript_groups_window_id=transcript_groups_window_id,
-                                       groups_listbox=groups_listbox:
-                                self.on_group_press(e, t_window_id=transcription_window_id,
-                                                    t_group_window_id=transcript_groups_window_id,
-                                                    groups_listbox=groups_listbox))
-
-            # place the transcript groups window on top of the transcription window
-            self.windows[transcript_groups_window_id].attributes('-topmost', 'true')
-            self.windows[transcript_groups_window_id].attributes('-topmost', 'false')
-            self.windows[transcript_groups_window_id].lift()
-
-            # and then call the update function to fill the groups listbox up
-            self.update_transcript_groups_window(t_window_id=transcription_window_id,
-                                                 t_group_window_id=transcript_groups_window_id,
-                                                 groups_listbox=groups_listbox)
-
-            # get the transcription path from the transcription window
-            transcription_file_path = self.t_edit_obj.get_transcription_path_from_window(
-                window_id=transcription_window_id
-            )
-
-            # add an observer for this groups window,
-            # to trigger an update in case the groups are changed
-            self.add_observer_to_window(
-                window_id=transcript_groups_window_id,
-                action='update_transcription_groups_{}'
-                .format(self.toolkit_ops_obj.get_transcription_id(transcription_file_path)),
-                callback=lambda: self.update_transcript_groups_window(t_window_id=transcription_window_id,
-                                                                      t_group_window_id=transcript_groups_window_id,
-                                                                      groups_listbox=groups_listbox,
-                                                                      reload_groups=True
-                                                                      )
-            )
-
-        if select_group is not None:
-            self.on_group_press(None, t_window_id=transcription_window_id,
-                                t_group_window_id=transcript_groups_window_id,
-                                group_id=select_group
-                                )
-
-    def on_group_auto_add_press(self, button):
-        '''
-        This function is called when the user clicks the auto add button in the transcript groups window
-        '''
-
-        # update the auto add to group setting to the opposite of what it is currently
-        self.t_edit_obj.auto_add_to_group = not self.t_edit_obj.auto_add_to_group
-
-        self.button_group_auto_add_state(button)
-
-    def button_group_auto_add_state(self, button):
-
-        # update the button text
-        if self.t_edit_obj.auto_add_to_group:
-            button.configure(text='Don\'t Auto Add')
-        else:
-            button.configure(text='Auto Add')
+            return visible_range[0] <= label_range[0] and visible_range[1] >= label_range[1]
 
     # QUEUE WINDOW
 
@@ -10521,21 +10569,21 @@ class toolkit_UI():
                     result_search_term = result['search_term']
 
                     # add the search term header
-                    results_text_element.insert(tk.END, 'Searching for: "' + result_search_term + '"\n')
-                    results_text_element.insert(tk.END, '--------------------------------------\n')
-                    results_text_element.insert(tk.END, 'Top {} closest phrases:\n\n'.format(max_results))
+                    results_text_element.insert(ctk.END, 'Searching for: "' + result_search_term + '"\n')
+                    results_text_element.insert(ctk.END, '--------------------------------------\n')
+                    results_text_element.insert(ctk.END, 'Top {} closest phrases:\n\n'.format(max_results))
 
                 # remember the current insert position
-                current_insert_position = results_text_element.index(tk.INSERT)
+                current_insert_position = results_text_element.index(ctk.INSERT)
 
                 # add the result text
                 text_result = result['text']
 
                 # add the result text
-                results_text_element.insert(tk.END, str(text_result).strip() + '\n')
+                results_text_element.insert(ctk.END, str(text_result).strip() + '\n')
 
                 # color it in blue
-                results_text_element.tag_add('white', current_insert_position, tk.INSERT)
+                results_text_element.tag_add('white', current_insert_position, ctk.INSERT)
                 results_text_element.tag_config('white', foreground=self.theme_colors['supernormal'])
 
                 # if the type is a transcription
@@ -10544,11 +10592,11 @@ class toolkit_UI():
                     time_str = "second {:.2f}".format(result['transcript_time']) \
                         if result['timecode'] is None else result['timecode']
 
-                    results_text_element.insert(tk.END, ' -- Transcript Line {} ({}) \n'
+                    results_text_element.insert(ctk.END, ' -- Transcript Line {} ({}) \n'
                                                 .format(result['segment_index'], time_str))
 
                     # add the transcription file path and segment index to the result
-                    results_text_element.insert(tk.END, ' -- Transcript: {}\n'
+                    results_text_element.insert(ctk.END, ' -- Transcript: {}\n'
                                                 .format(result['name']))
 
                     # add a tag to the above text to make it clickable
@@ -10582,12 +10630,12 @@ class toolkit_UI():
                 # if the type is a transcription
                 elif result['type'] == 'text':
                     # add the transcription file path and segment index to the result
-                    results_text_element.insert(tk.END, ' -- File: {}\n'
+                    results_text_element.insert(ctk.END, ' -- File: {}\n'
                                                 .format(os.path.basename(result['file_path'])))
 
                     # add a tag to the above text to make it clickable
                     tag_name = 'clickable_{}'.format(result['idx'])
-                    results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
+                    results_text_element.tag_add(tag_name, current_insert_position, ctk.INSERT)
 
                     # hash the file path so we can use it as a window id
                     file_path_hash = hashlib.md5(result['file_path'].encode('utf-8')).hexdigest()
@@ -10612,28 +10660,28 @@ class toolkit_UI():
                 elif result['type'] == 'marker':
 
                     # add the timeline name
-                    results_text_element.insert(tk.END, ' -- Marker at Frame: {}\n'.format(result['marker_index']))
-                    # results_text_element.insert(tk.END, ' -- Source: Timeline Marker\n')
+                    results_text_element.insert(ctk.END, ' -- Marker at Frame: {}\n'.format(result['marker_index']))
+                    # results_text_element.insert(ctk.END, ' -- Source: Timeline Marker\n')
 
                     # add the project name
-                    results_text_element.insert(tk.END, ' -- Project: {}\n'.format(result['project']))
+                    results_text_element.insert(ctk.END, ' -- Project: {}\n'.format(result['project']))
 
                     # add the timeline name
-                    results_text_element.insert(tk.END, ' -- Timeline: {}\n'.format(result['timeline']))
+                    results_text_element.insert(ctk.END, ' -- Timeline: {}\n'.format(result['timeline']))
 
                 elif result['type'] == 'transcript_group':
 
                     # add the timeline name
-                    results_text_element.insert(tk.END, ' -- Transcript Group\n')
-                    # results_text_element.insert(tk.END, ' -- Source: Timeline Marker\n')
+                    results_text_element.insert(ctk.END, ' -- Transcript Group\n')
+                    # results_text_element.insert(ctk.END, ' -- Source: Timeline Marker\n')
 
                     # add the transcription file path
-                    results_text_element.insert(tk.END, ' -- Transcript: {}\n'
+                    results_text_element.insert(ctk.END, ' -- Transcript: {}\n'
                                                 .format(result['transcription_name']))
 
                     # add a tag to the above text to make it clickable
                     tag_name = 'clickable_{}'.format(result['idx'])
-                    results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
+                    results_text_element.tag_add(tag_name, current_insert_position, ctk.INSERT)
 
                     # add the transcription file path and segment index to the tag
                     # so we can use it to open the transcription window with the transcription file and jump to the segment
@@ -10647,7 +10695,7 @@ class toolkit_UI():
 
                 else:
                     # mention that the result source is unknown
-                    results_text_element.insert(tk.END, ' -- Source: Unknown\n')
+                    results_text_element.insert(ctk.END, ' -- Source: Unknown\n')
 
                 # add score to the result
                 # consider the result as low confidence if the score is less than 0.35
@@ -10660,7 +10708,7 @@ class toolkit_UI():
 
                 # show score if in debug mode
                 if self.stAI.debug_mode:
-                    results_text_element.insert(tk.END, ' -- Score: {:.4f}{}\n'.format(result['score'], result_confidence))
+                    results_text_element.insert(ctk.END, ' -- Score: {:.4f}{}\n'.format(result['score'], result_confidence))
 
                 # highlight the tag when the mouse enters the tag
                 # (the unhighlight function is called when the mouse leaves the tag)
@@ -10669,7 +10717,7 @@ class toolkit_UI():
                     self._highlight_result_tag(self.text_windows[search_window_id]['text_widget'], tag_name))
 
                 # add a new line
-                results_text_element.insert(tk.END, '\n')
+                results_text_element.insert(ctk.END, '\n')
 
                 # add the score to the list of scores
                 scores.append(result['score'])
@@ -10678,10 +10726,10 @@ class toolkit_UI():
             average_score = round(sum(scores) / len(scores) * 10, 1)
 
             # update the results text element
-            results_text_element.insert(tk.END, '--------------------------------------\n')
-            results_text_element.insert(tk.END, 'Search took {:.2f} seconds\n'.format(total_search_time))
-            results_text_element.insert(tk.END, 'Average results score {:.1f} out of 10\n'.format(average_score))
-            results_text_element.insert(tk.END, 'The last result is the closest to your search.\n')
+            results_text_element.insert(ctk.END, '--------------------------------------\n')
+            results_text_element.insert(ctk.END, 'Search took {:.2f} seconds\n'.format(total_search_time))
+            results_text_element.insert(ctk.END, 'Average results score {:.1f} out of 10\n'.format(average_score))
+            results_text_element.insert(ctk.END, 'The last result is the closest to your search.\n')
 
             # use this to make sure we have a new prompt prefix for the next search
             self._text_window_update(search_window_id, 'Ready for new search.')

@@ -236,7 +236,6 @@ class ToolkitOps:
 
         # notify all observers for this action
         for observer in self._observers[action]:
-
             observer.update()
 
     class ToolkitAssistant:
@@ -1668,7 +1667,7 @@ class ToolkitOps:
             It will overwrite any existing transcript groups in the transcription file.
 
             :param transcription_file_path:
-            :param transcript_groups:
+            :param transcript_groups: a list of transcript groups
             :param group_id: If this is passed, we will only save the transcript group with this group id
             :return: The group dict if the groups were saved successfully, False otherwise
                     or None if there were other problems transcription file
@@ -1693,11 +1692,12 @@ class ToolkitOps:
             else:
 
                 # one final strip and lower to make sure that the group_id is in the right format
-                group_id = group_id.strip().lower()
+                #group_id = group_id.strip().lower()
 
                 # but make sure that it was passed correctly in the transcript_groups dict
                 if group_id not in transcript_groups:
-                    logger.error('The transcript group id {} was not found in the transcript_groups dict.'
+                    logger.error('Unable to save transcript group - the group id "{}" '
+                                 'was not found in the transcript_groups dict.'
                                  .format(group_id))
                     return False
 
@@ -1721,6 +1721,11 @@ class ToolkitOps:
             if not saved:
                 return False
 
+            # notify observers that the groups were updated for this transcription file
+            self.toolkit_ops_obj.notify_observers(
+                action='update_transcription_groups_{}'
+                .format(self.toolkit_ops_obj.get_transcription_id(transcription_file_path)))
+
             # return the saved transcript groups
             return transcription_file_data['transcript_groups']
 
@@ -1728,17 +1733,20 @@ class ToolkitOps:
             '''
             This function returns a group id from a group name.
 
-            For now, we're simply stripping and lowercasing the group name.
+            For now, we're simply stripping, lowercasing and adding a timestamp to the group name.
 
             :param group_name:
             :return: the group id
             '''
 
             # first, strip and lower the group name
-            group_name = group_name.strip().lower()
+            group_id = "{}{}".format(group_name.strip(), time.strftime('%Y%m%d%H%M%S%f'))
+
+            # remove all spaces from the group name and lowercase everything
+            group_id = group_id.replace(' ', '').lower()
 
             # and return the group name
-            return group_name
+            return group_id
 
         def prepare_transcript_group(self, group_name: str, time_intervals: list,
                                      group_id: str = None, group_notes: str = '',
@@ -1765,13 +1773,10 @@ class ToolkitOps:
             group_name = group_name.strip()
             group_notes = group_notes.strip()
 
-            # if the group id is not provided, use the group name
+            # if the group id is not provided, use the group name to generate one
             if group_id is None:
                 # generate a group id
                 group_id = self.group_id_from_name(str(group_name))
-
-            # always lowercase the group id
-            group_id = group_id.lower()
 
             # if we're not overwriting an existing group, see if the group id already exists in existing groups
             if not overwrite_existing \
@@ -1848,57 +1853,6 @@ class ToolkitOps:
                     overwrite_existing=overwrite_existing)
 
             return transcript_group
-
-        def save_segments_as_group_in_transcription_file(self,
-                                                         transcription_file_path: str,
-                                                         segments: list,
-                                                         group_name: str,
-                                                         group_id: str = None,
-                                                         group_notes: str = '',
-                                                         existing_transcript_groups: list = None,
-                                                         overwrite_existing: bool = False) -> str or None:
-            '''
-            This function saves a list of transcript segments as a group in a transcription file
-
-            The transcription file must already exist in order to save the transcript group.
-
-            :param transcription_file_path:
-            :param segments: a list of transcript segments
-            :param group_name: the name of the transcript group
-            :param group_id: the id of the transcript group
-            :param group_notes: the notes of the transcript group
-            :param existing_transcript_groups: if a transcript group is being updated, pass its contents here
-            :param overwrite_existing: if the same group_id is found in the existing transcript groups, overwrite it
-            :return: the transcript group id or None if something went wrong
-            '''
-
-            # first, prepare the transcript group
-            transcript_group = self.segments_to_groups(segments=segments, group_name=group_name, group_id=group_id,
-                                                       group_notes=group_notes,
-                                                       existing_transcript_groups=existing_transcript_groups,
-                                                       overwrite_existing=overwrite_existing)
-
-            if transcript_group is None or type(transcript_group) is not dict:
-                logger.debug('Could not prepare transcript group from segments for saving')
-                return None
-
-            # get the group id that may have been generated while creating the transcript group
-            group_id = list(transcript_group.keys())[0]
-
-            # finally, save the transcript group
-            saved = self.save_transcript_groups(transcription_file_path=transcription_file_path,
-                                                transcript_groups=transcript_group, group_id=group_id)
-
-            if not saved:
-                logger.debug('Could not save to transcription file {} the following transcript group: {}'.
-                             format(transcription_file_path, transcript_group))
-
-            # elif :
-            #    saved = group_id
-
-            logger.debug('Saved transcript groups {} to transcription file {}'
-                         .format(list(transcript_group.keys()), transcription_file_path))
-            return saved
 
     class ProcessingQueue:
         '''
@@ -4321,36 +4275,28 @@ class ToolkitOps:
 
         return classified_segments
 
-    def group_questions(self, segments=None, transcription_file_path: str = None, group_name: str = "Questions",
+    def group_questions(self, transcription_file_path: str = None, group_name: str = "Questions",
                         **kwargs):
         """
         This uses the classify_segments() method to detect questions and add them to a transcription group
-        :param segments: the segments to classify
         :param transcription_file_path: the path to the transcription json file
         :param group_name: the name of the group to save the questions in (default: Questions)
         :param kwargs: this is not needed, but makes sure that any additional arguments are ignored
         :return: the questions_group
         """
 
-        # initialize the empty transcription data etc.
-        transcription_data = None
-        questions_group = None
-        transcript_groups = {}
+        transcription_data = self.get_transcription_file_data(transcription_file_path=transcription_file_path)
 
-        # if no segments were provided, try to get them from the transcription file
-        if not segments:
+        if not transcription_data:
+            logger.error('Unable to group questions - no transcription file found: {}.'
+                         .format(transcription_file_path))
 
-            transcription_data = self.get_transcription_file_data(transcription_file_path=transcription_file_path)
+            if kwargs.get('queue_id'):
+                self.processing_queue.update_status(kwargs['queue_id'], 'failed')
 
-            if not transcription_data:
-                logger.error('Unable to group questions - no segments provided and no transcription file found.')
+            return None
 
-                if kwargs.get('queue_id'):
-                    self.processing_queue.update_status(kwargs['queue_id'], 'failed')
-
-                return None
-
-            segments = transcription_data['segments']
+        segments = transcription_data['segments']
 
         # classify the segments as questions or statements
         # but use the existing transcription data if we have it
@@ -4372,6 +4318,9 @@ class ToolkitOps:
             if self.processing_queue.cancel_if_canceled(queue_id=kwargs.get('queue_id')):
                 return None
 
+        # initialize the questions_group
+        questions_group = None
+
         # if we have question segments, create a group with them
         # but save it later, after the transcription is saved
         # since this is a multi_label_pass classification, we're going to use the '_multi_label_pass_' key
@@ -4379,39 +4328,31 @@ class ToolkitOps:
                 and '_multi_label_pass_' in classified_question_segments \
                 and len(classified_question_segments['_multi_label_pass_']) > 0:
 
-            # get all the current groups using get_all_transcript_groups
-            transcript_groups = self.t_groups_obj.get_all_transcript_groups(
-                # don't use the transcription data to force a reload of the groups in case they were updated externally
-                # transcription_data=transcription_data,
-                transcription_file_path=transcription_file_path
-            )
+            # get the time intervals of the question segments
+            group_time_intervals =\
+                self.transcript_segments_to_time_intervals(
+                    segments=classified_question_segments['_multi_label_pass_'])
 
-            # make sure we're not overwriting an existing group
-            n = 1
-            while self.t_groups_obj.group_id_from_name(group_name) in transcript_groups:
-
-                # remove any "_n" suffixes from the group name
-                if group_name.endswith('_' + str(n)):
-                    group_name = group_name[:-2]
-
-                n += 1
-
-                # now add the "_n" suffix
-                group_name = group_name + '_' + str(n)
-
-            questions_group = self.t_groups_obj.segments_to_groups(
-                segments=classified_question_segments['_multi_label_pass_'],
-                group_name=group_name
+            # prepare the new dict of the new group
+            # (this will return a dict looking like this {group_id: group_data})
+            questions_group = self.t_groups_obj.prepare_transcript_group(
+                group_name=group_name,
+                time_intervals=group_time_intervals
             )
 
         # if this was successful, save the questions group to the transcription json file
-        if questions_group is not None:
+        if questions_group is not None and transcription_data is not None:
 
-            # we're only passing the questions group to the save_transcript_groups method
-            # so this will only save the questions group and not touch any existing ones
-            self.t_groups_obj.save_transcript_groups(transcription_file_path,
-                                                     questions_group,
-                                                     group_id=group_name)
+            # get the existing transcript groups
+            transcript_groups = transcription_data.get('transcript_groups', {})
+
+            # merge the new questions group with the existing transcript groups
+            all_transcript_groups = {**transcript_groups, **questions_group}
+
+            # push this change to the toolkit_ops_obj
+            self.t_groups_obj. \
+                save_transcript_groups(transcription_file_path=transcription_file_path,
+                                       transcript_groups=all_transcript_groups)
 
         # if we have a queue_id, update the status to done
         if kwargs.get('queue_id', None):
@@ -6803,7 +6744,8 @@ class ToolkitOps:
                 # then we call the ask_dialogue function
                 user_input = self.toolkit_UI_obj.AskDialog(title='Markers to Render',
                                                            input_widgets=input_widgets,
-                                                           parent=self.toolkit_UI_obj.root
+                                                           parent=self.toolkit_UI_obj.root,
+                                                           toolkit_UI_obj=self.toolkit_UI_obj,
                                                            ).value()
 
                 # if the user didn't cancel the operation
