@@ -2046,24 +2046,24 @@ class toolkit_UI():
         main_window.r_copy_markers_clip = ctk.CTkButton(main_window.resolve_buttons_frame,
                                                  **self.ctk_button_size,
                                                  text="Timeline Markers to Same Clip",
-                                                 command=lambda: self.toolkit_ops_obj.execute_operation(
+                                                 command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
                                                      'copy_markers_timeline_to_clip', self))
 
         main_window.r_copy_markers_timeline = ctk.CTkButton(main_window.resolve_buttons_frame,
                                                  **self.ctk_button_size,
                                                  text="Clip Markers to Same Timeline",
-                                                 command=lambda: self.toolkit_ops_obj.execute_operation(
+                                                 command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
                                                      'copy_markers_clip_to_timeline', self))
 
         # resolve buttons frame row 2
         main_window.r_render_marker_stils = ctk.CTkButton(main_window.resolve_buttons_frame,
                                                  **self.ctk_button_size, text="Render Markers to Stills",
-                                                 command=lambda: self.toolkit_ops_obj.execute_operation(
+                                                 command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
                                                      'render_markers_to_stills', self))
 
         main_window.r_render_marker_clips = ctk.CTkButton(main_window.resolve_buttons_frame,
                                                  **self.ctk_button_size, text="Render Markers to Clips",
-                                                 command=lambda: self.toolkit_ops_obj.execute_operation(
+                                                 command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
                                                      'render_markers_to_clips', self))
 
 
@@ -4648,10 +4648,24 @@ class toolkit_UI():
             last_target_dir = self.stAI.get_project_setting(project_name=NLE.current_project,
                                                             setting_key='last_target_dir')
 
+            # get the current timeline from Resolve
+            currentTimelineName = resolve_data['currentTimeline']['name']
+
             # ask the user where to save the files
             while target_dir == '' or not os.path.exists(os.path.join(target_dir)):
                 logger.info("Prompting user for render path.")
-                target_dir = self.ask_for_target_dir(target_dir=last_target_dir)
+                #target_dir = self.ask_for_target_dir(target_dir=last_target_dir)
+
+                target_file = self.ask_for_save_file(target_dir=last_target_dir,
+                                                     initialfile=currentTimelineName
+                                                     )
+                if target_file:
+
+                    # get the file_name
+                    target_dir = os.path.dirname(target_file)
+
+                    # get the file_name
+                    file_name = os.path.basename(target_file)
 
                 # remember this target_dir for the next time we're working on this project
                 # (but only if it was selected by the user)
@@ -4664,9 +4678,6 @@ class toolkit_UI():
                     logger.info("User canceled transcription operation.")
                     return
 
-            # get the current timeline from Resolve
-            currentTimelineName = resolve_data['currentTimeline']['name']
-
             # send the timeline name via kwargs
             kwargs['timeline_name'] = currentTimelineName
 
@@ -4675,14 +4686,19 @@ class toolkit_UI():
                 # get the project name from Resolve
                 kwargs['project_name'] = resolve_data['currentProject']
 
+            # suspend NLE polling while we're rendering
+            NLE.suspend_polling = True
+
+            # and wait for a second to make sure that the last poll was executed
+            time.sleep(1)
+
             # generate a unique id to keep track of this file in the queue and transcription log
             if kwargs.get('queue_id', None) is None:
-                kwargs['queue_id'] = self.toolkit_ops_obj.processing_queue.generate_queue_id(name=currentTimelineName)
+                kwargs['queue_id'] = self.toolkit_ops_obj.processing_queue.generate_queue_id(name=file_name)
 
-            # todo check why this doesn't work - maybe because resolve polling is hanging the main thread
             # update the transcription log
-            self.toolkit_ops_obj.processing_queue.update_queue_item(queue_id=kwargs['queue_id'],
-                                                                    status='waiting for render')
+            self.toolkit_ops_obj.processing_queue.update_queue_item(
+                name=file_name, queue_id=kwargs['queue_id'], status='waiting for render')
 
             # open the queue window
             self.open_queue_window()
@@ -4699,23 +4715,29 @@ class toolkit_UI():
             self.notify_via_os("Starting Render", "Starting Render in Resolve",
                                          "Saving into {} and starting render.".format(target_dir))
 
-            # render the timeline in Resolve
-            rendered_files = self.toolkit_ops_obj.resolve_api.render_timeline(
-                target_dir, render_preset, True, False, False, True)
-
-            if not rendered_files:
-                self.toolkit_ops_obj.processing_queue.update_queue_item(queue_id=kwargs['queue_id'], status='failed')
-                logger.error("Timeline render failed.")
-                return
+            render_monitor, render_file_paths \
+                = self.toolkit_ops_obj.start_resolve_render_and_monitor(
+                target_dir=target_dir, render_preset=render_preset, start_render=False,
+                add_file_suffix=False, add_date=False, add_timestamp=True, file_name=file_name,
+            )
 
             # turn the rendered files into a string separated by commas with each element between double quotes
-            if len(rendered_files) > 1:
-                rendered_files = ', '.join(['"{}"'.format(f) for f in rendered_files])
+            # so they fit the files input in the ingest window
+            if len(render_file_paths) > 1:
+                render_file_paths = ', '.join(['"{}"'.format(f) for f in render_file_paths])
             else:
-                rendered_files = '{}'.format(rendered_files[0])
+                render_file_paths = '{}'.format(render_file_paths[0])
 
-            # now open up the ingest window
-            self.button_transcribe(target_files=rendered_files, transcription_task=transcription_task, **kwargs)
+            # add the done function to the render monitor
+            # - when the monitor reaches the done state, it will call the function button_transcribe
+            render_monitor.add_done_callback(
+                lambda render_file_paths=render_file_paths:
+                    self.button_transcribe(target_files=render_file_paths,
+                                           transcription_task=transcription_task, **kwargs)
+            )
+
+            # resume polling
+            NLE.suspend_polling = False
 
     def convert_text_to_time_intervals(self, text, **kwargs):
         '''
@@ -8964,7 +8986,7 @@ class toolkit_UI():
                 button.configure(state=tk.NORMAL)
 
         if show_resolve_buttons:
-            update_attr['r_buttons_frame'].grid(row=2, column=0, padx=5, pady=42)
+            update_attr['r_buttons_frame'].grid(row=2, column=0, **self.ctk_side_frame_button_paddings)
         else:
             update_attr['r_buttons_frame'].grid_forget()
 
@@ -11191,6 +11213,30 @@ class toolkit_UI():
 
         # remember what the user selected for next time
         self.stAI.initial_target_dir = os.path.dirname(target_file if isinstance(target_file, str) else target_file[0])
+
+        return target_file
+
+    def ask_for_save_file(self, target_dir=None, **kwargs):
+
+        # if an initial target_dir was passed
+        if target_dir is not None:
+            # assign it as the initial_target_dir
+            self.stAI.initial_target_dir = target_dir
+
+        # put the UI on top
+        # self.root.wm_attributes('-topmost', True)
+        self.root.lift()
+
+        # ask the user via os dialog which file to use
+        target_file = filedialog.asksaveasfilename(title="Save file..", initialdir=self.stAI.initial_target_dir,
+                                                   **kwargs)
+
+        # what happens if the user cancels
+        if not target_file:
+            return False
+
+        # remember what the user selected for next time
+        self.stAI.initial_target_dir = os.path.dirname(target_file)
 
         return target_file
 

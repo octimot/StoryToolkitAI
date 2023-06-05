@@ -11,9 +11,11 @@ from storytoolkitai.core.logger import *
 from requests import get
 
 class StoryToolkitAI:
-    def __init__(self, server=False):
+    def __init__(self, server=False, args=None):
         # import version.py - this holds the version stored locally
         import version
+
+        self.cli_args = args
 
         # are we running the standalone version?
         # keep track of this in this class variable
@@ -57,7 +59,8 @@ class StoryToolkitAI:
 
         self.debug_mode = False
 
-        self.check_api_token()
+        if not self.cli_args.mode == 'cli':
+            self.check_api_token()
 
         # add a variable that holds usage statistics
         # this is only preserved until the app is closed
@@ -70,7 +73,10 @@ class StoryToolkitAI:
         # check if a new version of the app exists on GitHub
         # but use either the release version number or version.py,
         # depending on standalone is True or False
-        [self.update_available, self.online_version] = self.check_update()
+        if not self.cli_args.mode == 'cli' and not self.cli_args.skip_update_check:
+            [self.update_available, self.online_version] = self.check_update()
+        else:
+            logger.debug("Skipping update check due to command line argument.")
 
         logger.info(Style.BOLD + Style.UNDERLINE + "Running StoryToolkitAI{} version {} {}"
                     .format(' SERVER' if server else '',
@@ -530,7 +536,7 @@ class StoryToolkitAI:
 
         # if they did, is the online version the same as the one they ignored?
         if ignore_update and ignore_update.split(".") == online_version:
-            logger.info('Ignoring the new update (version {}) according to app settings.'.format(ignore_update))
+            logger.info('Ignoring the new update (version {}) due to app settings.'.format(ignore_update))
 
             # return False - no update available and the local version number instead of what's online
             return False, self.__version__

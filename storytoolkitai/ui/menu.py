@@ -436,22 +436,22 @@ class UImenus:
                                               state=NORMAL)
             self.integrationsmenu.entryconfig(
                 "Copy Timeline Markers to Timeline Bin Clip",
-                command=lambda: self.toolkit_ops_obj.execute_operation(
+                command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
                     'copy_markers_timeline_to_clip', self.toolkit_UI_obj),
                 state=NORMAL)
             self.integrationsmenu.entryconfig(
                 "Copy Timeline Bin Clip Markers to Timeline",
-                command=lambda: self.toolkit_ops_obj.execute_operation(
+                command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
                     'copy_markers_clip_to_timeline', self.toolkit_UI_obj),
                 state=NORMAL)
             self.integrationsmenu.entryconfig(
                 "Render Markers to Stills",
-                command=lambda: self.toolkit_ops_obj.execute_operation(
+                command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
                     'render_markers_to_stills', self.toolkit_UI_obj),
                 state=NORMAL)
             self.integrationsmenu.entryconfig(
                 "Render Markers to Clips",
-                command=lambda: self.toolkit_ops_obj.execute_operation(
+                command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
                     'render_markers_to_clips', self.toolkit_UI_obj),
                 state=NORMAL)
 

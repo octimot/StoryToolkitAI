@@ -10,6 +10,7 @@ import subprocess
 import os
 import platform
 import json
+from threading import Timer
 
 from timecode import Timecode
 
@@ -1030,7 +1031,8 @@ class MotsResolve:
             return False
 
     def render_timeline(self, target_dir, render_preset='H.264 Master', start_render=False,
-                        add_file_suffix=False, add_date=False, add_timestamp=False):
+                        add_file_suffix=False, add_date=False, add_timestamp=False, file_name=None,
+                        return_render_job=False):
         '''
         Renders the timeline that is currently open in Resolve.
 
@@ -1040,6 +1042,10 @@ class MotsResolve:
         :param add_file_suffix:
         :param add_date:
         :param add_timestamp:
+        :param file_name: If this is set, the rendered file will be named accordingly
+                            and add_file_suffix, add_date and add_timestamp will be ignored.
+        :param return_render_job: If this is set to True, the function will return the job id of the render job
+                              but only if start_render is set to True
         :return:
         '''
 
@@ -1064,27 +1070,41 @@ class MotsResolve:
             renderSettings["MarkIn"] = currentTimeline.GetStartFrame()
             renderSettings["MarkOut"] = currentTimeline.GetEndFrame()
 
-            # the render file name is given by the timeline name
-            renderSettings["CustomName"] = currentTimeline.GetName()
-
-            # add file suffix if requested
-            if add_file_suffix and add_file_suffix != '':
-                renderSettings["CustomName"] = renderSettings["CustomName"] + " " + str(add_file_suffix)
-
-            # if add date was passed, use it to format the date
-            # and add it at the end of the file name
-            if add_date:
-                #try:
-                now = datetime.now()
-                renderSettings["CustomName"] = renderSettings["CustomName"] + " " + now.strftime(add_date)
-                #except:
-                #    print("Wrong date format was passed. Use %Y %m %d for eg. or see python date formatting.")
-                #    return False
-
+            # in case we need it
             render_timestamp = str(time.time()).split('.')[0]
-            # add timestamp to the name if required
-            if add_timestamp:
-                renderSettings["CustomName"] = renderSettings['CustomName'] + " " + render_timestamp
+
+            # either use the file name that was passed
+            if file_name and isinstance(file_name, str):
+
+                # only get the basename without the folder path
+                renderSettings["CustomName"] = os.path.basename(file_name)
+
+                if renderSettings["CustomName"] != file_name:
+                    self.logger.warning('The file name you passed contains a folder path, '
+                                        'but that will be ignored and target_dir will be used instead.')
+
+            # or use the timeline name
+            else:
+                # the render file name is given by the timeline name
+                renderSettings["CustomName"] = currentTimeline.GetName()
+
+                # add file suffix if requested
+                if add_file_suffix and add_file_suffix != '':
+                    renderSettings["CustomName"] = renderSettings["CustomName"] + " " + str(add_file_suffix)
+
+                # if add date was passed, use it to format the date
+                # and add it at the end of the file name
+                if add_date:
+                    #try:
+                    now = datetime.now()
+                    renderSettings["CustomName"] = renderSettings["CustomName"] + " " + now.strftime(add_date)
+                    #except:
+                    #    print("Wrong date format was passed. Use %Y %m %d for eg. or see python date formatting.")
+                    #    return False
+
+                # add timestamp to the name if required
+                if add_timestamp:
+                    renderSettings["CustomName"] = renderSettings['CustomName'] + " " + render_timestamp
 
             # set the render dir
             renderSettings["TargetDir"] = target_dir
@@ -1103,30 +1123,47 @@ class MotsResolve:
             current_fps = currentTimeline.GetSetting('timelineFrameRate')
 
             # round up for the non-dropframe 23.976fps - this is a hack, since resolve rounds up due to bug
-            if int(current_fps) >= 23.97 and int(current_fps) <= 24:
-                current_fps = "24"
 
             # prepare the render data to pass to the file
             # this will not be used if we don't start the render here
-            render_data = {}
+            render_data = dict()
             render_data[render_job_id] = {'project_name': project.GetName(),
                                           'timeline_name': currentTimeline.GetName(),
                                           'timeline_start_tc': currentTimeline.GetStartTimecode(),
                                           'render_name': renderSettings["CustomName"],
                                           'in_offset': 0,
                                           'duration': int(renderSettings["MarkOut"]) - int(renderSettings["MarkIn"]),
-                                          'fps': current_fps,
+                                          'fps': 24 if 23.97 <= int(current_fps) <= 24 else current_fps,
                                           'render_timestamp': render_timestamp
                                           }
 
-            # start render if that was called
-            if start_render:
+            # if start render was passed, and we're not required to return the job id
+            # start the render now
+            if start_render and not return_render_job:
                 self.logger.info("Starting render")
+
                 render_status = self.render([render_job_id], resolve_objects, False, render_data)
 
                 # go back to the initial resolve page
                 resolve.OpenPage(current_resolve_page)
                 return render_status
+
+            # if we need to start the render but return the job id
+            elif return_render_job:
+
+                render_job_list = []
+                for job in project.GetRenderJobList():
+
+                    if 'JobId' in job and job['JobId'] == render_job_id:
+
+                        # also add the render_data to the job since we might need it later
+                        job['render_data'] = render_data
+
+                        # add the job to the list
+                        render_job_list.append(job)
+
+                # return the render job dict
+                return render_job_list
 
             # otherwise just return the job id
             else:
@@ -1168,12 +1205,8 @@ class MotsResolve:
                     # add the rendered jobs to the dict
                     rendered_files.append(rendered_clip['TargetDir'] + "/" + rendered_clip['OutputFilename'])
 
-                    # print("Added " + rendered_clip['TargetDir'] + "/" + rendered_clip[
-                    #    'OutputFilename'] + " to the rendered files list")
-
                     # if requested, also save some data next to the rendered file
                     if render_data and len(render_data) > 0:
-                        # print(render_jobs_markers[rendered_clip['JobId']])
 
                         # write the render info in the file
                         with open(os.path.join(rendered_clip['TargetDir'], rendered_clip['OutputFilename'] + '.json'),
@@ -1193,14 +1226,6 @@ class MotsResolve:
                             ['ffmpeg', '-y', '-i', rendered_clip, '-qmin', '1', '-qscale:v', '1', rendered_clip + ".jpg"],
                             capture_output=True)
 
-                        # save log next to the rendered file
-                        # if result.returncode:
-                        #    print(str(result))
-
-                        # with open(rendered_clip+'.txt', 'w') as f:
-                        #    f.write(str(result))
-                        #    f.close()
-
                     def notify(title, text):
                         os.system("""
                                                                 osascript -e 'display notification "{}" with title "{}"'
@@ -1209,7 +1234,7 @@ class MotsResolve:
                     # when done notify via mac os notifications
                     notify("Stills Rendered", "Stills based on Markers exported to JPEG.")
 
-                # TODO - tiff conversion on other platforms
+                # tiff conversion on other platforms
                 # since ffmpeg is required, we should pass the conversion to it
                 '''
                 elif platform.system() == 'Windows':    # Windows
@@ -1223,7 +1248,6 @@ class MotsResolve:
 
         self.logger.warning('No jobs were sent for render')
         return False
-
 
     def offset_start_tc_bin_item(self, offset=0, tc_larger_than='00:00:00:00', update_slate=True):
         """

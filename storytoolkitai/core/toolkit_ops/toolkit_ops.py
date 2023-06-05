@@ -3,6 +3,7 @@ import sys
 import time
 import json
 import codecs
+import subprocess
 
 from threading import Thread
 from threading import Timer as threadingTimer
@@ -36,6 +37,7 @@ import hashlib
 import pickle
 
 from storytoolkitai.core.textanalysis import TextAnalysis
+from .monitor import Monitor
 
 class NLE:
     '''
@@ -65,6 +67,9 @@ class NLE:
     resolve = None
     resolve_poll_num = 0
 
+    # this is used to suspend polling to avoid requests when the NLE might be busy
+    suspend_polling = False
+
     def reset_all(self=None):
 
         NLE.current_timeline \
@@ -89,7 +94,6 @@ class NLE:
 class Observer:
     def update(self, subject):
         pass
-
 
 class ToolkitOps:
 
@@ -195,8 +199,9 @@ class ToolkitOps:
         if not self.disable_resolve_api:
             self.resolve_enable()
 
+        # if this is not the CLI
         # resume the transcription queue if there's anything in it
-        if self.processing_queue.resume_queue_from_file():
+        if self.stAI.cli_args.mode != 'cli' and self.processing_queue.resume_queue_from_file():
             logger.info('Resuming queue from file')
 
     def attach_observer(self, action, observer):
@@ -6373,279 +6378,287 @@ class ToolkitOps:
             # (and implicitly the thread too)
             self.polling_resolve = True
 
-            # try to poll resolve
-            try:
+            # if polling is not suspended temporarily
+            if not NLE.suspend_polling:
 
-                # check if the resolve api is not disabled
-                if self.disable_resolve_api:
-                    logger.debug('Resolve API disabled. Aborting Resolve API polling until re-enabled.')
-                    self.polling_resolve = False
-
-                    # execute this one more time to make sure all variables are set correctly
-                    self.resolve_disable()
-
-                    return None
-
-                # also, check if the API module is available on this machine
-                if not self.resolve_api.api_module_available:
-                    logger.debug('Resolve API module not available on this machine. '
-                                 'Aborting Resolve API polling until StoryToolkitAI restart.')
-                    self.polling_resolve = False
-                    return None
-
-                # actual polling happens here
-                resolve_data = self.resolve_api.get_resolve_data(silent=True)
-
-                # for all the NLE variables related with resolve data,
-                #  check if the data has changed and if so, update the NLE variable
-                #  but if the polled data does not contain the key, also set the NLE variable to None
-                #  also, if the global variable is not None and the polled data doesn't contain the key,
-                #  set the global variable to None
-                # also, make sure you trigger the on_resolve event if the data has changed
-
-                # RESOLVE OBJECT CHANGE
-                # if the resolve object has changed (for eg. from None to an object)
+                # try to poll resolve
                 try:
-                    if type(NLE.resolve) != type(resolve_data['resolve']):
 
-                        logger.debug('Resolve object changed from {} to {}.'
-                                     .format(type(NLE.resolve), type(resolve_data['resolve'])))
+                    # check if the resolve api is not disabled
+                    if self.disable_resolve_api:
+                        logger.debug('Resolve API disabled. Aborting Resolve API polling until re-enabled.')
+                        self.polling_resolve = False
 
-                        # set the resolve object to whatever it is now
-                        NLE.resolve = resolve_data['resolve']
+                        # execute this one more time to make sure all variables are set correctly
+                        self.resolve_disable()
 
-                        # trigger the resolve_changed event
-                        self.on_resolve('resolve_changed')
+                        return None
 
-                        # if the resolve object is now None,
-                        # reset all and skip the rest of the polling
-                        if NLE.resolve is None:
+                    # also, check if the API module is available on this machine
+                    if not self.resolve_api.api_module_available:
+                        logger.debug('Resolve API module not available on this machine. '
+                                     'Aborting Resolve API polling until StoryToolkitAI restart.')
+                        self.polling_resolve = False
+                        return None
+
+                    # actual polling happens here
+                    resolve_data = self.resolve_api.get_resolve_data(silent=True)
+
+                    # for all the NLE variables related with resolve data,
+                    #  check if the data has changed and if so, update the NLE variable
+                    #  but if the polled data does not contain the key, also set the NLE variable to None
+                    #  also, if the global variable is not None and the polled data doesn't contain the key,
+                    #  set the global variable to None
+                    # also, make sure you trigger the on_resolve event if the data has changed
+
+                    # RESOLVE OBJECT CHANGE
+                    # if the resolve object has changed (for eg. from None to an object)
+                    try:
+                        if type(NLE.resolve) != type(resolve_data['resolve']):
+
+                            logger.debug('Resolve object changed from {} to {}.'
+                                         .format(type(NLE.resolve), type(resolve_data['resolve'])))
+
+                            # set the resolve object to whatever it is now
+                            NLE.resolve = resolve_data['resolve']
+
+                            # trigger the resolve_changed event
+                            self.on_resolve('resolve_changed')
+
+                            # if the resolve object is now None,
+                            # reset all and skip the rest of the polling
+                            if NLE.resolve is None:
+                                self.on_resolve('project_changed')
+                                self.on_resolve('timeline_changed')
+
+                                NLE.reset_all()
+                    except:
+                        import traceback
+                        logger.debug('Fail detected in resolve object change check.')
+                        logger.debug(traceback.format_exc())
+                        continue
+
+                    # RESOLVE TIMELINE NAME CHANGE
+                    # if the current project was already set and now it's no longer set in the polled data
+                    # or if the current project has changed
+                    try:
+                        if (NLE.current_project is not None and 'currentProject' not in resolve_data) \
+                                or NLE.current_project != resolve_data['currentProject']:
+                            # logger.debug('Current project changed from {} to {}.'
+                            #             .format(NLE.current_project, resolve_data['currentProject']))
+
+                            # set the current project to whatever it is now
+                            # but if the polled data doesn't contain the currentProject key, set it to None
+                            NLE.current_project = resolve_data[
+                                'currentProject'] if 'currentProject' in resolve_data else None
+
+                            # trigger the project_changed event
                             self.on_resolve('project_changed')
-                            self.on_resolve('timeline_changed')
 
-                            NLE.reset_all()
-                except:
-                    import traceback
-                    logger.debug('Fail detected in resolve object change check.')
-                    logger.debug(traceback.format_exc())
-                    continue
+                    except:
+                        import traceback
+                        logger.debug('Fail detected in resolve project change check.')
+                        logger.debug(traceback.format_exc())
+                        continue
 
-                # RESOLVE TIMELINE NAME CHANGE
-                # if the current project was already set and now it's no longer set in the polled data
-                # or if the current project has changed
-                try:
-                    if (NLE.current_project is not None and 'currentProject' not in resolve_data) \
-                            or NLE.current_project != resolve_data['currentProject']:
-                        # logger.debug('Current project changed from {} to {}.'
-                        #             .format(NLE.current_project, resolve_data['currentProject']))
-
-                        # set the current project to whatever it is now
-                        # but if the polled data doesn't contain the currentProject key, set it to None
-                        NLE.current_project = resolve_data[
-                            'currentProject'] if 'currentProject' in resolve_data else None
-
-                        # trigger the project_changed event
-                        self.on_resolve('project_changed')
-
-                except:
-                    import traceback
-                    logger.debug('Fail detected in resolve project change check.')
-                    logger.debug(traceback.format_exc())
-                    continue
-
-                # if the current timeline was already set and now it's no longer set in the polled data
-                # or if the current timeline has changed
-                try:
-                    if (NLE.current_timeline is not None and 'currentTimeline' not in resolve_data) \
-                            or NLE.current_timeline != resolve_data['currentTimeline']:
-
-                        # logger.debug('Current timeline changed from {} to {}.'
-                        #             .format(NLE.current_timeline, resolve_data['currentTimeline']))
-
-                        # because we only want to trigger the timeline_changed event if the name of the timeline has changed
-                        # but resolve_data['currentTimeline'] contains the entire timeline object,
-                        # including markers and other data that may have changed,
-                        # we need to focus on the name of the timeline
-
-                        # but first, if the polled data doesn't contain the currentTimeline key
-                        # yet the NLE.current_timeline was set before
-                        if NLE.current_timeline is not None and 'currentTimeline' not in resolve_data:
-
-                            # logger.debug('Current timeline changed from {} to None.'.format(NLE.current_timeline))
-
-                            # set the current timeline to None
-                            NLE.current_timeline = None
-
-                            # and trigger the timeline_changed event
-                            self.on_resolve('timeline_changed')
-
-                        # if the polled data contains the currentTimeline key
-                        elif 'currentTimeline' in resolve_data \
-                                and (type(NLE.current_timeline) != type(resolve_data['currentTimeline']) \
-                                     or ('name' in NLE.current_timeline and not 'name' in resolve_data[
-                                    'currentTimeline']) \
-                                     or ('name' in resolve_data[
-                                    'currentTimeline'] and not 'name' in NLE.current_timeline) \
-                                     or (NLE.current_timeline['name'] != resolve_data['currentTimeline']['name'])):
+                    # if the current timeline was already set and now it's no longer set in the polled data
+                    # or if the current timeline has changed
+                    try:
+                        if (NLE.current_timeline is not None and 'currentTimeline' not in resolve_data) \
+                                or NLE.current_timeline != resolve_data['currentTimeline']:
 
                             # logger.debug('Current timeline changed from {} to {}.'
                             #             .format(NLE.current_timeline, resolve_data['currentTimeline']))
 
-                            # set the current timeline to whatever it is now
-                            NLE.current_timeline = resolve_data['currentTimeline'] \
-                                if 'currentTimeline' in resolve_data else None
+                            # because we only want to trigger the timeline_changed event
+                            # if the name of the timeline has changed
+                            # but resolve_data['currentTimeline'] contains the entire timeline object,
+                            # including markers and other data that may have changed,
+                            # we need to focus on the name of the timeline
 
-                            # and trigger the timeline_changed event
-                            self.on_resolve('timeline_changed')
+                            # but first, if the polled data doesn't contain the currentTimeline key
+                            # yet the NLE.current_timeline was set before
+                            if NLE.current_timeline is not None and 'currentTimeline' not in resolve_data:
 
-                        # if the polled data contains the currentTimeline key, but the name of the timeline hasn't changed
-                        else:
-                            # set the current timeline to whatever it is now
-                            # but don't trigger the timeline_changed event
-                            NLE.current_timeline = resolve_data['currentTimeline'] \
-                                if 'currentTimeline' in resolve_data else None
+                                # logger.debug('Current timeline changed from {} to None.'.format(NLE.current_timeline))
 
+                                # set the current timeline to None
+                                NLE.current_timeline = None
+
+                                # and trigger the timeline_changed event
+                                self.on_resolve('timeline_changed')
+
+                            # if the polled data contains the currentTimeline key
+                            elif 'currentTimeline' in resolve_data \
+                                    and (type(NLE.current_timeline) != type(resolve_data['currentTimeline']) \
+                                         or ('name' in NLE.current_timeline and not 'name' in resolve_data[
+                                        'currentTimeline']) \
+                                         or ('name' in resolve_data[
+                                        'currentTimeline'] and not 'name' in NLE.current_timeline) \
+                                         or (NLE.current_timeline['name'] != resolve_data['currentTimeline']['name'])):
+
+                                # logger.debug('Current timeline changed from {} to {}.'
+                                #             .format(NLE.current_timeline, resolve_data['currentTimeline']))
+
+                                # set the current timeline to whatever it is now
+                                NLE.current_timeline = resolve_data['currentTimeline'] \
+                                    if 'currentTimeline' in resolve_data else None
+
+                                # and trigger the timeline_changed event
+                                self.on_resolve('timeline_changed')
+
+                            # if the polled data contains the currentTimeline key, but the name of the timeline hasn't changed
+                            else:
+                                # set the current timeline to whatever it is now
+                                # but don't trigger the timeline_changed event
+                                NLE.current_timeline = resolve_data['currentTimeline'] \
+                                    if 'currentTimeline' in resolve_data else None
+
+                    except:
+                        import traceback
+                        logger.debug('Fail detected in resolve timeline change check.')
+                        logger.debug(traceback.format_exc())
+                        continue
+
+                    # did the markers change?
+                    # (this only matters if the current timeline is not None
+                    # and if the current timeline has markers)
+                    if resolve_data is not None and type(resolve_data) is dict \
+                            and 'currentTimeline' in resolve_data \
+                            and type(resolve_data['currentTimeline']) is dict \
+                            and 'markers' in resolve_data['currentTimeline']:
+
+                        # first compare the types
+                        if type(NLE.current_timeline_markers) != type(resolve_data['currentTimeline']['markers']):
+                            # if the types are different, then the markers have changed
+                            self.on_resolve('timeline_markers_changed')
+
+                            NLE.current_timeline_markers = resolve_data['currentTimeline']['markers']
+
+                        # also do a key compare only for speed
+                        elif set(NLE.current_timeline_markers.keys()) != set(
+                                resolve_data['currentTimeline']['markers'].keys()):
+                            # if the keys are different, then the markers have changed
+                            self.on_resolve('timeline_markers_changed')
+
+                            NLE.current_timeline_markers = resolve_data['currentTimeline']['markers']
+
+                        # but if the marker keys are the same do a deeper compare
+                        elif NLE.current_timeline_markers != resolve_data['currentTimeline']['markers']:
+                            # if the keys are the same, but the values are different, then the markers have changed
+                            self.on_resolve('timeline_markers_changed')
+
+                            NLE.current_timeline_markers = resolve_data['currentTimeline']['markers']
+
+                    else:
+                        NLE.current_timeline_markers = None
+
+                    #  updates the currentBin
+                    if (NLE.current_bin is not None and NLE.current_bin != '' and 'currentBin' not in resolve_data) \
+                            or NLE.current_bin != resolve_data['currentBin']:
+                        NLE.current_bin = resolve_data['currentBin'] if 'currentBin' in resolve_data else ''
+
+                        self.on_resolve('bin_changed')
+                        # logger.info("Current Bin: {}".format(NLE.current_bin))
+
+                    # update current playhead timecode
+                    if (NLE.current_tc is not None and 'currentTC' not in resolve_data) \
+                            or NLE.current_tc != resolve_data['currentTC']:
+                        NLE.current_tc = resolve_data['currentTC']
+                        self.on_resolve('tc_changed')
+
+                    # update current playhead timecode
+                    if (NLE.current_timeline_fps is not None and 'currentTC' not in resolve_data) \
+                            or NLE.current_timeline_fps != resolve_data['currentTimelineFPS']:
+                        NLE.current_timeline_fps = resolve_data['currentTimelineFPS']
+                        self.on_resolve('fps_changed')
+
+                    # was there a previous error?
+                    if NLE.resolve is not None and NLE.resolve_error > 0:
+                        # first let the user know that the connection is back on
+                        logger.warning("Resolve connection re-established.")
+
+                        # reset the error counter
+                        NLE.resolve_error = 0
+
+                    elif NLE.resolve is None:
+                        NLE.resolve_error += 1
+
+                # if an exception is thrown while trying to work with Resolve, don't crash, but continue to try to poll
                 except:
+
                     import traceback
-                    logger.debug('Fail detected in resolve timeline change check.')
-                    logger.debug(traceback.format_exc())
-                    continue
+                    print(traceback.format_exc())
 
-                # did the markers change?
-                # (this only matters if the current timeline is not None
-                # and if the current timeline has markers)
-                if resolve_data is not None and type(resolve_data) is dict \
-                        and 'currentTimeline' in resolve_data \
-                        and type(resolve_data['currentTimeline']) is dict \
-                        and 'markers' in resolve_data['currentTimeline']:
-
-                    # first compare the types
-                    if type(NLE.current_timeline_markers) != type(resolve_data['currentTimeline']['markers']):
-                        # if the types are different, then the markers have changed
-                        self.on_resolve('timeline_markers_changed')
-
-                        NLE.current_timeline_markers = resolve_data['currentTimeline']['markers']
-
-                    # also do a key compare only for speed
-                    elif set(NLE.current_timeline_markers.keys()) != set(
-                            resolve_data['currentTimeline']['markers'].keys()):
-                        # if the keys are different, then the markers have changed
-                        self.on_resolve('timeline_markers_changed')
-
-                        NLE.current_timeline_markers = resolve_data['currentTimeline']['markers']
-
-                    # but if the marker keys are the same do a deeper compare
-                    elif NLE.current_timeline_markers != resolve_data['currentTimeline']['markers']:
-                        # if the keys are the same, but the values are different, then the markers have changed
-                        self.on_resolve('timeline_markers_changed')
-
-                        NLE.current_timeline_markers = resolve_data['currentTimeline']['markers']
-
-                else:
-                    NLE.current_timeline_markers = None
-
-                #  updates the currentBin
-                if (NLE.current_bin is not None and NLE.current_bin != '' and 'currentBin' not in resolve_data) \
-                        or NLE.current_bin != resolve_data['currentBin']:
-                    NLE.current_bin = resolve_data['currentBin'] if 'currentBin' in resolve_data else ''
-
-                    self.on_resolve('bin_changed')
-                    # logger.info("Current Bin: {}".format(NLE.current_bin))
-
-                # update current playhead timecode
-                if (NLE.current_tc is not None and 'currentTC' not in resolve_data) \
-                        or NLE.current_tc != resolve_data['currentTC']:
-                    NLE.current_tc = resolve_data['currentTC']
-                    self.on_resolve('tc_changed')
-
-                # update current playhead timecode
-                if (NLE.current_timeline_fps is not None and 'currentTC' not in resolve_data) \
-                        or NLE.current_timeline_fps != resolve_data['currentTimelineFPS']:
-                    NLE.current_timeline_fps = resolve_data['currentTimelineFPS']
-                    self.on_resolve('fps_changed')
-
-                # was there a previous error?
-                if NLE.resolve is not None and NLE.resolve_error > 0:
-                    # first let the user know that the connection is back on
-                    logger.warning("Resolve connection re-established.")
-
-                    # reset the error counter
-                    NLE.resolve_error = 0
-
-                elif NLE.resolve is None:
+                    # count the number of errors
                     NLE.resolve_error += 1
 
-            # if an exception is thrown while trying to work with Resolve, don't crash, but continue to try to poll
-            except:
+                    # resolve is now None in the global variable
+                    # resolve = None
 
-                import traceback
-                print(traceback.format_exc())
+                    # return False
 
-                # count the number of errors
-                NLE.resolve_error += 1
+                # how often do we poll resolve?
+                polling_interval = 500
 
-                # resolve is now None in the global variable
-                # resolve = None
+                # if any errors occurred
+                if NLE.resolve_error:
 
-                # return False
+                    # let the user know that there's an error, and throttle the polling_interval
 
-            # how often do we poll resolve?
-            polling_interval = 500
+                    # after 15+ errors, deduce that Resolve will not be started this session, so stop polling
+                    if NLE.resolve_error > 15:
+                        logger.warning("Resolve not reachable after 15 tries. "
+                                       "Disabling Resolve API polling until tool restart.")
 
-            # if any errors occurred
-            if NLE.resolve_error:
+                        polling_interval = None
 
-                # let the user know that there's an error, and throttle the polling_interval
+                    # after 10+ tries, assume the user is no longer paying attention and reduce the frequency of tries
+                    elif NLE.resolve_error > 10:
 
-                # after 15+ errors, deduce that Resolve will not be started this session, so stop polling
-                if NLE.resolve_error > 15:
-                    logger.warning("Resolve not reachable after 15 tries. "
-                                   "Disabling Resolve API polling until tool restart.")
+                        # only show this error one more time
+                        if NLE.resolve_error == 11:
+                            logger.warning('Resolve is still not reachable. '
+                                           'Now retrying every 15 seconds only a few more times.')
 
-                    polling_interval = None
+                        # and increase the polling interval to 30 seconds
+                        polling_interval = 15000
 
-                # after 10+ tries, assume the user is no longer paying attention and reduce the frequency of tries
-                elif NLE.resolve_error > 10:
+                    # if the error has been triggered more than 5 times, do this
+                    elif NLE.resolve_error > 5:
 
-                    # only show this error one more time
-                    if NLE.resolve_error == 11:
-                        logger.warning('Resolve is still not reachable. '
-                                       'Now retrying every 15 seconds only a few more times.')
+                        if NLE.resolve_error == 11:
+                            logger.warning('Resolve is still not reachable. Now retrying every 5 seconds or so.')
 
-                    # and increase the polling interval to 30 seconds
-                    polling_interval = 15000
+                        # increase the polling interval to 5 seconds
+                        polling_interval = 5000
 
-                # if the error has been triggered more than 5 times, do this
-                elif NLE.resolve_error > 5:
+                    else:
+                        if NLE.resolve_error == 1:
+                            logger.warning('Resolve is not reachable. Retrying every few seconds.')
 
-                    if NLE.resolve_error == 11:
-                        logger.warning('Resolve is still not reachable. Now retrying every 5 seconds or so.')
+                        # increase the polling interval to 1 second
+                        polling_interval = 1000
 
-                    # increase the polling interval to 5 seconds
-                    polling_interval = 5000
+                    # calculate the time that has passed since the polling started
+                    polling_time = time.time() - polling_start_time
 
-                else:
-                    if NLE.resolve_error == 1:
-                        logger.warning('Resolve is not reachable. Retrying every few seconds.')
+                    # if the polling time takes longer than 1 second, throttle the polling interval
+                    if polling_interval is not None and polling_time > 1:
+                        polling_interval = polling_interval + polling_time
 
-                    # increase the polling interval to 1 second
-                    polling_interval = 1000
+                    # logger.debug('Polling time: {} seconds'.format(round(time.time() - polling_start_time), 2))
 
-                # calculate the time that has passed since the polling started
-                polling_time = time.time() - polling_start_time
+                if polling_interval is None:
+                    self.polling_resolve = False
+                    return False
 
-                # if the polling time takes longer than 1 second, throttle the polling interval
-                if polling_interval is not None and polling_time > 1:
-                    polling_interval = polling_interval + polling_time
+                # take a short break before continuing the loop
+                time.sleep(polling_interval / 1000)
 
-                # logger.debug('Polling time: {} seconds'.format(round(time.time() - polling_start_time), 2))
-
-            if polling_interval is None:
-                self.polling_resolve = False
-                return False
-
-            # take a short break before continuing the loop
-            time.sleep(polling_interval / 1000)
+            else:
+                # take a 0.5-second break before trying this again
+                time.sleep(0.5)
 
     def resolve_check_timeline(self, resolve_data, toolkit_UI_obj):
         '''
@@ -6664,7 +6677,123 @@ class ToolkitOps:
         else:
             return True
 
-    def execute_operation(self, operation, toolkit_UI_obj):
+    def are_files_in_dir(self, dir, files_present):
+        """
+        This looks for a list of files in a directory and returns True if they're all present
+        """
+        return all(os.path.exists(os.path.join(dir, file)) for file in files_present)
+
+    def start_resolve_render_and_monitor(self, monitor_callback: callable=None, **kwargs):
+        """
+        This starts a render in Resolve and then uses a monitor to check if it's done
+        :param monitor_callback: a callable that will be called when the render is done
+        """
+
+        if not kwargs.get('target_dir', None) or not kwargs.get('file_name', None):
+            logger.error('Cannot start render. Missing target_dir or file_name.')
+            return False
+
+        # start the timeline Render in Resolve via CLI and pass all the kwargs
+        # get the render info so we can pass it to the Monitor object
+        render_info = self.render_timeline_via_cli(**kwargs)
+
+        if not render_info or not isinstance(render_info, list):
+            logger.error('Cannot monitor render - Resolve returned an unexpected value instead of the render info.')
+            return False
+
+        # if the render info is a list, we have multiple renders, so we need to monitor all the files
+        monitor_file_paths = []
+        render_file_paths = []
+
+        for render_job in render_info:
+
+            if 'OutputFilename' in render_job:
+
+                # we need the file path for the return value
+                render_file_paths.append(os.path.join(render_job['TargetDir'], render_job['OutputFilename']))
+
+                # when mots_resolve finishes the render job,
+                # it should also add a .json file with the same name
+                # so we'll just monitor to see if the .json file is there
+                # monitoring the rendered file itself not might be a good idea
+                # since it might already exist before the render is done
+                monitor_file_path = str(render_job['OutputFilename']) + '.json'
+
+                # delete the file we're monitoring if it's already there
+                if os.path.exists(os.path.join(kwargs['target_dir'], monitor_file_path)):
+                    try:
+                        os.remove(os.path.join(kwargs['target_dir'], monitor_file_path))
+                    except:
+                        logger.error('Cannot monitor render for {} '
+                                     '- the file {} already exists and cannot be deleted.'
+                                     .format(render_job['OutputFilename'],
+                                             os.path.join(kwargs['target_dir'], monitor_file_path)))
+                        continue
+
+                monitor_file_paths.append(monitor_file_path)
+
+        if not monitor_file_paths or len(monitor_file_paths) == 0:
+            logger.error('Cannot monitor render - no files to monitor.')
+            return False
+
+        # add a monitor to check if the render is done
+        # don't forget to add the "done" callback outside this function
+        # if we haven't added it via monitor_callback already!!
+        monitor = Monitor(
+            done=monitor_callback,
+            condition=lambda: self.are_files_in_dir(kwargs['target_dir'], monitor_file_paths)
+        )
+
+        # return the files list so we can use them further down the line
+        return monitor, render_file_paths
+
+    def render_timeline_via_cli(self, target_dir, render_preset, file_name, **kwargs):
+        """
+        This renders the current timeline via the CLI to avoid blocking the UI.
+        """
+        # first, add the render job to the render queue
+        # we do it directly, not through CLI because we need to get the render job ID
+
+        # start_render must be False
+        kwargs['start_render'] = False
+        kwargs['return_render_job'] = True
+
+        # add the render job to the Resolve render queue
+        render_job_info = self.resolve_api.render_timeline(
+            target_dir=target_dir, render_preset=render_preset, file_name=file_name, **kwargs)
+
+        # the render job id should be the first JobId of the first dict of the list
+        try:
+            render_job_id = render_job_info[0]['JobId']
+            render_job_render_data = render_job_info[0]['render_data']
+
+            # if the render job ID is not available, abort
+            if not render_job_info:
+                logger.error("Cannot render timeline via CLI - render job ID {} is not available."
+                             .format(render_job_id))
+                return False
+
+            logger.debug("Sending resolve_render command via CLI")
+
+            # start the render process via CLI
+            subprocess.Popen(['python', 'storytoolkitai', '--mode', 'cli',
+                              '--output-dir', '"{}"'.format(target_dir),
+                              '--resolve-render-job', render_job_id,
+                              '--resolve-render-data', '"{}"'.format(json.dumps(render_job_render_data))]
+                             )
+
+            # return the render job info
+            return render_job_info
+
+        except:
+            logger.error("An error occurred while trying to render timeline via CLI.", exc_info=True)
+            return False
+
+    def execute_resolve_operation(self, operation, toolkit_UI_obj):
+        """
+        This executes a given Resolve API operation
+        """
+
         if not operation or operation == '':
             return False
 
@@ -6729,10 +6858,6 @@ class ToolkitOps:
             marker_color = None
             starts_with = None
             if current_timeline_marker_colors:
-                # marker_color = simpledialog.askstring(title="Markers Color",
-                #                                      prompt="What color markers should we render?\n\n"
-                #                                             "These are the marker colors on the current timeline:\n"
-                #                                             + ", ".join(current_timeline_marker_colors))
 
                 # create a list of widgets for the input dialogue
                 input_widgets = [
