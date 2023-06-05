@@ -8,7 +8,7 @@ A new UI and a new Queue system that allows us to process both audio and video i
 
 Early update available for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
 
-## Changed
+### Changed
 - New User Interface
 - A better Queue system which allows queuing and managing of all CPU/GPU intensive tasks
 - Easier handling of multiple files when using the Transcription Settings window
@@ -16,7 +16,7 @@ Early update available for Patreon Frequent Users and Producers only - more info
 - Improved handling of Transcript Groups
 - Significant code refactoring and cleanup
 
-## Fixes
+### Fixes
 - When using the Transcribe Timeline feature, Resolve no longer blocks the tool's UI
 
 ## [0.18.5] - 2023-05-22
