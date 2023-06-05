@@ -1665,7 +1665,7 @@ class ToolkitOps:
             return {}
 
         def save_transcript_groups(self, transcription_file_path: str, transcript_groups: dict,
-                                   group_id: str = None) -> dict or bool or None:
+                                   group_id: str = None, silent: bool = False) -> dict or bool or None:
             '''
             This function saves transcript groups to a transcription file.
 
@@ -1674,6 +1674,7 @@ class ToolkitOps:
             :param transcription_file_path:
             :param transcript_groups: a list of transcript groups
             :param group_id: If this is passed, we will only save the transcript group with this group id
+            :param silent: If this is True, no Observers will be notified
             :return: The group dict if the groups were saved successfully, False otherwise
                     or None if there were other problems transcription file
             '''
@@ -1727,9 +1728,11 @@ class ToolkitOps:
                 return False
 
             # notify observers that the groups were updated for this transcription file
-            self.toolkit_ops_obj.notify_observers(
-                action='update_transcription_groups_{}'
-                .format(self.toolkit_ops_obj.get_transcription_id(transcription_file_path)))
+            # but only if we're not doing a silent save
+            if silent:
+                self.toolkit_ops_obj.notify_observers(
+                    action='update_transcription_groups_{}'
+                    .format(self.toolkit_ops_obj.get_transcription_id(transcription_file_path)))
 
             # return the saved transcript groups
             return transcription_file_data['transcript_groups']

@@ -12,38 +12,34 @@ other AI technologies to get stuff done.
 Recently, we've added a direct interface with **ChatGPT** which allows the use the state-of-the-art AI to analyze 
 transcripts and have conversations about them with AI.
 
-<img alt="StoryToolkitAI Demo GIF" src="https://videoapi-muybridge.vimeocdn.com/animated-thumbnails/image/9eb88ee1-4902-4e17-82dc-77411d959eab.gif?ClientID=vimeo-core-prod&Date=1665676352&Signature=52a72df29b216dd2f8cce8ee7360ea38a24b5b6e" width="700">
-https://vimeo.com/759962195/dee07a067a
+<img alt="StoryToolkitAI Interface" src="help/storytoolkitai_v0.19.0.png" width="700">
 
 ## Key Features
 - [x] **Free Automatic Transcriptions in many languages** on your local machine using AI
 - [x] **Free Automatic Translation** to English on your local machine using AI
 - [x] **ChatGPT integration** - state-of-the-art AI to assist you in your work and chat about your transcripts
-- [x] **Advanced Search** - allows you to search transcripts or even text files semantically using AI
+- [x] **Advanced Search** - search transcripts, or even text files semantically using AI
 - [X] **Transcript Groups** allow the grouping of transcription segments for easier access
 - [X] Automatic detection of Question-looking lines in transcripts
-- [X] Editing and Advanced Search of **existing SRT files**
 - [x] Export of transcripts to multiple formats, including SRT, TXT, AVID DS and as Fusion Text node
-- [x] Batch transcriptions using transcription queuing
-- [x] Partial re-transcribing of timelines/videos/audio files
+- [X] Import of **existing SRT files**
+- [X] Easy copy of timecoded transcript text to clipboard etc.
 
 ### Resolve Studio Integrations
 - [x] **Mark and Navigate Resolve Timelines via Transcript**, plus other handy Resolve-only features
 - [x] **Import subtitles after transcription** from the tool directly into Resolve
+- [x] **Advanced Search** of Resolve timeline markers using AI
 - [x] Easy **Resolve Markers to Transcript Group** vice versa
-- [x] **Advanced Search** of Resolve timeline markers
 - [x] Render to markers stills or clips feature
-- [x] Other timecode-based features, like copying transcript text to clipboard with timecodes etc.
 
 ### Planned Features
-- [ ] **Advanced Search of transcript groups and notes** using AI
-- [ ] Optimized Assistant feature for cost-effective use of ChatGPT
+- [ ] **Full video indexing** and search using AI
 - [ ] **Topic Classification** using AI to help you discover ideas in your transcripts
 - [ ] **Speaker Recognition** using AI (Diarization)
 - [ ] **AI based transcript line splitting** - see [this](https://github.com/octimot/StoryToolkitAI/issues/42#issuecomment-1485346579)
-- [ ] **Advanced Search of PDFs** using AI (for e.g. screenplays or books)
-- [ ] **Automatic Timeline Creation** based on Topic Classification and Advanced Search
-- [ ] Translation to other languages
+- [ ] **Paper Edit** and **Automatic Selects** using AI
+- [ ] **Translation** to other languages
+- [ ] Optimized Assistant feature for cost-effective use of ChatGPT
 - [ ] **Integration with other AI tools**
 - [ ] **Integration with other NLEs / standalone players**
 - [X] Plus more flashy features as clickbait to unrealistically raise expectations and destroy competition
@@ -92,7 +88,8 @@ The tool would be useless without using the following open source projects:
 - [Sentence Transformers](https://www.sbert.net/)
 - [OpenAI ChatGPT](https://openai.com/blog/chat-gpt/)
 - [spaCy](https://spacy.io/)
-- and many other packages that are listed in the requirements.txt file
+- [CustomTkinter](https://customtkinter.tomschimansky.com/)
+- and many other packages that can be seen in the requirements.txt file
 
 ---
 
@@ -112,7 +109,7 @@ issue. To prevent that from happening, try using the pre-detect speech option in
 Make sure that, in Davinci Resolve Preferences -> General, "External Scripting using" is set to Local.
 Again, the tool only works with Resolve Studio and *not the free version of Resolve* (not that we know of).
 
-### Windows Standalone version doesn't start or doesn't connect to Resolve
+### Standalone version doesn't start or doesn't connect to Resolve
 If the tool just hangs when you start it up, or if it doesn't connect to Resolve, most likely there is a conflict
 with another Python installation on your machine. The best approach is to uninstall all other Python versions and
 try to run the tool again.

@@ -12,10 +12,10 @@ import time
 if __name__ == '__main__':
 
     logger.warning('You are using the old way of starting StoryToolkitAI.\n'
-                   'This method will be removed soon.\n'
+                   'This method will be removed very soon.\n'
                    'Please see new instructions here: \n'
                    'https://github.com/octimot/StoryToolkitAI/blob/main/INSTALLATION.md#running-the-non-standalone-tool\n'
                    'Starting tool in 5 seconds.\n')
 
-    time.sleep(5)
+    time.sleep(10)
     main()

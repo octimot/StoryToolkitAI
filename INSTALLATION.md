@@ -3,15 +3,17 @@
 [Click here to the main project page](https://github.com/octimot/StoryToolkitAI)
 
 ## Have you looked for a standalone version first?
-We're currently working to get the app in a standalone binary version for different operating systems and platforms,
-so if you don't want to get your hands dirty with terminal commands, check if there is a release available for your 
+If you don't want to get your hands dirty with terminal commands, check if there is a release available for your 
 platform [here](https://github.com/octimot/StoryToolkitAI/releases).
 
-Please note that the standalone version may not always be up to date with the latest changes in the code, 
+However the standalone version may not always be up to date with the latest changes in the code,
+and might miss some state-of-the-art features that are only available in the non-standalone version.
 so if you want to be sure to have the latest features (some buggy and experimental too), you should install the app 
-from source.
+from source using the instructions below.
 
-The development of the standalone version depends highly on the support we get from our Patreon community, so
+## StoryToolkitAI is free but we need your help
+
+The development of Storytoolkit AI depends highly on the support we get from our Patreon community, so
 [please consider supporting the development](https://www.patreon.com/StoryToolkitAI) if you find this tool useful
 in your work.
 
@@ -28,11 +30,11 @@ or anything else that might happen.
 
 ### Quick Info before we start
 
-Our installations are on MacOS 12.6 running on M1 and Windows 10 machines, but the scripts should run fine on other 
-CPUs and GPUs. For both production and development we're currently using Python 3.9.13. 
+Our installations are on MacOS 12.6 running on M1 and Windows 10 machines in our editing room, 
+but the scripts should run fine on other CPUs and GPUs. 
+For both production and development we're currently using Python 3.10.11. 
 
-_Note: Whisper worked fine on Python 3.10.2, but we ran into problems when trying to install some packages which we're
-planning to use for future developments._
+_Note: The tool worked fine on Python 3.9, but some packages are now optimized for Python 3.10._
 
 **The API integration only works on Resolve Studio 18 (not on the free version).**
 
@@ -60,16 +62,16 @@ In case Homebrew installation fails, please check [this page](https://docs.brew.
 One of the most common installation fails is due to the fact that Xcode Command Line Tools is not installed on your 
 Mac, so you could try to install them first with `xcode-select --install`
 
-#### 2. You'll need Python 3.9, Python Tkinter, Git, and FFMPEG:
+#### 2. You'll need Python 3.10, Python Tkinter, Git, and FFMPEG:
 
-    brew install python@3.9
-    brew install python-tk@3.9
+    brew install python@3.10
+    brew install python-tk@3.10
     brew install git
     brew install ffmpeg
 
 #### 3. Make sure you now have virtualenv:
 
-    python3.9 -m pip install virtualenv
+    python3.10 -m pip install virtualenv
 
 _Note: if the pip command above doesn't work, try to use pip3 (and use pip3 for the next steps too)_
 
@@ -77,14 +79,14 @@ _Note: if the pip command above doesn't work, try to use pip3 (and use pip3 for 
 First, go to the Folder you want to install StoryToolkit in via Finder. Right-click on it and select "New Terminal at Folder".
 Once you get another terminal window open, run:
 
-    git clone https://github.com/octimot/StoryToolkitAI-dev.git
+    git clone git@github.com:octimot/StoryToolkitAI-dev.git
 
 This should download the app in the folder that you chose.
 
 #### 5. Set up a virtual environment
 Now create a virtual environment (to prevent messing up with other python packages you may have installed on your OS for other stuff):
 
-    python3.9 -m virtualenv -p python3.9 venv
+    python3.10 -m virtualenv -p python3.10 venv
 
 Right now, your installation folder should contain 2 other folders, and the tree should look like this:
 
@@ -103,7 +105,7 @@ using the following command!)
 _Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
 If you followed the previous steps, your terminal prompt should now have `(venv)` before everything else._
 
-    pip install -U openai-whisper 
+    pip install -U git+https://github.com/openai/whisper.git@248b6cb124225dd263bb9bd32d060b6517e067f8
 
 For more info regarding Whisper installation, please check https://github.com/openai/whisper 
 
@@ -134,8 +136,6 @@ _Note: After restart of the machine or your terminal window, never forget to act
 starting the app. In the folder where you created venv, run:_
 
     source venv/bin/activate
-
-_Note: if you're using a version earlier than 0.18.0, the old run command was: `python StoryToolkitAI-dev/app.py`_
     
 ## Windows
 
@@ -146,7 +146,7 @@ type in `cmd` in the location bar above then press Enter, and your Command Promp
 installation folder.
 
 #### 1. Download and install Python
-Download the latest Python 3.9 version from [the official Python website](https://www.python.org/downloads/).
+Download the latest Python 3.10 version from [the official Python website](https://www.python.org/downloads/).
 
 _Note: only use other Python installers / versions if you know what you're doing._
 
@@ -156,40 +156,31 @@ To check if you installed the right version, open the Command Prompt and run:
 
     py --version
 
-And something like `Python 3.9.13` should appear. Anything else besides 3.9.X means that you're in uncharted
+And something like `Python 3.10.11` should appear. Anything else besides 3.10.X means that you're in uncharted
 territories! If that is the case, we recommend uninstalling all Python versions (if you don't need them of course)
-and reinstalling Python 3.9.
+and reinstalling Python 3.10.
 
-#### 2. Download and install GIT 
+#### 2. Download and install GIT for Windows
 Download it from [here](https://git-scm.com/download/win) and then install it.
 
-#### 3. Download and install FFMPEG
-The simplest approach is to use a package manager like [Choco](https://chocolatey.org/install). Once you follow the
-installation steps for "Individual Use" on that page, you can install FFMPEG using this command:
-
-    choco install ffmpeg
-
-Alternatively, you can also try to download FFMPEG from [here](https://www.gyan.dev/ffmpeg/builds/) and manually 
-install it, but you may need to manually add some environment variables after installation.
-
-#### 4. Install virtualenv
+#### 3. Install virtualenv
 
 If you installed Python according to step 1, this shouldn't be necessary. But to make sure that you have virtualenv,
 simply run:
 
-    py -3.9 -m pip install virtualenv
+    py -3.10 -m pip install virtualenv
 
-#### 5. Download StoryToolkitAI:
+#### 4. Download StoryToolkitAI:
 
 Open the Command Prompt and navigate to the folder where you want to install StoryToolkitAI. Then run:
 
     git clone https://github.com/octimot/StoryToolkitAI-dev.git
 
-#### 6. Set up a virtual environment
+#### 5. Set up a virtual environment
 Now create a virtual environment (to prevent messing up with other python packages you may have installed on your OS
 for other stuff):
 
-    py -3.9 -m virtualenv venv
+    py -3.10 -m virtualenv venv
 
 Right now, your installation folder should contain 2 other folders, and the tree should look like this:
     
@@ -197,21 +188,21 @@ Right now, your installation folder should contain 2 other folders, and the tree
     +- StoryToolkitAI-dev
     +- venv
 
-#### 7. Activate virtual environment
+#### 6. Activate virtual environment
 Now enable the virtual environment (this means that all the packages you'll install now via pip will be contained in the
 virtual environment, meaning that for the tool to work **you'll ALWAYS have to activate the virtual environment first**
 using the following command!)
 
     venv\Scripts\activate.bat
 
-#### 8. Install OpenAI Whisper
+#### 7. Install OpenAI Whisper
 Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. If you followed the previous steps, your terminal prompt should now have (venv) before everything else.
 
-    pip install -U openai-whisper
+    pip install -U git+https://github.com/openai/whisper.git@248b6cb124225dd263bb9bd32d060b6517e067f8
 
 For more info regarding Whisper installation, please check https://github.com/openai/whisper
 
-#### 9. Install all the stuff the tool requires:
+#### 8. Install all the stuff the tool requires:
 Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
 If you followed the previous steps, your terminal prompt should now have (venv) before everything else.
 
@@ -252,10 +243,9 @@ If you haven't downloaded the app in a binary format, simply activate the virtua
     source venv/bin/activate
     python StoryToolkitAI-dev/storytoolkitai
 
-A simple GUI with a mind-bending mid-2000s inspired design should appear on the screen.
-Don't worry, that's intentional:
+The tool should pop up now on the screen
 
-<img src="help/StoryToolkitAI_GUI.png" width="300">
+<img src="help/storytoolkitai_v0.19.0.png" width="600">
 
 _Note: if you're using a version earlier than 0.18.0, the old run commands were: 
 `python StoryToolkitAI-dev/app.py`_ (macOS), or `py StoryToolkitAI-dev\app.py` (Windows)

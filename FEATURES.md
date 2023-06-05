@@ -210,19 +210,21 @@ you can also add group notes for each group. For eg. if you group certain segmen
 your notes on that particular topic in the group notes field. You can also use the groups to select all the segments
 of a certain character and so on.
 
-Starting with v0.18.0, the Auto Add button seen in the Groups window allows the user to automatically add segments to
+Until v0.19.0, the Update Segments switch seen in the Groups window allows the user to automatically add segments to
 groups when they select the segments in the Transcription Window. _Note: This will not remove any segments from the 
 group, when they're unselected in the Transcription Window! In order to remove segments from the group, you need to 
 update the group (for eg. using CMD/CTRL+G while the group is selected)_
+
+Starting with v0.19.0, the Update segments switch in the Groups window allows the user to automatically update the
+group segments when they select/deselect the segments in the Transcription Window. This will both add or remove
+segments from the group.
 
 _Note: the groups are based on time intervals, so if you change the start or end times of segments, they might drift
 outside of certain groups that they're in. Simply click on the group, select the segments and press CMD/CTR+G again to
 re-add them to the group_
 
-In the future, we will add the ability to perform an advanced search on one on more groups.
-
-Also, we will most likely have a few features which will auto-group segments together (for eg. character recognition,
-topic classification, Resolve / NLE markers to group segments, etc.)
+While performing an advanced search on a transcription, the tool will also look in the group names and notes, and
+will return the groups that match semantically to your search.
 
 ### Direct Translations to English
 The tool also supports direct translation to English by clicking the "Translate Timeline to English" button. However,
@@ -474,9 +476,7 @@ from your currently opened Resolve timeline.
     
     t               - re-transcribe current transcription or selected segments
 
-    CMD/CTRL+G      - group selected segments (or update an existing group, if a group is selected)
-
-    Shift+G         - open groups window
+    CMD/CTRL+G      - add selected segments into new group
 
     CMD/CTRL+F      - open find window
 

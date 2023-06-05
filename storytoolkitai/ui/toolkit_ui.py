@@ -48,6 +48,8 @@ class toolkit_UI():
     theme_colors['resolve_red'] = '#E64B3D'
     theme_colors['error'] = theme_colors['red']
     theme_colors['error_text'] = theme_colors['red']
+    theme_colors['selected_blue_text'] = ctk.ThemeManager.theme["CTkSegmentedButton"]["text_color"][1]
+    theme_colors['selected_blue_bg'] = ctk.ThemeManager.theme["CTkButton"]["hover_color"][1]
 
     # UI paddings and other settings
     ctk_frame_paddings = {'padx': 5, 'pady': 5}
@@ -7361,8 +7363,8 @@ class toolkit_UI():
                     text_element.tag_raise("l_selected")
 
                     # color the tag accordingly
-                    text_element.tag_config('l_selected', foreground='blue',
-                                            background=self.toolkit_UI_obj.theme_colors['superblack'])
+                    text_element.tag_config('l_selected', foreground=toolkit_UI.theme_colors['selected_blue_text'],
+                                            background=self.toolkit_UI_obj.theme_colors['selected_blue_bg'])
 
                 # trigger the on_selection function
                 self.on_selection(window_id=window_id)
@@ -7394,8 +7396,8 @@ class toolkit_UI():
                     text_element.tag_raise("l_selected")
 
                     # color the tag accordingly
-                    text_element.tag_config('l_selected', foreground='blue',
-                                            background=self.toolkit_UI_obj.theme_colors['superblack'])
+                    text_element.tag_config('l_selected', foreground=toolkit_UI.theme_colors['selected_blue_text'],
+                                            background=self.toolkit_UI_obj.theme_colors['selected_blue_bg'])
 
             # trigger the on_selection function
             self.on_selection(window_id=window_id)
@@ -9219,7 +9221,7 @@ class toolkit_UI():
             self._group_update_segments_var = tk.BooleanVar(self, value=self.update_segments)
             self._group_update_segments_switch = ctk.CTkSwitch(
                 self._group_buttons_frame,
-                text='Update segments',
+                text='Update Segments',
                 variable=self._group_update_segments_var,
                 command=self._toggle_update_segments
             )
@@ -9421,8 +9423,9 @@ class toolkit_UI():
             # perform list update
             self.update_list()
 
-            # update the status bar
-            self.toolkit_UI_obj.update_status_bar()
+            # update the status bar in the transcription window
+            self.toolkit_UI_obj.update_window_status_label(
+                self.window_id, text='Groups reloaded.')
 
         def _set_groups_data(self):
             """
@@ -9877,7 +9880,7 @@ class toolkit_UI():
             # push this change to the toolkit_ops_obj
             self.toolkit_ops_obj.t_groups_obj. \
                 save_transcript_groups(transcription_file_path=self._transcription_file_path,
-                                       transcript_groups=groups_data)
+                                       transcript_groups=groups_data, silent=True)
 
             # update the transcript data of for the window too
             self.t_edit_obj.set_window_transcription_data(
