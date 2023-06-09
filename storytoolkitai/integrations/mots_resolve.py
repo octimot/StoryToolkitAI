@@ -700,15 +700,15 @@ class MotsResolve:
         # initialize resolve objects
         [resolve, project, mediaPool, projectManager, currentBin, currentTimeline] = self.initialize_resolve()
 
-        self.logger.debug('Importing {} into media pool: '.format(file_path))
+        self.logger.debug('Importing {} into media pool.'.format(file_path))
 
         # import clip into current Media Folder
         if file_path and os.path.exists(file_path):
             mediaPoolItem = mediaPool.ImportMedia(file_path)
             return mediaPoolItem
 
+        self.logger.error('File {} not found'.format(file_path))
         return False
-
 
     def import_media_into_timeline(self, file_path):
         [resolve, project, mediaPool, projectManager, currentBin, currentTimeline] = self.initialize_resolve()
@@ -721,7 +721,6 @@ class MotsResolve:
             mediaPool.AppendToTimeline(mediaPoolItem)
 
         return False
-
 
     # This will be the render preset that the script will choose in case nothing was passed during the call
     # H.264 Master should be available in any new Resolve installation, it's in QuickTime format and uses H.264 as codec

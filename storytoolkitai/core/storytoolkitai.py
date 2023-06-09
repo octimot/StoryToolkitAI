@@ -83,6 +83,11 @@ class StoryToolkitAI:
                             self.__version__,
                             '(standalone)' if self.standalone else ''))
 
+        # get the backup_transcript_saves_every_n_hours setting
+        self.transcript_backup_interval = \
+            self.get_app_setting(setting_name='backup_transcription_saves_every_n_hours', default_if_none=2)
+
+
     def update_statistics(self, key, value):
         '''
         Updates the statistics dictionary

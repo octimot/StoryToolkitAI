@@ -190,9 +190,12 @@ class UImenus:
                                     self.toolkit_UI_obj.t_edit_obj.button_export_as_fusion_text_comp(window_id)
                                   )
 
+        transcription_file_path = \
+            self.toolkit_UI_obj.t_edit_obj.get_window_transcription(window_id).transcription_file_path
+
         self.filemenu.entryconfig(
             "Show transcription in "+self.file_browser_name, state=NORMAL,
-            command=lambda: self.open_file_dir(self.toolkit_UI_obj.t_edit_obj.transcription_file_paths[window_id])
+            command=lambda: self.open_file_dir(transcription_file_path)
         )
 
         # enable the advanced search menu items relevant for transcriptions
@@ -209,8 +212,8 @@ class UImenus:
 
         # enable the group questions menu item
         self.editmenu.entryconfig('Group questions', state=NORMAL,
-                                    command=lambda:
-                                    self.toolkit_UI_obj.t_edit_obj.button_group_questions(window_id)
+                                  command=lambda:
+                                  self.toolkit_UI_obj.t_edit_obj.button_group_questions(window_id)
                                   )
 
         # enable this for project search

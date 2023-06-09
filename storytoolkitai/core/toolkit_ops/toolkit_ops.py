@@ -5,8 +5,7 @@ import json
 import codecs
 import subprocess
 
-from threading import Thread
-from threading import Timer as threadingTimer
+from threading import Thread, Timer
 
 import torch
 import torchaudio
@@ -27,6 +26,7 @@ from storytoolkitai.core.logger import *
 from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_NAME
 
 from storytoolkitai.integrations.mots_resolve import MotsResolve
+from .transcription import Transcription, TranscriptionSegment, TranscriptionUtils
 
 import re
 from sentence_transformers import SentenceTransformer, util
@@ -115,9 +115,6 @@ class ToolkitOps:
 
         # initialize the toolkit search engine
         self.t_search_obj = self.ToolkitSearch(toolkit_ops_obj=self)
-
-        # initialize the TranscriptGroups object
-        self.t_groups_obj = self.TranscriptGroups(toolkit_ops_obj=self)
 
         # this is used to get fast the name of what is being transcribed currently
         self.transcription_queue_current_name = None
@@ -223,7 +220,7 @@ class ToolkitOps:
         if action not in self._observers:
             return False
 
-        # add the observer to the list of observers for this action
+        # remove the observer from the list of observers for this action
         self._observers[action].remove(observer)
 
         # if the list is empty, remove the action
@@ -578,9 +575,10 @@ class ToolkitOps:
 
             return super().is_file_searchable(file_path)
 
-        def process_file_paths(self, search_paths=None):
+        def process_file_paths(self, search_paths: str or list = None) -> list:
             '''
             This function will process the file paths that were passed to the search function
+            and return a list of file paths that are searchable
             :return:
             '''
 
@@ -589,16 +587,6 @@ class ToolkitOps:
             if search_paths is None:
                 logger.debug('No search paths were passed to the search function')
                 return None
-
-            # if the search path contains only one file
-            # which ends with .pkl we'll return it directly
-            # to be used as a search corpus (search cache)
-            # if search_paths is not None \
-            #        and ((type(search_paths) is str and os.path.isfile(search_paths)) \
-            #             or ((type(search_paths) is list or type(search_paths) is tuple)
-            #                 and len(search_paths) == 1 and os.path.isfile(search_paths[0]))) \
-            #        and search_paths[0].endswith('.pkl'):
-            #    return search_paths[0]
 
             # is this a search for a single file or a directory?
             # if it's a single file, we'll just add it to the search_file_paths list
@@ -623,43 +611,6 @@ class ToolkitOps:
                             search_file_paths.append(os.path.join(root, file))
 
             return search_file_paths
-
-        def load_file_paths_to_search_dict(self, file_paths):
-            '''
-            Loads the file paths to a dictionary that can be used for searching
-            :param file_paths: this can be a list of file paths or a single file path
-            :return:
-            '''
-
-            # if no transcription file paths were provided
-            if file_paths is None or len(file_paths) == 0:
-                # throw an error if no transcription file was passed
-                logger.error('Cannot search. No file path was passed.')
-
-            # if only one transcription file path is given, make it a list
-            if type(file_paths) is str:
-                file_paths = [file_paths]
-
-            # define the transcriptions dict
-            search_files = {}
-
-            # take all the transcription file paths and load them into the search_transcriptions dictionary
-            for s_file_path in file_paths:
-
-                # if a specific transcription file was passed, use that in the search
-                if s_file_path is not None:
-
-                    # don't include the file if it doesn't exist
-                    if not os.path.isfile(s_file_path):
-                        logger.error('File {} not found. Skipping.'.format(s_file_path))
-                        continue
-
-                    # now read the transcription file contents
-                    search_files[s_file_path] = \
-                        self.toolkit_ops_obj.get_transcription_file_data(
-                            transcription_file_path=s_file_path)
-
-            return search_files
 
         def prepare_search_corpus(self):
             '''
@@ -720,43 +671,34 @@ class ToolkitOps:
                     # if it's TRANSCRIPTION FILE
                     if s_file_path.endswith('.transcription.json'):
 
-                        # first get the transcription file data
-                        transcription_file_data = self.toolkit_ops_obj.get_transcription_file_data(
-                            transcription_file_path=s_file_path)
+                        # first get the transcription
+                        transcription = Transcription(transcription_file_path=s_file_path)
 
-                        if type(transcription_file_data) is not dict \
-                                or 'segments' not in transcription_file_data:
+                        if not transcription.is_transcription_file:
                             logger.warning('Transcription file {} is not in the right format. Skipping.'
                                            .format(s_file_path))
 
-                        elif type(transcription_file_data) is dict \
-                                and 'segments' in transcription_file_data \
-                                and type(transcription_file_data['segments']) is list:
+                        elif transcription.has_segments:
+
+                            # create a dictionary version of the segments
+                            segments_as_dict = [segment.to_dict() for segment in transcription.get_segments()]
 
                             # detect the language of the transcription if we don't know it already
                             # also make sure we have a language code that is 2 characters long (ISO 639-1)
-                            if 'language' not in transcription_file_data \
-                                    or len(transcription_file_data['language']) != 2:
+                            if not transcription.language or len(transcription.language) != 2:
 
                                 transcription_language \
-                                    = ta.detect_language(''.join([segment['text']
-                                                                  for segment in transcription_file_data['segments']]))
+                                    = ta.detect_language(''.join(
+                                    [segment.text for segment in transcription.get_segments()]))
 
                                 # if we know the language of the transcription
                                 if transcription_language is not None:
 
-                                    transcription_file_data['language'] = transcription_language
-
-                                    # save it to the transcription file
-                                    if self.toolkit_ops_obj.save_transcription_file(
-                                            transcription_file_path=s_file_path,
-                                            transcription_data=transcription_file_data,
-                                            backup='backup'):
-                                        logger.debug(
-                                            'Saved language to transcription file: {}'.format(s_file_path))
+                                    transcription.set('language', transcription_language)
+                                    transcription.save_soon()
 
                             else:
-                                transcription_language = transcription_file_data['language']
+                                transcription_language = transcription.language
 
                             # try to see if we know which model to use for this language
                             # (if not the TextAnalysis will try to get the model itself)
@@ -772,7 +714,7 @@ class ToolkitOps:
                             # run it through the TextAnalysis to cluster and clean up the text
                             filtered_transcription_segments = \
                                 ta.process_segments(
-                                    segments=transcription_file_data['segments'],
+                                    segments=segments_as_dict,
                                     time_difference_threshold=None,
                                     cache_dir=self.search_corpus_cache_dir,
                                     lang=transcription_language,
@@ -795,8 +737,7 @@ class ToolkitOps:
                             logger.debug('Adding {} to the search corpus.'.format(transcription_file_path))
 
                             # does this transcription file contain timecodes?
-                            timecode_data = \
-                                self.toolkit_ops_obj.transcription_has_timecode_data(transcription_file_data)
+                            timecode_data = transcription.get_timecode_data()
 
                             # group the segment texts into phrases using punctuation as dividers
                             # instead of how they're currently segmented
@@ -836,15 +777,15 @@ class ToolkitOps:
 
                                     timecode = None \
                                         if not timecode_data \
-                                        else self.toolkit_ops_obj.convert_sec_to_transcription_timecode(
-                                        segment['start'], transcription_file_data
-                                    )
+                                        else transcription.seconds_to_timecode(
+                                            segment['start'],
+                                            transcription.timeline_fps, transcription.timeline_start_tc
+                                        )
 
                                     search_corpus_assoc[general_segment_index] = {
                                         'transcription_file_path': transcription_file_path,
-                                        'name': transcription_file_data['name']
-                                        if 'name' in transcription_file_data else os.path.basename(
-                                            transcription_file_path),
+                                        'name': transcription.name
+                                        if transcription.name else os.path.basename(transcription_file_path),
                                         'segment': segment['text'],
                                         'segment_index': segment_index,
                                         'start': segment['start'],
@@ -862,7 +803,7 @@ class ToolkitOps:
                                         int(segment_index) + 1)
 
                                 # add the segment text to the current phrase
-                                # but only if it's longer than 2 characters to avoid adding stuff that is most likely meaningless
+                                # but only if it's longer than 2 chars to avoid adding stuff that is meaningless
                                 # like punctuation marks
                                 if 'text' in segment and type(segment['text']) is str:
 
@@ -876,7 +817,8 @@ class ToolkitOps:
 
                                     # if a punctuation mark exists in the last 5 characters of the segment text
                                     # it means that the current phrase is complete
-                                    if re.search(r'[\.\?\!]{1}$', segment_text[-5:]):
+                                    if re.search(r'[\.\?\!]{1}\s*$', segment_text[-5:]):
+
                                         # "close" the current phrase by adding it to the search corpus
                                         search_corpus_phrases.append(current_phrase.strip())
 
@@ -886,27 +828,26 @@ class ToolkitOps:
                                         # then empty the current phrase
                                         current_phrase = ''
 
-                            if 'transcript_groups' in transcription_file_data:
+                            if transcription.transcript_groups:
 
                                 # take each transcript group
-                                for transcript_group in transcription_file_data['transcript_groups']:
+                                for transcript_group in transcription.transcript_groups:
                                     general_segment_index = len(search_corpus_phrases)
 
                                     # and add the transcript group name and group notes to the search corpus association
                                     search_corpus_assoc[general_segment_index] = {
                                         'file_path': transcription_file_path,
-                                        'transcription_name': transcription_file_data['name']
-                                        if 'name' in transcription_file_data else os.path.basename(
-                                            transcription_file_path),
+                                        'transcription_name': transcription.name
+                                        if transcription.name else os.path.basename(transcription_file_path),
                                         'type': 'transcript_group',
                                         'group_name': transcript_group
                                     }
 
                                     # and add the transcript group name to the search corpus phrases
                                     search_corpus_phrases.append(
-                                        transcription_file_data['transcript_groups'][transcript_group]['name']
+                                        transcription.transcript_groups[transcript_group]['name']
                                         + ': '
-                                        + transcription_file_data['transcript_groups'][transcript_group]['notes']
+                                        + transcription.transcript_groups[transcript_group]['notes']
                                     )
 
 
@@ -1588,284 +1529,10 @@ class ToolkitOps:
 
             return True
 
-    class TranscriptGroups:
-        '''
-        This class contains functions for working with transcript groups.
-        '''
-
-        def __init__(self, toolkit_ops_obj):
-
-            # define the toolkit operations object
-            self.toolkit_ops_obj = toolkit_ops_obj
-
-            # and the stAI object
-            self.stAI = toolkit_ops_obj.stAI
-
-        def get_all_transcript_groups(self, transcription_file_path: str = None, transcription_data=None) \
-                -> dict or None:
-            '''
-            This function returns a list of transcript groups for a given transcription file or transcription data.
-
-            :param: transcription_file_path: the path to the transcription file
-            :return: a dict of transcript groups or None if the transcription file doesn't exist
-            '''
-
-            if transcription_data is None and transcription_file_path is None:
-                logger.error('Unable to get transcript groups '
-                             '- no transcription file path or transcription data provided.')
-                return None
-
-            # if no transcription data was provided, load the transcription file
-            if transcription_data is None:
-                # load the transcription file
-                # get the contents of the transcription file
-                transcription_data = \
-                    self.toolkit_ops_obj.get_transcription_file_data(
-                        transcription_file_path=transcription_file_path)
-
-            # if the transcription file data was cannot be loaded, return None
-            if transcription_data is False:
-                return None
-
-            # check if the transcription has any transcript groups
-            # and return accordingly
-            if 'transcript_groups' not in transcription_data:
-                return {}
-            else:
-                logger.debug('Transcript groups found in transcription {}'.format(transcription_file_path))
-                return transcription_data['transcript_groups']
-
-        def get_transcript_group(self, transcription_file_path: str, transcript_group_id: str) -> dict or None:
-            '''
-            Get a transcript group by its name from a given transcription file.
-
-            The groups are stored in a list in the transcription file.
-
-            :param transcription_file_path:
-            :param transcript_group_id:
-            :return: a list of transcript groups or None if the transcription file doesn't exist
-            '''
-
-            # get the transcript groups
-            transcript_groups = self.get_all_transcript_groups(transcription_file_path=transcription_file_path)
-
-            # if the previous call returned None it's likely that the transcription file cannot be loaded
-            if transcript_groups is None:
-                return None
-
-            # loop through the transcript groups
-            # the groups are stored in a list, and each group is a dict, with the group name as the key
-            for transcript_group in transcript_groups:
-
-                # if the transcript group name matches the one we're looking for, return it
-                if transcript_group_id in transcript_group:
-                    return transcript_group[transcript_group_id]
-
-            # if we get here, the transcript group was not found
-            return {}
-
-        def save_transcript_groups(self, transcription_file_path: str, transcript_groups: dict,
-                                   group_id: str = None, silent: bool = False) -> dict or bool or None:
-            '''
-            This function saves transcript groups to a transcription file.
-
-            It will overwrite any existing transcript groups in the transcription file.
-
-            :param transcription_file_path:
-            :param transcript_groups: a list of transcript groups
-            :param group_id: If this is passed, we will only save the transcript group with this group id
-            :param silent: If this is True, no Observers will be notified
-            :return: The group dict if the groups were saved successfully, False otherwise
-                    or None if there were other problems transcription file
-            '''
-
-            # first, get the transcription file data
-            transcription_file_data = \
-                self.toolkit_ops_obj.get_transcription_file_data(
-                    transcription_file_path=transcription_file_path)
-
-            # if the transcription file data was cannot be loaded, return None
-            if transcription_file_data is None:
-                return None
-
-            # if no group id was passed, overwrite all transcript groups
-            if group_id is None:
-
-                # overwrite the transcript groups with the passed transcript_groups
-                transcription_file_data['transcript_groups'] = transcript_groups
-
-            # otherwise, only focus on the passed group id
-            else:
-
-                # one final strip and lower to make sure that the group_id is in the right format
-                #group_id = group_id.strip().lower()
-
-                # but make sure that it was passed correctly in the transcript_groups dict
-                if group_id not in transcript_groups:
-                    logger.error('Unable to save transcript group - the group id "{}" '
-                                 'was not found in the transcript_groups dict.'
-                                 .format(group_id))
-                    return False
-
-                # if the transcript groups key doesn't exist, create it
-                if 'transcript_groups' not in transcription_file_data:
-                    transcription_file_data['transcript_groups'] = {}
-
-                # if the group with the group_id exists, remove it
-                if group_id in transcription_file_data['transcript_groups']:
-                    del transcription_file_data['transcript_groups'][group_id]
-
-                # now add the transcript group to the transcript groups
-                transcription_file_data['transcript_groups'][group_id] = transcript_groups[group_id]
-
-            # save the transcription file data
-            saved = self.toolkit_ops_obj.save_transcription_file(
-                transcription_file_path=transcription_file_path,
-                transcription_data=transcription_file_data,
-                backup='backup')
-
-            if not saved:
-                return False
-
-            # notify observers that the groups were updated for this transcription file
-            # but only if we're not doing a silent save
-            if silent:
-                self.toolkit_ops_obj.notify_observers(
-                    action='update_transcription_groups_{}'
-                    .format(self.toolkit_ops_obj.get_transcription_id(transcription_file_path)))
-
-            # return the saved transcript groups
-            return transcription_file_data['transcript_groups']
-
-        def group_id_from_name(self, group_name):
-            '''
-            This function returns a group id from a group name.
-
-            For now, we're simply stripping, lowercasing and adding a timestamp to the group name.
-
-            :param group_name:
-            :return: the group id
-            '''
-
-            # first, strip and lower the group name
-            group_id = "{}{}".format(group_name.strip(), time.strftime('%Y%m%d%H%M%S%f'))
-
-            # remove all spaces from the group name and lowercase everything
-            group_id = group_id.replace(' ', '').lower()
-
-            # and return the group name
-            return group_id
-
-        def prepare_transcript_group(self, group_name: str, time_intervals: list,
-                                     group_id: str = None, group_notes: str = '',
-                                     existing_transcript_groups: list = None,
-                                     overwrite_existing: bool = False) -> dict:
-            '''
-            This function prepares a transcript group dict.
-
-            Each group is a dict with the following keys: name, notes, time_intervals
-
-            The purpose is to be able to group together segments of a transcription, although the start and end times
-            of the groups are not necessarily always the same as the start and end times of the segments.
-
-            :param group_name:
-            :param time_intervals:
-            :param group_id:
-            :param group_notes:
-            :param existing_transcript_groups: if a transcript group is being updated, pass its contents here
-            :param overwrite_existing: if the same group_id is found in the existing transcript groups, overwrite it
-            :return: the transcript group dict or None if something went wrong
-            '''
-
-            # trim the group name and group notes
-            group_name = group_name.strip()
-            group_notes = group_notes.strip()
-
-            # if the group id is not provided, use the group name to generate one
-            if group_id is None:
-                # generate a group id
-                group_id = self.group_id_from_name(str(group_name))
-
-            # if we're not overwriting an existing group, see if the group id already exists in existing groups
-            if not overwrite_existing \
-                    and existing_transcript_groups is not None \
-                    and type(existing_transcript_groups) is list \
-                    and len(existing_transcript_groups) > 0:
-
-                # keep coming up with group id suffixes until we find one that doesn't exist
-                group_name_suffix = 1
-                while True:
-
-                    # first try the group name as is
-                    if group_name_suffix != 1:
-                        # but after the first iteration, add a suffix (should start at 2)
-                        group_id = self.group_id_from_name(group_name + '_' + str(group_name_suffix))
-
-                    # if the group id doesn't exist in the existing groups, break out of the loop
-                    # (convert all to lowercase for comparison to avoid any sort of case sensitivity issues)
-                    if str(group_id).lower() not in list(map(str.lower, existing_transcript_groups)):
-                        break
-
-                    # if the group id already exists, increment the suffix and try again
-                    group_name_suffix += 1
-
-            # return the prepared transcript group
-            return {
-                group_id: {
-                    'name': group_name,
-                    'notes': group_notes,
-                    'time_intervals': time_intervals
-                }
-            }
-
-        def segments_to_groups(self, segments: list, group_name: str, group_id: str = None,
-                               group_notes: str = '', existing_transcript_groups: list = None,
-                               overwrite_existing: bool = False) -> dict or None:
-            '''
-            This function converts a list of transcript segments to a transcript group
-
-            :param segments: a list of transcript segments
-            :param group_name: the name of the transcript group
-            :param group_id: the id of the transcript group
-            :param group_notes: the notes of the transcript group
-            :param existing_transcript_groups: if a transcript group is being updated, pass its contents here
-            :param overwrite_existing: if the same group_id is found in the existing transcript groups, overwrite it
-            :return: the transcript group dict or None if something went wrong
-            '''
-
-            # first, get the time intervals from the segments
-            group_time_intervals = []
-
-            # if the segments are empty or not a list, return None
-            if segments is None or type(segments) is not list:
-                return None
-
-            # get a proper list of time intervals based on the segments
-            group_time_intervals = self.toolkit_ops_obj.transcript_segments_to_time_intervals(segments=segments)
-
-            if group_time_intervals is None:
-                return None
-
-            # if the time intervals are empty, return None
-            if len(group_time_intervals) == 0:
-                return None
-
-            # prepare the transcript group
-            transcript_group = \
-                self.prepare_transcript_group(
-                    group_name=group_name,
-                    time_intervals=group_time_intervals,
-                    group_id=group_id,
-                    group_notes=group_notes,
-                    existing_transcript_groups=existing_transcript_groups,
-                    overwrite_existing=overwrite_existing)
-
-            return transcript_group
-
     class ProcessingQueue:
-        '''
+        """
         This class handles the processing queue:
-        '''
+        """
 
         def __init__(self, toolkit_ops_obj=None, toolkit_UI_obj=None):
             self.toolkit_ops_obj = toolkit_ops_obj
@@ -2945,6 +2612,9 @@ class ToolkitOps:
 
             queue_history = self.load_queue_from_file()
 
+            # use this to determine what we return
+            queue_empty = True
+
             # if we have a list
             if isinstance(queue_history, list) and len(queue_history) > 0:
 
@@ -2992,13 +2662,15 @@ class ToolkitOps:
                     if item['status'] not in ['done', 'failed', 'canceled']:
                         self.add_to_queue(**item, ping=False)
 
+                        queue_empty = False
+
                 # once we finished re-building the queue, we need to ping it
                 # it's important to ping it after we're done adding all items to the queue
                 # since some items that depend on others might fail if they can't find the other items
                 self.ping_queue()
 
-                # if we processed the queue, we've resumed it
-                return True
+                # if we processed the queue, return whether or not it's empty
+                return not queue_empty
 
             # if we reached this point, we don't have a queue to resume
             return False
@@ -3015,7 +2687,7 @@ class ToolkitOps:
 
         return available_devices
 
-    # TRANSCRIPTION MANAGEMENT
+    # TRANSCRIPTION PROCESS MANAGEMENT
 
     def get_all_valid_media_paths_in_dir(self, dir_path, recursive=False):
 
@@ -3076,7 +2748,7 @@ class ToolkitOps:
         return False
 
     def add_media_to_queue(self, source_file_paths: str or list=None, queue_id: str=None,
-                           transcription_settings = None, video_indexing_settings = None,
+                           transcription_settings=None, video_indexing_settings=None,
                            **kwargs):
         """
         This adds one media item to the ingest queue
@@ -3295,7 +2967,7 @@ class ToolkitOps:
         elif queue_id:
             return self.processing_queue.get_progress(queue_id=queue_id)
 
-    # TRANSCRIPTION METHODS
+    # TRANSCRIPTION PROCESS METHODS
 
     def whisper_options(self, **parameters):
         """
@@ -3341,116 +3013,6 @@ class ToolkitOps:
         # return only the filtered parameters
         return filtered_parameters
 
-    def time_intervals_to_transcript_segments(self, time_intervals: list, segments: list) -> list or None:
-        '''
-        This function converts a list of time intervals to a list of transcript segments
-
-        :param time_intervals: a list of time intervals
-        :param segments: a dict of transcript segments
-        :return: a list of transcript segments
-        '''
-
-        # if the time intervals or segments are empty or not a list/dict, return None
-        if time_intervals is None or type(time_intervals) is not list \
-                or segments is None or type(segments) is not list:
-            return None
-
-        # if the time intervals are empty, return None
-        if len(time_intervals) == 0:
-            return []
-
-        # take all time intervals and check if they overlap with any of the segments
-        # if they do, add the segment to the list of segments to return
-        segments_to_return = []
-
-        # first sort the time intervals by start time
-        time_intervals = sorted(time_intervals, key=lambda x: x['start'])
-
-        # then sort the segments by start time
-        segments = sorted(segments, key=lambda x: x['start'])
-
-        # now take all the time intervals and check if they overlap with any of the segments
-        for current_time_interval in time_intervals:
-
-            # test this time interval against all segments
-            for current_segment in segments:
-
-                # if the current time interval overlaps with the current segment, add it to the list of segments
-                if current_segment['start'] >= current_time_interval['start'] \
-                        and current_segment['end'] <= current_time_interval['end']:
-
-                    segments_to_return.append(current_segment)
-
-                # otherwise, if the current segment is after the current time interval, break
-                # this only works if the segments and time intervals have been sorted
-                elif current_segment['start'] > current_time_interval['end']:
-                    break
-
-        return segments_to_return
-
-    def transcript_segments_to_time_intervals(self, segments: list) -> list or None:
-        '''
-        This function takes a list of transcript segments, groups them together if they don't have
-        any gaps between them.
-        :param segments:
-        :return: the list of time intervals or None if something went wrong
-        '''
-
-        # if the segments are not empty or not a dict, return None
-        if segments is None or type(segments) is not list or len(segments) == 0:
-            logger.debug('Could not convert transcript segments to time intervals '
-                         'because the segments are empty or not a list')
-            return None
-
-        # these are the group time intervals that we'll return eventually
-        # this group will consist of multiple time intervals taken from transcript segments that
-        # are next to each other (end_time of previous segment matches the start_time of current segment)
-        time_intervals = [{}]
-
-        time_interval_num = 0
-
-        # remove duplicates from segments
-        # this is important because if there are duplicates, the time intervals might repeat
-        segments_unique = []
-        [segments_unique.append(x) for x in segments if x not in segments_unique]
-
-        # place the unique segments back into the original list
-        segments = segments_unique
-
-        # sort the segments by start time
-        segments = sorted(segments, key=lambda x: x['start'])
-
-        # loop through the segments
-        for current_segment in segments:
-
-            # print('current segment {}-{}: {}'
-            #       .format(current_segment['start'], current_segment['end'], current_segment['text']))
-
-            # if the current time interval doesn't have a start time, add it
-            # (i.e. this segment is the first in this time interval)
-            if 'start' not in time_intervals[time_interval_num]:
-                time_intervals[time_interval_num]['start'] = current_segment['start']
-
-            # if the end time of the current time_interval matches the start time of the current segment,
-            # it means that there's no gap between the current time_interval and the current segment,
-            # so add the current segment to the current time interval, by simply updating the end time
-            # this extends the time interval to include the current segment too
-            if 'end' not in time_intervals[time_interval_num] or \
-                    time_intervals[time_interval_num]['end'] == current_segment['start']:
-
-                time_intervals[time_interval_num]['end'] = current_segment['end']
-
-            # otherwise, it means that the current segment is not next to the current time interval,
-            # so start a new time interval containing the current segment
-            else:
-                time_interval_num += 1
-                time_intervals.append({
-                    'start': current_segment['start'],
-                    'end': current_segment['end']
-                })
-
-        return time_intervals
-
     def get_whisper_available_languages(self) -> list or None:
 
         available_languages = whisper_tokenizer.LANGUAGES.values()
@@ -3460,7 +3022,7 @@ class ToolkitOps:
 
         return sorted(available_languages)
 
-    def torch_device_type_select(self, device = None):
+    def torch_device_type_select(self, device=None):
         '''
         A standardized way of selecting the right Torch device type
         :param device:
@@ -3540,7 +3102,7 @@ class ToolkitOps:
 
     def get_speech_intervals(self, audio_segment, **kwargs):
         """
-        Returns the an array of start and end times of the segments of speech in the audio_segment
+        Returns an array of start and end times of the segments of speech in the audio_segment
 
         :param audio_segment: a numpy array with the audio segment
         :return: a list of start and end times of the segments of speech in the audio_segment
@@ -3581,8 +3143,7 @@ class ToolkitOps:
 
         # if the first speech_timestamp starts after 0 but before 1 second
         # we set the start time to 0
-        if type(speech_timestamps) is list and \
-                speech_timestamps[0][0] > 0 and speech_timestamps[0][0] < 1:
+        if isinstance(speech_timestamps, list) and 0 < speech_timestamps[0][0] < 1:
             speech_timestamps[0][0] = 0
 
         return speech_timestamps
@@ -4146,29 +3707,34 @@ class ToolkitOps:
 
             for i, segment in enumerate(segments):
 
-
+                # if this is a transcription segment, get the text and words,
+                # or assume it's a dict and get them from there
+                segment_text = segment.text \
+                    if isinstance(segment, TranscriptionSegment) else segment.get('text', None)
+                segment_words = segment.words \
+                    if isinstance(segment, TranscriptionSegment) else segment.get('words', None)
 
                 # skip segments that don't have any text or words
-                if 'text' not in segment and 'words' not in segment:
-                    logger.debug('Skipping segment classification because it doesn\'t have any text or words: {}'
+                if not segment_text and not segment_words:
+                    logger.debug("Skipping segment classification because it doesn't have any text or words: {}"
                                  .format(segment))
                     continue
 
                 # if the text is empty, try to get the text from the words
-                if not segment['text'] or segment['text'].strip() == '':
-                    segment['text'] = ' '.join([word['word'] for word in segment['words']])
+                if not segment_text or segment_text.strip() == '':
+                    segment_text = ' '.join([word['word'] for word in segment_words])
 
                 # if the text is still empty, skip the segment
-                if not segment['text'] or segment['text'].strip() == '':
-                    logger.debug('Skipping segment classification because it doesn\'t have any text: {}'
-                                    .format(segment))
+                if not segment_text or segment_text.strip() == '':
+                    logger.debug("Skipping segment classification because it doesn't have any text: {}"
+                                 .format(segment))
                     continue
 
                 # classify the segment
 
                 # if labels is a list of strings, do a normal classification
                 if isinstance(labels, list) and isinstance(labels[0], str):
-                    classification = classifier(segment['text'], labels)
+                    classification = classifier(segment_text, labels)
 
                     # if the classification confidence is too low, skip the segment
                     if min_confidence and classification['scores'][0] < min_confidence:
@@ -4200,7 +3766,7 @@ class ToolkitOps:
                             continue
 
                         # classify the segment using this label
-                        classification = classifier(segment['text'], sub_labels)
+                        classification = classifier(segment_text, sub_labels)
 
                         # if the min_confidence is a list, use the index of the current label group
                         # to get the corresponding min_confidence value
@@ -4216,7 +3782,7 @@ class ToolkitOps:
                             logger.debug('Skipping segment classification for the following segment '
                                          'because a confidence of {}'
                                          'is too low to classify it in any of the labels {}: \n{}\n\n'
-                                         .format(classification['scores'][0], sub_labels, segment['text']))
+                                         .format(classification['scores'][0], sub_labels, segment_text))
                             continue
 
                         # add it to the corresponding list, but first make sure the label exists
@@ -4271,7 +3837,7 @@ class ToolkitOps:
 
                 # simply add the first label to the multi-label pass list
                 # we're going to intersect the other labels with this one
-                if classified_segments['_multi_label_pass_'] == []:
+                if not classified_segments['_multi_label_pass_']:
                     classified_segments['_multi_label_pass_'] = classified_segments[label]
                     continue
 
@@ -4293,18 +3859,20 @@ class ToolkitOps:
         :return: the questions_group
         """
 
-        transcription_data = self.get_transcription_file_data(transcription_file_path=transcription_file_path)
+        # use the transcription class to get the segments
+        # this will use an already instantiated transcription object if it exists for this file
+        transcription = Transcription(transcription_file_path)
 
-        if not transcription_data:
-            logger.error('Unable to group questions - no transcription file found: {}.'
-                         .format(transcription_file_path))
+        if not transcription:
+            logger.error('Unable to group questions - no transcription available: {}.'
+                         .format(transcription.transcription_file_path))
 
             if kwargs.get('queue_id'):
                 self.processing_queue.update_status(kwargs['queue_id'], 'failed')
 
             return None
 
-        segments = transcription_data['segments']
+        segments = transcription.segments
 
         # classify the segments as questions or statements
         # but use the existing transcription data if we have it
@@ -4338,40 +3906,39 @@ class ToolkitOps:
 
             # get the time intervals of the question segments
             group_time_intervals =\
-                self.transcript_segments_to_time_intervals(
+                transcription.transcript_segments_to_time_intervals(
                     segments=classified_question_segments['_multi_label_pass_'])
 
             # prepare the new dict of the new group
             # (this will return a dict looking like this {group_id: group_data})
-            questions_group = self.t_groups_obj.prepare_transcript_group(
+            questions_group = transcription.prepare_transcript_group(
                 group_name=group_name,
                 time_intervals=group_time_intervals
             )
 
         # if this was successful, save the questions group to the transcription json file
-        if questions_group is not None and transcription_data is not None:
+        if questions_group is not None and isinstance(questions_group, dict) and transcription is not None:
 
-            # get the existing transcript groups
-            transcript_groups = transcription_data.get('transcript_groups', {})
-
-            # merge the new questions group with the existing transcript groups
-            all_transcript_groups = {**transcript_groups, **questions_group}
+            # get the id of the questions group
+            questions_group_id = list(questions_group.keys())[0]
 
             # push this change to the toolkit_ops_obj
-            self.t_groups_obj. \
-                save_transcript_groups(transcription_file_path=transcription_file_path,
-                                       transcript_groups=all_transcript_groups)
+            transcription.set_transcript_groups(group_id=questions_group_id, transcript_groups=questions_group)
+
+            # save the transcription now, not soon
+            # - this ensures that the transcription is saved before notifying observers
+            transcription.save_soon(sec=0)
 
         # if we have a queue_id, update the status to done
         if kwargs.get('queue_id', None):
             self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='done')
 
         # update all the observers that are listening for this transcription
-        self.notify_observers('update_transcription_{}'.format(self.get_transcription_id(transcription_file_path)))
+        self.notify_observers('update_transcription_{}'.format(transcription.transcription_path_id))
 
         # update all the observers that are listening for this transcription's groups
         self.notify_observers('update_transcription_groups_{}'
-                              .format(self.get_transcription_id(transcription_file_path)))
+                              .format(transcription.transcription_path_id))
 
         return questions_group
 
@@ -4473,7 +4040,7 @@ class ToolkitOps:
         #    print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
         return False
 
-    def whisper_transcribe_segments(self, audio_segments, task, next_segment_id, other_options, queue_id=None):
+    def whisper_transcribe_segments(self, audio_segments, task, other_options, queue_id=None):
         """
         Transcribes only the passed audio segments
         and offsets the transcription segments start and end times
@@ -4481,23 +4048,40 @@ class ToolkitOps:
         Only returns the transcription segments
         """
 
+        # get the transcription object if a transcription_file_path exists
+        transcription = Transcription(transcription_file_path=other_options.get('transcription_file_path')) \
+            if other_options.get('transcription_file_path', None) else None
+
+        # if the transcription object doesn't exist,
+        # this function will simply return the results from the transcribe function
+        # otherwise, it will also update the transcription object with the results and save it
+
         results = {'segments': []}
         result = None
 
         # this will be counted up for each segment to provide a unique id
         id_count = 0
 
-        # the total duration of the audio is the sum of the duration of each audio segment
+        # the total duration of the audio is the sum of the durations of each audio segment
         # the duration of each audio segment is the end time minus the start time
         total_duration = sum([audio_segment[1] - audio_segment[0] for audio_segment in audio_segments])
 
         # transcribe each audio segment
         previous_progress = 0
+        next_segment_id = 0 if not transcription else transcription.generate_new_segment_id()
         for audio_segment in audio_segments:
 
             if len(audio_segment) != 3:
                 logger.warning('Audio segment must be a list of [start, end, audio]')
                 continue
+
+            # the start and end times of the audio segment which we will use to offset the results below
+            audio_segment_start = audio_segment[0]
+            audio_segment_end = audio_segment[1]
+
+            # if we have a transcription object, first delete any existing segments from this time interval
+            if transcription is not None:
+                transcription.delete_segments_between(start=audio_segment_start, end=audio_segment_end)
 
             # pre process the audio segment
             audio_segment = self.pre_process_audio_segment(audio_segment, **other_options)
@@ -4521,7 +4105,7 @@ class ToolkitOps:
             other_options['post_remove_word_timestamps'] = \
                 other_options.get('post_remove_word_timestamps', True)
 
-            # post process the result
+            # post process the result for this audio segment
             result = self.post_process_whisper_result(audio_segment[2], result, **other_options)
 
             # get the progress of the transcription so far,
@@ -4533,50 +4117,55 @@ class ToolkitOps:
 
             # if there are segments in the result
             # re-calibrate the start and end times of each segment according to the offset
-            # and calculate the segment id
+            # and add them to the transcription
             if isinstance(result, dict) and 'segments' in result and result['segments']:
 
                 # take each segment and add the offset to the start and end time
                 for i, transcript_segment in enumerate(result['segments']):
-                    transcript_segment['start'] += audio_segment[0]
-                    transcript_segment['end'] += audio_segment[0]
+
+                    # add the offset to the start and end time
+                    transcript_segment['start'] += audio_segment_start
+                    transcript_segment['end'] += audio_segment_start
 
                     # avoid end time being larger than the interval end time
-                    # - there seems to be an issue in the whisper model:
-                    #   https://github.com/openai/whisper/discussions/357
-                    if transcript_segment['end'] > audio_segment[1]:
-                        transcript_segment['end'] = audio_segment[1]
+                    if transcript_segment['end'] > audio_segment_end:
+                        transcript_segment['end'] = audio_segment_end
 
                     # also avoid start time being smaller than the interval start time
-                    if transcript_segment['start'] < audio_segment[0]:
-                        transcript_segment['start'] = audio_segment[0]
+                    if transcript_segment['start'] < audio_segment_start:
+                        transcript_segment['start'] = audio_segment_start
 
                     # if the segment contains a 'words' key,
                     # then add the offset to the start and end time of each word
                     if 'words' in transcript_segment:
                         for word in transcript_segment['words']:
-                            word['start'] += audio_segment[0]
-                            word['end'] += audio_segment[0]
+                            word['start'] += audio_segment_start
+                            word['end'] += audio_segment_start
 
                             # avoid end time being larger than the interval end time
-                            if word['end'] > audio_segment[1]:
-                                word['end'] = audio_segment[1]
+                            if word['end'] > audio_segment_end:
+                                word['end'] = audio_segment_end
 
                             # also avoid start time being smaller than the interval start time
-                            if word['start'] < audio_segment[0]:
-                                word['start'] = audio_segment[0]
+                            if word['start'] < audio_segment_start:
+                                word['start'] = audio_segment_start
 
                     transcript_segment['id'] = next_segment_id + id_count
                     id_count += 1
-
-                    # update the segment in the result
-                    # result['segments'][i] = transcript_segment
 
                     # add the transcription of the audio segment to the results list
                     results['segments'].append(transcript_segment)
 
                     # add the language to the result
                     results['whisper_language'] = result['language'] if 'language' in result else ''
+
+                    # add the segment to the transcription object (if any)
+                    if transcription is not None:
+                        transcription.add_segment(transcript_segment)
+
+            # save the transcription for each audio segment
+            if transcription is not None:
+                transcription.save_soon()
 
         # copy the status from the result to the results (if any)
         # normally we should only get a status if the transcription was canceled or it failed
@@ -4591,146 +4180,78 @@ class ToolkitOps:
         and returns a new audio_array with the excluded segments removed
         """
 
-        # if there are exclusion time segments and time_intervals
-        if excluded_time_intervals and type(excluded_time_intervals) == list and len(excluded_time_intervals) > 0 \
-                and time_intervals and type(time_intervals) == list and len(time_intervals) > 0:
+        # if there are no excluded time intervals, return the original audio array
+        if not (excluded_time_intervals and time_intervals):
+            audio_segments, new_time_intervals = self.split_audio_by_intervals(audio_array, time_intervals, sr)
+            return audio_segments, new_time_intervals
 
-            # sort the excluded segments by start time
-            excluded_time_intervals = \
-                sorted(excluded_time_intervals, key=lambda x: x[0])
+        # sort the time intervals by start time
+        excluded_time_intervals.sort(key=lambda x: x[0])
 
-            # take each time segment
-            for excluded_time_interval in excluded_time_intervals:
+        # use this to keep track of the new time intervals
+        new_time_intervals = []
 
-                # and check it against each of the time segments we selected for transcription
-                for time_interval in time_intervals:
+        # for each time interval, check if it overlaps with any of the excluded time intervals
+        for interval in time_intervals:
+            temp_intervals = [interval]
 
-                    # if the exclusion is outside the current segment times
-                    if excluded_time_interval[1] <= time_interval[0] \
-                            or excluded_time_interval[0] >= time_interval[1]:
-                        continue
+            # for each excluded time interval, split the temp_intervals
+            for excluded_interval in excluded_time_intervals:
+                new_temp_intervals = []
 
-                    # if the exclusion is exactly as the current segment times
-                    elif time_interval[0] == excluded_time_interval[0] \
-                            and time_interval[1] == excluded_time_interval[1]:
+                # for each temp_interval, check if it overlaps with the excluded time interval
+                for temp_interval in temp_intervals:
 
-                        # simply remove the whole segment
-                        time_intervals.remove(time_interval)
+                    # if the excluded interval is completely before or after the temp interval, do nothing
+                    if excluded_interval[1] <= temp_interval[0] or excluded_interval[0] >= temp_interval[1]:
+                        new_temp_intervals.append(temp_interval)
 
+                    # if the excluded interval is completely inside the temp interval, split the temp interval
                     else:
+                        # if the start of the excluded interval is inside the temp interval
+                        if temp_interval[0] < excluded_interval[0]:
+                            new_temp_intervals.append([temp_interval[0], excluded_interval[0]])
 
-                        # if the exclusion start time is equal to the segment start time
-                        if excluded_time_interval[0] == time_interval[0]:
+                        # if the end of the excluded interval is inside the temp interval
+                        if temp_interval[1] > excluded_interval[1]:
+                            new_temp_intervals.append([excluded_interval[1], temp_interval[1]])
 
-                            # cut out the beginning of the segment
-                            # by using the end time of the exclusion as its start
-                            time_interval[0] = excluded_time_interval[1]
+                # replace the temp intervals with the new temp intervals
+                temp_intervals = new_temp_intervals
 
+            # add the temp intervals to the new time intervals
+            new_time_intervals.extend(temp_intervals)
 
-                        # if the exclusion end time is equal to the segment end time
-                        elif excluded_time_interval[1] == time_interval[1]:
+        # split the audio array by the new time intervals
+        audio_segments, new_time_intervals = self.split_audio_by_intervals(audio_array, new_time_intervals, sr)
 
-                            # cut out the end of the segment
-                            # by using the start time of the exclusion as its end
-                            time_interval[1] = excluded_time_interval[0]
+        return audio_segments, new_time_intervals
 
-
-                        # if the exclusion is in the middle of the segment
-                        elif excluded_time_interval[0] > time_interval[0] \
-                                and excluded_time_interval[1] < time_interval[1]:
-
-                            # remove the segment from the list
-                            time_intervals.remove(time_interval)
-
-                            # but then split it into two segments
-                            # first the segment until the exclusion
-                            time_intervals.append([time_interval[0], excluded_time_interval[0]])
-
-                            # then the segment from the exclusion
-                            time_intervals.append([excluded_time_interval[1], time_interval[1]])
-
-            # sort the selection by start time
-            time_intervals = sorted(time_intervals, key=lambda x: x[0])
-
-        # now split the audio using the newly created intervals
-        audio_segments, time_intervals = self.split_audio_by_intervals(audio_array, time_intervals, sr)
-
-        return audio_segments, time_intervals
-
-    def whisper_transcribe(self, name=None, audio_file_path=None, task=None,
-                           target_dir=None, queue_id=None, return_path=False, **other_options) -> bool or str:
+    def _initialize_whisper_transcribe(self, queue_id=None, **other_options):
         """
-        This prepares and transcribes audio using Whisper
-        :param name:
-        :param audio_file_path:
-        :param task:
-        :param target_dir:
-        :param queue_id:
-        :param return_path: if True, returns the path to the transcription file if successful
-        :param other_options:
-        :return:
+        This initializes everything that is needed for whisper
         """
-
-        # if no audio file path was passed, try to use the source file path if it was passed
-        if audio_file_path is None and other_options.get('source_file_path', None) is not None:
-            audio_file_path = other_options.get('source_file_path', None)
-
-        # don't continue unless we have a queue_id
-        if audio_file_path is None or not audio_file_path:
-            logger.warning('No audio file path was passed to whisper_transcribe. Aborting.')
-
-            # update the queue item status
-            if queue_id is not None:
-                self.processing_queue.update_queue_item(queue_id=queue_id, status='failed')
-
-            return False
-
-        # use the name of the file in case the name wasn't passed
-        if name is None:
-            name = os.path.basename(audio_file_path)
-
-        # use the directory where the file is stored if another one wasn't passed
-        if target_dir is None:
-            target_dir = os.path.dirname(audio_file_path)
-
-        # what is the name of the audio file
-        audio_file_name = os.path.basename(audio_file_path)
-
-        # if a timeline_name was sent, remember it for later
-        timeline_name = None
-        if 'timeline_name' in other_options:
-            timeline_name = other_options['timeline_name']
-            del other_options['timeline_name']
-
-        # if a project_name was sent, remember it for later
-        project_name = None
-        if 'project_name' in other_options:
-            project_name = other_options['project_name']
-            del other_options['project_name']
 
         torch_device_changed = False
-        if 'device' in other_options and self.torch_device != other_options['device']:
+        # change the torch device if it was passed and it's different from the current one
+        if other_options.get('device', None) and self.torch_device != other_options.get('device'):
+            # select the new whisper device but take it through the torch device selection to make sure it's valid
+            self.torch_device = self.torch_device_type_select(other_options.get('device', None))
+
             torch_device_changed = True
 
-        # select the device that was passed (if any)
-        if 'device' in other_options:
-            # select the new whisper device but take it through the torch device selection to make sure it's valid
-            self.torch_device = self.torch_device_type_select(other_options['device'])
-            del other_options['device']
-
         # load OpenAI Whisper model
-        # and hold it loaded for future use (unless another model name was passed via other_whisper_options)
+        # if it wasn't loaded before, if the model name changed (via other_options) or if the torch device changed
         if self.whisper_model is None \
-                or ('model_name' in other_options
-                    and self.whisper_model_name != other_options['model_name']) \
+                or ('model_name' in other_options and self.whisper_model_name != other_options['model_name']) \
                 or torch_device_changed:
 
-            # update the status of the item in the queue
-            self.processing_queue.update_queue_item(queue_id=queue_id, status='loading model')
+            # use the model name that was passed in the call or the one that's already set
+            self.whisper_model_name = other_options.get('model_name', self.whisper_model_name)
 
-            # use the model name that was passed in the call (if any)
-            if 'model_name' in other_options and other_options['model_name']:
-                self.whisper_model_name = other_options['model_name']
+            # update the status of the item in the queue
+            self.processing_queue.update_queue_item(queue_id=queue_id, status='loading {} model'
+                                                    .format(self.whisper_model_name))
 
             # cancel transcription if user requested it
             if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
@@ -4773,7 +4294,8 @@ class ToolkitOps:
                                       setting_value=True)
 
             # let the user know if the whisper model is multilingual or english-only
-            logger.info('Selected Whisper model is {}.'.format(
+            logger.info('Selected Whisper model "{}" is {}.'.format(
+                str(self.whisper_model_name),
                 'multilingual' if self.whisper_model.is_multilingual else 'English-only'
             ))
 
@@ -4781,74 +4303,51 @@ class ToolkitOps:
         if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
             return None
 
+        return True
+
+    def _split_audio_into_segments(self, audio_file_path, queue_id=None, **kwargs):
+        """
+        This splits the audio into segments that are suitable for Whisper
+        It also takes into consideration any inclusion or exclusion intervals
+        """
+
         # load audio file as array using librosa
         # this should work for most audio formats (so ffmpeg might not be needed at all)
         audio_array, sr = librosa.load(audio_file_path, sr=16_000)
 
-        # if the audio_array is longer than 10 minutes, notify the user that the process will take a while
-        if len(audio_array) > 10 * 60 * 16_000:
-            long_audio_msg = "This might take a while."
-        else:
-            long_audio_msg = ""
-
         # cancel transcription if user requested it
         if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
-            return None
+            return None, None
 
-        # technically the transcription process starts here, so start a timer for statistics
-        transcription_start_time = time.time()
-
-        # clean up empty whisper options
-        if 'whisper_options' in other_options:
-
-            # remove empty language from whisper_options
-            if 'language' in other_options['whisper_options'] \
-                and (other_options['whisper_options']['language'] == ''
-                     or other_options['whisper_options']['language'] is None):
-
-                del other_options['whisper_options']['language']
-
-            # remove empty initial prompt
-            if 'initial_prompt' in other_options['whisper_options'] \
-                    and (other_options['whisper_options']['initial_prompt'] == ''
-                         or other_options['whisper_options']['initial_prompt'] is None):
-
-                del other_options['whisper_options']['initial_prompt']
+        # TIME INTERVALS PRE-PROCESSING starts here
 
         # assume no time intervals
         time_intervals = None
 
-        # TIME INTERVALS PRE-PROCESSING starts here
-
         # if pre_detect_speech is True, detect speech intervals in the audio
-        if 'pre_detect_speech' in other_options:
+        if kwargs.get('pre_detect_speech', None):
 
-            # detect speech intervals and save them in time_intervals
-            if other_options['pre_detect_speech']:
-                logger.info('Detecting speech intervals in the audio.')
+            # update the status of the item in the transcription log
+            self.processing_queue.update_queue_item(queue_id=queue_id, status='pre-detecting speech')
 
-                # update the status of the item in the transcription log
-                self.processing_queue.update_queue_item(queue_id=queue_id, status='pre-detecting speech')
+            logger.info('Pre-detecting speech intervals in {}.'.format(kwargs.get('name', 'audio file')))
 
-                logger.info('Pre-detecting speech intervals in the audio.')
-
-                # perform speech detection
-                time_intervals = self.get_speech_intervals(audio_array)
+            # perform speech detection
+            time_intervals = self.get_speech_intervals(audio_array)
 
         # if time_intervals was passed from the request, take them into consideration
-        if 'time_intervals' in other_options:
+        # but only if they are not boolean (True or False)
+        if kwargs.get('time_intervals', None) \
+                and type(kwargs.get('time_intervals', None)) is not bool:
 
-            # only take into consideration non boolean values
-            if type(other_options['time_intervals']) is not bool:
-
-                # if no time intervals were set before, just use the ones from the request
-                if time_intervals is None:
-                    time_intervals = other_options['time_intervals']
-                else:
-                    # intersect the time intervals from the request
-                    # with the previously had time intervals (from speech for eg.)
-                    time_intervals = \
-                        self.combine_overlapping_intervals(other_options['time_intervals'], time_intervals)
+            # if no time intervals were set before, use the ones from the request
+            if time_intervals is None:
+                time_intervals = kwargs['time_intervals']
+            else:
+                # intersect the time intervals from the request
+                # with the previously had time intervals (from speech for eg.)
+                time_intervals = \
+                    self.combine_overlapping_intervals(kwargs.get('time_intervals'), time_intervals)
 
         # split the audio into segments according to the time intervals
         # in case no time intervals were passed, this will just return one audio segment with the whole audio
@@ -4856,65 +4355,131 @@ class ToolkitOps:
 
         # cancel transcription if user requested it
         if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
-            return None
+            return None, None
 
         # exclude time intervals that need to be excluded
-        if 'excluded_time_intervals' in other_options:
+        if kwargs.get('excluded_time_intervals', None) \
+                and type(kwargs.get('excluded_time_intervals', None)) is not bool:
+
+            print('excluding', kwargs.get('excluded_time_intervals', None))
+
             audio_segments, time_intervals = self.exclude_segments_by_intervals(
-                audio_array, time_intervals, other_options['excluded_time_intervals'], sr=sr
+                audio_array, time_intervals, kwargs.get('excluded_time_intervals'), sr=sr
             )
-
-        # create an empty list to load existing transcription data (or to save the new data)
-        transcription_data = {}
-
-        existing_transcription = False
-
-        # ignore the transcription file path if it's empty
-        if 'transcription_file_path' in other_options \
-            and other_options['transcription_file_path'] is None:
-
-            del other_options['transcription_file_path']
-
-        # load the transcription data from the file if a path was passed
-        elif 'transcription_file_path' in other_options:
-
-            if other_options['transcription_file_path'].strip() != '':
-                transcription_file_path = other_options['transcription_file_path']
-
-                # load the transcription data from the file
-                transcription_data = self.get_transcription_file_data(transcription_file_path)
-
-                # mark that we're using existing transcription data (re-transcribing)
-                # and remember the name of the transcription file
-                existing_transcription = transcription_file_path
-
-                # change the status of the item in the transcription log to re-transcribing
-                self.processing_queue.update_queue_item(queue_id=queue_id, status='re-transcribing')
-
-            del other_options['transcription_file_path']
-
-        # get the next id based on the largest id from transcription_data segments
-        if type(transcription_data) == dict and 'segments' in transcription_data:
-            next_segment_id = max([int(segment['id']) for segment in transcription_data['segments']]) + 1
-        else:
-            next_segment_id = 0
-
-        # update the status of the item in the transcription log
-        self.processing_queue.update_queue_item(queue_id=queue_id, status='transcribing')
-
-        # let the user know the transcription process has started
-        notification_msg = "Transcribing {}.\n{}".format(name, long_audio_msg)
-        if self.is_UI_obj_available():
-            self.toolkit_UI_obj.notify_via_os("Starting Transcription",
-                                              notification_msg,
-                                              debug_message="Transcribing {}. {}".format(name, long_audio_msg))
-        else:
-            logger.info(notification_msg)
 
         # last chance to cancel if user requested it
         # before the transcription process starts
         if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
+            return None, None
+
+        if len(audio_segments) > 1:
+            logger.info('Split audio {} into {} segments: {}'.format(
+                kwargs.get('name', 'from file'),
+                len(audio_segments),
+                ', '.join([str(float(x[0]))+'-'+str(float(x[1])) for x in time_intervals])))
+
+        return audio_segments, time_intervals
+
+    def whisper_transcribe(self, name: str = None, audio_file_path: str = None, task=None,
+                           target_dir=None, queue_id=None, return_path=False, **other_options) -> bool or str:
+        """
+        This prepares and transcribes audio using Whisper
+        :param name:
+        :param audio_file_path:
+        :param task:
+        :param target_dir:
+        :param queue_id:
+        :param return_path: if True, returns the path to the transcription file if successful
+        :param other_options:
+        :return:
+        """
+
+        # if no audio file path was passed, try to use the source file path if it was passed
+        audio_file_path = audio_file_path or other_options.get('source_file_path')
+
+        # don't continue if we don't have an audio file path
+        if audio_file_path is None or not audio_file_path:
+            logger.warning('No audio file path was passed to whisper_transcribe. Aborting.')
+
+            # update the queue item status
+            if queue_id is not None:
+                self.processing_queue.update_queue_item(queue_id=queue_id, status='failed')
+
+            return False
+
+        # use the directory where the file is stored if another one wasn't passed
+        target_dir = target_dir if target_dir and os.path.isdir(target_dir) else os.path.dirname(audio_file_path)
+
+        # the transcription_file_path is either something that was sent via other_options
+        # or it's the audio_file_path, but with the extension changed to .transcription.json
+        transcription_file_path = other_options.get('transcription_file_path', None) \
+            or os.path.join(target_dir, '{}.transcription.json'.format(os.path.basename(audio_file_path)))
+
+        # if we're currently not retranscribing or supposed to overwrite an existing transcription file
+        if os.path.exists(transcription_file_path) \
+                and other_options.get('overwrite', False) is False \
+                and other_options.get('retranscribe', False) is False:
+
+            # get the next available transcription file path
+            transcription_file_path = TranscriptionUtils.add_count_to_transcription_path(transcription_file_path)
+
+        # let's instantiate the transcription object
+        transcription = Transcription(transcription_file_path=transcription_file_path)
+
+        # no matter if a path was sent or not, let's set it here
+        other_options['transcription_file_path'] = transcription_file_path
+
+        # use the name of the file in case the name wasn't passed
+        other_options['name'] \
+            = name = name or os.path.basename(audio_file_path)
+
+        # set a few things in the transcription object
+        transcription.set('audio_file_path', os.path.basename(audio_file_path))
+        transcription.set('name', name)
+        transcription.set('transcription_id', queue_id)
+
+        # this marks the transcription as incomplete so that it can be resumed later
+        transcription.set('incomplete', True)
+
+        # set some more things in the transcription object
+        transcription.set('task', task)
+        transcription.set('whisper_model', self.whisper_model_name)
+
+        # initialize whisper and get the audio array and sample rate
+        if not self._initialize_whisper_transcribe(queue_id=queue_id, **other_options):
             return None
+
+        # split the audio into segments according to the time intervals and pre-detect speech if requested
+        audio_segments, time_intervals = self._split_audio_into_segments(
+            audio_file_path=audio_file_path, queue_id=queue_id, **other_options)
+
+        if not audio_segments:
+            return None
+
+        # update the correct status depending if this is a retranscribe operation or not
+        # and if the transcription file already exists
+        if transcription.exists and other_options.get('retranscribe', False):
+            self.processing_queue.update_queue_item(queue_id=queue_id, status='re-transcribing')
+        else:
+            self.processing_queue.update_queue_item(queue_id=queue_id, status='transcribing')
+
+        # technically the transcription process starts here, so start a timer for statistics
+        transcription_start_time = time.time()
+
+        # let the user know the transcription process has started
+        if isinstance(time_intervals, list):
+            time_intervals_str = ", ".join([f"{start} - {end}" for start, end in time_intervals])
+            debug_message = "Transcribing {} between: {}.".format(name, time_intervals_str)
+        else:
+            debug_message = "Transcribing {}.".format(name)
+
+        if self.is_UI_obj_available():
+            self.toolkit_UI_obj.notify_via_os("Starting Transcription",
+                                              text="Transcribing {}".format(name),
+                                              debug_message=debug_message)
+
+        else:
+            logger.info(debug_message)
 
         # initialize empty result
         result = None
@@ -4924,12 +4489,11 @@ class ToolkitOps:
         try:
             result = self.whisper_transcribe_segments(audio_segments=audio_segments,
                                                       task=task,
-                                                      next_segment_id=next_segment_id,
                                                       other_options=other_options,
                                                       queue_id=queue_id
                                                       )
-        except Exception:
-            logger.error('Error transcribing audio using Whisper.', exc_info=True)
+        except:
+            logger.error('Error transcribing audio {} using Whisper.'.format(name), exc_info=True)
 
             # update the status of the item in the transcription log
             self.processing_queue.update_queue_item(queue_id=queue_id, status='failed', progress='')
@@ -4948,31 +4512,6 @@ class ToolkitOps:
 
             return None
 
-        # update the transcription data with the new segments
-        # but first remove all the segments between the time intervals that were passed
-        if type(transcription_data) is dict and 'segments' in transcription_data:
-
-            # for each time interval, remove all the segments that are between the start and end of the interval
-            for time_interval in time_intervals:
-
-                # get the start and end of the time interval
-                start_time = time_interval[0]
-                end_time = time_interval[1]
-
-                # remove all the segments that are between the start and end of the time interval
-                transcription_data['segments'] = [segment for segment in transcription_data['segments'] if
-                                                  segment['start'] < start_time or segment['end'] > end_time]
-
-                # if we have segments in result, add them to the transcription data
-                if type(result) is dict and 'segments' in result:
-                    # add the new segments to the transcription data
-                    transcription_data['segments'] += [segment for segment in result['segments']
-                                                       if segment['start'] >= start_time
-                                                       and segment['end'] <= end_time]
-
-            # now make sure that the segments are sorted by start time
-            transcription_data['segments'] = sorted(transcription_data['segments'], key=lambda k: k['start'])
-
         # perform speaker diarization if requested
         # self.speaker_diarization(audio_file_path)
 
@@ -4986,122 +4525,74 @@ class ToolkitOps:
             logger.info(notification_msg)
 
         # update the status of the item in the transcription log
-        self.processing_queue.update_queue_item(queue_id=queue_id, status='saving files')
+        self.processing_queue.update_queue_item(queue_id=queue_id, status='saving files', progress='')
 
-        # if we're not updating an older transcription file
-        if not existing_transcription or type(existing_transcription) is not str:
+        # if we made it here, it means that the transcription is complete
+        transcription.set('incomplete', False)
 
-            # first determine if there's another transcription.json file with the same name
-            # and keep adding numbers to it until the name is free
-            file_name = audio_file_name
-            file_num = 2
-            while os.path.exists(os.path.join(target_dir, file_name + '.transcription.json')):
-                file_name = audio_file_name + "_{}".format(file_num)
-                file_num = file_num + 1
+        # save the transcription file once here
+        transcription.save_soon(sec=0)
 
-            # also create the transcription data dictionary
-            transcription_data = result
+        # if we're not retranscribing or supposed to overwrite an existing transcription file
+        if not other_options.get('retranscribe', False):
+
+            # if a timeline_name was sent, remember it for later
+            timeline_name = other_options.get('timeline_name', None)
 
             # add the timeline name to the transcription data, if there is one
             if timeline_name is not None:
-                transcription_data['timeline_name'] = timeline_name
+                transcription.set('timeline_name', timeline_name)
+
+            # if a project_name was sent, remember it for later
+            project_name = other_options.get('project_name', None)
 
             # add the project name to the transcription data, if there is one
             if project_name is not None:
-                transcription_data['project_name'] = project_name
-
-        else:
-            # for the file name we'll use the name of the existing transcription file,
-            # but remove '.transcription.json' from the end
-            file_name = os.path.basename(existing_transcription).replace('.transcription.json', '')
-
-        # take the full text from the transcription segments since whisper might have given us a text
-        # that is incomplete due to interval splitting
-        # this also takes into account the segments that were passed before transcription
-        #   (in case of re-transcriptions)
-        transcription_data['text'] = ' '.join([segment['text'] for segment in transcription_data['segments']])
-
-        txt_file_path = self.save_txt_from_transcription(file_name=file_name, target_dir=target_dir,
-                                                         transcription_data=transcription_data)
-
-        # only save the filename without the absolute path to the transcript json
-        if txt_file_path:
-            transcription_data['txt_file_path'] = os.path.basename(txt_file_path)
-
-        # save the SRT file next to the transcription file
-        srt_file_path = self.save_srt_from_transcription(file_name=file_name, target_dir=target_dir,
-                                                         transcription_data=transcription_data)
-
-        # only the basename is needed here too
-        if srt_file_path:
-            transcription_data['srt_file_path'] = os.path.basename(srt_file_path)
-
-        # remember the audio_file_path this transcription is based on too
-        transcription_data['audio_file_path'] = os.path.basename(audio_file_path)
-
-        # don't forget to add the name of the transcription
-        transcription_data['name'] = name
-
-        # and some more info about the transription
-        transcription_data['task'] = task
-        transcription_data['model'] = self.whisper_model_name
-
-        # add the transcription unique id
-        transcription_data['transcription_id'] = queue_id
+                transcription.set('project_name', project_name)
 
         # if the transcription data doesn't contain the fps, the timeline name or the start_tc,
         # try to get them from a render.json file
         # these files are saved by the render() function in mots_resolve.py
-        if 'timeline_fps' not in transcription_data or transcription_data['timeline_fps'] == '' \
-                or 'timeline_start_tc' not in transcription_data or transcription_data['timeline_start_tc'] == '' \
-                or 'timeline_name' not in transcription_data or transcription_data['timeline_name'] == '':
+        if not transcription.timeline_fps or not transcription.timeline_start_tc or not transcription.timeline_name:
 
             # the render.json file path should be next to the audio file
             # and will have the same name as the audio file, but with .json at the end
-            render_json_file_path = os.path.join(os.path.dirname(audio_file_path), file_name + '.json')
+            render_json_file_path = \
+                os.path.join(os.path.dirname(audio_file_path), os.path.basename(audio_file_path) + '.json')
 
             # if the render.json file exists, try to get the data from it
             if os.path.exists(render_json_file_path):
+
+                logger.debug('Trying to get timeline data from render json file: {}'.format(render_json_file_path))
+
                 with open(render_json_file_path, 'r') as render_json_file:
                     render_data = json.load(render_json_file)
-                    if 'timeline_fps' not in transcription_data and 'fps' in render_data:
-                        transcription_data['timeline_fps'] = render_data['fps']
-                    if 'timeline_start_tc' not in transcription_data and 'timeline_start_tc' in render_data:
-                        transcription_data['timeline_start_tc'] = render_data['timeline_start_tc']
-                    if 'timeline_name' not in transcription_data and 'timeline_name' in render_data:
-                        transcription_data['timeline_name'] = render_data['timeline_name']
 
-                logger.debug('Getting timeline data from render json file: {}'.format(render_json_file_path))
+                    if not transcription.timeline_fps and 'fps' in render_data:
+                        transcription.set('timeline_fps', render_data['fps'])
 
+                    if not transcription.timeline_start_tc and 'timeline_start_tc' in render_data:
+                        transcription.set('timeline_start_tc', render_data['timeline_start_tc'])
+
+                    if not transcription.timeline_name and 'timeline_name' in render_data:
+                        transcription.set('timeline_name', render_data['timeline_name'])
             else:
                 logger.debug('No render json file found at {}'.format(render_json_file_path))
 
-        # save the transcription file with all the added data
-        transcription_json_file_path = self.save_transcription_file(file_name=file_name, target_dir=target_dir,
-                                                                    transcription_data=transcription_data)
+        # save the transcription to file with all the added data
+        transcription.save_soon(sec=0)
 
         # cancel transcription if user requested it
         if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
             return None
 
-        # perform question grouping if requested
-        # if 'group_questions' in other_options and other_options['group_questions']:
-        #     logger.info('Grouping questions.')
-        #     self.processing_queue.update_queue_item(queue_id=queue_id, status='grouping', progress='')
-        #
-        #     # detect and group questions
-        #     self.group_questions(
-        #         segments=result['segments'] if not existing_transcription else transcription_data['segments'],
-        #         transcription_file_path=transcription_json_file_path
-        #     )
-
-        # if there's a project_name and a timeline_name
+        # if there's a project_name and a timeline_name in the transcription
         # link the transcription to the project and timeline
-        if project_name is not None and timeline_name is not None:
-            self.link_transcription_to_timeline(transcription_file_path=transcription_json_file_path,
-                                                project_name=project_name,
-                                                timeline_name=timeline_name,
-                                                link=True)
+        if transcription.project_name is not None and transcription.timeline_name is not None:
+            self.link_transcription_path_to_timeline(transcription_file_path=transcription.transcription_file_path,
+                                                     project_name=transcription.project_name,
+                                                     timeline_name=transcription.timeline_name,
+                                                     link=True)
 
         # when done, change the status in the queue, clear the progress
         # and also add the file paths to the queue item
@@ -5109,9 +4600,7 @@ class ToolkitOps:
             queue_id=queue_id,
             status='done',
             progress='',
-            srt_file_path=transcription_data['srt_file_path'] if 'srt_file_path' in transcription_data else '',
-            txt_file_path=transcription_data['txt_file_path'] if 'txt_file_path' in transcription_data else '',
-            transcription_file_path=transcription_json_file_path
+            transcription_file_path=transcription.transcription_file_path
         )
 
         # todo: move this to the UI - maybe a monitor function that checks the queue window for events?
@@ -5119,636 +4608,14 @@ class ToolkitOps:
         if self.is_UI_obj_available():
             self.toolkit_UI_obj.open_transcription_window(
                 title=name,
-                transcription_file_path=transcription_json_file_path,
-                srt_file_path=transcription_data['srt_file_path']
-                if 'srt_file_path' in transcription_data and transcription_data['srt_file_path'] else None
+                transcription_file_path=transcription.transcription_file_path
             )
 
-        return True if not return_path else transcription_json_file_path
-
-    def save_transcription_file(self, transcription_file_path=None, transcription_data=None,
-                                file_name=None, target_dir=None, backup=None) -> str or bool:
-        '''
-        Saves the transcription file either to the transcription_file_path
-        or to the "target_dir/name.transcription.json" path
-
-        :param transcription_file_path:
-        :param transcription_data:
-        :param file_name: This is usually the audio file name
-        :param target_dir:
-        :param backup: If True, the existing transcription file will be backed up to a .backups folder
-                        in the same directory as the transcription file. The backup string will be used as a suffix
-                        to the backup file name
-        :return: False or transcription_file_path
-        '''
-
-        # if no full path was passed
-        if transcription_file_path is None:
-
-            # try to use the name and target dir attributes
-            if file_name is not None and target_dir is not None:
-                # the path should contain the name and the target dir, but end with transcription.json
-                transcription_file_path = os.path.join(target_dir, file_name + '.transcription.json')
-
-            # if the name and target_dir were not passed, throw an error
-            else:
-                logger.error('No transcription file path, name or target dir were passed.')
-                return False
-
-        if transcription_file_path:
-
-            # if backup_original is enabled, it will save a copy of the transcription file to
-            # originals/[filename].backup.json (if one doesn't exist already)
-            if backup and os.path.exists(transcription_file_path):
-
-                import shutil
-
-                # format the name of the backup file
-                backup_transcription_file_path = \
-                    os.path.splitext(os.path.basename(transcription_file_path))[0] + '.' + str(backup) + '.json'
-
-                backups_dir = os.path.join(os.path.dirname(transcription_file_path), '.backups')
-
-                # if the backups directory doesn't exist, create it
-                if not os.path.exists(backups_dir):
-                    os.mkdir(backups_dir)
-
-                # copy the existing file to the backups directory
-                # if it doesn't already exist
-                if not os.path.exists(os.path.join(backups_dir, backup_transcription_file_path)):
-                    shutil.copyfile(transcription_file_path,
-                                    os.path.join(backups_dir, backup_transcription_file_path))
-
-            # Finally,
-            # save the whole whisper result in the transcription json file
-            # don't question what is being passed, simply save everything
-            with open(transcription_file_path, 'w', encoding='utf-8') as outfile:
-                json.dump(transcription_data, outfile)
-
-            return transcription_file_path
-
-        return False
-
-    @staticmethod
-    def get_transcription_file_data(transcription_file_path):
-
-        # make sure the transcription exists
-        if not os.path.exists(transcription_file_path):
-            logger.warning("Transcription file {} not found".format(transcription_file_path))
-            return False
-
-        # get the contents of the transcription file
-        with codecs.open(transcription_file_path, 'r', 'utf-8-sig') as json_file:
-            transcription_json = json.load(json_file)
-
-        # make sure that it's a transcription file
-        if 'segments' not in transcription_json:
-            logger.warning(
-                "The file {} is not a valid transcription file (segments missing)".format(transcription_file_path))
-            return False
-
-        # check if the transcription file contains word timings
-        if len(transcription_json['segments']) > 0 and 'words' in transcription_json['segments'][0]:
-            logger.debug("Word level timings detected in transcription file data.")
-
-        return transcription_json
-
-    @staticmethod
-    def get_transcription_id(transcription_file_path):
-        """
-        We're using this to generate a unique ID for the transcription based on its file path
-        """
-        return hashlib.md5(transcription_file_path.encode('utf-8')).hexdigest()
-
-    def get_transcription_audio_file_path(self, transcription_file_path, transcription_data=None):
-        """
-        Returns the audio file path from the transcription file
-        """
-
-        # we still need the transcription file path to get the absolute path of the audio file
-        if not transcription_file_path:
-            logger.error('No transcription file path was passed.')
-            return None
-
-        # get the transcription data first (if it wasn't passed)
-        if not transcription_data:
-            transcription_data = self.get_transcription_file_data(transcription_file_path)
-
-        if transcription_data:
-
-            if 'audio_file_path' in transcription_data:
-
-                # if the path is not absolute, make it absolute, based on the transcription file path
-                if not os.path.isabs(transcription_data['audio_file_path']):
-
-                    # get the directory of the transcription file
-                    transcription_file_dir = os.path.dirname(transcription_file_path)
-
-                    # join the audio file path with the transcription file dir
-                    audio_file_path = os.path.join(transcription_file_dir, transcription_data['audio_file_path'])
-
-                    # if the audio file exists, return it
-                    if os.path.exists(audio_file_path):
-                        return audio_file_path
-
-                    logger.error("Audio file path not found: {}".format(audio_file_path))
-                    return None
-
-            logger.error("Audio file path not found in transcription file: {}".format(transcription_file_path))
-            return None
-
-        # if we got here it means that the audio file path is not in the transcription file or cannot be found
-        logger.error("Invalid transcription file: {}".format(transcription_file_path))
-        return None
-
-    def time_str_to_seconds(self, time_str: str) -> float:
-        '''
-        Converts 00:00:00.000 time formats to seconds.
-        :param time_str: 00:00:00.000 (string)
-        :return:
-        '''
-
-        # use regex to get the hours, minutes, seconds and milliseconds
-        # from the time string
-        time_regex = re.compile(r'(\d{2}):(\d{2}):(\d{2}).(\d)')
-        time_match = time_regex.match(time_str)
-
-        # if the time string matches the regex
-        if time_match:
-
-            # calculate the seconds
-            seconds = int(time_match.group(1)) * 3600 + \
-                      int(time_match.group(2)) * 60 + \
-                      int(time_match.group(3)) + \
-                      int(time_match.group(4)) / 1000
-
-        # otherwise, throw an error
-        else:
-            exception = 'The passed time string {} is not formatted correctly.'.format(time_str)
-            logger.error(exception)
-
-            # throw exception
-            raise ValueError(exception)
-
-        return seconds
-
-    def convert_srt_to_transcription_json(self, srt_file_path: str, transcription_file_path: str = None,
-                                          overwrite: bool = False):
-        '''
-        Converts an srt file to a transcription json file, saves it in the same directory
-         and returns the name of the transcription file.
-
-        If it's impossible to convert or save the srt file, it will return None
-
-        If overwrite is True, it will overwrite any existing transcription file from the same directory.
-
-        :param srt_file_path:
-        :param transcription_file_path:
-        :param overwrite:
-        :return:
-        '''
-
-        # make sure the srt file exists
-        if not os.path.exists(srt_file_path):
-            logger.warning("SRT file {} doesn't exist.".format(srt_file_path))
-            return None
-
-        # get the contents of the srt file
-        with codecs.open(srt_file_path, 'r', 'utf-8-sig') as srt_file:
-            srt_contents = srt_file.read()
-
-        srt_segments = []
-        full_text = ''
-
-        # if properly formatted, the srt file should have 2 new lines between each subtitle
-        # so go through all of them
-        for line_string in srt_contents.split('\r\n'):
-
-            if line_string != '':
-
-                # if the line is a number, it's the subtitle number
-                if line_string.isdigit():
-                    idx = int(line_string)
-
-                    # so create a new subtitle segment
-                    srt_segments.append({'id': str(idx), 'start': 0.0, 'end': 0.0, 'text': ''})
-
-                # if the line is not a number, it's either the time or the text
-                else:
-                    # if the line contains '-->', it's the time
-                    if '-->' in line_string:
-                        # split the line in the middle to get the start and end times
-                        start_time, end_time = line_string.split('-->')
-
-                        # add these to the last subtitle segment
-                        srt_segments[-1]['start'] = self.time_str_to_seconds(start_time.strip())
-                        srt_segments[-1]['end'] = self.time_str_to_seconds(end_time.strip())
-
-                    # if the line doesn't contain '-->', it's the text
-                    else:
-
-                        # add the text to the last subtitle segment
-                        # but also a white space if there's already a string inside the segment text
-                        srt_segments[-1]['text'] += \
-                            ' ' + line_string if len(srt_segments[-1]['text']) > 0 else line_string
-
-                        # add the text to the full text
-                        full_text += ' ' + line_string if len(full_text) > 0 else line_string
-
-        # initialize the transcription_data for the transcription_file
-        transcription_data = {'text': full_text,
-                              'segments': srt_segments,
-                              'task': 'convert_srt_to_transcription_json',
-                              'audio_file_path': '',
-                              'srt_file_path': os.path.basename(srt_file_path),
-                              'name': os.path.splitext(os.path.basename(srt_file_path))[0]
-                              }
-
-        # if no transcription file path was passed, create one based on the srt file name
-        if transcription_file_path is None:
-            transcription_file_path = os.path.splitext(srt_file_path)[0] + '.transcription.json'
-
-        if not overwrite and os.path.exists(transcription_file_path):
-            logger.error("Transcription file {} already exists. Cannot overwite.".format(transcription_file_path))
-            return None
-
-        # if the transcription file already exists, log that we're overwriting it
-        elif overwrite and os.path.exists(transcription_file_path):
-            logger.info("Overwritting {} with transcription from SRT.".format(transcription_file_path))
-
-        else:
-            logger.info("Saving transcription from SRT to {}.".format(transcription_file_path))
-
-        # save the full text to a text file
-        transcription_txt_file_path = os.path.splitext(transcription_file_path)[0] + '.txt'
-        self.save_txt_from_transcription(transcription_txt_file_path, transcription_data)
-
-        # save the transcription data to the transcription file
-        self.save_transcription_file(transcription_file_path, transcription_data)
-
-        return transcription_file_path
-
-    def process_transcription_data(self, transcription_segments=None, transcription_data=None):
-        '''
-        This takes the passed segments and puts them into a dict ready to be passed to a transcription file.
-
-        It's important that if the contents of any transcription segment was edited, to see that reflected in
-        other variables as well. It also adds the key 'modified' so we later know that the tokens might not
-        correspond to the segment contents anymore.
-
-        :param transcription_segments:
-        :return:
-        '''
-
-        # take each transcription segment
-        if transcription_segments is not None and transcription_segments and transcription_data is not None and 'segments' in transcription_data:
-
-            # first empty the text variable
-            transcription_data['text'] = ''
-
-            for segment in transcription_segments:
-                # take each segment and insert it into the text variable
-                transcription_data['text'] = segment + ' '
-
-            # make it known that this transcription was modified
-            transcription_data['modified'] = time.time()
-
-            return transcription_data
-
-    def format_timestamp(self, seconds: float, always_include_hours: bool = False, decimal_marker: str = '.'):
-        assert seconds >= 0, "non-negative timestamp expected"
-        milliseconds = round(seconds * 1000.0)
-
-        hours = milliseconds // 3_600_000
-        milliseconds -= hours * 3_600_000
-
-        minutes = milliseconds // 60_000
-        milliseconds -= minutes * 60_000
-
-        seconds = milliseconds // 1_000
-        milliseconds -= seconds * 1_000
-
-        hours_marker = f"{hours:02d}:" if always_include_hours or hours > 0 else ""
-        return f"{hours_marker}{minutes:02d}:{seconds:02d}{decimal_marker}{milliseconds:03d}"
-
-    def write_srt(self, transcript_segments: dict, srt_file_path: str):
-        """
-        Write the transcript segments to a file in SRT format.
-        """
-
-        with open(srt_file_path, "w", encoding="utf-8") as srt_file:
-            i = 1
-            for segment in transcript_segments:
-                # write srt lines
-                print(
-                    f"{i}\n"
-                    f"{self.format_timestamp(segment['start'], always_include_hours=True, decimal_marker=',')} --> "
-                    f"{self.format_timestamp(segment['end'], always_include_hours=True, decimal_marker=',')}\n"
-                    f"{segment['text'].strip().replace('-->', '->')}\n",
-                    file=srt_file,
-                    flush=True,
-                )
-                i += 1
-
-    def write_txt(self, transcript_segments: dict, txt_file_path: str):
-        """
-        Write the transcript segments to a file in SRT format.
-        Each segment is written on a new line.
-        """
-
-        with open(txt_file_path, "w", encoding="utf-8") as txt_file:
-            for segment in transcript_segments:
-                # write txt lines
-                print(
-                    f"{segment['text'].strip()}",
-                    file=txt_file,
-                    flush=True,
-                )
-
-    def write_avid_ds(self, transcript_segments: dict, avid_ds_file_path: str, timeline_fps, timeline_start_tc):
-        """
-        Write the transcript segments to a file in Avid DS format.
-        """
-
-        # this is an example format for Avid DS
-        # @ This file written with StoryToolkitAI, version x.x.x
-        #
-        # <begin subtitles>
-        #
-        # 12:03:46:05 12:03:48:05
-        # This is a test.
-        #
-        # 12:03:48:05 12:03:50:05
-        # This is another test.
-        #
-        # <end subtitles>
-
-        # convert the timeline_start_tc to a Timecode object
-        timeline_start_tc = Timecode(timeline_fps, timeline_start_tc)
-
-        def format_timecode_line(start_time, end_time, timeline_fps, timeline_start_tc):
-            # convert the start to a timecode
-            start_tc = Timecode(timeline_fps, start_seconds=start_time)
-
-            # add the timeline_start_tc to the start_tc
-            start_tc = start_tc + timeline_start_tc
-
-            # convert the end to a timecode
-            end_tc = Timecode(timeline_fps, start_seconds=end_time)
-
-            # add the timeline_start_tc to the start_tc
-            end_tc = end_tc + timeline_start_tc
-
-            return f"{start_tc} {end_tc}"
-
-        with open(avid_ds_file_path, "w", encoding="utf-8") as avid_ds_file:
-            # write header
-            print(
-                f"@ This file written with StoryToolkitAI version {self.stAI.version}\n",
-                file=avid_ds_file,
-                flush=True
-            )
-
-            # write subtitle start
-            print(
-                f"<begin subtitles>\n",
-                file=avid_ds_file,
-                flush=True
-            )
-
-            # write subtitle lines
-            for segment in transcript_segments:
-                print(
-                    f"{format_timecode_line(segment['start'], segment['end'], timeline_fps, timeline_start_tc)}\n"
-                    f"{segment['text'].strip()}\n",
-                    file=avid_ds_file,
-                    flush=True,
-                )
-
-            # write subtitle end
-            print(
-                f"<end subtitles>",
-                file=avid_ds_file,
-                flush=True
-            )
-
-    def write_fusion_text_comp(self, transcript_segments: dict, comp_file_path: str, timeline_fps):
-        '''
-        Write the transcript segments into a Fusion Text+ comp file
-        '''
-
-        keyframes = []
-
-        # take each transcription segment
-        for segment in transcript_segments:
-
-            # frame = int(segment["start"] * fps)
-
-            # calculate frame based on segment start and timeline fps
-            # we'll ignore the timeline_start_tc considering that we're in a comp file that starts at 0
-            if segment["start"] != 0:
-                keyframe_tc = Timecode(timeline_fps, start_seconds=segment["start"])
-                frame = keyframe_tc.frames
-
-            # if the segment starts at 0, we'll use frame 1 to form the timecode and frame 0 for the keyframe
-            # this is because Timecode objects can't start at 0
-            else:
-                keyframe_tc = Timecode(timeline_fps, 1)
-                frame = 0
-
-            text = segment["text"].replace('"', '\\"')
-
-            # create the segment keyframe
-            keyframe = '[' + str(frame) + '] = { Value = Text { Value = "' + str(text) + '" } }'
-
-            # if the next segment doesn't start exactly when this one ends, add a keyframe with an empty string
-            # but only if this isn't the last segment
-            if segment != transcript_segments[-1]:
-
-                # get the next segment
-                next_segment = transcript_segments[transcript_segments.index(segment) + 1]
-
-                # if the next segment doesn't start exactly when this one ends, add a keyframe with an empty string
-                if next_segment["start"] != segment["end"]:
-                    # calculate frame based on segment end and timeline fps
-                    # we'll ignore the timeline_start_tc considering that we're in a comp file that starts at 0
-                    keyframe_tc = Timecode(timeline_fps, start_seconds=segment["end"])
-                    frame = keyframe_tc.frames
-                    keyframe += ',\n[' + str(frame) + '] = { Value = Text { Value = "" } }'
-
-            keyframes.append(keyframe)
-
-        # if there are no keyframes, return False
-        if len(keyframes) == 0:
-            return False
-
-        # turn the keyframes into a string with newlines and indentation
-        keyframes_str = ",\n            ".join(keyframes)
-
-        # place the above keyframes in the fusion template
-        fusion_template = '''
-        {
-            Tools = ordered() {
-                TranscriptText = TextPlus {
-                    Inputs = {
-                        Width = Input { Value = 1920, },
-                        Height = Input { Value = 1080, },
-                        Font = Input { Value = "Open Sans", },
-                        Style = Input { Value = "Bold", },
-                        VerticalJustificationNew = Input { Value = 3, },
-                        HorizontalJustificationNew = Input { Value = 3, },
-                        StyledText = Input {
-                            SourceOp = "TranscriptTextStyledText",
-                            Source = "Value",
-                        },
-                    },
-                    ViewInfo = OperatorInfo { Pos = { 311.26, 124.0282 } },
-                },
-                TranscriptTextStyledText = BezierSpline {
-                    SplineColor = { Red = 237, Green = 142, Blue = 243 },
-                    KeyFrames = {
-                        ''' + keyframes_str + ''',
-                    }
-                },
-                MergeText = Merge {
-                    CtrlWZoom = false,
-                    NameSet = true,
-                    Inputs = {
-                        Foreground = Input {
-                            SourceOp = "TranscriptText",
-                            Source = "Output",
-                        },
-                        PerformDepthMerge = Input { Value = 0, },
-                    },
-                    ViewInfo = OperatorInfo { Pos = { 311.26, 50.0282 } },
-                },
-                StoryToolkitAI_Transcript = Underlay {
-                    CtrlWZoom = false,
-                    NameSet = true,
-                    Inputs = {
-                        Comments = Input { Value = "Exported using StoryToolkitAI version ''' + self.stAI.version + '''", }
-                    },
-                    ViewInfo = UnderlayInfo {
-                        Pos = { 307.152, 15.0243 },
-                        Size = { 172, 164.121 }
-                    },
-                }
-            },
-            ActiveTool = "Text1"
-        }
-        '''
-
-        # write the comp file
-        with open(comp_file_path, "w", encoding="utf-8") as comp_file:
-            print(
-                f'{fusion_template}',
-                file=comp_file,
-                flush=True
-            )
-
-        # return the comp file path
-        return comp_file_path
-
-    def save_srt_from_transcription(self, srt_file_path=None, transcription_segments=None,
-                                    file_name=None, target_dir=None, transcription_data=None):
-        '''
-        Saves an SRT file based on a transcription file.
-
-        You can either pass the transcription segments or the full transcription data. When both are passed,
-        the transcription_segments will be used.
-
-        :param srt_file_path: The full path to the SRT file
-        :param transcription_segments:
-        :param file_name: The name of the SRT file
-        :param target_dir:
-        :param transcription_data:
-        :return: False or srt_file_path
-        '''
-
-        # if no full path was passed
-        if srt_file_path is None:
-
-            # try to use the name and target dir attributes
-            if file_name is not None and target_dir is not None:
-                # the path should contain the name and the target dir, but end with transcription.json
-                srt_file_path = os.path.join(target_dir, file_name + '.srt')
-
-            # if the name and target_dir were not passed, throw an error
-            else:
-                logger.error('No transcription file path, name or target dir were passed.')
-                return False
-
-        if srt_file_path and srt_file_path != '':
-
-            # if the transcription segments were not passed
-            # try to find them in transcription_data (if that was passed too)
-            if transcription_segments is None and transcription_data and 'segments' in transcription_data:
-                transcription_segments = transcription_data['segments']
-
-            # otherwise, stop the process
-            else:
-                logger.debug('No transcription segments were passed.')
-                return False
-
-            if transcription_segments:
-                self.write_srt(transcription_segments, srt_file_path)
-                return srt_file_path
-
-        return False
-
-    def save_txt_from_transcription(self, txt_file_path=None, transcription_text=None,
-                                    file_name=None, target_dir=None, transcription_data=None):
-        '''
-        Saves an txt file based on the transcription file.
-
-        You can either pass the transcription text or the full transcription data. When both are passed,
-        the transcription_text will be used.
-
-        :param txt_file_path:
-        :param transcription_text:
-        :param file_name:
-        :param target_dir:
-        :param transcription_data:
-        :return: False or txt_file_path
-        '''
-
-        # if no full path was passed
-        if txt_file_path is None:
-
-            # try to use the name and target dir attributes
-            if file_name is not None and target_dir is not None:
-                # the path should contain the name and the target dir, but end with transcription.json
-                txt_file_path = os.path.join(target_dir, file_name + '.txt')
-
-            # if the name and target_dir were not passed, throw an error
-            else:
-                logger.error('No transcription file path, name or target dir were passed.')
-                return False
-
-        if txt_file_path and txt_file_path != '':
-
-            # if the transcription segments were not passed
-            # try to find them in transcription_data (if that was passed too)
-            if transcription_text is None and transcription_data and 'text' in transcription_data:
-                transcription_text = transcription_data['text']
-
-            # otherwise, stop the process
-            else:
-                logger.debug('No transcription text was passed.')
-                return False
-
-            # save the text in the txt file
-            if transcription_text:
-                with open(txt_file_path, 'w', encoding="utf-8") as txt_outfile:
-                    txt_outfile.write(transcription_text)
-
-                return txt_file_path
-
-        return False
+        return True if not return_path else transcription.transcription_file_path
 
     # TIMELINE METHODS
 
-    def get_timeline_transcriptions(self, timeline_name=None, project_name=None):
+    def get_timeline_transcription_paths(self, timeline_name=None, project_name=None):
         '''
         Gets a list of all the transcriptions associated with a timeline
         :param timeline_name:
@@ -5760,17 +4627,16 @@ class ToolkitOps:
 
         # get all the transcription files associated with the timeline
         # by requesting the timeline setting named 'transcription_files'
-        timeline_transcription_files = self.stAI.get_timeline_setting(project_name=project_name,
-                                                                      timeline_name=timeline_name,
-                                                                      setting_key='transcription_files')
+        return self.stAI.get_timeline_setting(
+            project_name=project_name, timeline_name=timeline_name, setting_key='transcription_files'
+        )
 
-        return timeline_transcription_files
-
-    def get_transcription_to_timeline_link(self, transcription_file_path=None, timeline_name=None, project_name=None):
+    def get_transcription_path_to_timeline_link(self, transcription_file_path=None, timeline_name=None, project_name=None):
         '''
-        Checks if a transcription linked with a timeline but also returns all the transcription files
+        Checks if a transcription is linked with a timeline but also returns all the transcription files
         associated with that timeline
 
+        :param transcription:
         :param transcription_file_path:
         :param timeline_name:
         :param project_name:
@@ -5780,7 +4646,7 @@ class ToolkitOps:
             return None
 
         # get all the transcription files associated with the timeline
-        timeline_transcription_files = self.get_timeline_transcriptions(timeline_name=timeline_name,
+        timeline_transcription_files = self.get_timeline_transcription_paths(timeline_name=timeline_name,
                                                                         project_name=project_name)
 
         # if the settings of our timeline were found
@@ -5796,7 +4662,7 @@ class ToolkitOps:
         # give None and an empty transcription list
         return None, []
 
-    def link_transcription_to_timeline(self, transcription_file_path=None, timeline_name=None, link=None,
+    def link_transcription_path_to_timeline(self, transcription_file_path=None, timeline_name=None, link=None,
                                        project_name=None):
         '''
         Links transcription files to timelines.
@@ -5842,7 +4708,7 @@ class ToolkitOps:
                 logger.error('No project name was passed. Unable to link transcript to timeline.')
 
         # check the if the transcript is currently linked with the transcription
-        current_link, timeline_transcriptions = self.get_transcription_to_timeline_link(
+        current_link, timeline_transcriptions = self.get_transcription_path_to_timeline_link(
             transcription_file_path=transcription_file_path,
             timeline_name=timeline_name, project_name=project_name)
 
@@ -5898,6 +4764,7 @@ class ToolkitOps:
 
     def is_UI_obj_available(self, toolkit_UI_obj=None):
 
+        # todo: track all uses of this and use observers instead
         # if there's no toolkit_UI_obj in the object or one hasn't been passed, abort
         if toolkit_UI_obj is None and self.toolkit_UI_obj is None:
             return False
@@ -5986,168 +4853,6 @@ class ToolkitOps:
 
         else:
             return False
-
-    def transcription_has_timecode_data(self, transcription_data=None, transcription_file_path=None):
-        '''
-        This function checks if the passed transcription data or path has timecode data
-        :param transcription_data: The transcription data to check
-        :param transcription_file_path: The path to the transcription file to check
-        :return: [timeline_fps, timeline_start_tc] if the transcription data has timecode data,
-                False if it doesn't, None if the transcription data or path is invalid
-        '''
-
-        # if the transcription data isn't passed, try to get it from the path
-        if transcription_data is None and transcription_file_path is not None:
-            transcription_data = self.get_transcription_file_data(transcription_file_path=transcription_file_path)
-
-        # if the transcription data is still None, return False
-        if transcription_data is None:
-            logger.debug('Transcription not found or invalid.')
-            return None
-
-        # if the transcription data has a timeline_fps and start_tc, return True
-        if isinstance(transcription_data, dict) and \
-                'timeline_fps' in transcription_data and 'timeline_start_tc' in transcription_data:
-            return transcription_data['timeline_fps'], transcription_data['timeline_start_tc']
-
-        # otherwise return False
-        logger.debug('Transcription does not contain timeline_fps or timeline_start_tc')
-        return False
-
-    def convert_sec_to_transcription_timecode(self, seconds=0, transcription_data=None, transcription_file_path=None,
-                                              offset_with_start_tc=True, return_timecode_data=False):
-        '''
-        This function converts the passed number of seconds to timecode,
-        using the framerate and start_tc found in the transcription file/data
-
-        :param seconds: The number of seconds to convert
-        :param transcription_data: The transcription data to use (ignored if transcription_file_path is passed)
-        :param transcription_file_path: The path to the transcription file to use
-        :param offset_with_start_tc: Whether or not to offset the timecode with the transcription file's start_tc
-        :param return_timecode_data: Whether or not to return the timecode data as well as the timecode string
-        :return: The timecode string, a list with the timecode string and timecode data (timecode, fps, start_tc),
-                False if the transcription data contains no timeline_fps,
-                or None if something else went wrong
-        '''
-
-        # get the timecode data from the transcription
-        timecode_data = self.transcription_has_timecode_data(transcription_data=transcription_data,
-                                                             transcription_file_path=transcription_file_path)
-
-        # if False or None was returned, pass them
-        if timecode_data is False or timecode_data is None:
-            return timecode_data
-
-        if (isinstance(timecode_data, list) or isinstance(timecode_data, tuple)) and len(timecode_data) == 2:
-
-            # use try for the timecode conversion,
-            # in case the framerate or timeline_start_tc are invalid
-            try:
-                # get the framerate timecode_data
-                timeline_fps = timecode_data[0]
-
-                # convert the seconds to timecode
-                timecode = Timecode(timeline_fps, start_seconds=float(seconds))
-
-                # get the start timecode from the transcription file
-                timeline_start_tc = Timecode(timeline_fps, timecode_data[1])
-
-                # if we need to offset the timecode with the transcription file's start_tc
-                if offset_with_start_tc:
-
-                    # only offset if timecode is different than 00:00:00:00
-                    if timeline_start_tc != '00:00:00:00':
-                        # calculate the new timecode
-                        timecode = timeline_start_tc + timecode
-
-                # if we need to return the timecode data as well
-                if return_timecode_data:
-                    return timecode, timeline_fps, timeline_start_tc
-
-                return timecode
-
-            except:
-                logger.debug('Something went wrong converting the seconds to timecode', exc_info=True)
-                return None
-
-        # if all fails, return None
-        return None
-
-    def convert_transcription_timecode_to_sec(self, timecode: str,
-                                              transcription_data=None, transcription_file_path=None,
-                                              offset_with_start_tc=True, return_timecode_data=False,
-                                              timecode_data=None):
-        '''
-        This function converts the passed timecode to seconds,
-        using the framerate and start_tc found in the transcription file/data
-
-        :param timecode: The timecode to convert (must be a string)
-        :param transcription_data: The transcription data to use (ignored if transcription_file_path is passed)
-        :param transcription_file_path: The path to the transcription file to use
-        :param offset_with_start_tc: Whether or not to offset the timecode with the transcription file's start_tc
-        :param return_timecode_data: Whether or not to return the timecode data as well as the timecode string
-        :return: The number of seconds, a list with the number of seconds and timecode data (seconds, fps, start_tc),
-                False if the transcription data contains no timeline_fps, or None if something else went wrong
-        '''
-
-        # get the timecode data from the transcription
-        if timecode_data is None:
-            timecode_data = self.transcription_has_timecode_data(transcription_data=transcription_data,
-                                                                 transcription_file_path=transcription_file_path)
-
-        # if False or None was returned, pass them
-        if timecode_data is False or timecode_data is None:
-            return timecode_data
-
-        if (isinstance(timecode_data, list) or isinstance(timecode_data, tuple)) and len(timecode_data) == 2:
-
-            # stop if the timecode data tuple is useless
-            if timecode_data == (None, None):
-                return None
-
-            seconds = None
-
-            # use try for the timecode conversion,
-            # in case the framerate or timeline_start_tc are invalid
-            try:
-                # get the framerate timecode_data
-                timeline_fps = timecode_data[0]
-
-                # initialize the timecode object
-                timecode = Timecode(timeline_fps, timecode)
-
-                # get the start timecode from the transcription file
-                timeline_start_tc = timecode_data[1]
-
-                # initialize the timecode object for the start tc
-                timeline_start_tc = Timecode(timeline_fps, timeline_start_tc)
-
-                # if we need to offset the timecode with the transcription file's start_tc
-                if offset_with_start_tc:
-
-                    # if the timecode is the same as the start timecode, return 0.0 to avoid errors
-                    if timeline_start_tc == timecode:
-                        seconds = 0
-
-                    # only offset if timecode is different than 00:00:00:00
-                    if timeline_start_tc != '00:00:00:00' and seconds is None:
-                        # calculate the new timecode
-                        timecode = timecode - timeline_start_tc
-
-                # convert the timecode to seconds by dividing the frames by the framerate
-                # if it hasn't been calculated yet
-                if seconds is None:
-                    seconds = float(timecode.frames) / float(timeline_fps)
-
-                # if we need to return the timecode data as well
-                if return_timecode_data:
-                    return seconds, timeline_fps, timeline_start_tc
-
-                return seconds
-
-            except:
-                logger.debug('Something went wrong converting the timecode to seconds', exc_info=True)
-                return None
 
     def calculate_resolve_timecode_to_sec(self, timecode=None, frames=None, framerate=None, start_tc=None):
         '''
@@ -6294,7 +4999,7 @@ class ToolkitOps:
                     and type(NLE.current_timeline) == dict and 'name' in NLE.current_timeline:
 
                 # get the transcription_paths linked with this timeline
-                timeline_transcription_file_paths = self.get_timeline_transcriptions(
+                timeline_transcription_file_paths = self.get_timeline_transcription_paths(
                     timeline_name=NLE.current_timeline['name'],
                     project_name=NLE.current_project
                 )
@@ -6621,10 +5326,9 @@ class ToolkitOps:
 
                         # only show this error one more time
                         if NLE.resolve_error == 11:
-                            logger.warning('Resolve is still not reachable. '
-                                           'Now retrying every 15 seconds only a few more times.')
+                            logger.debug('Resolve is still not reachable. Throttling polling interval to 15 seconds.')
 
-                        # and increase the polling interval to 30 seconds
+                        # and increase the polling interval to 15 seconds
                         polling_interval = 15000
 
                     # if the error has been triggered more than 5 times, do this
@@ -6638,7 +5342,7 @@ class ToolkitOps:
 
                     else:
                         if NLE.resolve_error == 1:
-                            logger.warning('Resolve is not reachable. Retrying every few seconds.')
+                            logger.warning('Resolve is not open or reachable. Retrying every few seconds.')
 
                         # increase the polling interval to 1 second
                         polling_interval = 1000
