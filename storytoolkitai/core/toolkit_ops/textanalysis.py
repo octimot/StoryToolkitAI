@@ -12,6 +12,7 @@ import json
 
 import requests
 
+
 class TextAnalysis:
 
     def __init__(self, torch_device_name=None):

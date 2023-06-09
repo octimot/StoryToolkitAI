@@ -1,8 +1,11 @@
+from storytoolkitai.core.toolkit_ops.toolkit_ops import *
+
 import copy
 import os.path
 import platform
 import subprocess
 import webbrowser
+import sys
 
 from requests import get
 import time
@@ -12,12 +15,6 @@ import hashlib
 from typing import Union, List
 
 from timecode import Timecode
-
-from storytoolkitai.core.logger import *
-from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_NAME
-
-from storytoolkitai.core.toolkit_ops.toolkit_ops import *
-from storytoolkitai.core.toolkit_ops.transcription import Transcription, TranscriptionSegment, TranscriptionUtils
 
 import tkinter as tk
 import customtkinter as ctk
@@ -6263,18 +6260,11 @@ class toolkit_UI():
             if not user_input or 'group_name' not in user_input or not user_input['group_name']:
                 return
 
-            # prepare the options for the processing queue
-            queue_item = dict()
-            queue_item['name'] = '{} {}'.format(
-                window_transcription.name,
-                '(Group Questions)')
-            queue_item['source_file_path'] = queue_item['transcription_file_path'] = transcription_file_path
-            queue_item['tasks'] = ['group_questions']
-            queue_item['device'] = self.toolkit_ops_obj.torch_device_type_select()
-            queue_item['group_name'] = user_input['group_name']
-            queue_item['type'] = 'transcription'
+            queue_item_name = '{} {}'.format(window_transcription.name, '(Group Questions)')
+            group_name = user_input['group_name']
 
-            self.toolkit_ops_obj.processing_queue.add_to_queue(**queue_item)
+            self.toolkit_ops_obj.add_group_questions_to_queue(
+                queue_item_name=queue_item_name, transcription_file_path=transcription_file_path, group_name=group_name)
 
             # open the queue window
             self.toolkit_UI_obj.open_queue_window()
@@ -9788,7 +9778,7 @@ class toolkit_UI():
             return False
 
         # initialize a new search item
-        search_item = self.toolkit_ops_obj.SearchItem(toolkit_ops_obj=self.toolkit_ops_obj)
+        search_item = SearchItem(toolkit_ops_obj=self.toolkit_ops_obj)
 
         # declare the empty list of search file paths
         search_file_paths = []
@@ -10389,7 +10379,7 @@ class toolkit_UI():
         # initialize an assistant item
         if 'assistant_item' not in self.assistant_windows[assistant_window_id]:
             self.assistant_windows[assistant_window_id]['assistant_item'] = \
-                self.toolkit_ops_obj.AssistantGPT(toolkit_ops_obj=self.toolkit_ops_obj)
+                AssistantGPT(toolkit_ops_obj=self.toolkit_ops_obj)
 
         # but use a simpler reference here
         assistant_item = self.assistant_windows[assistant_window_id]['assistant_item']

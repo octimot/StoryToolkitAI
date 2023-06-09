@@ -6,9 +6,11 @@ import subprocess
 import time
 
 from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_NAME, initial_target_dir
-from storytoolkitai.core.logger import *
+from storytoolkitai.core.logger import logger
+from storytoolkitai.core.logger import Style as loggerStyle
 
 from requests import get
+
 
 class StoryToolkitAI:
     def __init__(self, server=False, args=None):
@@ -59,7 +61,7 @@ class StoryToolkitAI:
 
         self.debug_mode = False
 
-        if not self.cli_args.mode == 'cli':
+        if not self.cli_args or not self.cli_args.mode == 'cli':
             self.check_api_token()
 
         # add a variable that holds usage statistics
@@ -73,12 +75,12 @@ class StoryToolkitAI:
         # check if a new version of the app exists on GitHub
         # but use either the release version number or version.py,
         # depending on standalone is True or False
-        if not self.cli_args.mode == 'cli' and not self.cli_args.skip_update_check:
+        if not self.cli_args or not self.cli_args.mode == 'cli' or not self.cli_args.skip_update_check:
             [self.update_available, self.online_version] = self.check_update()
         else:
             logger.debug("Skipping update check due to command line argument.")
 
-        logger.info(Style.BOLD + Style.UNDERLINE + "Running StoryToolkitAI{} version {} {}"
+        logger.info(loggerStyle.BOLD + loggerStyle.UNDERLINE + "Running StoryToolkitAI{} version {} {}"
                     .format(' SERVER' if server else '',
                             self.__version__,
                             '(standalone)' if self.standalone else ''))

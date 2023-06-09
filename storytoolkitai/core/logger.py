@@ -5,7 +5,8 @@ import logging.handlers as handlers
 
 from storytoolkitai import APP_LOG_FILE
 
-class Style():
+
+class Style:
     BOLD = '\33[1m'
     ITALIC = '\33[3m'
     UNDERLINE = '\33[4m'
@@ -24,14 +25,13 @@ class Style():
 
     ENDC = '\033[0m'
 
-# START LOGGER CONFIGURATION
 
 # System call so that Windows enables console colors
 os.system("")
 
+
 # logger colors + style
-class Logger_ConsoleFormatter(logging.Formatter):
-    # format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
+class LoggerConsoleFormatter(logging.Formatter):
     format = '%(levelname)s: %(message)s'
 
     FORMATS = {
@@ -62,12 +62,12 @@ logger_console_handler = logging.StreamHandler()
 logger_console_handler.setLevel(logging.INFO if '--debug' not in sys.argv else logging.DEBUG)
 
 # add console formatter to ch
-logger_console_handler.setFormatter(Logger_ConsoleFormatter())
+logger_console_handler.setFormatter(LoggerConsoleFormatter())
 
 # add logger_console_handler to logger
 logger.addHandler(logger_console_handler)
 
-## Here we define our file formatter
+# Here we define our file formatter
 # format the file logging
 file_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s: %(message)s (%(filename)s:%(lineno)d)")
 
