@@ -6272,6 +6272,7 @@ class toolkit_UI():
             queue_item['tasks'] = ['group_questions']
             queue_item['device'] = self.toolkit_ops_obj.torch_device_type_select()
             queue_item['group_name'] = user_input['group_name']
+            queue_item['type'] = 'transcription'
 
             self.toolkit_ops_obj.processing_queue.add_to_queue(**queue_item)
 
@@ -9489,6 +9490,26 @@ class toolkit_UI():
         # update the queue window
         self.update_queue_window()
 
+    def on_click_queue_item(self, queue_id, button_cancel):
+        """
+        When the user clicks on a queue item, this will open the transcription window
+        """
+
+        # get the queue item
+        queue_item = self.toolkit_ops_obj.processing_queue.get_item(queue_id=queue_id)
+
+        # if the status is done
+        if queue_item['status'] == 'done':
+
+            # and the type is 'transcription', and we have a transcription_file_path
+            if queue_item['type'] == 'transcription' and queue_item.get('transcription_file_path', None):
+
+                # open the transcription window
+                self.open_transcription_window(transcription_file_path=queue_item['transcription_file_path'])
+
+        else:
+            logger.debug('Queue item is not done yet. Status: {}'.format(queue_item['status']))
+
     def on_button_cancel_queue(self):
 
         all_queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
@@ -9541,7 +9562,7 @@ class toolkit_UI():
 
             # the status may contain the progress too
             status_progress = ''
-            if 'progress' in q_item and q_item['progress'] and q_item['progress'] != '':
+            if q_item.get('progress', '') != '':
 
                 # prevent weirdness with progress values over 100%
                 if int(q_item['progress']) > 100:
@@ -9550,7 +9571,7 @@ class toolkit_UI():
                 status_progress = ' (' + str(q_item['progress']) + '%)'
 
             # update the name label variable which is in the queue window
-            if 'name' not in q_item:
+            if q_item.get('name', '') == '':
                 q_item['name'] = 'Unknown'
 
             queue_window.queue_items[queue_id]['name_var'].set(q_item['name'])
@@ -9627,6 +9648,7 @@ class toolkit_UI():
         # if the queue is not empty
         else:
             for row_num, queue_id in enumerate(all_queue_items):
+
                 # create a frame to hold the queue item
                 queue_item_frame = ctk.CTkFrame(queue_items_frame, **self.ctk_list_item)
 
@@ -9661,6 +9683,17 @@ class toolkit_UI():
                 # add the name and status labels to the queue item frame (but don't add the progress bar yet)
                 name_label.grid(row=0, column=0, sticky='w', **self.ctk_form_paddings)
                 status_label.grid(row=0, column=1, sticky='e', **self.ctk_form_paddings)
+
+                # add an action to click on the frame
+                queue_item_frame.bind("<Button-1>", lambda e, queue_id=queue_id:
+                self.on_click_queue_item(queue_id, queue_item_frame))
+
+                # add an action to click on the label and status
+                name_label.bind("<Button-1>", lambda e, queue_id=queue_id:
+                self.on_click_queue_item(queue_id, queue_item_frame))
+
+                status_label.bind("<Button-1>", lambda e, queue_id=queue_id:
+                self.on_click_queue_item(queue_id, queue_item_frame))
 
                 # add the queue item to the queue items frame
                 queue_item_frame.grid(row=row_num, column=0, sticky='ew', **self.ctk_form_paddings)
