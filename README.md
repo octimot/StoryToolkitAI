@@ -56,14 +56,22 @@ in the standalone version in the next release._
 
 For detailed features info, go [here](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md).
 
+# Download, Setup & Installation
+
+To download the latest standalone release, see [the releases page](https://github.com/octimot/StoryToolkitAI/releases).
+
+For detailed installation instructions 
+[go here](https://github.com/octimot/StoryToolkitAI/blob/main/INSTALLATION.md).
+
 ## Is it really completely free?
-Yes, the tool runs locally and there's no need for any additional account to transcribe, translate to English, or use 
-any of its features. We may develop features that depend on external services, but the current features will always be 
-free and will never be capped.
+Yes, the tool runs locally and there's no need for any additional account to transcribe or search. These features will
+always be free as long as your machine supports them without external services. The only feature that now requires
+external services is the Assistant feature which relies on OpenAI ChatGPT.
 
 **Some features are released earlier only to our Patreon Patrons.** If you want to support the development, 
-check out our [Patreon page](https://www.patreon.com/StoryToolkitAI) and get some cool perks.
+check out our [Patreon page](https://www.patreon.com/StoryToolkitAI) and get some cool perks. 
 
+---
 
 ## About data privacy
 By the way, if you feel that your content is sensitive or subject to privacy laws, no worries: 
@@ -90,13 +98,6 @@ The tool would be useless without using the following open source projects:
 - [spaCy](https://spacy.io/)
 - [CustomTkinter](https://customtkinter.tomschimansky.com/)
 - and many other packages that can be seen in the requirements.txt file
-
----
-
-# Setup & Installation
-
-For detailed installation instructions 
-[go here](https://github.com/octimot/StoryToolkitAI/blob/main/INSTALLATION.md).
 
 ---
 
