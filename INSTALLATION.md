@@ -2,16 +2,14 @@
 
 [Click here to the main project page](https://github.com/octimot/StoryToolkitAI)
 
-## Have you looked for a standalone version first?
+## Installing the Standalone version
 If you don't want to get your hands dirty with terminal commands, check if there is a release available for your 
 platform [here](https://github.com/octimot/StoryToolkitAI/releases).
 
-However the standalone version may not always be up to date with the latest changes in the code,
-and might miss some state-of-the-art features that are only available in the non-standalone version.
-so if you want to be sure to have the latest features (some buggy and experimental too), you should install the app 
-from source using the instructions below.
+We do, however, recommend doing your best to install the non-standalone version of the tool using the instructions
+below. This would allow you to get the latest features and bug fixes as soon as they are released.
 
-## StoryToolkitAI is free but we need your help
+### StoryToolkitAI is free but we need your help
 
 The development of Storytoolkit AI depends highly on the support we get from our Patreon community, so
 [please consider supporting the development](https://www.patreon.com/StoryToolkitAI) if you find this tool useful
@@ -19,36 +17,29 @@ in your work.
 
 ---
 
-## How to Install directly from GitHub
-If a binary isn't available, before you attempt something silly like actually installing this tool on your machine, 
-please keep in mind that by clicking on the instructions you will see many computer commands which are the main method 
-used by our ancestors to tame their machines. Approach them with no fear. But do keep in mind that you might end up
-ruining your computer, destroying the Internet, starting AI apocalypse, losing your job and your only real friend, have 
-children out of wedlock, and/or marry your lost non-identical twin by mistake - not necessarily in that order and
-highly unlikely because of the commands, but still slightly possible. Nevertheless, we're not responsible for any of it 
-or anything else that might happen.
+## Installing the Non-Standalone version
 
 ### Quick Info before we start
 
-Our installations are on MacOS 12.6 running on M1 and Windows 10 machines in our editing room, 
+#### Caution
+If you want to try to install a non-standalone version, please keep in mind that you might end up ruining your computer, 
+destroying the Internet, starting AI apocalypse, losing your job, and/or marry your lost non-identical twin by mistake - 
+not necessarily in that order and highly unlikely as a result of trying to install this, but still slightly possible. 
+
+Nevertheless, we're not responsible for any of it or anything else that might happen. In a low-chance worst-case 
+scenario, some stuff might not work at all on your computer, and you'll need pro help to fix them back.
+
+#### Requirements
+
+Our installations are on MacOS 12.6+ running on M1 and Windows 10 machines in our editing room, 
 but the scripts should run fine on other CPUs and GPUs. 
 For both production and development we're currently using Python 3.10.11. 
 
-_Note: The tool worked fine on Python 3.9, but some packages are now optimized for Python 3.10._
+_Note: The tool worked fine on Python 3.9, but some packages are now optimized for Python 3.10. 
+Python 3.9 support will no longer be possible in the very near future._
 
-**The API integration only works on Resolve Studio 18 (not on the free version).**
-
-_Note: Unfortunately, only the Studio version of Resolve supports external scripting and Resolve versions earlier than
-18 do not support Python 3.6+_
-
-We recommend running the tool inside a virtual environment like virtualenv. This is not required, but it prevents
-messing up your Python installation.
-
-_**Important Disclaimer: you need to be comfortable using the Terminal on Mac OS, or the Command Prompt on Windows.
-You should be fine even with little to no experience, but keep in mind that you are installing stuff on your machine
-and there is a (very) slight chance that you'll affect your Operating System's overall performance or even the performance of
-your other apps. In an unlikely worst-case scenario, some stuff might not work anymore at all and you'll need pro help
-to fix them back._
+**The Resolve API integration only works on Resolve Studio 18 (not on the free version, and certainly not earlier 
+versions).**
 
 ## Mac OS
 In the Terminal:
@@ -69,7 +60,10 @@ Mac, so you could try to install them first with `xcode-select --install`
     brew install git
     brew install ffmpeg
 
-#### 3. Make sure you now have virtualenv:
+#### 3. Install virtualenv:
+
+We recommend running the tool inside a virtual environment like virtualenv. This is not required, but it prevents
+messing up your Python installation, for that, you need to install virtualenv:
 
     python3.10 -m pip install virtualenv
 
@@ -110,7 +104,8 @@ If you followed the previous steps, your terminal prompt should now have `(venv)
 For more info regarding Whisper installation, please check https://github.com/openai/whisper 
 
 If you are seeing an error message like `error: subprocess-exited-with-error` (or similar), 
-you might need to install rust first, see the instructions [here](https://www.rust-lang.org/learn/get-started)
+you might need to install rust first. If you already installed homebrew, it should be as easy as `brew install rust`,
+if things get uneasy, see the instructions [here](https://www.rust-lang.org/learn/get-started)
 
 #### 8. Install all the stuff the tool requires:
 _Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
@@ -164,6 +159,9 @@ and reinstalling Python 3.10.
 Download it from [here](https://git-scm.com/download/win) and then install it.
 
 #### 3. Install virtualenv
+
+We recommend running the tool inside a virtual environment like virtualenv. This is not required, but it prevents
+messing up your Python installation, for that, you need to install virtualenv.
 
 If you installed Python according to step 1, this shouldn't be necessary. But to make sure that you have virtualenv,
 simply run:

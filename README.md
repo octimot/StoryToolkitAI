@@ -5,52 +5,47 @@
 **StoryToolkitAI is a film editing tool that can help editors work more efficiently by automatically transcribing audio
 and allowing them to search transcripts semantically with the help of AI.**
 
-The tool works locally, independent of any editing software, but it also functions as a Davinci Resolve Studio 18 
-integration via API. It is using OpenAI, OpenAI Whisper for speech-to-text, sentence transformers for semantic search and a few 
-other AI technologies to get stuff done.
+The tool works locally on your machine, independent of any other editing software, but it also integrates with DaVinci 
+Resolve Studio 18 and above.
 
 Recently, we've added a direct interface with **ChatGPT** which allows the use the state-of-the-art AI to analyze 
 transcripts and have conversations about them with AI.
 
-<img alt="StoryToolkitAI Interface" src="help/storytoolkitai_v0.19.0.png" width="700">
+<img alt="StoryToolkitAI Interface" src="help/storytoolkitai_v0.19.0.png" width="750">
 
 ## Key Features
-- [x] **Free Automatic Transcriptions in many languages** on your local machine using AI
-- [x] **Free Automatic Translation** to English on your local machine using AI
-- [x] **ChatGPT integration** - state-of-the-art AI to assist you in your work and chat about your transcripts
-- [x] **Advanced Search** - search transcripts, or even text files semantically using AI
-- [X] **Transcript Groups** allow the grouping of transcription segments for easier access
-- [X] Automatic detection of Question-looking lines in transcripts
-- [x] Export of transcripts to multiple formats, including SRT, TXT, AVID DS and as Fusion Text node
-- [X] Import of **existing SRT files**
+- [x] **Free Automatic Transcriptions** on your local machine
+- [x] **Free Automatic Translation** to English on your local machine
+- [x] **ChatGPT integration** - talk to AI about your content, or generate new ideas
+- [x] **Search Content** intuitively without having to type in exact words
+- [X] **Transcript Groups** - group transcript lines into whatever you need to find them easier
+- [X] Automatic Question detection in transcripts
+- [x] Multi-format export of transcripts, including SRT, TXT, AVID DS and as Fusion Text node
+- [X] Import of **existing SRT files** 
 - [X] Easy copy of timecoded transcript text to clipboard etc.
 
 ### Resolve Studio Integrations
 - [x] **Mark and Navigate Resolve Timelines via Transcript**, plus other handy Resolve-only features
-- [x] **Import subtitles after transcription** from the tool directly into Resolve
 - [x] **Advanced Search** of Resolve timeline markers using AI
-- [x] Easy **Resolve Markers to Transcript Group** vice versa
-- [x] Render to markers stills or clips feature
+- [x] Copy Resolve timeline markers to transcript and vice-versa for advanced search
+- [x] Direct import of subtitles into Resolve bin
 
 ### Planned Features
-- [ ] **Full video indexing** and search using AI
-- [ ] **Topic Classification** using AI to help you discover ideas in your transcripts
-- [ ] **Speaker Recognition** using AI (Diarization)
-- [ ] **AI based transcript line splitting** - see [this](https://github.com/octimot/StoryToolkitAI/issues/42#issuecomment-1485346579)
-- [ ] **Paper Edit** and **Automatic Selects** using AI
+- [ ] **Full video indexing and search** 
+- [ ] **Automatic Topic Classification** to help you discover ideas in your transcripts
+- [ ] **Speaker Diarization** 
+- [ ] **Paper Edit** and **Automatic Selects**
 - [ ] **Translation** to other languages
 - [ ] Optimized Assistant feature for cost-effective use of ChatGPT
 - [ ] **Integration with other AI tools**
-- [ ] **Integration with other NLEs / standalone players**
+- [ ] **Integration with other software / standalone players**
 - [X] Plus more flashy features as clickbait to unrealistically raise expectations and destroy competition
-
 
 Our plan is to incorporate more AI technologies that make editors' work easier and more efficient, something similar
 to having an AI Assistant Editor which knows what is where in your footage and can even classify footage by meaning,
 emotions, visual content etc. Automated transcriptions are simply a means to an end.
 
-_The app is in this stage raw and not polished at all, but we use it daily in our editing room. It's for free
-not only out of sheer generosity, but also because we'd like to change how people approach editing by using AI._
+_The app is in this stage raw and not polished at all, but we use it daily in our editing room._
 
 _Some of the above features are only available in the non-standalone version of the tool, but they will be available
 in the standalone version in the next release._

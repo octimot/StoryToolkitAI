@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.19.1] - 2023-06-12
+
+### Added
+- Handling of large Search indexes via Queue
+
+### Changed
+- Improved handling of Transcriptions, with less read/write operations on the disk
+- Finished Transcriptions no longer open automatically, but by click on queue item
+
+### Fixes
+- Solved a bug that prevented including phrases that ended with spaces in the Advanced Search index
+- Improved handling of Timecodes
+
 ## [0.19.0] - 2023-06-05
 
 A new UI and a new Queue system that allows us to process both audio and video ingesting jobs.
