@@ -22,7 +22,7 @@ from storytoolkitai.core.logger import logger
 from storytoolkitai.integrations.mots_resolve import MotsResolve
 from .transcription import Transcription, TranscriptionSegment, TranscriptionUtils
 from .processing_queue import ProcessingQueue
-from .search import ToolkitSearch, SearchItem
+from .search import ToolkitSearch, SearchItem, TextSearch
 from .assistant import ToolkitAssistant, AssistantGPT
 
 from timecode import Timecode
@@ -154,7 +154,8 @@ class ToolkitOps:
         self.queue_tasks = {
             'transcribe': [self.whisper_transcribe],
             'translate': [self.whisper_transcribe],
-            'group_questions': [self.group_questions]
+            'group_questions': [self.group_questions],
+            'index_text': [self.index_text],
             # 'ingest': [self.index_video] # this will be added soon
         }
 
@@ -491,7 +492,7 @@ class ToolkitOps:
             kwargs['source_file_path'] = audio_file_path
 
             # add the type
-            kwargs['type'] = 'transcription'
+            kwargs['item_type'] = 'transcription'
 
             # send each item to the universal queue
             self.processing_queue.add_to_queue(**kwargs)
@@ -503,7 +504,7 @@ class ToolkitOps:
                 kwargs['name'] = '{} {}'.format(kwargs['name'], '(Group Questions)')
                 kwargs['queue_id'] = None
 
-                kwargs['type'] = 'transcription'
+                kwargs['item_type'] = 'transcription'
 
                 group_questions_queue_id = self.processing_queue.add_to_queue(**kwargs)
 
@@ -1210,312 +1211,6 @@ class ToolkitOps:
 
         return segments
 
-    def classify_segments(self, segments: list, labels: list,
-                          min_confidence: int or list = 0.55, multi_label_pass: list = None, **kwargs):
-        '''
-        Classifies segments into different types using the transformers zero-shot-classification pipeline
-        :param segments: the segments to classify
-        :param labels: the labels to use for classification, if a list of lists is provided,
-                        a multi-label classification is performed, taking into consideration each group of labels
-        :param min_confidence: the minimum confidence for a classification to be considered valid,
-                                if a list is provided, then the confidence is calculated for multi_label_pass label group
-        :param multi_label_pass: a list of groups of labels that need to be passed together,
-                                so that the segment stays in the result
-        '''
-
-        if segments is None or len(segments) == 0:
-            logger.debug('No segments to classify.')
-            return None
-
-        # make sure that if a list of lists of labels is provided,
-        # and also a list of minimum confidence values is provided,
-        # then the number of confidence values matches the number of label groups
-        # also don't allow a single label group and a list of confidence values
-        if (isinstance(labels[0], list) and isinstance(min_confidence, list) and len(labels) != len(min_confidence)
-            or (isinstance(labels[0], str) and isinstance(min_confidence, list))
-        ):
-            logger.error("The number of label groups doesn't match the number of minimum confidence values.")
-            raise Exception("The number of label groups doesn't match the number of minimum confidence values.")
-
-        if isinstance(labels[0], list) and len(labels) < len(multi_label_pass):
-            logger.warn("The number of label groups is less than the number of multi-label-pass groups. "
-                        "Disabling multi-label-pass.")
-            multi_label_pass = None
-
-        # using tensorflow but with another model,
-        # because facebook/bart-large-mnli is not available in tensorflow
-        # from transformers import TFAutoModelForSequenceClassification, AutoTokenizer
-        # tokenizer = AutoTokenizer.from_pretrained('roberta-large-mnli')
-        # model = TFAutoModelForSequenceClassification.from_pretrained('roberta-large-mnli')
-        # classifier = pipeline('zero-shot-classification', model=model, tokenizer=tokenizer)
-
-        # start classification process
-        model_name = self.stAI.get_app_setting('text_classifier_model', default_if_none='facebook/bart-large-mnli')
-
-        logger.debug('Loading text classifier model: {}'.format(model_name))
-        # get the zero-shot-classification pipeline
-        classifier = pipeline('zero-shot-classification',
-                              model=model_name,
-                              )
-
-        logger.debug('Classifying segments using the following labels: {}'.format(labels))
-
-        # go through each segment and classify it
-        classified_segments = {}
-
-        # use tqdm to show a progress bar while classifying segments
-        with tqdm.tqdm(segments, desc='Classifying segments', total=len(segments)) as pbar:
-
-            for i, segment in enumerate(segments):
-
-                # if this is a transcription segment, get the text and words,
-                # or assume it's a dict and get them from there
-                segment_text = segment.text \
-                    if isinstance(segment, TranscriptionSegment) else segment.get('text', None)
-                segment_words = segment.words \
-                    if isinstance(segment, TranscriptionSegment) else segment.get('words', None)
-
-                # skip segments that don't have any text or words
-                if not segment_text and not segment_words:
-                    logger.debug("Skipping segment classification because it doesn't have any text or words: {}"
-                                 .format(segment))
-                    continue
-
-                # if the text is empty, try to get the text from the words
-                if not segment_text or segment_text.strip() == '':
-                    segment_text = ' '.join([word['word'] for word in segment_words])
-
-                # if the text is still empty, skip the segment
-                if not segment_text or segment_text.strip() == '':
-                    logger.debug("Skipping segment classification because it doesn't have any text: {}"
-                                 .format(segment))
-                    continue
-
-                # classify the segment
-
-                # if labels is a list of strings, do a normal classification
-                if isinstance(labels, list) and isinstance(labels[0], str):
-                    classification = classifier(segment_text, labels)
-
-                    # if the classification confidence is too low, skip the segment
-                    if min_confidence and classification['scores'][0] < min_confidence:
-                        logger.debug('Skipping segment classification because the confidence is too low {}: {}'
-                                     .format(classification['scores'][0], segment))
-                        continue
-
-                    # add it to the corresponding list, but first make sure the label exists
-                    if classification['labels'][0] not in classified_segments:
-                        classified_segments[classification['labels'][0]] = []
-
-                    classified_segments[classification['labels'][0]].append(segment)
-
-                    # clear classification to free up memory
-                    del classification
-
-                # if labels is a list of lists, do a multi-label classification
-                elif isinstance(labels, list) and isinstance(labels[0], list):
-
-                    # reset the current_segment_passed_classification to True,
-                    # until we find a label that doesn't pass
-                    current_segment_passed_classification = True
-
-                    # take each label groups, one by one and use them to classify the segment
-                    for sub_labels in labels:
-
-                        # if the segment didn't pass the classification for the previous label check, skip it
-                        if not current_segment_passed_classification:
-                            continue
-
-                        # classify the segment using this label
-                        classification = classifier(segment_text, sub_labels)
-
-                        # if the min_confidence is a list, use the index of the current label group
-                        # to get the corresponding min_confidence value
-                        if isinstance(min_confidence, list):
-                            min_confidence = min_confidence[labels.index(sub_labels)]
-
-                        # for a multi-label classification,
-                        # we need to check if the confidence is high enough for each label
-                        # so if it isn't, we skip the segment - which means that all other remaining labels
-                        # will be skipped as well
-                        if classification['scores'][0] < min_confidence:
-                            current_segment_passed_classification = False
-                            logger.debug('Skipping segment classification for the following segment '
-                                         'because a confidence of {}'
-                                         'is too low to classify it in any of the labels {}: \n{}\n\n'
-                                         .format(classification['scores'][0], sub_labels, segment_text))
-                            continue
-
-                        # add it to the corresponding list, but first make sure the label exists
-                        if classification['labels'][0] not in classified_segments:
-                            classified_segments[classification['labels'][0]] = []
-
-                        classified_segments[classification['labels'][0]].append(segment)
-
-                        # clear classification to free up memory
-                        del classification
-
-                else:
-                    logger.error('Invalid labels for classification: {}'.format(labels))
-                    continue
-
-                # update progress bar - this should be done after each segment is classified
-                # because the progress bar is based on the number of segments
-                pbar.update(1)
-
-                # get the percentage of progress
-                progress = int(((i+1) / len(segments)) * 100)
-
-                # if there's a queue_id, update the queue item with the progress and some output
-                if kwargs.get('queue_id'):
-                    self.processing_queue.update_queue_item(kwargs['queue_id'], progress=progress, save_to_file=False)
-
-                    # cancel process if user requested it via queue
-                    if self.processing_queue.cancel_if_canceled(queue_id=kwargs.get('queue_id')):
-                        return None
-
-        # if there are no segments to classify, return
-        if not classified_segments:
-            return None
-
-        # if there are any multi-label passes, go through each segment and check if it's in the list of all the labels
-        # but make sure that sufficient number of label groups were provided
-        # - as a minimum check first, before matching the labels below
-        if multi_label_pass and len(labels) >= len(multi_label_pass):
-
-            classified_segments['_multi_label_pass_'] = []
-
-            # take each label from the multi-label pass list and use it to intersect the classified segments
-            for label in multi_label_pass:
-
-                # is this label in the classified segments keys?
-                if label not in classified_segments:
-                    # if not, skip it
-                    logger.warn("Label {} doesn't exist in classified segments: {}\n"
-                                "Multi-label pass failed for all segments, since none of them have this label."
-                                .format(label, classified_segments.keys()))
-                    break
-
-                # simply add the first label to the multi-label pass list
-                # we're going to intersect the other labels with this one
-                if not classified_segments['_multi_label_pass_']:
-                    classified_segments['_multi_label_pass_'] = classified_segments[label]
-                    continue
-
-                # intersect the classified_segments['_multi_label_pass_'] with the current label
-                classified_segments['_multi_label_pass_'] = [item for item in classified_segments['_multi_label_pass_']
-                                                             if item in classified_segments[label]]
-        
-        logger.debug('Classification complete.')
-
-        return classified_segments
-
-    def group_questions(self, transcription_file_path: str = None, group_name: str = "Questions",
-                        **kwargs):
-        """
-        This uses the classify_segments() method to detect questions and add them to a transcription group
-        :param transcription_file_path: the path to the transcription json file
-        :param group_name: the name of the group to save the questions in (default: Questions)
-        :param kwargs: this is not needed, but makes sure that any additional arguments are ignored
-        :return: the questions_group
-        """
-
-        # use the transcription class to get the segments
-        # this will use an already instantiated transcription object if it exists for this file
-        transcription = Transcription(transcription_file_path)
-
-        if not transcription:
-            logger.error('Unable to group questions - no transcription available: {}.'
-                         .format(transcription.transcription_file_path))
-
-            if kwargs.get('queue_id'):
-                self.processing_queue.update_status(kwargs['queue_id'], 'failed')
-
-            return None
-
-        segments = transcription.segments
-
-        # classify the segments as questions or statements
-        # but use the existing transcription data if we have it
-        classified_question_segments = self.classify_segments(
-            segments,
-            labels=[
-                ['interrogative sentence', 'declarative sentence'],
-                ['question', 'statement'],
-                ['asking', 'telling'],
-                ['ask', 'tell'],
-            ],
-            multi_label_pass=['interrogative sentence', 'question', 'asking', 'ask'],
-            min_confidence=[0.5, 0.5, 0.7, 0.7],
-            **kwargs
-        )
-
-        # cancel if the process was canceled
-        if kwargs.get('queue_id'):
-            if self.processing_queue.cancel_if_canceled(queue_id=kwargs.get('queue_id')):
-                return None
-
-        # initialize the questions_group
-        questions_group = None
-
-        # if we have question segments, create a group with them
-        # but save it later, after the transcription is saved
-        # since this is a multi_label_pass classification, we're going to use the '_multi_label_pass_' key
-        if isinstance(classified_question_segments, dict) \
-                and '_multi_label_pass_' in classified_question_segments \
-                and len(classified_question_segments['_multi_label_pass_']) > 0:
-
-            # get the time intervals of the question segments
-            group_time_intervals =\
-                transcription.transcript_segments_to_time_intervals(
-                    segments=classified_question_segments['_multi_label_pass_'])
-
-            # prepare the new dict of the new group
-            # (this will return a dict looking like this {group_id: group_data})
-            questions_group = transcription.prepare_transcript_group(
-                group_name=group_name,
-                time_intervals=group_time_intervals
-            )
-
-        # if this was successful, save the questions group to the transcription json file
-        if questions_group is not None and isinstance(questions_group, dict) and transcription is not None:
-
-            # get the id of the questions group
-            questions_group_id = list(questions_group.keys())[0]
-
-            # push this change to the toolkit_ops_obj
-            transcription.set_transcript_groups(group_id=questions_group_id, transcript_groups=questions_group)
-
-            # save the transcription now, not soon
-            # - this ensures that the transcription is saved before notifying observers
-            transcription.save_soon(sec=0)
-
-        # if we have a queue_id, update the status to done
-        if kwargs.get('queue_id', None):
-            self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='done')
-
-        # update all the observers that are listening for this transcription
-        self.notify_observers('update_transcription_{}'.format(transcription.transcription_path_id))
-
-        # update all the observers that are listening for this transcription's groups
-        self.notify_observers('update_transcription_groups_{}'
-                              .format(transcription.transcription_path_id))
-
-        return questions_group
-
-    def add_group_questions_to_queue(self, queue_item_name, transcription_file_path, group_name):
-
-        # prepare the options for the processing queue
-        queue_item = dict()
-        queue_item['name'] = queue_item_name
-        queue_item['source_file_path'] = queue_item['transcription_file_path'] = transcription_file_path
-        queue_item['tasks'] = ['group_questions']
-        queue_item['device'] = self.torch_device_type_select()
-        queue_item['group_name'] = group_name
-        queue_item['type'] = 'transcription'
-
-        self.processing_queue.add_to_queue(**queue_item)
-
     def post_process_whisper_result(self, audio, result, **kwargs):
         """
         Post processes the result of a whisper transcribe call
@@ -1935,8 +1630,6 @@ class ToolkitOps:
         if kwargs.get('excluded_time_intervals', None) \
                 and type(kwargs.get('excluded_time_intervals', None)) is not bool:
 
-            print('excluding', kwargs.get('excluded_time_intervals', None))
-
             audio_segments, time_intervals = self.exclude_segments_by_intervals(
                 audio_array, time_intervals, kwargs.get('excluded_time_intervals'), sr=sr
             )
@@ -2176,6 +1869,392 @@ class ToolkitOps:
         )
 
         return True if not return_path else transcription.transcription_file_path
+
+    # SEARCH/CLASSIFICATION PROCESS METHODS
+
+    def classify_segments(self, segments: list, labels: list,
+                          min_confidence: int or list = 0.55, multi_label_pass: list = None, **kwargs):
+        '''
+        Classifies segments into different types using the transformers zero-shot-classification pipeline
+        :param segments: the segments to classify
+        :param labels: the labels to use for classification, if a list of lists is provided,
+                        a multi-label classification is performed, taking into consideration each group of labels
+        :param min_confidence: the minimum confidence for a classification to be considered valid,
+                                if a list is provided, then the confidence is calculated for multi_label_pass label group
+        :param multi_label_pass: a list of groups of labels that need to be passed together,
+                                so that the segment stays in the result
+        '''
+
+        if segments is None or len(segments) == 0:
+            logger.debug('No segments to classify.')
+            return None
+
+        # make sure that if a list of lists of labels is provided,
+        # and also a list of minimum confidence values is provided,
+        # then the number of confidence values matches the number of label groups
+        # also don't allow a single label group and a list of confidence values
+        if (isinstance(labels[0], list) and isinstance(min_confidence, list) and len(labels) != len(min_confidence)
+                or (isinstance(labels[0], str) and isinstance(min_confidence, list))
+        ):
+            logger.error("The number of label groups doesn't match the number of minimum confidence values.")
+            raise Exception("The number of label groups doesn't match the number of minimum confidence values.")
+
+        if isinstance(labels[0], list) and len(labels) < len(multi_label_pass):
+            logger.warn("The number of label groups is less than the number of multi-label-pass groups. "
+                        "Disabling multi-label-pass.")
+            multi_label_pass = None
+
+        # using tensorflow but with another model,
+        # because facebook/bart-large-mnli is not available in tensorflow
+        # from transformers import TFAutoModelForSequenceClassification, AutoTokenizer
+        # tokenizer = AutoTokenizer.from_pretrained('roberta-large-mnli')
+        # model = TFAutoModelForSequenceClassification.from_pretrained('roberta-large-mnli')
+        # classifier = pipeline('zero-shot-classification', model=model, tokenizer=tokenizer)
+
+        # start classification process
+        model_name = self.stAI.get_app_setting('text_classifier_model', default_if_none='facebook/bart-large-mnli')
+
+        logger.debug('Loading text classifier model: {}'.format(model_name))
+        # get the zero-shot-classification pipeline
+        classifier = pipeline('zero-shot-classification',
+                              model=model_name,
+                              )
+
+        logger.debug('Classifying segments using the following labels: {}'.format(labels))
+
+        # go through each segment and classify it
+        classified_segments = {}
+
+        # use tqdm to show a progress bar while classifying segments
+        with tqdm.tqdm(segments, desc='Classifying segments', total=len(segments)) as pbar:
+
+            for i, segment in enumerate(segments):
+
+                # if this is a transcription segment, get the text and words,
+                # or assume it's a dict and get them from there
+                segment_text = segment.text \
+                    if isinstance(segment, TranscriptionSegment) else segment.get('text', None)
+                segment_words = segment.words \
+                    if isinstance(segment, TranscriptionSegment) else segment.get('words', None)
+
+                # skip segments that don't have any text or words
+                if not segment_text and not segment_words:
+                    logger.debug("Skipping segment classification because it doesn't have any text or words: {}"
+                                 .format(segment))
+                    continue
+
+                # if the text is empty, try to get the text from the words
+                if not segment_text or segment_text.strip() == '':
+                    segment_text = ' '.join([word['word'] for word in segment_words])
+
+                # if the text is still empty, skip the segment
+                if not segment_text or segment_text.strip() == '':
+                    logger.debug("Skipping segment classification because it doesn't have any text: {}"
+                                 .format(segment))
+                    continue
+
+                # classify the segment
+
+                # if labels is a list of strings, do a normal classification
+                if isinstance(labels, list) and isinstance(labels[0], str):
+                    classification = classifier(segment_text, labels)
+
+                    # if the classification confidence is too low, skip the segment
+                    if min_confidence and classification['scores'][0] < min_confidence:
+                        logger.debug('Skipping segment classification because the confidence is too low {}: {}'
+                                     .format(classification['scores'][0], segment))
+                        continue
+
+                    # add it to the corresponding list, but first make sure the label exists
+                    if classification['labels'][0] not in classified_segments:
+                        classified_segments[classification['labels'][0]] = []
+
+                    classified_segments[classification['labels'][0]].append(segment)
+
+                    # clear classification to free up memory
+                    del classification
+
+                # if labels is a list of lists, do a multi-label classification
+                elif isinstance(labels, list) and isinstance(labels[0], list):
+
+                    # reset the current_segment_passed_classification to True,
+                    # until we find a label that doesn't pass
+                    current_segment_passed_classification = True
+
+                    # take each label groups, one by one and use them to classify the segment
+                    for sub_labels in labels:
+
+                        # if the segment didn't pass the classification for the previous label check, skip it
+                        if not current_segment_passed_classification:
+                            continue
+
+                        # classify the segment using this label
+                        classification = classifier(segment_text, sub_labels)
+
+                        # if the min_confidence is a list, use the index of the current label group
+                        # to get the corresponding min_confidence value
+                        if isinstance(min_confidence, list):
+                            min_confidence = min_confidence[labels.index(sub_labels)]
+
+                        # for a multi-label classification,
+                        # we need to check if the confidence is high enough for each label
+                        # so if it isn't, we skip the segment - which means that all other remaining labels
+                        # will be skipped as well
+                        if classification['scores'][0] < min_confidence:
+                            current_segment_passed_classification = False
+                            logger.debug('Skipping segment classification for the following segment '
+                                         'because a confidence of {}'
+                                         'is too low to classify it in any of the labels {}: \n{}\n\n'
+                                         .format(classification['scores'][0], sub_labels, segment_text))
+                            continue
+
+                        # add it to the corresponding list, but first make sure the label exists
+                        if classification['labels'][0] not in classified_segments:
+                            classified_segments[classification['labels'][0]] = []
+
+                        classified_segments[classification['labels'][0]].append(segment)
+
+                        # clear classification to free up memory
+                        del classification
+
+                else:
+                    logger.error('Invalid labels for classification: {}'.format(labels))
+                    continue
+
+                # update progress bar - this should be done after each segment is classified
+                # because the progress bar is based on the number of segments
+                pbar.update(1)
+
+                # get the percentage of progress
+                progress = int(((i + 1) / len(segments)) * 100)
+
+                # if there's a queue_id, update the queue item with the progress and some output
+                if kwargs.get('queue_id'):
+                    self.processing_queue.update_queue_item(kwargs['queue_id'], progress=progress, save_to_file=False)
+
+                    # cancel process if user requested it via queue
+                    if self.processing_queue.cancel_if_canceled(queue_id=kwargs.get('queue_id')):
+                        return None
+
+        # if there are no segments to classify, return
+        if not classified_segments:
+            return None
+
+        # if there are any multi-label passes, go through each segment and check if it's in the list of all the labels
+        # but make sure that sufficient number of label groups were provided
+        # - as a minimum check first, before matching the labels below
+        if multi_label_pass and len(labels) >= len(multi_label_pass):
+
+            classified_segments['_multi_label_pass_'] = []
+
+            # take each label from the multi-label pass list and use it to intersect the classified segments
+            for label in multi_label_pass:
+
+                # is this label in the classified segments keys?
+                if label not in classified_segments:
+                    # if not, skip it
+                    logger.warn("Label {} doesn't exist in classified segments: {}\n"
+                                "Multi-label pass failed for all segments, since none of them have this label."
+                                .format(label, classified_segments.keys()))
+                    break
+
+                # simply add the first label to the multi-label pass list
+                # we're going to intersect the other labels with this one
+                if not classified_segments['_multi_label_pass_']:
+                    classified_segments['_multi_label_pass_'] = classified_segments[label]
+                    continue
+
+                # intersect the classified_segments['_multi_label_pass_'] with the current label
+                classified_segments['_multi_label_pass_'] = [item for item in classified_segments['_multi_label_pass_']
+                                                             if item in classified_segments[label]]
+
+        logger.debug('Classification complete.')
+
+        return classified_segments
+
+    def group_questions(self, transcription_file_path: str = None, group_name: str = "Questions",
+                        **kwargs):
+        """
+        This uses the classify_segments() method to detect questions and add them to a transcription group
+        :param transcription_file_path: the path to the transcription json file
+        :param group_name: the name of the group to save the questions in (default: Questions)
+        :param kwargs: this is not needed, but makes sure that any additional arguments are ignored
+        :return: the questions_group
+        """
+
+        # use the transcription class to get the segments
+        # this will use an already instantiated transcription object if it exists for this file
+        transcription = Transcription(transcription_file_path)
+
+        if not transcription:
+            logger.error('Unable to group questions - no transcription available: {}.'
+                         .format(transcription.transcription_file_path))
+
+            if kwargs.get('queue_id'):
+                self.processing_queue.update_status(kwargs['queue_id'], 'failed')
+
+            return None
+
+        segments = transcription.segments
+
+        # classify the segments as questions or statements
+        # but use the existing transcription data if we have it
+        classified_question_segments = self.classify_segments(
+            segments,
+            labels=[
+                ['interrogative sentence', 'declarative sentence'],
+                ['question', 'statement'],
+                ['asking', 'telling'],
+                ['ask', 'tell'],
+            ],
+            multi_label_pass=['interrogative sentence', 'question', 'asking', 'ask'],
+            min_confidence=[0.5, 0.5, 0.7, 0.7],
+            **kwargs
+        )
+
+        # cancel if the process was canceled
+        if kwargs.get('queue_id'):
+            if self.processing_queue.cancel_if_canceled(queue_id=kwargs.get('queue_id')):
+                return None
+
+        # initialize the questions_group
+        questions_group = None
+
+        # if we have question segments, create a group with them
+        # but save it later, after the transcription is saved
+        # since this is a multi_label_pass classification, we're going to use the '_multi_label_pass_' key
+        if isinstance(classified_question_segments, dict) \
+                and '_multi_label_pass_' in classified_question_segments \
+                and len(classified_question_segments['_multi_label_pass_']) > 0:
+            # get the time intervals of the question segments
+            group_time_intervals = \
+                transcription.transcript_segments_to_time_intervals(
+                    segments=classified_question_segments['_multi_label_pass_'])
+
+            # prepare the new dict of the new group
+            # (this will return a dict looking like this {group_id: group_data})
+            questions_group = transcription.prepare_transcript_group(
+                group_name=group_name,
+                time_intervals=group_time_intervals
+            )
+
+        # if this was successful, save the questions group to the transcription json file
+        if questions_group is not None and isinstance(questions_group, dict) and transcription is not None:
+            # get the id of the questions group
+            questions_group_id = list(questions_group.keys())[0]
+
+            # push this change to the toolkit_ops_obj
+            transcription.set_transcript_groups(group_id=questions_group_id, transcript_groups=questions_group)
+
+            # save the transcription now, not soon
+            # - this ensures that the transcription is saved before notifying observers
+            transcription.save_soon(sec=0)
+
+        # if we have a queue_id, update the status to done
+        if kwargs.get('queue_id', None):
+            self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='done')
+
+        # update all the observers that are listening for this transcription
+        self.notify_observers('update_transcription_{}'.format(transcription.transcription_path_id))
+
+        # update all the observers that are listening for this transcription's groups
+        self.notify_observers('update_transcription_groups_{}'
+                              .format(transcription.transcription_path_id))
+
+        return questions_group
+
+    def add_group_questions_to_queue(self, queue_item_name, transcription_file_path, group_name):
+
+        # prepare the options for the processing queue
+        queue_item = dict()
+        queue_item['name'] = queue_item_name
+        queue_item['source_file_path'] = queue_item['transcription_file_path'] = transcription_file_path
+        queue_item['tasks'] = ['group_questions']
+        queue_item['device'] = self.torch_device_type_select()
+        queue_item['group_name'] = group_name
+        queue_item['item_type'] = 'transcription'
+
+        return self.processing_queue.add_to_queue(**queue_item)
+
+    def index_text(self, search_file_paths: list = None, **kwargs):
+        """
+        This takes the search_file_paths through the TextSearch embedder and saves their cached embeddings to disk
+        """
+
+        if kwargs.get('queue_id', None):
+            self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='reading files')
+
+        search_item = TextSearch(
+            toolkit_ops_obj=self, search_file_paths=search_file_paths, search_type='semantic',
+            use_analyzer=kwargs.get('use_analyzer', False)
+        )
+
+        # prepare the search corpus
+        search_item.prepare_search_corpus()
+
+        # cancel indexing if user requested it
+        if self.processing_queue.cancel_if_canceled(queue_id=kwargs.get('queue_id', None)):
+            return None
+
+        def batch_progress_callback(current_index, total_indexes):
+            """
+            This is sent to the encoder to be called after each batch is processed
+            and track the progress so we can update the queue item and cancel mid-encoding if requested
+            """
+
+            if kwargs.get('queue_id', None) is not None:
+
+                # cancel indexing if user requested it
+                if self.processing_queue.cancel_if_canceled(queue_id=kwargs.get('queue_id', None)):
+                    return None
+
+                # calculate the current progress in percent
+                current_progress = round((current_index / total_indexes) * 100)
+
+                # update the queue item progress
+                self.processing_queue.update_queue_item(
+                    queue_id=kwargs.get('queue_id', None),
+                    status='indexing',
+                    progress=current_progress,
+                )
+
+            # keep going
+            return True
+
+        # embed the search corpus
+        if not search_item.embed_corpus(batch_process_callback=batch_progress_callback):
+            return None
+
+        if kwargs.get('queue_id', None):
+            self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='done')
+
+        # search_item.search_file_path_id
+        # notify all observers that are listening for this search_file_path_id
+        self.notify_observers('update_done_indexing_search_file_path_{}'.format(search_item.search_file_path_id))
+
+        return True
+
+    def add_index_text_to_queue(self, queue_item_name, search_file_paths):
+
+        # prepare the options for the processing queue
+        queue_item = dict()
+        queue_item['name'] = queue_item_name
+        queue_item['task_data'] = True
+        queue_item['tasks'] = ['index_text']
+        queue_item['device'] = self.torch_device_type_select()
+        queue_item['item_type'] = 'search'
+        queue_item['search_file_paths'] = search_file_paths
+
+        # get the search_file_path_id from the TextSearch object
+        search_item = TextSearch(toolkit_ops_obj=self, search_file_paths=search_file_paths, search_type='semantic')
+
+        queue_item['use_analyzer'] = search_item.use_analyzer
+
+        # this will be used to notify observers when the indexing has been stopped for any reason
+        queue_item['on_stop_action_name'] \
+            = 'update_fail_indexing_search_file_path_{}'.format(search_item.search_file_path_id)
+
+        return self.processing_queue.add_to_queue(**queue_item)
 
     # TIMELINE METHODS
 

@@ -482,7 +482,7 @@ class Transcription:
 
             # if the file doesn't exist, set the value to None
             if not os.path.isfile(abs_value):
-                logger.warning("File {} does not exist.".format(value))
+                logger.warning("File {} referenced in {} does not exist.".format(value, self.__transcription_file_path))
             #    value = None
 
         # the segments
@@ -962,8 +962,14 @@ class Transcription:
         # in case the framerate or timeline_start_tc are invalid
         try:
 
-            # convert the seconds to timecode
-            timecode = Timecode(fps, start_seconds=float(seconds))
+            # since we can't have a timecode with 0 frames,
+            # if the seconds are 0, we set the timecode to 00:00:00:00 as a string
+            if float(seconds) == 0:
+                timecode = '00:00:00:00'
+
+            else:
+                # convert the seconds to timecode
+                timecode = Timecode(fps, start_seconds=float(seconds))
 
             # if we need to offset the timecode with the transcription file's start_tc
             if start_tc_offset and start_tc_offset != '00:00:00:00':
@@ -971,8 +977,11 @@ class Transcription:
                 # get the start timecode
                 start_tc = Timecode(fps, start_tc_offset)
 
-                # calculate the new timecode
-                timecode = start_tc + timecode
+                # add the start_tc to the final timecode, but only if the timecode is not 00:00:00:00
+                if timecode == '00:00:00:00' or timecode is None or not isinstance(timecode, Timecode):
+                    timecode = start_tc
+                else:
+                    timecode = start_tc + timecode
 
             else:
                 start_tc = '00:00:00:00'

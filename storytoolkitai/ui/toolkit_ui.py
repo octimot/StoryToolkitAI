@@ -744,11 +744,41 @@ class toolkit_UI():
                                                        textvariable=text_classifier_model_var,
                                                        **toolkit_UI.ctk_form_entry_settings_double)
 
+            # PRE-INDEXING TEXT ANALYSIS
+            preindexing_textanalysis = kwargs.get('search_preindexing_textanalysis', None) \
+                if kwargs.get('search_preindexing_textanalysis', None) is not None \
+                else self.stAI.get_app_setting('search_preindexing_textanalysis', default_if_none=False)
+
+            form_vars['search_preindexing_textanalysis_var'] = \
+                preindexing_textanalysis_var = tk.BooleanVar(search_prefs_frame,
+                                                         value=preindexing_textanalysis)
+            preindexing_textanalysis_label = ctk.CTkLabel(search_prefs_frame, text='Pre-indexing Text Analysis',
+                                                      **toolkit_UI.ctk_form_label_settings)
+            preindexing_textanalysis_input = ctk.CTkSwitch(search_prefs_frame, variable=preindexing_textanalysis_var,
+                                                       text='', **toolkit_UI.ctk_form_entry_settings)
+
+            # AUTOCLEAR WINDOW
+            search_clear_before_results = kwargs.get('search_clear_before_results', None) \
+                if kwargs.get('search_clear_before_results', None) is not None \
+                else self.stAI.get_app_setting('search_clear_before_results', default_if_none=True)
+
+            form_vars['search_clear_before_results_var'] = \
+                search_clear_before_results_var = tk.BooleanVar(search_prefs_frame,
+                                                         value=search_clear_before_results)
+            search_clear_before_results_label = ctk.CTkLabel(search_prefs_frame, text='Clear Before Results',
+                                                      **toolkit_UI.ctk_form_label_settings)
+            search_clear_before_results_input = ctk.CTkSwitch(search_prefs_frame, variable=search_clear_before_results_var,
+                                                       text='', **toolkit_UI.ctk_form_entry_settings)
+
             # ADD ELEMENTS TO GRID
             s_semantic_search_model_name_label.grid(row=1, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
             s_semantic_search_model_name_input.grid(row=1, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
             text_classifier_model_label.grid(row=2, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
             text_classifier_model_input.grid(row=2, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            preindexing_textanalysis_label.grid(row=3, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            preindexing_textanalysis_input.grid(row=3, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            search_clear_before_results_label.grid(row=4, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            search_clear_before_results_input.grid(row=4, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
 
             return form_vars
 
@@ -2376,6 +2406,10 @@ class toolkit_UI():
         user_prompt = self.text_windows[window_id]['user_prompt'] \
             if 'user_prompt' in self.text_windows[window_id] else None
 
+        # if clear is given, clear the text window by deleting all text
+        if kwargs.get('clear', False):
+            self.text_windows[window_id]['text_widget'].delete('1.0', 'end')
+
         # if user input is enabled and user_input prefix exists, move the cursor to the beginning of the last line
         linestart = ''
         if user_prompt and prompt_prefix:
@@ -2406,6 +2440,17 @@ class toolkit_UI():
 
         # also scroll to the end of the last line (or to whatever scroll_to was sent)
         self.text_windows[window_id]['text_widget'].see(kwargs.get('scroll_to', 'end-1c'))
+
+    def _text_window_set_prefix(self, window_id, prefix):
+        """
+        This changes the prefix of the prompt in the text window
+        """
+
+        # if the window_id does not exist, create it (this should never be the case...)
+        if window_id not in self.text_windows:
+            self.text_windows[window_id] = dict()
+
+        self.text_windows[window_id]['prompt_prefix'] = prefix
 
     def open_text_window(self, window_id=None, title: str = 'Console', initial_text: str = None,
                          can_find: bool = False, user_prompt: bool = False, prompt_prefix: str = None,
@@ -2442,11 +2487,12 @@ class toolkit_UI():
         close_action = kwargs.get('close_action', lambda window_id=window_id: self.destroy_text_window(window_id))
 
         # open the text window
-        if self.create_or_open_window(parent_element=self.root, window_id=window_id, title=title, resizable=True,
-                                      type=type if type else 'text',
-                                      close_action=close_action,
-                                      open_multiple=kwargs.get('open_multiple', True)
-                                      ):
+        if window_id := self.create_or_open_window(
+                parent_element=self.root, window_id=window_id, title=title, resizable=True,
+                type=type if type else 'text',
+                close_action=close_action,
+                open_multiple=kwargs.get('open_multiple', True)
+        ):
 
             # create an entry in the text_windows dict
             self.text_windows[window_id] = {'text': initial_text}
@@ -9492,10 +9538,14 @@ class toolkit_UI():
         if queue_item['status'] == 'done':
 
             # and the type is 'transcription', and we have a transcription_file_path
-            if queue_item['type'] == 'transcription' and queue_item.get('transcription_file_path', None):
+            if queue_item['item_type'] == 'transcription' and queue_item.get('transcription_file_path', None):
 
                 # open the transcription window
                 self.open_transcription_window(transcription_file_path=queue_item['transcription_file_path'])
+
+            elif queue_item['item_type'] == 'search' and queue_item.get('search_file_paths', None):
+
+                self.open_advanced_search_window(search_file_path=queue_item['search_file_paths'])
 
         else:
             logger.debug('Queue item is not done yet. Status: {}'.format(queue_item['status']))
@@ -9770,50 +9820,45 @@ class toolkit_UI():
 
     # ADVANCED SEARCH WINDOW
 
-    def open_advanced_search_window(self, transcription_window_id=None, search_file_path=None,
-                                    select_dir=False, **kwargs):
-
-        if self.toolkit_ops_obj is None or self.toolkit_ops_obj.t_search_obj is None:
-            logger.error('Cannot open advanced search window. A ToolkitSearch object is needed to continue.')
-            return False
-
-        # initialize a new search item
-        search_item = SearchItem(toolkit_ops_obj=self.toolkit_ops_obj)
+    def advanced_search_ask_for_paths(self, search_file_path=None,
+                                      transcription_window_id=None, select_dir=False, **kwargs):
 
         # declare the empty list of search file paths
         search_file_paths = []
 
-        if transcription_window_id is not None:
-            window_transcription = self.t_edit_obj.get_window_transcription(transcription_window_id)
-
-        # check if a searchable file path was passed and if it exists
-        if search_file_path is not None and not os.path.exists(search_file_path):
-            logger.error('The file {} cannot be found.'.format(search_file_path))
-            return False
-
         # if a transcription window id was passed, get the transcription object from it
-        elif search_file_path is None and transcription_window_id is not None:
+        if search_file_path is None and transcription_window_id is not None:
+
+            # get the transcription object, if a transcription window id was passed
+            window_transcription = self.t_edit_obj.get_window_transcription(transcription_window_id)
 
             # and use the transcription file path as the searchable file path
             search_file_path = window_transcription.transcription_file_path
 
         # if we still don't have a searchable file path (or paths),
         # ask the user to manually select the files
-        selected_file_path = None
         if search_file_path is None and not search_file_paths:
 
+            # get the initial dir to use in the file dialog
+            # depending if we're using the NLE
             if NLE.is_connected():
                 initial_dir = self.stAI.get_project_setting(project_name=NLE.current_project,
                                                             setting_key='last_target_dir')
 
+            # if we're not using the NLE, use the last selected dir
             else:
-                initial_dir = '~'
+                initial_dir = self.stAI.initial_target_dir
 
             # if select_dir is true, allow the user to select a directory
             if select_dir:
                 # ask the user to select a directory with searchable files
                 selected_file_path = filedialog.askdirectory(initialdir=initial_dir,
-                                                             title='Select a folder to search')
+                                                             title='Select a directory to use in the search')
+
+                # update the last selected dir
+                if selected_file_path:
+                    search_file_paths = selected_file_path
+                    self.stAI.initial_target_dir = selected_file_path
 
             else:
                 # ask the user to select the searchable files to use in the search corpus
@@ -9821,8 +9866,15 @@ class toolkit_UI():
                     = filedialog.askopenfilenames(initialdir=initial_dir,
                                                   title='Select files to use in the search',
                                                   filetypes=[('Transcription files', '*.json'),
-                                                             ('Text files', '*.txt'),
-                                                             ('Pickle files', '*.pkl')])
+                                                             ('Text files', '*.txt')])
+
+                # update the last selected dir
+                if selected_file_path:
+
+                    # turn directories into files and filter out non-searchable files (by extension)
+                    search_file_paths = TextSearch.filter_file_paths(selected_file_path)
+
+                    self.stAI.initial_target_dir = os.path.dirname(selected_file_path[0])
 
             # if resolve is connected, save the last target dir
             if NLE.is_connected() and search_file_paths \
@@ -9831,29 +9883,45 @@ class toolkit_UI():
                                                setting_key='last_target_dir',
                                                setting_value=os.path.dirname(search_file_paths[0]))
 
-            # process the selected paths and return only the files that are valid
-            # this works for both a single file path and a directory (depending what the user selected above)
-            search_file_paths = search_item.process_file_paths(selected_file_path)
-
             if not search_file_paths:
-                logger.info('No files were selected for search. Aborting.')
+                # logger.info('No files were selected for search. Aborting.')
                 return False
 
-        # but if the call included a search file path, just add it to the list
-        elif search_file_path is not None and os.path.exists(search_file_path):
-            search_file_paths = [search_file_path]
+        # but if the call included a search file path, format it as a list if it isn't already
+        elif search_file_path is not None:
+            search_file_paths = search_file_path if isinstance(search_file_path, list) else [search_file_path]
+
+        return search_file_paths
+
+    def open_advanced_search_window(self, transcription_window_id=None, search_file_path=None,
+                                    select_dir=False, **kwargs):
+
+        if self.toolkit_ops_obj is None or self.toolkit_ops_obj.t_search_obj is None:
+            logger.error('Cannot open advanced search window. A ToolkitSearch object is needed to continue.')
+            return False
+
+        # get the transcription object, if a transcription window id was passed
+        window_transcription = self.t_edit_obj.get_window_transcription(transcription_window_id)
+
+        # process the selected paths and return only the files that are valid
+        # this works for both a single file path and a directory (depending what the user selected above)
+        # search_file_paths = search_item.process_file_paths(selected_file_path)
+
+        # process the search file paths or ask the user to select them
+        search_file_paths = self.advanced_search_ask_for_paths(
+            search_file_path=search_file_path,
+            transcription_window_id=transcription_window_id,
+            select_dir=select_dir
+        )
+
+        # abort if we don't have any search file paths (the user probably aborted)
+        if not search_file_paths:
+            return None
 
         # if the call included a transcription window
         # init the search window id, the title and the parent element
-        if transcription_window_id is not None and search_file_path is not None:
-
-            # use the name of the transcription as the title of the search window
-            # get the name of the transcription
-            search_window_title = 'Search - {}'.format(
-                window_transcription.name
-                if window_transcription.name
-                else os.path.basename(search_file_path).split('.transcription.json')[0]
-            )
+        if window_transcription is not None and window_transcription.exists \
+                and transcription_window_id is not None and search_file_path is not None:
 
             search_window_id = transcription_window_id + '_search'
 
@@ -9866,18 +9934,36 @@ class toolkit_UI():
             # get the parent window
             parent_window = self.get_window_by_id(transcription_window_id)
 
+            # use either the transcription name or the file name for the search window title
+            search_window_title_ext = \
+                window_transcription.name \
+                if window_transcription.name \
+                else os.path.basename(search_file_path).split('.transcription.json')[0]
+
         # if there is no transcription window id or any search_file_path
         else:
 
             search_window_title_ext = ''
 
+            # if we have a list of one, take the first element
+            if search_file_paths and isinstance(search_file_paths, list) and len(search_file_paths) == 1:
+                search_file_paths = search_file_paths[0]
+
             # if the user selected a directory and it exists
-            if select_dir and selected_file_path and os.path.isdir(selected_file_path):
+            if select_dir and isinstance(search_file_paths, str) \
+                    and search_file_paths and os.path.isdir(search_file_paths):
 
                 # use the directory name as the title
-                search_window_title_ext = os.path.basename(selected_file_path)
+                search_window_title_ext = os.path.basename(search_file_paths)
 
-            elif search_file_paths and (type(search_file_paths) is list or type(search_file_paths) is tuple):
+            # if we have a single file, use the file name as the title
+            elif search_file_paths and isinstance(search_file_paths, str) \
+                    and search_file_paths and os.path.isfile(search_file_paths):
+
+                search_window_title_ext = os.path.basename(search_file_paths)
+
+            # if we have multiple files, use the name of the first file as the title
+            elif search_file_paths and (isinstance(search_file_paths, list) or isinstance(search_file_paths, tuple)):
 
                 search_window_title_ext = os.path.basename(search_file_paths[0])
 
@@ -9886,7 +9972,6 @@ class toolkit_UI():
                     search_window_title_ext += ' and others'
 
             search_window_id = 'adv_search_{}'.format(str(time.time()))
-            search_window_title = 'Search{}'.format(' - '+search_window_title_ext if search_window_title_ext else '')
 
             # the parent is in this case the main window
             parent_window = self.root
@@ -9895,9 +9980,30 @@ class toolkit_UI():
             # we can open multiple search windows at the same time
             open_multiple = True
 
-        # prepare the search item
-        search_item.search_id = search_window_id
-        search_item.search_file_paths = search_file_paths
+        # format the full search window title
+        search_window_title = 'Search{}'.format(' - '+search_window_title_ext if search_window_title_ext else '')
+
+        # we need to filter out the files that are not searchable
+        # even if this was done before, just to make sure we're using the same TextSearch object
+
+        # filter the files that are not searchable (by extension) and turn directories into files
+        search_file_paths = TextSearch.filter_file_paths(search_file_paths)
+
+        # use_analyzer
+        use_analyzer = self.stAI.get_app_setting('search_preindexing_textanalysis', default_if_none=False)
+
+        # initialize the search item object
+        search_item = TextSearch(toolkit_ops_obj=self.toolkit_ops_obj, search_file_paths=search_file_paths,
+                                 search_type='semantic', use_analyzer=use_analyzer)
+
+        # if this search has a file path id,
+        if search_item.search_file_path_id is not None:
+
+            # let's use it in the search window's id
+            # this will help if we want to avoid re-opening it for the same file paths
+            search_window_id = 'adv_search_{}'.format(search_item.search_file_path_id)
+
+            open_multiple = False
 
         # open a new console search window
         search_window_id = self.open_text_window(window_id=search_window_id,
@@ -9908,19 +10014,184 @@ class toolkit_UI():
                                                  self.destroy_advanced_search_window(search_window_id),
                                                  prompt_prefix='SEARCH > ',
                                                  prompt_callback=self.advanced_search,
-                                                 prompt_callback_kwargs={'search_item': search_item,
-                                                                         'search_window_id': search_window_id},
+                                                 prompt_callback_kwargs={
+                                                     'search_item': search_item,
+                                                     'search_window_id': search_window_id},
                                                  type='search',
                                                  open_multiple=open_multiple,
                                                  window_width=60
                                                  )
 
-        if search_window_id not in self.windows:
+        # if the window was not created and is not in the list of windows, throw an error
+        if search_window_id and not self.get_window_by_id(search_window_id):
             logger.error('Search window {} was not created.'.format(search_window_id))
             return False
 
+        # if the window was not created, but it's in the list of windows, just return
+        # the window will be focused by now and the user will be able to use it
+        if not search_window_id:
+            return
+
+        help_console_info = "Type [help] to see all available commands.\n\n"
+
         # get this window object
         search_window = self.get_window_by_id(search_window_id)
+
+        # change the prefix of the window from SEARCH to nothing until the processing is done
+        self._text_window_set_prefix(window_id=search_window_id, prefix=' > ')
+
+        def process_items(thread):
+            """
+            This processes the indexing for this search window, either directly in a thread or through the queue.
+            """
+
+            # let the user know that we're now reading the files
+            self._text_window_update(
+                search_window_id,
+                text=help_console_info+'Reading {} {}...'.format(
+                    search_item.search_file_paths_count,
+                    'file' if search_item.search_file_paths_count == 1 else 'files'),
+                clear=True
+            )
+
+            def ready_for_search():
+                """
+                This updates the window with the "ready for search" prefix and message
+                """
+                # change the prefix back to SEARCH
+                self._text_window_set_prefix(window_id=search_window_id, prefix='SEARCH > ')
+
+                # update the text window
+                self._text_window_update(
+                    search_window_id, help_console_info + 'Ready for search.', clear=True)
+
+            # the preparation of the search corpus needs to happen before sending the search item to the queue
+            # this is the only way to find out if we have a cache or not
+            # but it also means that we're taking it through TextAnalysis which might be slow...
+            search_item.prepare_search_corpus()
+
+            queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+
+            in_queue = False
+            # look through all the queue items and see if the search_file_paths match
+            for q_item_id, q_item in queue_items.items():
+
+                # if the queue item is a search item
+                if q_item.get('item_type', None) == 'search' \
+                        and q_item.get('search_file_paths', None) == search_file_paths:
+
+                    # if the item is done, let the user know that he can search
+                    if q_item['status'] == 'done':
+                        ready_for_search()
+
+                        # we're saying it is in the queue, just to avoid re-processing it
+                        in_queue = True
+                        break
+
+                    # if the item is still processing, let the user know that he has to wait
+                    elif q_item['status'] not in ['failed', 'canceled', 'canceling']:
+                        self._text_window_update(
+                            window_id=search_window_id,
+                            text=help_console_info + 'Waiting for queue to finish processing...', clear=True)
+                        in_queue = True
+                        break
+
+                    # for any other status (failed, canceled, canceling), we can say it's not in the queue
+                    else:
+                        in_queue = False
+                        break
+
+            # if the search_file_paths_size is larger than 300kb and doesn't have a cache
+            if not in_queue and search_item.search_file_paths_size > 300000 and not search_item.cache_exists:
+
+                # add the search item to the queue
+                queue_id = self.toolkit_ops_obj.add_index_text_to_queue(
+                    queue_item_name='Indexing text of {}'.format(search_window_title_ext),
+                    search_file_paths=search_file_paths)
+
+                self._text_window_update(
+                    search_window_id, help_console_info+'Sent processing job to the queue...', clear=True)
+
+                if queue_id:
+
+                    # add the queue id as a processing item to the window
+                    #  - this will be removed when the observer is notified at the end of the processing
+                    self.add_window_processing(window_id=search_window_id, processing_item=queue_id)
+
+                    def window_indexing_done():
+                        """
+                        We use this as a callback to update the text window when the done indexing observer is notified
+                        """
+
+                        ready_for_search()
+
+                        # remove the processing queue item from the window
+                        self.remove_window_processing(window_id=search_window_id, processing_item=queue_id)
+
+                    def window_indexing_failed():
+                        """
+                        We use this as a callback to update the text window
+                        when the failed indexing observer is notified
+                        """
+
+                        self.notify_via_messagebox(
+                            message="The indexing was either canceled or it failed for this search. \n"
+                                    "Please re-open this window if you want to try again."
+                            .format(search_window_title),
+                            type='error',
+                            parent=search_window,
+                            message_log="Indexing failed for search window {}.".format(search_window_title)
+                        )
+
+                        # close this window
+                        self.destroy_advanced_search_window(search_window_id)
+
+                    # add window observer to track when the queue is done processing
+                    self.add_observer_to_window(
+                        window_id=search_window_id,
+                        action='update_done_indexing_search_file_path_{}'.format(search_item.search_file_path_id),
+                        callback=window_indexing_done,
+                        dettach_after_call=True
+                    )
+
+                    # add window observer to track when the queue failed/canceled processing
+                    self.add_observer_to_window(
+                        window_id=search_window_id,
+                        action='update_fail_indexing_search_file_path_{}'.format(search_item.search_file_path_id),
+                        callback=window_indexing_failed,
+                        dettach_after_call=True
+                    )
+
+                    # open the queue window
+                    self.open_queue_window()
+
+                    # check if the processing isn't already done by the time we reach this
+                    # - sometimes the queue is so fast that we miss the observer notification
+                    queue_item = self.toolkit_ops_obj.processing_queue.get_item(queue_id)
+                    if queue_item['status'] == 'done':
+                        window_indexing_done()
+
+            # if the total file size is smaller than 150kb, process it now
+            elif not in_queue:
+
+                self._text_window_update(
+                    search_window_id, help_console_info+'Processing for a moment...', clear=True)
+
+                # use the toolkit method of indexing text
+                self.toolkit_ops_obj.index_text(search_file_paths=search_file_paths)
+
+                ready_for_search()
+
+            # when this is done, remove the processing item from the window
+            self.remove_window_processing(window_id=search_window_id, processing_item=thread)
+
+        # create a new thread to prevent locking the window
+        processing_thread = Thread(target=lambda: process_items(processing_thread))
+        # start the thread
+        processing_thread.start()
+
+        # add the processing item to the window so it "knows" that it's processing something
+        self.add_window_processing(window_id=search_window_id, processing_item=processing_thread)
 
         # if the parent of the window is not the main window
         if parent_window != self.root:
@@ -9979,9 +10250,68 @@ class toolkit_UI():
         # now prepare the search corpus
         # (everything happens within the search item, that's why we don't really need to return anything)
         # if the search corpus was prepared successfully, update the search window
-        self._text_window_update(search_window_id, 'Ready for search. Type [help] if you need help.')
 
-    def _advanced_search_list_files_in_window(self, search_window_id: str, search_item=None):
+        self._text_window_update(search_window_id, help_console_info)
+
+        # if the window is still processing, show this:
+        if self.is_window_processing(search_window_id):
+            self._text_window_update(search_window_id, 'Processing search files. Please wait...')
+
+        # focus in the text widget after 110 ms
+        search_window.after(110, lambda: self.text_windows[search_window_id]['text_widget'].focus_set())
+
+    def is_window_processing(self, window_id: str):
+        """
+        This checks if a window has any processing items
+        """
+
+        if window_id not in self.windows:
+            return False
+
+        if not hasattr(self.windows[window_id], 'processing'):
+            return False
+
+        # if the window has processing items, return them
+        # otherwise return False
+        return self.windows[window_id].processing if len(self.windows[window_id].processing) > 0 else False
+
+    def add_window_processing(self, window_id: str, processing_item: int or Thread):
+        """
+        This sets the processing list of a window
+        """
+
+        if window_id not in self.windows:
+            return False
+
+        # append the processing item to the list of processing items
+        # but first create the list if it doesn't exist
+        if not hasattr(self.windows[window_id], 'processing'):
+            self.windows[window_id].processing = []
+
+        self.windows[window_id].processing.append(processing_item)
+
+    def remove_window_processing(self, window_id: str, processing_item: int or Thread):
+        """
+        This removes an item from the list of processing items
+        """
+
+        if window_id not in self.windows:
+            return False
+
+        # if the window doesn't have a processing list, return False
+        if not hasattr(self.windows[window_id], 'processing'):
+            return False
+
+        # if the processing item is not in the list, return False
+        if processing_item not in self.windows[window_id].processing:
+            return False
+
+        # remove the processing item from the list
+        self.windows[window_id].processing.remove(processing_item)
+
+        return True
+
+    def _advanced_search_list_files_in_window(self, search_window_id: str, search_item=None, clear=False):
         """
         This function lists the files that are loaded for search in the search window.
         """
@@ -9997,9 +10327,10 @@ class toolkit_UI():
             search_file_list = search_file_list + os.path.basename(search_file_path) + '\n'
 
         search_file_list = search_file_list.strip()
-        self._text_window_update(search_window_id, 'Loaded {} {}:'
+        self._text_window_update(search_window_id, 'Looking into {} {} for this search:'
                                  .format(len(search_item.search_file_paths),
-                                         'file' if len(search_item.search_file_paths) == 1 else 'files'))
+                                         'file' if len(search_item.search_file_paths) == 1 else 'files'), clear=clear)
+
         self._text_window_update(search_window_id, search_file_list)
 
     def advanced_search(self, prompt, search_item, search_window_id):
@@ -10007,26 +10338,31 @@ class toolkit_UI():
         This is the callback function for the advanced search window.
         It calls the search function of the search item and passes the prompt as the search query.
         Then it updates the search window with the results.
-
-        :param prompt:
-        :return:
         """
+
+        # the window object
+        search_window = self.get_window_by_id(search_window_id)
+
+        # are we supposed to clear the window before each reply?
+        clear_before_reply = self.stAI.get_app_setting('search_clear_before_results', default_if_none=True)
 
         # is the user asking for help?
         if prompt.lower() == '[help]':
 
             help_reply = 'Simply enter a search term and press enter.\n' \
                          'For eg.: about life events\n\n' \
-                         'If you want to restrict the number of results, just add [n] to the beginning of the query.\n' \
+                         'If you want to restrict the number of results, ' \
+                         'just add [n] to the beginning of the query.\n' \
                          'For eg.: [10] about life events\n\n' \
-                         'If you want to perform multiple searches in the same time, use the | character to split the search terms\n' \
+                         'If you want to perform multiple searches in the same time, ' \
+                         'use the | character to split the search terms\n' \
                          'For eg.: about life events | about family\n\n' \
                          'If you want to change the model, use [model:<model_name>]\n' \
                          'For eg.: [model:distiluse-base-multilingual-cased-v1]\n\n' \
                          'See list of models here: https://www.sbert.net/docs/pretrained_models.html\n'
 
             # use this to make sure we have a new prompt prefix for the next search
-            self._text_window_update(search_window_id, help_reply)
+            self._text_window_update(search_window_id, help_reply, clear=clear_before_reply)
             return
 
         # if the user sent either [model] or [model:<model_name>] as the prompt
@@ -10042,7 +10378,8 @@ class toolkit_UI():
                 if model_name.strip() != '':
 
                     # let the user know that we are loading the model
-                    self._text_window_update(search_window_id, 'Loading model {}...'.format(model_name))
+                    self._text_window_update(
+                        search_window_id, 'Loading model {}...'.format(model_name), clear=clear_before_reply)
 
                     # load the model
                     try:
@@ -10052,16 +10389,26 @@ class toolkit_UI():
                         return
 
             if search_item.model_name:
-                self._text_window_update(search_window_id, 'Using model {}'.format(search_item.model_name))
+                self._text_window_update(
+                    search_window_id, 'Using model {}'.format(search_item.model_name), clear=clear_before_reply)
             else:
-                self._text_window_update(search_window_id, 'No model loaded.\n'
-                                                           'Perform a search first to load the default model.\n'
-                                                           'Or load a model with the [model:<model_name>] command and it will be used '
-                                                           'for all the searches in this window.')
+                self._text_window_update(
+                    search_window_id,
+                    'No model loaded.\n'
+                    'Perform a search first to load the default model.\n'
+                    'Or load a model with the [model:<model_name>] command and it will be used '
+                    'for all the searches in this window.',
+                    clear=clear_before_reply
+                )
+            return
+
+        # this clears the search window
+        elif prompt.lower() == '[clear]':
+            self._text_window_update(search_window_id, '', clear=clear_before_reply)
             return
 
         elif prompt.lower() == '[listfiles]' or prompt.lower() == '[list files]':
-            self._advanced_search_list_files_in_window(search_window_id, search_item)
+            self._advanced_search_list_files_in_window(search_window_id, search_item, clear=clear_before_reply)
             return
 
         # is the user trying to quit?
@@ -10069,9 +10416,22 @@ class toolkit_UI():
             self.destroy_advanced_search_window(search_window_id)
             return
 
-        # remember when we started the search
+        # keep track of when we started the search
         start_search_time = time.time()
 
+        # if we reached this point, we're sending the prompt to the search item
+        # but first, we need to make sure that the window is not processing
+        # if it is, we need to wait for it to finish
+        if self.is_window_processing(search_window_id):
+
+            # let the user know that the window is processing
+            self._text_window_update(
+                window_id=search_window_id,
+                text="Cannot search yet - we're processing the search files. Try again later."
+            )
+            return
+
+        # perform the search
         search_results, max_results = search_item.search(query=prompt)
 
         # get the search window text element
@@ -10082,6 +10442,14 @@ class toolkit_UI():
 
         # now add the search results to the search results window
         if len(search_results) > 0:
+
+            # clear the search window if we're supposed to
+            if clear_before_reply:
+
+                self._text_window_update(search_window_id, '', clear=clear_before_reply)
+
+                # but add back the search term before the results
+                results_text_element.insert(ctk.END, prompt+"\n\n")
 
             # add text to the search window
             # self._text_window_update(search_window_id + '_B', 'Searched in files...')
@@ -10099,8 +10467,12 @@ class toolkit_UI():
                     result_search_term = result['search_term']
 
                     # add the search term header
-                    results_text_element.insert(ctk.END, 'Searching for: "' + result_search_term + '"\n')
-                    results_text_element.insert(ctk.END, '--------------------------------------\n')
+                    # if we haven't cleared the previous results,
+                    # we need to somehow mark the beginning of the new results, so that they're easier to spot
+                    if not clear_before_reply:
+                        results_text_element.insert(ctk.END, 'Searching for: "' + result_search_term + '"\n')
+                        results_text_element.insert(ctk.END, '--------------------------------------\n')
+
                     results_text_element.insert(ctk.END, 'Top {} closest phrases:\n\n'.format(max_results))
 
                 # remember the current insert position
@@ -10270,13 +10642,6 @@ class toolkit_UI():
 
         logger.debug('Deleting caches of search window {}'.format(window_id))
 
-        # first remove the caches associated with the advanced search window
-        if window_id in self.toolkit_ops_obj.t_search_obj.search_corpuses:
-            del self.toolkit_ops_obj.t_search_obj.search_corpuses[window_id]
-
-        if window_id in self.toolkit_ops_obj.t_search_obj.search_embeddings:
-            del self.toolkit_ops_obj.t_search_obj.search_embeddings[window_id]
-
         # call the default destroy window function
         self.destroy_text_window(window_id=window_id)
 
@@ -10415,15 +10780,21 @@ class toolkit_UI():
                               type='assistant'
                               )
 
+        # get this window object
+        assistant_window = self.get_window_by_id(assistant_window_id)
+
         # show the initial message if the window didn't exist before
         if not window_existed:
             initial_info = 'Your requests might be billed by OpenAI.\n' + \
-                           'Type [help] or just ask a question.'
+                           'Type [help] to see available commands or just ask a question.'
 
             self._text_window_update(assistant_window_id, initial_info)
 
         if received_context:
             self._text_window_update(assistant_window_id, 'Added transcript items as context.')
+
+        # focus in the text widget after 110 ms
+        assistant_window.after(110, lambda: self.text_windows[assistant_window_id]['text_widget'].focus_set())
 
     def assistant_query(self, prompt, assistant_window_id: str, assistant_item=None):
 
@@ -10485,6 +10856,10 @@ class toolkit_UI():
             elif prompt.lower() == '[reset]':
                 assistant_item.reset()
                 self._text_window_update(assistant_window_id, 'Conversation reset. Context preserved.')
+                return
+
+            elif prompt.lower() == '[clear]':
+                self._text_window_update(assistant_window_id, '', clear=True)
                 return
 
             elif prompt.lower() == '[resetall]':

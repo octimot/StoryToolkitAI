@@ -52,7 +52,6 @@ class TextAnalysis:
 
         return spacy_device
 
-
     def detect_language(self, text: str):
         # create a factory for the LanguageDetector
         @Language.factory("language_detector")

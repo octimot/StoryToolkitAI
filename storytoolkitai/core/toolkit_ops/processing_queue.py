@@ -70,7 +70,7 @@ class ProcessingQueue:
     def add_to_queue(self,
                      tasks: list or str = None,
                      queue_id: str = None,
-                     type: str = None,
+                     item_type: str = None,
                      source_file_path=None,
                      task_data=None,
                      device=None,
@@ -91,7 +91,7 @@ class ProcessingQueue:
 
         :param queue_id: the queue id of the task - if None, one will be generated
 
-        :param type: the main type of item that is being processed
+        :param item_type: the main type of item that is being processed
                      - this could be used for UI purposes on the Queue window
                      - this will also be used to notify the "{}_queue_item_done" observers
 
@@ -125,7 +125,7 @@ class ProcessingQueue:
             return False
 
         # add the type
-        kwargs['type'] = type
+        kwargs['item_type'] = item_type
 
         # if we have a task queue, add it to the kwargs
         kwargs['task_queue'] = task_queue
@@ -440,6 +440,9 @@ class ProcessingQueue:
             if isinstance(thread, dict) \
                     and 'queue_id' in thread \
                     and thread['queue_id'] == queue_id:
+
+                self._notify_on_stop_observer(item=item)
+
                 # set the status to 'canceling' in the queue history
                 # and hope that someone will be watching the status and cancel the item!
                 return self.update_queue_item(queue_id=queue_id, status='canceled')
@@ -447,6 +450,7 @@ class ProcessingQueue:
         # if we reached this point,
         # the item is not currently being processed,
         # so we can remove it from the queue history
+        self._notify_on_stop_observer(item=item)
         return self.update_queue_item(queue_id=queue_id, status='canceled')
 
     def cancel_if_canceled(self, queue_id):
@@ -507,6 +511,7 @@ class ProcessingQueue:
         # if the item is not currently being processed by one of the threads,
         # we can simply set the status to 'canceled'
         if not self.is_item_in_thread(queue_id=queue_id):
+            self._notify_on_stop_observer(item=item)
             return self.update_queue_item(queue_id=queue_id, status='canceled')
 
         return self.update_queue_item(queue_id=queue_id, status='canceling', progress='')
@@ -647,6 +652,15 @@ class ProcessingQueue:
 
         return task_queue
 
+    def _notify_on_stop_observer(self, item):
+        """
+        This is used to notify the on_stop observers
+        """
+
+        # notify on_stop observers
+        if 'on_stop_action_name' in item:
+            self.toolkit_ops_obj.notify_observers(item['on_stop_action_name'])
+
     def execute_item_tasks(self, queue_id, task_queue: list, **kwargs):
         """
         This function executes the functions in the task queue for a given queue item
@@ -687,10 +701,16 @@ class ProcessingQueue:
             # - this means that the user has requested to cancel the item
             if item['status'] == 'canceling':
                 self.update_status(queue_id=queue_id, status='canceled')
+
+                # notify on_stop observers
+                self._notify_on_stop_observer(item=item)
+
                 return False
 
             # stop also if something set the status to 'failed'
             if item['status'] == 'failed':
+                # notify on_stop observers
+                self._notify_on_stop_observer(item=item)
                 return False
 
             try:
@@ -717,7 +737,7 @@ class ProcessingQueue:
                 logger.debug('Finished execution of {} for queue item {}'.format(task.__name__, queue_id))
 
                 # notify the observers listening to specific queue item types
-                self.toolkit_ops_obj.notify_observers('{}_queue_item_done'.format(item['type']))
+                self.toolkit_ops_obj.notify_observers('{}_queue_item_done'.format(item['item_type']))
 
                 executed = True
 
@@ -727,6 +747,9 @@ class ProcessingQueue:
 
                 # update the status of the queue item to 'failed'
                 self.update_status(queue_id=queue_id, status='failed')
+
+                # notify on_stop observers
+                self._notify_on_stop_observer(item=item)
 
                 # stop the execution
                 executed = False
