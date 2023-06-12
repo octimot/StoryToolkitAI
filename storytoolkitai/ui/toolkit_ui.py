@@ -1645,8 +1645,8 @@ class toolkit_UI():
             logger.debug('Unable to close window: ' + window_id + ' because it does not exist in the windows dict.')
             return None
 
-        # first destroy the window
-        windows_dict[window_id].destroy()
+        # destroy the window once the mainloop is idle
+        windows_dict[window_id].after_idle(windows_dict[window_id].destroy)
 
         logger.debug('Closing window: ' + window_id)
 
