@@ -41,6 +41,11 @@ Python 3.9 support will no longer be possible in the very near future._
 **The Resolve API integration only works on Resolve Studio 18 (not on the free version, and certainly not earlier 
 versions).**
 
+#### For Patrons 
+
+_If you have access to the early-updates private repo, use `StoryToolkitAI-dev` instead of `StoryToolkitAI` 
+in all the commands below._
+
 ## Mac OS
 In the Terminal:
 
@@ -50,8 +55,8 @@ In the Terminal:
 
 In case Homebrew installation fails, please check [this page](https://docs.brew.sh/Common-Issues) for troubleshooting.
 
-One of the most common installation fails is due to the fact that Xcode Command Line Tools is not installed on your 
-Mac, so you could try to install them first with `xcode-select --install`
+The most common reason why brew installations fail is because Xcode Command Line Tools isn't installed. 
+So, try adding them using `xcode-select --install`.
 
 #### 2. You'll need Python 3.10, Python Tkinter, Git, and FFMPEG:
 
@@ -70,8 +75,9 @@ messing up your Python installation, for that, you need to install virtualenv:
 _Note: if the pip command above doesn't work, try to use pip3 (and use pip3 for the next steps too)_
 
 #### 4. Download StoryToolkitAI:
-First, go to the Folder you want to install StoryToolkit in via Finder. Right-click on it and select "New Terminal at Folder".
-Once you get another terminal window open, run:
+
+First, go to the Folder you want to install StoryToolkit in via Finder.
+Right-click on it and select "New Terminal at Folder". Once you get another terminal window open, run:
 
     git clone git@github.com:octimot/StoryToolkitAI.git
 
@@ -168,13 +174,22 @@ simply run:
 
     py -3.10 -m pip install virtualenv
 
-#### 4. Download StoryToolkitAI:
+#### 4. Download and install FFMPEG
+The simplest approach is to use a package manager like [Choco](https://chocolatey.org/install). Once you follow the
+installation steps for "Individual Use" on that page, you can install FFMPEG using this command:
+
+    choco install ffmpeg
+
+Alternatively, you can also try to download FFMPEG from [here](https://www.gyan.dev/ffmpeg/builds/) and manually 
+install it, but you may need to manually add some environment variables after installation.
+
+#### 5. Download StoryToolkitAI:
 
 Open the Command Prompt and navigate to the folder where you want to install StoryToolkitAI. Then run:
 
     git clone https://github.com/octimot/StoryToolkitAI.git
 
-#### 5. Set up a virtual environment
+#### 6. Set up a virtual environment
 Now create a virtual environment (to prevent messing up with other python packages you may have installed on your OS
 for other stuff):
 
@@ -186,21 +201,21 @@ Right now, your installation folder should contain 2 other folders, and the tree
     +- StoryToolkitAI
     +- venv
 
-#### 6. Activate virtual environment
+#### 7. Activate virtual environment
 Now enable the virtual environment (this means that all the packages you'll install now via pip will be contained in the
 virtual environment, meaning that for the tool to work **you'll ALWAYS have to activate the virtual environment first**
 using the following command!)
 
     venv\Scripts\activate.bat
 
-#### 7. Install OpenAI Whisper
+#### 8. Install OpenAI Whisper
 Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. If you followed the previous steps, your terminal prompt should now have (venv) before everything else.
 
     pip install -U git+https://github.com/openai/whisper.git@248b6cb124225dd263bb9bd32d060b6517e067f8
 
 For more info regarding Whisper installation, please check https://github.com/openai/whisper
 
-#### 8. Install all the stuff the tool requires:
+#### 9. Install all the stuff the tool requires:
 Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
 If you followed the previous steps, your terminal prompt should now have (venv) before everything else.
 
