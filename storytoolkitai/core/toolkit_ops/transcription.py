@@ -1430,11 +1430,11 @@ class TranscriptionSegment:
 
     @property
     def start(self):
-        return self._start
+        return float(self._start)
 
     @property
     def end(self):
-        return self._end
+        return float(self._end)
 
     @property
     def words(self):
