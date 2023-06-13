@@ -1080,6 +1080,9 @@ class Transcription:
         # now take all the time intervals and check if they overlap with any of the segments
         for current_time_interval in time_intervals:
 
+            current_time_interval['start'] = float(current_time_interval['start'])
+            current_time_interval['end'] = float(current_time_interval['end'])
+
             # test this time interval against all segments
             for current_segment in segments:
 
