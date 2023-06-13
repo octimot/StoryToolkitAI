@@ -7207,7 +7207,7 @@ class toolkit_UI():
         def segment_to_selection(self,
                                  window_id=None,
                                  text_element=None,
-                                 line: Union[int, List[int], List[TranscriptionSegment]] = None)
+                                 line: Union[int, List[int], List[TranscriptionSegment]] = None
                                  only_add=False):
             """
             This either adds or removes a segment to a selection,
