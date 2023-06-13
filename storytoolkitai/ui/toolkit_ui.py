@@ -5554,7 +5554,7 @@ class toolkit_UI():
                 start_segment, max_segment = max_segment, start_segment
 
             # clear the existing selection
-            self.clear_selection(window_id, text_element)
+            # self.clear_selection(window_id, text_element)
 
             # how many segments are we selecting?
             num_segments = max_segment - start_segment + 1
@@ -5563,7 +5563,7 @@ class toolkit_UI():
             n = start_segment
             while n <= max_segment:
                 # and add it to the selection
-                self.segment_to_selection(window_id, text_element, n)
+                self.segment_to_selection(window_id, text_element, n, only_add=True)
                 n = n + 1
 
             # and also call auto add to group function
@@ -7207,7 +7207,8 @@ class toolkit_UI():
         def segment_to_selection(self,
                                  window_id=None,
                                  text_element=None,
-                                 line: Union[int, List[int], List[TranscriptionSegment]] = None):
+                                 line: Union[int, List[int], List[TranscriptionSegment]] = None)
+                                 only_add=False):
             """
             This either adds or removes a segment to a selection,
             depending if it's already in the selection or not
@@ -7217,6 +7218,7 @@ class toolkit_UI():
             :param window_id:
             :param text_element:
             :param line: Either a line no. a list of line numbers, or a list of segments
+            :param only_add: Do not deselect if the line is not part of the selection
             :return:
             """
 
@@ -7262,7 +7264,6 @@ class toolkit_UI():
 
                     self.selected_segments[window_id][line_num] = segment
 
-
                     # tag the text on the text element
                     text_element.tag_add("l_selected", "{}.0".format(line_num), "{}.end+1c".format(line_num))
 
@@ -7284,8 +7285,9 @@ class toolkit_UI():
                 # convert the line number to segment_index
                 segment_index = line - 1
 
-                # if the segment is not in the transcript segments dict
-                if line in self.selected_segments[window_id]:
+                # if the segment is in the transcript segments dict
+                if line in self.selected_segments[window_id] and not only_add:
+
                     # remove it
                     del self.selected_segments[window_id][line]
 
@@ -7293,7 +7295,7 @@ class toolkit_UI():
                     text_element.tag_remove("l_selected", "{}.0".format(line), "{}.end+1c".format(line))
 
                 # otherwise add it
-                else:
+                elif line not in self.selected_segments[window_id]:
                     self.selected_segments[window_id][line] \
                         = window_transcription.get_segment(segment_index=segment_index)
 
