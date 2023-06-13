@@ -71,6 +71,9 @@ class Transcription:
         # this is the path to the audio file that is associated with the transcription file
         self._audio_file_path = None
 
+        # the path to the video index path
+        self._video_index_path = None
+
         # timecode data variables
         self._timeline_fps = None
         self._timeline_start_tc = None
@@ -210,6 +213,15 @@ class Transcription:
         return self._audio_file_path
 
     @property
+    def video_index_path(self):
+
+        # if the path is not absolute, make it absolute using the transcription file path
+        if not os.path.isabs(self._video_index_path):
+            return os.path.join(os.path.dirname(self.transcription_file_path), self._video_index_path)
+
+        return self._video_index_path
+
+    @property
     def exists(self):
         return self._exists
 
@@ -332,7 +344,8 @@ class Transcription:
         'whisper_language',
         'timeline_fps', 'timeline_start_tc',
         'timeline_name', 'project_name',
-        'transcription_id', 'incomplete'
+        'transcription_id', 'incomplete',
+        'video_index_path'
     ]
 
     @staticmethod
@@ -1915,6 +1928,9 @@ class TranscriptionUtils:
         Write the transcript segments to a file in SRT format.
         """
 
+        if not transcript_segments:
+            return
+
         with open(srt_file_path, "w", encoding="utf-8") as srt_file:
             i = 1
             for segment in transcript_segments:
@@ -1944,6 +1960,9 @@ class TranscriptionUtils:
         Write the transcript segments to a file in SRT format.
         Each segment is written on a new line.
         """
+
+        if not transcript_segments:
+            return
 
         with open(txt_file_path, "w", encoding="utf-8") as txt_file:
             for segment in transcript_segments:

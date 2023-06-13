@@ -165,7 +165,7 @@ class toolkit_UI():
                 # UI - add the audio and video tabs
                 general_tab = middle_frame.add('General')
                 integrations_tab = middle_frame.add('Integrations')
-                ingest_tab = middle_frame.add('Transcriptions')
+                ingest_tab = middle_frame.add('Ingest')
                 search_tab = middle_frame.add('Search')
                 assistant_tab = middle_frame.add('Assistant')
 
@@ -222,6 +222,10 @@ class toolkit_UI():
                 audio_form_vars = self.toolkit_UI_obj.add_ingest_audio_form_elements(
                     ingest_tab_scrollable_frame, show_time_intervals=False, show_custom_punctuation_marks=True)
 
+                # add the video ingest form elements (but without the time intervals)
+                video_form_vars = self.toolkit_UI_obj.add_ingest_video_form_elements(
+                    ingest_tab_scrollable_frame)
+
                 # add the analysis form elements
                 analysis_form_vars = self.toolkit_UI_obj.add_analysis_form_elements(
                     ingest_tab_scrollable_frame)
@@ -244,7 +248,8 @@ class toolkit_UI():
                     assistant_tab_scrollable_frame)
 
                 # create the giant dictionary that contains all the form variables
-                form_vars = {**general_prefs_form_vars, **audio_form_vars, **analysis_form_vars,
+                form_vars = {**general_prefs_form_vars,
+                             **audio_form_vars, **video_form_vars, **analysis_form_vars,
                              **other_ingest_form_vars, **integrations_form_vars, **search_form_vars,
                              **assistant_form_vars}
 
@@ -313,7 +318,7 @@ class toolkit_UI():
                     if kwargs.get('console_font_size', None) is not None \
                     else self.toolkit_UI_obj.stAI.get_app_setting('console_font_size', default_if_none=13)
 
-            # create the pre-detect speech variable, label and input
+            # create the console font size variable, label and input
             form_vars['console_font_size_var'] = \
                 console_font_size_var = tk.IntVar(general_prefs_frame, value=console_font_size)
             console_font_size_label = ctk.CTkLabel(general_prefs_frame, text='Console Font Size',
@@ -329,7 +334,7 @@ class toolkit_UI():
                     if kwargs.get('transcript_font_size', None) is not None \
                     else self.toolkit_UI_obj.stAI.get_app_setting('transcript_font_size', default_if_none=15)
 
-            # create the pre-detect speech variable, label and input
+            # create the variable, label and input
             form_vars['transcript_font_size_var'] = \
                 transcript_font_size_var = tk.IntVar(general_prefs_frame, value=transcript_font_size)
             transcript_font_size_label = ctk.CTkLabel(general_prefs_frame, text='Transcript Font Size',
@@ -432,19 +437,19 @@ class toolkit_UI():
             parent.columnconfigure(0, weight=1)
             other_ingest_prefs_frame.columnconfigure(1, weight=1)
 
-            # TRANSCRIPTS SKIP SETTINGS
-            transcripts_skip_settings = kwargs.get('transcripts_skip_settings', None) if kwargs.get(
-                'transcripts_skip_settings', None) is not None else self.toolkit_UI_obj.stAI.get_app_setting(
-                'transcripts_skip_settings',
+            # INGEST SKIP SETTINGS
+            ingest_skip_settings = kwargs.get('ingest_skip_settings', None) if kwargs.get(
+                'ingest_skip_settings', None) is not None else self.toolkit_UI_obj.stAI.get_app_setting(
+                'ingest_skip_settings',
                 default_if_none=False)
-            form_vars['transcripts_skip_settings_var'] \
-                = transcripts_skip_settings_var = tk.BooleanVar(other_ingest_prefs_frame,
-                                                                value=transcripts_skip_settings)
+            form_vars['ingest_skip_settings_var'] \
+                = ingest_skip_settings_var = tk.BooleanVar(other_ingest_prefs_frame,
+                                                                value=ingest_skip_settings)
 
-            transcripts_skip_settings_label = ctk.CTkLabel(other_ingest_prefs_frame, text='Skip Transcription Settings',
+            ingest_skip_settings_label = ctk.CTkLabel(other_ingest_prefs_frame, text='Skip Ingest Window',
                                                            **toolkit_UI.ctk_form_label_settings)
-            transcripts_skip_settings_input = ctk.CTkSwitch(other_ingest_prefs_frame,
-                                                            variable=transcripts_skip_settings_var,
+            ingest_skip_settings_input = ctk.CTkSwitch(other_ingest_prefs_frame,
+                                                            variable=ingest_skip_settings_var,
                                                             text='', **toolkit_UI.ctk_form_entry_settings)
 
             # INGEST MAX FILES
@@ -473,8 +478,8 @@ class toolkit_UI():
             )
 
             # ADD ELEMENTS TO GRID
-            transcripts_skip_settings_label.grid(row=1, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            transcripts_skip_settings_input.grid(row=1, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            ingest_skip_settings_label.grid(row=1, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            ingest_skip_settings_input.grid(row=1, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
             ingest_file_limit_label.grid(row=2, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
             ingest_file_limit_frame.grid(row=2, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
 
@@ -886,6 +891,13 @@ class toolkit_UI():
             self.stAI.config['transcription_group_questions'] = input_variables['group_questions_var'].get()
             del input_variables['group_questions_var']
 
+            # the video sensitivity needs a bit of conversion
+            sensitivity = input_variables['clip_shot_change_sensitivity_var'].get()
+            del input_variables['clip_shot_change_sensitivity_var']
+
+            # the sensitivity is between 0 and 100, but the encoder expects a value between 255 (lowest) and 0 (highest)
+            self.stAI.config['clip_shot_change_sensitivity'] = 255 - int(sensitivity * 255 / 100)
+
             # SAVE THE VARIABLES FROM HERE ON
 
             # save all the variables to the config file
@@ -901,23 +913,25 @@ class toolkit_UI():
             # save the config file
             if self.stAI.save_config():
 
-                # close the window
-                self.toolkit_UI_obj.destroy_window_(windows_dict=self.toolkit_UI_obj.windows, window_id='preferences')
-
                 # let the user know it worked
                 self.toolkit_UI_obj.notify_via_messagebox(type='info', title='Preferences Saved',
                                                           message='Preferences saved successfully.\n\n'
                                                                   'Please restart StoryToolkitAI for the new settings '
                                                                   'to take full effect.',
-                                                          message_log='Preferences saved, need restart for full effect')
+                                                          message_log='Preferences saved, need restart for full effect',
+                                                          parent=self.toolkit_UI_obj.get_window_by_id('preferences'))
 
+
+                # close the window
+                self.toolkit_UI_obj.destroy_window_(window_id='preferences')
                 return True
 
             else:
                 self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Error',
                                                           message='Preferences could not be saved.\n'
                                                                   'Check log for details.',
-                                                          message_log='Preferences could not be saved')
+                                                          message_log='Preferences could not be saved',
+                                                          parent=self.toolkit_UI_obj.get_window_by_id('preferences'))
 
                 return False
 
@@ -1477,7 +1491,7 @@ class toolkit_UI():
             logger.debug('Window not found: {}'.format(window_id))
             return False
 
-        window = self.windows[window_id] if window is None else window
+        window = self.get_window_by_id(window_id) if window is None else window
 
         # bring the window to the top
         window.lift()
@@ -1516,10 +1530,11 @@ class toolkit_UI():
             # bring the window to the top
             # self.windows[window_id].attributes('-topmost', 1)
             # self.windows[window_id].attributes('-topmost', 0)
-            self.windows[window_id].lift()
+            window = self.get_window_by_id(window_id)
+            window.lift()
 
-            # then focus on it
-            self.windows[window_id].focus_set()
+            # then focus on it after 50ms
+            window.after(50, window.focus_set)
 
             # but return false since we're not creating it
             return False
@@ -1645,6 +1660,9 @@ class toolkit_UI():
             logger.debug('Unable to close window: ' + window_id + ' because it does not exist in the windows dict.')
             return None
 
+        # also remove any observers that are registered for this window
+        self.remove_observer_from_window(window_id=window_id)
+
         # destroy the window once the mainloop is idle
         windows_dict[window_id].after_idle(windows_dict[window_id].destroy)
 
@@ -1652,9 +1670,6 @@ class toolkit_UI():
 
         # then remove its reference
         del windows_dict[window_id]
-
-        # also remove any observers that are registered for this window
-        self.remove_observer_from_window(window_id=window_id)
 
     def add_observer_to_window(self, window_id, action, callback, dettach_after_call=False):
         """
@@ -2126,11 +2141,11 @@ class toolkit_UI():
 
         main_window.t_ingest = ctk.CTkButton(main_window.tool_buttons_frame,
                                              **self.ctk_button_size,
-                                             text="Transcribe Audio", command=self.button_transcribe)
+                                             text="Ingest", command=self.button_ingest)
 
         # add the shift+click binding to the button
         main_window.t_ingest.bind('<Shift-Button-1>',
-                                  lambda event: self.button_transcribe(select_dir=True))
+                                  lambda event: self.button_ingest(select_dir=True))
 
         main_window.t_open_transcript = ctk.CTkButton(main_window.tool_buttons_frame,
                                                       **self.ctk_button_size,
@@ -2200,7 +2215,7 @@ class toolkit_UI():
 
         # add key bindings to the main window
         # key t for the transcription window
-        main_window.bind("t", lambda event: self.button_transcribe())
+        main_window.bind("t", lambda event: self.button_ingest())
 
         # load menubar items
         self.UI_menus.load_menubar()
@@ -3543,14 +3558,15 @@ class toolkit_UI():
 
             # UI - add the audio and video tabs
             audio_tab = middle_frame.add('Audio')
-            # video_tab = middle_frame.add('Video')
+            video_tab = middle_frame.add('Video')
             analysis_tab = middle_frame.add('Analysis')
 
             # UI - add a scrollable frame to the audio and video tabs
             audio_tab_scrollable_frame = ctk.CTkScrollableFrame(audio_tab, **self.ctk_frame_transparent)
-            # video_tab_scrollable_frame = ctk.CTkScrollableFrame(video_tab, **self.ctk_frame_transparent)
             audio_tab_scrollable_frame.pack(fill='both', expand=True)
-            # video_tab_scrollable_frame.pack(fill='both', expand=True)
+
+            video_tab_scrollable_frame = ctk.CTkScrollableFrame(video_tab, **self.ctk_frame_transparent)
+            video_tab_scrollable_frame.pack(fill='both', expand=True)
 
             # UI - set the visibility on the audio tab
             middle_frame.set('Audio')
@@ -3609,6 +3625,15 @@ class toolkit_UI():
                 self.button_cancel_ingest(window_id=ingest_window_id, queue_id=queue_id, dont_ask=True)
                 return None
 
+            # add the ingest video options to the video tab (in the middle frame)
+            video_form_vars = self.add_ingest_video_form_elements(video_tab_scrollable_frame, **kwargs)
+
+            # if something went wrong with the audio options tab, close the window
+            if video_form_vars is None:
+                logger.error('Something went wrong with the video options')
+                self.button_cancel_ingest(window_id=ingest_window_id, queue_id=queue_id, dont_ask=True)
+                return None
+
             # add the analysis options to the analysis tab (in the middle frame)
             analysis_form_vars = self.add_analysis_form_elements(analysis_tab, **kwargs)
 
@@ -3621,6 +3646,7 @@ class toolkit_UI():
             # add the variables from the added forms above to the form variables
             form_vars = {**form_vars, **file_path_var,
                          'audio_form_vars': audio_form_vars,
+                         'video_form_vars': video_form_vars,
                          'analysis_form_vars': analysis_form_vars}
 
             # UI - start button command
@@ -3675,6 +3701,27 @@ class toolkit_UI():
 
             return
 
+    def files_string_to_list(self, path):
+        """
+        This function takes a string and returns a list of files from it if it's in a valid format
+        """
+
+        # are these comma separated files or folders?
+        if ',' in path:
+
+            # split the paths
+            path = path.split(',')
+
+            # remove the quotes from the beginning and end of each path
+            path = [p.strip(' \'\"') for p in path]
+
+        # if there are no commas in the path, it must be a single file or folder
+        # so if it exists, it's valid
+        elif os.path.isfile(path.strip(' \'\"')) or os.path.isdir(path.strip(' \'\"')):
+            path = [path]
+
+        return path
+
     def validate_files_or_folders_path(self, var=None, path: str = None,
                                        valid_callback: callable = None, invalid_callback: callable = None, **kwargs):
         """
@@ -3687,8 +3734,6 @@ class toolkit_UI():
         :return: the path if it's valid, None otherwise
         """
 
-        valid = False
-
         if path is None and var is None:
             logger.error('Unable to validate files or folders - no path or variable was passed.')
             return None
@@ -3698,24 +3743,22 @@ class toolkit_UI():
             # get the variable value
             path = var.get()
 
-        # are these comma separated files or folders?
-        if ',' in path:
+        # convert the path to a list
+        path = self.files_string_to_list(path)
 
-            # split the paths
-            path = path.split(',')
+        # check if all the paths are valid
+        # if all the paths are valid, the result will be True
+        valid = all([os.path.isfile(p.strip()) or os.path.isdir(p.strip()) for p in path])
 
-            # remove the quotes from the beginning and end of each path
-            path = [p.strip(' \'\"') for p in path]
+        # take the files through the file analyzer to see if they're valid
+        if valid and kwargs.get('file_analyze_callback') is not None:
 
-            # check if all the paths are valid
-            # if all the paths are valid, the result will be True
-            valid = all([os.path.isfile(p.strip()) or os.path.isdir(p.strip()) for p in path])
+            for current_path in path:
 
-        # if there are no commas in the path, it must be a single file or folder
-        # so if it exists, it's valid
-        elif os.path.isfile(path.strip(' \'\"')) or os.path.isdir(path.strip(' \'\"')):
-            path = [path]
-            valid = True
+                # if one of the files is not valid, set valid to False and break
+                if not kwargs.get('file_analyze_callback')(path=current_path, **kwargs):
+                    valid = False
+                    break
 
         # if the file path is empty, clear the label and return
         if valid:
@@ -3828,10 +3871,6 @@ class toolkit_UI():
                 # reset the text of the file info label
                 kwargs.get('file_info_label').configure(text="")
 
-            # todo: make this callback work
-            if kwargs.get('file_analyze_callback') is not None:
-                kwargs.get('file_analyze_callback')(path=path, **kwargs)
-
             # remove this from the from_invalid attribute of the window
             self.remove_form_invalid(window_id=kwargs.get('ingest_window_id'), key='file_path', **kwargs)
 
@@ -3857,6 +3896,21 @@ class toolkit_UI():
         if kwargs.get('source_file_path', None) is not None:
             file_path_var.set(kwargs.get('source_file_path'))
 
+        def files_changed_callback(*args, **kwargs):
+            """
+            This is called whenever the files change
+            """
+
+            # validate the files and execute the valid or invalid callback
+            self.validate_files_or_folders_path(var=file_path_var, entry=file_path_entry,
+                                                valid_callback=files_are_valid, file_info_label=file_info_label,
+                                                invalid_callback=files_are_invalid, file_path_entry=file_path_entry,
+                                                **kwargs)
+
+            # if there a files_changed_callback kwarg exists, execute it
+            if kwargs.get('files_changed_callback', None) is not None:
+                kwargs.get('files_changed_callback')(path_str=file_path_var.get(), **kwargs)
+
         # if the source file path is empty, add the form invalid attribute
         # this will keep the start button disabled until the user selects a file
         if file_path_var.get() == '':
@@ -3864,17 +3918,10 @@ class toolkit_UI():
 
         # if it the source file path is not empty, validate it
         else:
-            self.validate_files_or_folders_path(var=file_path_var, entry=file_path_entry,
-                                                valid_callback=files_are_valid, file_info_label=file_info_label,
-                                                invalid_callback=files_are_invalid, file_path_entry=file_path_entry,
-                                                **kwargs)
+            files_changed_callback(**kwargs)
 
         # if the file_path_var changes, validate it
-        file_path_var.trace('w', lambda *args:
-        self.validate_files_or_folders_path(var=file_path_var, entry=file_path_entry,
-                                            valid_callback=files_are_valid, file_info_label=file_info_label,
-                                            invalid_callback=files_are_invalid, file_path_entry=file_path_entry,
-                                            **kwargs))
+        file_path_var.trace('w', lambda *args: files_changed_callback(file_path=file_path_var.get(), **kwargs))
 
         # Create the file path entry, the browse button, and the file info label
         # The file path entry should stick to the left and expand horizontally
@@ -3941,6 +3988,7 @@ class toolkit_UI():
         # for each of these, we will create a frame, and add the elements to it
 
         # create the frames
+        enable_disable_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
         basic_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
         post_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
         advanced_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
@@ -3965,17 +4013,32 @@ class toolkit_UI():
 
         # add the labels and frames to the parent
         basic_frame_label.grid(row=l_row + 1, column=0, sticky="ew", **self.ctk_frame_paddings)
-        basic_frame.grid(row=l_row + 2, column=0, sticky="ew", **self.ctk_frame_paddings)
-        advanced_frame_label.grid(row=l_row + 3, column=0, sticky="ew", **self.ctk_frame_paddings)
-        advanced_frame.grid(row=l_row + 4, column=0, sticky="ew", **self.ctk_frame_paddings)
-        post_frame_label.grid(row=l_row + 5, column=0, sticky="ew", **self.ctk_frame_paddings)
-        post_frame.grid(row=l_row + 6, column=0, sticky="ew", **self.ctk_frame_paddings)
+        enable_disable_frame.grid(row=l_row + 2, column=0, sticky="ew", **self.ctk_frame_paddings)
+        basic_frame.grid(row=l_row + 3, column=0, sticky="ew", **self.ctk_frame_paddings)
+        advanced_frame_label.grid(row=l_row + 4, column=0, sticky="ew", **self.ctk_frame_paddings)
+        advanced_frame.grid(row=l_row + 5, column=0, sticky="ew", **self.ctk_frame_paddings)
+        post_frame_label.grid(row=l_row + 6, column=0, sticky="ew", **self.ctk_frame_paddings)
+        post_frame.grid(row=l_row + 7, column=0, sticky="ew", **self.ctk_frame_paddings)
 
         # make the column expandable
         parent.columnconfigure(0, weight=1)
+        enable_disable_frame.columnconfigure(1, weight=1)
         basic_frame.columnconfigure(1, weight=1)
         post_frame.columnconfigure(1, weight=1)
         advanced_frame.columnconfigure(1, weight=1)
+
+        # TRANSCRIPTIONS ENABLE SWITCH
+        transcription_enabled = kwargs.get('transcription_enabled', None) \
+            if kwargs.get('transcription_enabled', None) is not None \
+            else self.stAI.get_app_setting('transcription_enabled', default_if_none=True)
+
+        form_vars['transcription_enabled_var'] = \
+            transcription_enabled_var = tk.BooleanVar(enable_disable_frame,
+                                                     value=transcription_enabled)
+        transcription_enabled_label = ctk.CTkLabel(enable_disable_frame, text='Transcribe Audio',
+                                                  **self.ctk_form_label_settings)
+        transcription_enabled_input = ctk.CTkSwitch(enable_disable_frame, variable=transcription_enabled_var,
+                                                   text='', **self.ctk_form_entry_settings)
 
         # SOURCE LANGUAGE DROPDOWN
         # get the available languages from whisper, and the default language from the app settings
@@ -4301,16 +4364,45 @@ class toolkit_UI():
         word_timestamps_var.trace('w', update_max_per_segment_inputs_visibility)
         update_max_per_segment_inputs_visibility()
 
+        # ENABLE/DISABLE function
+        def update_transcription_enabled(*f_args):
+
+            # enable all the elements in the audio tab
+            if transcription_enabled_var.get():
+                # basic_frame_label.grid()
+                basic_frame.grid()
+                advanced_frame_label.grid()
+                advanced_frame.grid()
+                post_frame_label.grid()
+                post_frame.grid()
+
+            # disable all the elements in the audio tab
+            else:
+                # basic_frame_label.grid_remove()
+                basic_frame.grid_remove()
+                advanced_frame_label.grid_remove()
+                advanced_frame.grid_remove()
+                post_frame_label.grid_remove()
+                post_frame.grid_remove()
+
+        # add enable/disable function to the transcription_enabled_var
+        transcription_enabled_var.trace('w', update_transcription_enabled)
+        update_transcription_enabled()
+
         # Adding all the elements to THE GRID:
+
+        # ENABLE/DISABLE FRAME GRID
+        transcription_enabled_label.grid(row=1, column=0, sticky="w", **self.ctk_form_paddings)
+        transcription_enabled_input.grid(row=1, column=1, sticky="w", **self.ctk_form_paddings)
 
         # BASIC SETTINGS FRAME GRID add all the elements to the grid of the basic frame
         # add all elements to the grid of the basic frame
-        source_language_label.grid(row=1, column=0, sticky="w", **self.ctk_form_paddings)
-        source_language_input.grid(row=1, column=1, sticky="w", **self.ctk_form_paddings)
-        task_label.grid(row=2, column=0, sticky="w", **self.ctk_form_paddings)
-        task_entry.grid(row=2, column=1, sticky="w", **self.ctk_form_paddings)
-        model_name_label.grid(row=3, column=0, sticky="w", **self.ctk_form_paddings)
-        model_name_input.grid(row=3, column=1, sticky="w", **self.ctk_form_paddings)
+        source_language_label.grid(row=2, column=0, sticky="w", **self.ctk_form_paddings)
+        source_language_input.grid(row=2, column=1, sticky="w", **self.ctk_form_paddings)
+        task_label.grid(row=3, column=0, sticky="w", **self.ctk_form_paddings)
+        task_entry.grid(row=3, column=1, sticky="w", **self.ctk_form_paddings)
+        model_name_label.grid(row=4, column=0, sticky="w", **self.ctk_form_paddings)
+        model_name_input.grid(row=4, column=1, sticky="w", **self.ctk_form_paddings)
 
         # ADVANCED SETTINGS FRAME GRID
         # add all elements to the grid of the advanced options frame
@@ -4347,6 +4439,42 @@ class toolkit_UI():
         # return all the gathered form variables
         return form_vars
 
+    def form_to_video_indexing_settings(self, **kwargs):
+        """
+        This function takes the form variables and gets them into the video indexing settings
+        """
+
+        form_vars = kwargs.get('form_vars', None)
+        video_form_vars = form_vars.get('video_form_vars', None)
+
+        # if video indexing is not enabled, return None
+        if video_form_vars.get('video_indexing_enabled_var', None) \
+                and not video_form_vars.get('video_indexing_enabled_var').get():
+            return None
+
+        indexing_settings = dict()
+
+        # first, the non-video indexing specific settings
+        indexing_settings['queue_id'] = kwargs.get('queue_id', None)
+        indexing_settings['timeline_name'] = kwargs.get('timeline_name', None)
+        indexing_settings['project_name'] = kwargs.get('project_name', None)
+
+        # if we have a transcription_file_path, pass it
+        # but if we're also transcribing the video, then this will be ignored and that transcription will be used
+        indexing_settings['transcription_file_path'] = kwargs.get('transcription_file_path', None)
+
+        # then, the video indexing specific settings
+        indexing_settings['video_file_path'] = kwargs.get('file_path', None)
+        indexing_settings['model_name'] \
+            = video_form_vars['clip_model_name_var'].get()
+
+        sensitivity = video_form_vars['clip_shot_change_sensitivity_var'].get()
+
+        # the sensitivity is between 0 and 100, but the encoder expects a value between 255 (lowest) and 0 (highest)
+        indexing_settings['shot_change_threshold'] = 255 - int(sensitivity * 255 / 100)
+
+        return indexing_settings
+
     def form_to_transcription_settings(self, **kwargs):
         """
         This function takes the form variables and gets them into the transcription settings
@@ -4359,6 +4487,10 @@ class toolkit_UI():
 
         audio_form_vars = form_vars.get('audio_form_vars', None)
         analysis_form_vars = form_vars.get('analysis_form_vars', None)
+
+        if audio_form_vars.get('transcription_enabled_var', None) \
+                and not audio_form_vars.get('transcription_enabled_var').get():
+            return None
 
         transcription_settings = dict()
 
@@ -4425,6 +4557,121 @@ class toolkit_UI():
         transcription_settings['transcription_group_questions'] = analysis_form_vars['group_questions_var'].get()
 
         return transcription_settings
+
+    def add_ingest_video_form_elements(self, parent: tk.Widget, **kwargs) -> dict or None:
+        """
+        This function adds the form elements for the analysis window
+        """
+
+        # create the frames
+        enable_disable_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
+        video_indexing_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
+
+        # create labels for the frames (and style them according to the theme)
+        video_indexing_label = ctk.CTkLabel(parent, text='Video Indexing', **self.ctk_frame_label_settings)
+
+        # we're going to create the form_vars dict to store all the variables
+        # we will use this dict at the end of the function to gather all the created tk variables
+        form_vars = {}
+
+        # get the last grid row for the parent
+        l_row = parent.grid_size()[1]
+
+        # add the labels and frames to the parent
+        video_indexing_label.grid(row=l_row + 1, column=0, sticky="ew", **self.ctk_frame_paddings)
+        enable_disable_frame.grid(row=l_row + 2, column=0, sticky="ew", **self.ctk_frame_paddings)
+        video_indexing_frame.grid(row=l_row + 3, column=0, sticky="ew", **self.ctk_frame_paddings)
+
+        # make the column expandable
+        parent.columnconfigure(0, weight=1)
+        enable_disable_frame.columnconfigure(1, weight=1)
+        video_indexing_frame.columnconfigure(1, weight=1)
+
+        # VIDEO INDEXING ENABLE SWITCH
+        video_indexing_enabled = kwargs.get('video_indexing_enabled', None) \
+            if kwargs.get('video_indexing_enabled', None) is not None \
+            else self.stAI.get_app_setting('video_indexing_enabled', default_if_none=True)
+
+        form_vars['video_indexing_enabled_var'] = \
+            video_indexing_enabled_var = tk.BooleanVar(enable_disable_frame,
+                                                     value=video_indexing_enabled)
+        video_indexing_enabled_label = ctk.CTkLabel(enable_disable_frame, text='Index Video',
+                                                  **self.ctk_form_label_settings)
+        video_indexing_enabled_input = ctk.CTkSwitch(enable_disable_frame, variable=video_indexing_enabled_var,
+                                                   text='', **self.ctk_form_entry_settings)
+
+        # THE MODEL DROPDOWN
+        # get the available models from ClipIndex, and the default model from the app settings
+        model_selected = \
+            kwargs.get('clip_model_name', None) \
+                if kwargs.get('clip_model_name', None) is not None \
+                else self.stAI.get_app_setting('clip_model_name', default_if_none='RN50x4')
+
+        # create the model variable, label and input
+        form_vars['clip_model_name_var'] = \
+            model_name_var = tk.StringVar(video_indexing_frame, value=model_selected)
+        model_name_label = ctk.CTkLabel(video_indexing_frame, text='Model', **self.ctk_form_label_settings)
+        model_name_input = ctk.CTkOptionMenu(video_indexing_frame, variable=model_name_var,
+                                             values=ClipIndex.get_available_clip_models(),
+                                             **self.ctk_form_entry_settings)
+
+        # THE SHOT CHANGE SENSITIVITY
+        # get the available models from ClipIndex, and the default model from the app settings
+        shot_change_sensitivity = \
+            kwargs.get('clip_shot_change_sensitivity', None) \
+                if kwargs.get('clip_shot_change_sensitivity', None) is not None \
+                else self.stAI.get_app_setting('clip_shot_change_sensitivity', default_if_none=40)
+
+        # convert the sensitivity to a value between 0 and 100
+        shot_change_sensitivity = 100 - int(shot_change_sensitivity * 100 / 255)
+
+        # create the variable, label and input
+        form_vars['clip_shot_change_sensitivity_var'] = \
+            sensitivity_var = tk.IntVar(video_indexing_frame, value=shot_change_sensitivity)
+        sensitivity_label \
+            = ctk.CTkLabel(video_indexing_frame, text='Shot Change Sensitivity', **self.ctk_form_label_settings)
+
+        sensitivity_input_frame = ctk.CTkFrame(video_indexing_frame, **self.ctk_frame_transparent)
+
+        sensitivity_input \
+            = ctk.CTkSlider(sensitivity_input_frame, from_=10, to=100, number_of_steps=18, variable=sensitivity_var,
+                            **self.ctk_form_entry_settings)
+        sensitivity_slider_value \
+            = ctk.CTkLabel(sensitivity_input_frame, textvariable=sensitivity_var, **self.ctk_form_label_settings)
+
+        sensitivity_input.pack(side=ctk.LEFT)
+        sensitivity_slider_value.pack(side=ctk.LEFT, **self.ctk_form_paddings)
+
+        # ENABLE/DISABLE function
+        def update_video_indexing_enabled(*f_args):
+
+            # enable all the elements in the audio tab
+            if video_indexing_enabled_var.get():
+                # video_indexing_label.grid()
+                video_indexing_frame.grid()
+
+            # disable all the elements in the audio tab
+            else:
+                # video_indexing_label.grid_remove()
+                video_indexing_frame.grid_remove()
+
+        # add enable/disable function to the transcription_enabled_var
+        video_indexing_enabled_var.trace('w', update_video_indexing_enabled)
+        update_video_indexing_enabled()
+
+        # Adding all the elemente to the grid
+
+        # ENABLE/DISABLE FRAME GRID
+        video_indexing_enabled_label.grid(row=0, column=0, sticky="w", **self.ctk_form_paddings)
+        video_indexing_enabled_input.grid(row=0, column=1, sticky="w", **self.ctk_form_paddings)
+
+        # VIDEO FRAME GRID
+        model_name_label.grid(row=1, column=0, sticky="w", **self.ctk_form_paddings)
+        model_name_input.grid(row=1, column=1, sticky="w", **self.ctk_form_paddings)
+        sensitivity_label.grid(row=2, column=0, sticky="w", **self.ctk_form_paddings)
+        sensitivity_input_frame.grid(row=2, column=1, sticky="w", **self.ctk_form_paddings)
+
+        return form_vars
 
     def add_analysis_form_elements(self, parent: tk.Widget, **kwargs) -> dict or None:
         """
@@ -4504,11 +4751,21 @@ class toolkit_UI():
             logger.error('No file paths found in the ingest call. Aborting ingest.')
             return False
 
-        # soon: convert the video form variables to video indexing settings
-        video_indexing_settings = {}
-
         # convert the audio form variables to transcription settings
         transcription_settings = self.form_to_transcription_settings(**kwargs)
+
+        # convert the video form variables to video indexing settings
+        video_indexing_settings = self.form_to_video_indexing_settings(**kwargs)
+
+        if transcription_settings is None and video_indexing_settings is None:
+            self.notify_via_messagebox(type='warning',
+                                       message='Both transcription and video indexing are disabled. '
+                                               'Enable one of them to proceed.',
+                                       message_log='Nothing to send to queue ' \
+                                                   '- both transcription and video indexing are disabled.',
+                                       parent=self.get_window_by_id(ingest_window_id)
+            )
+            return False
 
         # add the transcription job(s) to the queue
         if self.toolkit_ops_obj.add_media_to_queue(source_file_paths=file_paths, queue_id=queue_id,
@@ -4646,14 +4903,14 @@ class toolkit_UI():
         # do a validation check to potentially change the start button state
         self.is_form_valid(window_id=window_id, **kwargs)
 
-    def button_transcribe(self, target_files=None, transcription_task='transcribe', **kwargs):
+    def button_ingest(self, target_files=None, transcription_task='transcribe', **kwargs):
         """
         This prompts the user for a file path and opens the ingest window
         """
 
         # this ensures that we show the ingest window
         # and simply use the default settings (selected from Preferences window)
-        if self.stAI.get_app_setting('transcripts_skip_settings', default_if_none=False):
+        if self.stAI.get_app_setting('ingest_skip_settings', default_if_none=False):
             kwargs['skip_settings'] = True
 
         # ask the user for the target files if none were passed
@@ -4671,7 +4928,7 @@ class toolkit_UI():
 
             # now open up the transcription settings window
             self.open_ingest_window(
-                title='Transcribe',
+                title='Ingest',
                 source_file_path=target_files,
                 transcription_task=transcription_task, **kwargs)
 
@@ -4788,8 +5045,7 @@ class toolkit_UI():
             # - when the monitor reaches the done state, it will call the function button_transcribe
             render_monitor.add_done_callback(
                 lambda render_file_paths=render_file_paths:
-                self.button_transcribe(target_files=render_file_paths,
-                                       transcription_task=transcription_task, **kwargs)
+                self.button_ingest(target_files=render_file_paths, transcription_task=transcription_task, **kwargs)
             )
 
             # resume polling
@@ -8998,8 +9254,10 @@ class toolkit_UI():
 
             # remove all the children of the groups list frame
             for child in children:
-                # destroy the child
-                child.destroy()
+                # does the child still exist in the groups list frame?
+                if child.winfo_exists():
+                    # destroy the child
+                    child.destroy()
 
             if isinstance(self._groups_data, dict):
 
@@ -9682,7 +9940,11 @@ class toolkit_UI():
 
         # empty queue_items_frame from all widgets
         for widget in queue_items_frame.winfo_children():
-            widget.destroy()
+
+            # does the widget still exist
+            # - to prevent trying to destroy a widget that was destroyed by another thread
+            if widget.winfo_exists():
+                widget.destroy()
 
         # create a new frame to hold the queue items
         # queue_items_frame = queue_window.queue_items_frame = ctk.CTkScrollableFrame(queue_window)
@@ -9782,6 +10044,7 @@ class toolkit_UI():
         # create a window for the Queue if one doesn't already exist
         if self.create_or_open_window(parent_element=self.root, type='queue',
                                       window_id='queue', title='Queue', resizable=True):
+
             queue_window = self.windows['queue']
 
             # add a frame to hold all the queue items

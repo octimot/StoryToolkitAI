@@ -496,10 +496,12 @@ class UImenus:
         self.filemenu.add_command(label="Open transcription file...", command=self.toolkit_UI_obj.open_transcript)
         self.filemenu.add_separator()
 
-        self.filemenu.add_command(label="Ingest files...", command=self.toolkit_UI_obj.open_ingest_window)
+        self.filemenu.add_command(label="Ingest files...", command=self.ingest_files)
+        self.filemenu.add_command(label="Ingest directory...", command=self.ingest_directory)
+        self.filemenu.add_separator()
 
-        self.filemenu.add_command(label="Transcribe audio file...", command=self.transcribe_audio_files)
-        self.filemenu.add_command(label="Translate audio file...", command=self.translate_audio_files)
+        self.filemenu.add_command(label="Transcribe audio files...", command=self.transcribe_audio_files)
+        self.filemenu.add_command(label="Translate audio files...", command=self.translate_audio_files)
 
         # FILE MENU - export items
         self.filemenu.add_separator()
@@ -744,11 +746,17 @@ class UImenus:
         # close the window
         self.toolkit_UI_obj.windows[self.current_window_id].close_action()
 
+    def ingest_files(self):
+        self.toolkit_UI_obj.button_ingest()
+
+    def ingest_directory(self):
+        self.toolkit_UI_obj.button_ingest(select_dir=True)
+
     def transcribe_audio_files(self):
-        self.toolkit_UI_obj.button_transcribe()
+        self.toolkit_UI_obj.button_ingest(video_indexing_enabled=False)
 
     def translate_audio_files(self):
-        self.toolkit_UI_obj.button_transcribe(transcription_task='translate')
+        self.toolkit_UI_obj.button_ingest(transcription_task='translate', video_indexing_enabled=False)
 
     def donothing(self):
         return

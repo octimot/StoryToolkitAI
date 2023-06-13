@@ -12,10 +12,9 @@ class ProcessingQueue:
     This class handles the processing queue:
     """
 
-    def __init__(self, toolkit_ops_obj=None, toolkit_UI_obj=None):
+    def __init__(self, toolkit_ops_obj=None):
 
         self.toolkit_ops_obj = toolkit_ops_obj
-        self.toolkit_UI_obj = toolkit_UI_obj
 
         # this holds the queue ids of the items that need to be processed next
         # once the item is sent for processing, it is removed from this list and only remains in the queue history
@@ -57,6 +56,7 @@ class ProcessingQueue:
 
             # if the queue id doesn't return an item
             if not self.get_item(queue_id=queue_id):
+
                 # add it to the queue history
                 self.queue_history.append({'queue_id': queue_id, 'name': '', 'status': 'pending'})
 
@@ -736,6 +736,10 @@ class ProcessingQueue:
 
                 logger.debug('Finished execution of {} for queue item {}'.format(task.__name__, queue_id))
 
+                # todo 230612 - remove this once the UI works
+                # wait a moment
+                time.sleep(0.1)
+
                 # notify the observers listening to specific queue item types
                 self.toolkit_ops_obj.notify_observers('{}_queue_item_done'.format(item['item_type']))
 
@@ -770,6 +774,9 @@ class ProcessingQueue:
         """
         This function updates the status of a queue item
         """
+
+        if queue_id is None:
+            return None
 
         item = self.get_item(queue_id=queue_id)
         if not item:

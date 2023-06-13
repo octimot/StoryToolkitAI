@@ -27,7 +27,11 @@ from .assistant import ToolkitAssistant, AssistantGPT
 
 from timecode import Timecode
 
+import numpy as np
+
 from .monitor import Monitor
+from .videoanalysis import ClipIndex
+from .media import MediaItem, VideoFileClip, AudioFileClip
 
 
 class NLE:
@@ -156,7 +160,7 @@ class ToolkitOps:
             'translate': [self.whisper_transcribe],
             'group_questions': [self.group_questions],
             'index_text': [self.index_text],
-            # 'ingest': [self.index_video] # this will be added soon
+            'index_video': [self.index_video]
         }
 
         # use this to store all the devices that can be used for processing queue tasks
@@ -338,13 +342,13 @@ class ToolkitOps:
                 logger.warning('Source file path does not exist: ' + source_file_path)
                 continue
 
-            # if it's a folder, add all the valid media files in the folder to the queue
+            # if it's a DIRECTORY, add all the valid media files in the folder to the queue
             if os.path.isdir(source_file_path):
 
                 # get all the valid media files in the folder
                 valid_source_file_paths += self.get_all_valid_media_paths_in_dir(source_file_path, recursive=True)
 
-            # if it's a file, check if it's a valid media file
+            # if it's a FILE, check if it's a valid media file
             if os.path.isfile(source_file_path):
 
                 # if it's a valid media file, add it to the queue
@@ -360,48 +364,78 @@ class ToolkitOps:
         if not valid_source_file_paths:
             return False
 
+        # this will hold all the queue ids generated in this call
         queued = []
 
         # if there are valid source file paths, add each of them to the queue
         for source_file_path in valid_source_file_paths:
 
+            # check if there are audio and video streams in the file
+            has_audio = MediaItem.has_audio(source_file_path)
+            has_video = MediaItem.has_video(source_file_path)
+
+            # these two will hold all the queue ids of created for this file
+            transcription_queue_ids = []
+            video_indexing_queue_ids = []
+
             # create a transcription job only if we have transcription settings
-            if transcription_settings is not None and isinstance(transcription_settings, dict):
+            if has_audio and transcription_settings is not None and isinstance(transcription_settings, dict):
 
                 transcription_settings['name'] = os.path.basename(source_file_path)
 
-                # make sure to generate a new queue id for each type of task (transcription, video indexing, etc.)
-                # if a queue_id exists use it for the first item
-                if queue_id is not None:
-
-                    current_queue_id = queue_id
-
-                    # then reset it, so we make sure we generate a new queue_id if there are multiple files
-                    queue_id = None
-
-                else:
-                    current_queue_id = self.processing_queue.generate_queue_id(name=transcription_settings['name'])
-
-                # get the ingest settings
-                #ingest_settings = self.get_ingest_settings(source_file_path, ingest_task=ingest_task, **kwargs)
-
-                # send the item to ingest queue
-                #self.processing_queue.add_queue_item(source_file_path, **ingest_settings)
-
                 # don't forget the queue_id
-                transcription_settings['queue_id'] = current_queue_id
+                transcription_settings['queue_id'] = queue_id
 
-                # remove the audio_file_path from the transcription settings
+                # reset the queue id once we used it to prevent other items in this batch from using it
+                queue_id = None
+
+                # add the audio file path to the transcription settings
                 transcription_settings['audio_file_path'] = source_file_path
 
                 # send the item to transcription queue
-                self.add_transcription_to_queue(**transcription_settings)
+                transcription_queue_id = self.add_transcription_to_queue(**transcription_settings)
 
                 # add this to the queued list
-                queued.append(current_queue_id)
+                if isinstance(transcription_queue_id, str):
+                    queued.append(transcription_queue_id)
+                    transcription_queue_ids.append(transcription_queue_id)
+
+                elif isinstance(transcription_queue_id, list):
+                    queued.extend(transcription_queue_id)
+                    transcription_queue_ids.extend(transcription_queue_id)
 
                 # throttle a bit to avoid collisions etc.
                 time.sleep(0.05)
+
+            # create a video indexing job only if we have video indexing settings
+            if has_video and video_indexing_settings is not None and isinstance(video_indexing_settings, dict):
+
+                # add the video file path to the transcription settings
+                video_indexing_settings['video_file_path'] = source_file_path
+
+                # add the current queue id to the video indexing settings
+                video_indexing_settings['queue_id'] = queue_id
+
+                # reset the queue id once we used it to prevent other items in this batch from using it
+                queue_id = None
+
+                # add the indexing to the queue
+                current_queue_id = self.add_index_video_to_queue(**video_indexing_settings)
+
+                # add the generated queue id to the list to the queued list
+                queued.append(current_queue_id)
+                video_indexing_queue_ids.append(current_queue_id)
+
+            # if we have both audio and video indexing queue ids,
+            # we need to let the transcription queue items know about the video indexing queue ids
+            if transcription_queue_ids and video_indexing_queue_ids:
+
+                # get all the transcription queue items that we just added
+                for transcription_queue_id in transcription_queue_ids:
+
+                    # add the video indexing queue id to the transcription queue item
+                    self.processing_queue.update_queue_item(
+                        transcription_queue_id, video_indexing_queue_ids=video_indexing_queue_ids)
 
         # confirm that stuff was added to the queue
         if len(queued) > 0:
@@ -458,6 +492,8 @@ class ToolkitOps:
         else:
             return False
 
+        all_added_queue_ids = []
+
         # add all the above tasks to the queue
         for i, c_task in enumerate(transcription_tasks):
 
@@ -472,10 +508,14 @@ class ToolkitOps:
                 # then reset it
                 queue_id = None
 
-            c_name = name
-            # add the task name to the name if there are multiple tasks
-            if i > 0:
-                c_name += ' - ' + str(c_task)
+            if c_task == 'transcribe':
+                c_name = 'Transcription of {}'.format(name)
+
+            elif c_task == 'translate':
+                c_name = 'Translation of {}'.format(name)
+
+            else:
+                c_name = name
 
             # pass the queue tasks via kwargs
             # we're not all the transcription tasks into a single item but going through this loop,
@@ -495,7 +535,10 @@ class ToolkitOps:
             kwargs['item_type'] = 'transcription'
 
             # send each item to the universal queue
-            self.processing_queue.add_to_queue(**kwargs)
+            added_queue_id = self.processing_queue.add_to_queue(**kwargs)
+
+            # add the generated queue id to the list to the queued list
+            all_added_queue_ids.append(added_queue_id)
 
             # if we need to group questions, add the group questions tasks too
             if kwargs.get('transcription_group_questions', False):
@@ -508,10 +551,16 @@ class ToolkitOps:
 
                 group_questions_queue_id = self.processing_queue.add_to_queue(**kwargs)
 
+                # add the generated queue id to the list to the queued list
+                all_added_queue_ids.append(group_questions_queue_id)
+
                 # add the main transcription queue item as a dependency to the group questions queue item
                 # this way, when the transcription is done, the group questions item will start
                 # and retrieve all the all the data from the transcription queue item
                 self.processing_queue.add_dependency(queue_id=group_questions_queue_id, dependency_id=next_queue_id)
+
+        # return the queue ids
+        return all_added_queue_ids
 
     def transcription_progress(self, queue_id=None, progress=None):
         '''
@@ -528,6 +577,41 @@ class ToolkitOps:
         # if no progress was passed, just return the current progress
         elif queue_id:
             return self.processing_queue.get_progress(queue_id=queue_id)
+
+    def add_transcription_file_path_to_queue_item(self, queue_id=None, transcription_file_path=None):
+        """
+        This function adds the transcription file path to another queue item
+        """
+
+        # if no queue id was passed, return False
+        if not queue_id:
+            return False
+
+        # if no transcription file path was passed, return False
+        if not transcription_file_path:
+            return False
+
+        # get the queue item
+        queue_item = self.processing_queue.get_item(queue_id=queue_id)
+
+        # if no queue item was found, return False
+        if not queue_item:
+            return False
+
+        # if it has a list of transcription file paths, append the new one
+        if queue_item.get('transcription_file_paths', False):
+
+            # append the new transcription file path
+            queue_item['transcription_file_paths'].append(transcription_file_path)
+
+        # if it doesn't have a list of transcription file paths, create one
+        else:
+
+            # create a list of transcription file paths
+            queue_item['transcription_file_paths'] = [transcription_file_path]
+
+        # update the queue item
+        self.processing_queue.update_queue_item(**queue_item)
 
     # TRANSCRIPTION PROCESS METHODS
 
@@ -1359,7 +1443,7 @@ class ToolkitOps:
             decoding_options = self.whisper_options(**other_options.get('whisper_options', {}))
 
             # do not send an empty string as the language
-            if decoding_options.get('language', '') == '':
+            if decoding_options.get('language', None) and decoding_options.get('language', '') == '':
                 del decoding_options['language']
 
             # run whisper transcribe on the audio segment
@@ -1585,8 +1669,31 @@ class ToolkitOps:
         """
 
         # load audio file as array using librosa
-        # this should work for most audio formats (so ffmpeg might not be needed at all)
-        audio_array, sr = librosa.load(audio_file_path, sr=16_000)
+        # this should work for most audio formats
+        try:
+            audio_array, sr = librosa.load(audio_file_path, sr=16_000)
+
+        # if the above fails, try this:
+        except:
+
+            raw_sr = 48000
+            sr = 16000
+
+            # if this is a video file, extract the audio from it
+            try:
+                video = VideoFileClip(audio_file_path)
+                raw_audio_array = video.audio.to_soundarray(fps=raw_sr)
+            except:
+                # last chance, if this is audio-only, try to load it with AudioFileClip
+
+                audio = AudioFileClip(audio_file_path)
+                raw_audio_array = audio.to_soundarray(fps=raw_sr)
+
+            audio_array = librosa.core.resample(np.asfortranarray(raw_audio_array.T), orig_sr=raw_sr, target_sr=sr)
+            audio_array = librosa.core.to_mono(audio_array)
+
+            # change to float32
+            audio_array = np.asarray(audio_array, dtype=np.float32)
 
         # cancel transcription if user requested it
         if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
@@ -1739,7 +1846,7 @@ class ToolkitOps:
 
         # let the user know the transcription process has started
         if isinstance(time_intervals, list):
-            time_intervals_str = ", ".join([f"{start} - {end}" for start, end in time_intervals])
+            time_intervals_str = ", ".join([f"{start}-{end}" for start, end in time_intervals])
             debug_message = "Transcribing {} between: {}.".format(name, time_intervals_str)
         else:
             debug_message = "Transcribing {}.".format(name)
@@ -1864,13 +1971,20 @@ class ToolkitOps:
                                                      link=True)
 
         # when done, change the status in the queue, clear the progress
-        # and also add the file paths to the queue item
+        # and also add the transcription file path to the queue item
         self.processing_queue.update_queue_item(
             queue_id=queue_id,
             status='done',
             progress='',
             transcription_file_path=transcription.transcription_file_path
         )
+
+        # if a video_indexing_queue_id was provided, add the transcription file path to the video indexing queue item
+        # this is so that the video indexing function adds its own resulting file paths to this transcription
+        if other_options.get('video_indexing_queue_id', False):
+            self.add_transcription_file_path_to_queue_item(
+                queue_id=other_options.get('video_indexing_queue_id'),
+                transcription_file_path=transcription.transcription_file_path)
 
         return True if not return_path else transcription.transcription_file_path
 
@@ -2257,6 +2371,142 @@ class ToolkitOps:
         # this will be used to notify observers when the indexing has been stopped for any reason
         queue_item['on_stop_action_name'] \
             = 'update_fail_indexing_search_file_path_{}'.format(search_item.search_file_path_id)
+
+        return self.processing_queue.add_to_queue(**queue_item)
+
+    def index_video(self, video_file_path, **kwargs):
+
+        # the target dir is either something that was sent via other_options
+        # or it's the directory of the video_file_path
+        target_dir = kwargs.get('target_dir', None) or os.path.dirname(video_file_path)
+
+        # the transcription_file_path is either something that was sent via other_options
+        # or it's the video_file_path, but with the extension changed to .transcription.json
+        transcription_file_path = kwargs.get('transcription_file_path', None) \
+            or os.path.join(target_dir, '{}.transcription.json'.format(os.path.basename(video_file_path)))
+
+        # if a transcription_file_path was passed, use it
+        transcription = Transcription(transcription_file_path)
+
+        def frame_progress_callback(current_frame, total_frames):
+            """
+            This is sent to the encoder to be called after each frame was processed
+            and track the progress so we can update the queue item and cancel mid-encoding if requested
+            """
+
+            if kwargs.get('queue_id', None) is not None:
+
+                # cancel indexing if user requested it
+                if self.processing_queue.cancel_if_canceled(queue_id=kwargs.get('queue_id', None)):
+                    return None
+
+                # calculate the current progress in percent
+                current_progress = round((current_frame / total_frames) * 100)
+
+                # update the queue item progress
+                self.processing_queue.update_queue_item(
+                    queue_id=kwargs.get('queue_id', None),
+                    status='indexing',
+                    progress=current_progress,
+                )
+
+            # keep going
+            return True
+
+        self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='loading encoder')
+
+        # initialize the encoder
+        index = ClipIndex(device=self.torch_device)
+
+        # cancel indexing if user requested it
+        if self.processing_queue.cancel_if_canceled(queue_id=kwargs.get('queue_id', None)):
+            return None
+
+        # update status
+        self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='indexing')
+
+        # index the video and return None if something went wrong
+        if not index.index_video(path=video_file_path, frame_progress_callback=frame_progress_callback,  **kwargs):
+            return None
+
+        # cancel indexing if user requested it
+        if self.processing_queue.cancel_if_canceled(queue_id=kwargs.get('queue_id', None)):
+            return None
+
+        # update status
+        self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='saving index')
+
+        # save the embeddings to disk
+        embedding_paths = index.save_embeddings()
+
+        # if we didn't get the embedding paths, something went wrong
+        if not embedding_paths or not isinstance(embedding_paths, tuple) or len(embedding_paths) != 2:
+            self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='failed')
+            return None
+
+        # this is the path to the numpy file which contains the embeddings
+        numpy_file_path = embedding_paths[0]
+
+        # if 'transcription_file_paths' exists in kwargs, add the metadata paths to all the transcriptions
+        if kwargs.get('transcription_file_paths', None):
+            for transcription_file_path in kwargs.get('transcription_file_paths', None):
+
+                self.add_video_index_paths_to_transcription(transcription_file_path=transcription_file_path,
+
+                                                         video_index_path=numpy_file_path)
+
+        # otherwise, if 'transcription_file_path' exists in kwargs, add the metadata path to that transcription
+        elif kwargs.get('transcription_file_path', None):
+            self.add_video_index_paths_to_transcription(transcription_file_path=transcription_file_path,
+                                                        video_index_path=numpy_file_path)
+
+        # update status
+        self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='done')
+
+        return True
+
+    def add_video_index_paths_to_transcription(self, transcription_file_path, video_index_path):
+        """
+        This adds the video index path (numpy_file_path) to said transcription file
+        """
+
+        transcription = Transcription(transcription_file_path=transcription_file_path)
+
+        # add the video index paths to the transcription
+        transcription.set('video_index_path', os.path.basename(video_index_path))
+
+        # save the transcription
+        transcription.save_soon(sec=0)
+
+
+    def add_index_video_to_queue(self, video_file_path, **other_options):
+        """
+        This adds the clip indexing task to the processing queue
+        """
+
+        # prepare the queue item dict
+        queue_item = dict()
+
+        # the queue item name
+        queue_item_name = os.path.basename(video_file_path)
+
+        # let's define the source file path as the video file path for now
+        queue_item['source_file_path'] = video_file_path
+
+        # the transcription file path
+        queue_item['transcription_file_path'] = other_options.get('transcription_file_path', None)
+
+        # the queue id if any
+        queue_item['queue_id'] = other_options.get('queue_id', None)
+
+        # other options
+        queue_item['name'] = 'Video index of {}'.format(queue_item_name)
+        queue_item['task_data'] = True
+        queue_item['tasks'] = ['index_video']
+        queue_item['device'] = self.torch_device_type_select()
+        queue_item['item_type'] = 'index_video'
+        queue_item['video_file_path'] = queue_item['source_file_path']
+        queue_item['shot_change_threshold'] = other_options.get('shot_change_threshold', None)
 
         return self.processing_queue.add_to_queue(**queue_item)
 

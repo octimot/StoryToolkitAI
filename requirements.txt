@@ -31,8 +31,10 @@ resampy
 openai
 spacy>=3.0.0
 spacy-langdetect
+clip @ git+https://github.com/openai/CLIP.git@a9b1bf5920416aaeaec965c25dd9e8f98c864f16
 opencv-python
 patchify
 darkdetect
 customtkinter @ git+https://github.com/octimot/CustomTkinter.git@32dacb3200534656a755ec8218b2725fa01b699f
 ftfy
+moviepy
