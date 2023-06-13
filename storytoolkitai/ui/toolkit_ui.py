@@ -1677,14 +1677,25 @@ class toolkit_UI():
         # add an Observer to the transcription window
         window_observer = Observer()
 
+        # wrap the call with after() so that all notifications are executed sequentially and not in parallel
+        # this is important,
+        # otherwise widgets might be destroyed by some threads while other threads are trying to access them
+        # triggering a _tkinter.TclError: invalid command name exception
+        def callback_after(*args, **kwargs):
+
+            # get the window
+            window = self.get_window_by_id(window_id=window_id)
+
+            window.after(1, callback, *args, **kwargs)
+
         # if the dettach_after_call is True, execute the callback and then dettach the observer
         if dettach_after_call:
 
             # create a new callback which contains the callback and the dettach function
             def callback_with_dettach(*args, **kwargs):
 
-                # call the callback
-                callback(*args, **kwargs)
+                # call the callback through after()
+                callback_after(*args, **kwargs)
 
                 # dettach the observer
                 self.toolkit_ops_obj.dettach_observer(action=action, observer=window_observer)
@@ -1693,9 +1704,9 @@ class toolkit_UI():
             window_observer.update = callback_with_dettach
 
         else:
-            window_observer.update = callback
+            window_observer.update = callback_after
 
-        # attach the observer to update_transcription action
+        # attach the observer to the action
         self.toolkit_ops_obj.attach_observer(action=action, observer=window_observer)
 
         # add the observer to the windows_observers dictionary
