@@ -1359,7 +1359,11 @@ class ToolkitOps:
             decoding_options = self.whisper_options(**other_options.get('whisper_options', {}))
 
             # do not send an empty string as the language
-            if decoding_options.get('language', '') == '':
+            if 'language' in decoding_options and (
+                    not isinstance(decoding_options['language'], str)
+                    or decoding_options['language'] is None
+                    or decoding_options['language'] == ''
+            ):
                 del decoding_options['language']
 
             # run whisper transcribe on the audio segment
