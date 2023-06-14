@@ -18,6 +18,7 @@ from timecode import Timecode
 
 import tkinter as tk
 import customtkinter as ctk
+from PIL import Image, ImageTk
 
 from tkinter import filedialog, simpledialog, messagebox, font
 
@@ -77,6 +78,9 @@ class toolkit_UI():
 
     ctk_side_frame_button_paddings = {'padx': 10, 'pady': 10}
     ctk_side_frame_button_size = {'width': 200}
+    ctk_side_label_settings = {'width': 100, 'anchor': 'w'}
+    ctk_side_label_paddings = {'padx': 10, 'pady': (2, 6)}
+    ctk_side_switch_settings = {'width': 50}
     ctk_fake_listbox_label_paddings = {'padx': 5, 'pady': 0}
     ctk_fake_listbox_paddings = {'padx': 5, 'pady': 0}
 
@@ -1914,7 +1918,10 @@ class toolkit_UI():
         return True
 
     def _add_switch_to_side_frames_of_window(self, window_id: str, side: str,
-                                             switch_text: str, switch_command: callable, sub_frame: str = None):
+                                             switch_command: callable = None,
+                                             switch_text: str = '',
+                                             sub_frame: str = None,
+                                             label_text=None):
         """
         This adds a switch to the left or right frame of a window. It also creates a sub-frame for it if needed.
         :param window_id: the id of the text window
@@ -1940,28 +1947,48 @@ class toolkit_UI():
         # this will be the frame we use to add the switch
         switch_parent_frame = self._add_side_subframe_to_window(frame, sub_frame)
 
-        # finally, add the button
+        # finally, add the switch
         # but only if another switch with the same text doesn't already exist
-        if hasattr(switch_parent_frame, 'switch_{}'.format(switch_text.strip().lower())):
+        if hasattr(switch_parent_frame, 'switch_{}'.format(
+                label_text.strip().lower() if label_text is not None else switch_text.strip().lower()
+        )):
             return False
 
+        # add a frame to hold a switch and a label
+        switch_frame = ctk.CTkFrame(
+            switch_parent_frame, **self.ctk_side_frame_button_size)
+
+        # add a label to it
+        if label_text is not None:
+            new_label = ctk.CTkLabel(switch_frame, text=label_text, **self.ctk_side_label_settings)
+            new_label.grid(row=0, column=0, sticky='w', **self.ctk_side_label_paddings)
+
+        # add a bool variable to hold the switch state
+        switch_state_var = tk.BooleanVar()
+
         # add the button
-        new_button = ctk.CTkSwitch(switch_parent_frame,
+        new_switch = ctk.CTkSwitch(switch_frame,
                                    text=switch_text,
                                    command=switch_command,
-                                   **self.ctk_side_frame_button_size
+                                   variable=switch_state_var,
+                                   **self.ctk_side_switch_settings
                                    )
-        new_button.pack(fill='x', expand=True, **self.ctk_side_frame_button_paddings, anchor='nw')
+        new_switch.grid(row=0, column=1, sticky='e')
 
-        # add the new button as an attribute of the sub-frame
-        setattr(switch_parent_frame, 'switch_{}'.format(switch_text.strip().lower()), new_button)
+        # the switch frame should fill the parent frame
+        switch_frame.columnconfigure(0, weight=1)
+
+        switch_frame.pack(fill='x', expand=True, **self.ctk_side_frame_button_paddings, anchor='w')
+
+        # add the new switch as an attribute of the sub-frame
+        setattr(switch_parent_frame, 'switch_{}'.format(switch_text.strip().lower()), new_switch)
 
         # is the frame in the grid?
         if not frame.grid_info():
             # if not, add it so that it's visible
             frame.grid(row=0, column=frame_column, sticky="ns")
 
-        return True
+        return switch_state_var, switch_frame
 
     def reset_status_label_after(self, window_id, seconds=5):
         """
@@ -2447,7 +2474,8 @@ class toolkit_UI():
         # first get the current insert position
         insert_pos = self.text_windows[window_id]['text_widget'].index('insert')
 
-        self.text_windows[window_id]['text_widget'].insert('insert', text + '\n\n')
+        if text != '':
+            self.text_windows[window_id]['text_widget'].insert('insert', text + '\n\n')
 
         # now change the color of the last entry to supernormal (almost white)
         self.text_windows[window_id]['text_widget'].tag_add('reply', insert_pos, 'end-1c' + linestart)
@@ -4620,7 +4648,7 @@ class toolkit_UI():
         shot_change_sensitivity = \
             kwargs.get('clip_shot_change_sensitivity', None) \
                 if kwargs.get('clip_shot_change_sensitivity', None) is not None \
-                else self.stAI.get_app_setting('clip_shot_change_sensitivity', default_if_none=40)
+                else self.stAI.get_app_setting('clip_shot_change_sensitivity', default_if_none=13)
 
         # convert the sensitivity to a value between 0 and 100
         shot_change_sensitivity = 100 - int(shot_change_sensitivity * 100 / 255)
@@ -10131,6 +10159,10 @@ class toolkit_UI():
                 selected_file_path = filedialog.askdirectory(initialdir=initial_dir,
                                                              title='Select a directory to use in the search')
 
+                # if the user aborted the file selection, return False
+                if not selected_file_path:
+                    return None
+
                 # update the last selected dir
                 if selected_file_path:
                     search_file_paths = selected_file_path
@@ -10142,13 +10174,24 @@ class toolkit_UI():
                     = filedialog.askopenfilenames(initialdir=initial_dir,
                                                   title='Select files to use in the search',
                                                   filetypes=[('Transcription files', '*.json'),
-                                                             ('Text files', '*.txt')])
+                                                             ('Text files', '*.txt')
+                                                             ])
+
+                # if the user aborted the file selection, return False
+                if not selected_file_path:
+                    return None
 
                 # update the last selected dir
                 if selected_file_path:
 
+                    def validate_either(path):
+                        return TextSearch.is_file_searchable(path) or VideoSearch.is_file_searchable(path)
+
                     # turn directories into files and filter out non-searchable files (by extension)
-                    search_file_paths = TextSearch.filter_file_paths(selected_file_path)
+                    search_file_paths = SearchItem.filter_file_paths(
+                        search_paths=selected_file_path,
+                        file_validator=validate_either
+                    )
 
                     self.stAI.initial_target_dir = os.path.dirname(selected_file_path[0])
 
@@ -10158,10 +10201,6 @@ class toolkit_UI():
                 self.stAI.save_project_setting(project_name=NLE.current_project,
                                                setting_key='last_target_dir',
                                                setting_value=os.path.dirname(search_file_paths[0]))
-
-            if not search_file_paths:
-                # logger.info('No files were selected for search. Aborting.')
-                return False
 
         # but if the call included a search file path, format it as a list if it isn't already
         elif search_file_path is not None:
@@ -10190,7 +10229,12 @@ class toolkit_UI():
             select_dir=select_dir
         )
 
-        # abort if we don't have any search file paths (the user probably aborted)
+        # abort if we don't have any search file paths (but don't show the message if the user aborted - none)
+        if search_file_paths is not None and not search_file_paths:
+           self.notify_via_messagebox(
+               type='info', message='No valid files found for search.', parent=self.get_window_by_id('main'))
+           return None
+
         if not search_file_paths:
             return None
 
@@ -10263,21 +10307,26 @@ class toolkit_UI():
         # even if this was done before, just to make sure we're using the same TextSearch object
 
         # filter the files that are not searchable (by extension) and turn directories into files
-        search_file_paths = TextSearch.filter_file_paths(search_file_paths)
+        text_search_file_paths = TextSearch.filter_file_paths(search_file_paths)
+
+        # filter the video search file paths
+        video_search_file_paths = VideoSearch.filter_file_paths(search_file_paths)
 
         # use_analyzer
         use_analyzer = self.stAI.get_app_setting('search_preindexing_textanalysis', default_if_none=False)
 
         # initialize the search item object
-        search_item = TextSearch(toolkit_ops_obj=self.toolkit_ops_obj, search_file_paths=search_file_paths,
+        text_search_item = TextSearch(toolkit_ops_obj=self.toolkit_ops_obj, search_file_paths=text_search_file_paths,
                                  search_type='semantic', use_analyzer=use_analyzer)
 
+        video_search_item = VideoSearch(toolkit_ops_obj=self.toolkit_ops_obj, search_file_paths=video_search_file_paths)
+
         # if this search has a file path id,
-        if search_item.search_file_path_id is not None:
+        if text_search_item.search_file_path_id is not None:
 
             # let's use it in the search window's id
             # this will help if we want to avoid re-opening it for the same file paths
-            search_window_id = 'adv_search_{}'.format(search_item.search_file_path_id)
+            search_window_id = 'adv_search_{}'.format(text_search_item.search_file_path_id)
 
             open_multiple = False
 
@@ -10291,7 +10340,8 @@ class toolkit_UI():
                                                  prompt_prefix='SEARCH > ',
                                                  prompt_callback=self.advanced_search,
                                                  prompt_callback_kwargs={
-                                                     'search_item': search_item,
+                                                     'text_search_item': text_search_item,
+                                                     'video_search_item': video_search_item,
                                                      'search_window_id': search_window_id},
                                                  type='search',
                                                  open_multiple=open_multiple,
@@ -10310,164 +10360,208 @@ class toolkit_UI():
 
         help_console_info = "Type [help] to see all available commands.\n\n"
 
+        def ready_for_search():
+            """
+            This updates the window with the "ready for search" prefix and message
+            """
+            # change the prefix back to SEARCH
+            self._text_window_set_prefix(window_id=search_window_id, prefix='SEARCH > ')
+
+            # update the text window
+            self._text_window_update(
+                search_window_id, help_console_info + 'Ready for search.', clear=True)
+
         # get this window object
         search_window = self.get_window_by_id(search_window_id)
 
         # change the prefix of the window from SEARCH to nothing until the processing is done
         self._text_window_set_prefix(window_id=search_window_id, prefix=' > ')
 
-        def process_items(thread):
-            """
-            This processes the indexing for this search window, either directly in a thread or through the queue.
-            """
+        # let the user know that we're now reading the files
+        self._text_window_update(
+            search_window_id,
+            text=help_console_info+'Reading {} {}...'.format(
+                text_search_item.search_file_paths_count,
+                'file' if text_search_item.search_file_paths_count == 1 else 'files'),
+            clear=True
+        )
 
-            # let the user know that we're now reading the files
-            self._text_window_update(
-                search_window_id,
-                text=help_console_info+'Reading {} {}...'.format(
-                    search_item.search_file_paths_count,
-                    'file' if search_item.search_file_paths_count == 1 else 'files'),
-                clear=True
-            )
-
-            def ready_for_search():
+        # TEXT SEARCH
+        # check if we have text files to search, otherwise this is video search only and we can skip this
+        if text_search_file_paths:
+            def process_text_items(thread):
                 """
-                This updates the window with the "ready for search" prefix and message
+                This processes the indexing for this search window, either directly in a thread or through the queue.
                 """
-                # change the prefix back to SEARCH
-                self._text_window_set_prefix(window_id=search_window_id, prefix='SEARCH > ')
 
-                # update the text window
-                self._text_window_update(
-                    search_window_id, help_console_info + 'Ready for search.', clear=True)
+                # the preparation of the search corpus needs to happen before sending the search item to the queue
+                # this is the only way to find out if we have a cache or not
+                # but it also means that we're taking it through TextAnalysis which might be slow...
+                text_search_item.prepare_search_corpus()
 
-            # the preparation of the search corpus needs to happen before sending the search item to the queue
-            # this is the only way to find out if we have a cache or not
-            # but it also means that we're taking it through TextAnalysis which might be slow...
-            search_item.prepare_search_corpus()
+                queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
 
-            queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+                in_queue = False
+                # look through all the queue items and see if the search_file_paths match
+                for q_item_id, q_item in queue_items.items():
 
-            in_queue = False
-            # look through all the queue items and see if the search_file_paths match
-            for q_item_id, q_item in queue_items.items():
+                    # if the queue item is a search item
+                    if q_item.get('item_type', None) == 'search' \
+                            and q_item.get('search_file_paths', None) == text_search_file_paths:
 
-                # if the queue item is a search item
-                if q_item.get('item_type', None) == 'search' \
-                        and q_item.get('search_file_paths', None) == search_file_paths:
+                        # if the item is done, let the user know that he can search
+                        if q_item['status'] == 'done':
+                            ready_for_search()
 
-                    # if the item is done, let the user know that he can search
-                    if q_item['status'] == 'done':
-                        ready_for_search()
+                            # we're saying it is in the queue, just to avoid re-processing it
+                            in_queue = True
+                            break
 
-                        # we're saying it is in the queue, just to avoid re-processing it
-                        in_queue = True
-                        break
+                        # if the item is still processing, let the user know that he has to wait
+                        elif q_item['status'] not in ['failed', 'canceled', 'canceling']:
+                            self._text_window_update(
+                                window_id=search_window_id,
+                                text=help_console_info + 'Waiting for queue to finish processing...', clear=True)
+                            in_queue = True
+                            break
 
-                    # if the item is still processing, let the user know that he has to wait
-                    elif q_item['status'] not in ['failed', 'canceled', 'canceling']:
-                        self._text_window_update(
+                        # for any other status (failed, canceled, canceling), we can say it's not in the queue
+                        else:
+                            in_queue = False
+                            break
+
+                # if the search_file_paths_size is larger than 300kb and doesn't have a cache
+                if not in_queue \
+                        and text_search_item.search_file_paths_size > 300000 \
+                        and not text_search_item.cache_exists:
+
+                    # add the search item to the queue
+                    queue_id = self.toolkit_ops_obj.add_index_text_to_queue(
+                        queue_item_name='Indexing text of {}'.format(search_window_title_ext),
+                        search_file_paths=text_search_file_paths)
+
+                    self._text_window_update(
+                        search_window_id, help_console_info+'Sent processing job to the queue...', clear=True)
+
+                    if queue_id:
+
+                        # add the queue id as a processing item to the window
+                        #  - this will be removed when the observer is notified at the end of the processing
+                        self.add_window_processing(window_id=search_window_id, processing_item=queue_id)
+
+                        def window_indexing_done():
+                            """
+                            We use this as a callback to update the text window when the done indexing observer is notified
+                            """
+
+                            # remove the processing queue item from the window
+                            self.remove_window_processing(window_id=search_window_id, processing_item=queue_id)
+
+                            # if the window is no longer processing anything, we can update the text window
+                            if not self.is_window_processing(window_id=search_window_id):
+                                ready_for_search()
+
+                        def window_indexing_failed():
+                            """
+                            We use this as a callback to update the text window
+                            when the failed indexing observer is notified
+                            """
+
+                            self.notify_via_messagebox(
+                                message="The indexing was either canceled or it failed for this search. \n"
+                                        "Please re-open this window if you want to try again."
+                                .format(search_window_title),
+                                type='error',
+                                parent=search_window,
+                                message_log="Indexing failed for search window {}.".format(search_window_title)
+                            )
+
+                            # close this window
+                            self.destroy_advanced_search_window(search_window_id)
+
+                        # add window observer to track when the queue is done processing
+                        self.add_observer_to_window(
                             window_id=search_window_id,
-                            text=help_console_info + 'Waiting for queue to finish processing...', clear=True)
-                        in_queue = True
-                        break
-
-                    # for any other status (failed, canceled, canceling), we can say it's not in the queue
-                    else:
-                        in_queue = False
-                        break
-
-            # if the search_file_paths_size is larger than 300kb and doesn't have a cache
-            if not in_queue and search_item.search_file_paths_size > 300000 and not search_item.cache_exists:
-
-                # add the search item to the queue
-                queue_id = self.toolkit_ops_obj.add_index_text_to_queue(
-                    queue_item_name='Indexing text of {}'.format(search_window_title_ext),
-                    search_file_paths=search_file_paths)
-
-                self._text_window_update(
-                    search_window_id, help_console_info+'Sent processing job to the queue...', clear=True)
-
-                if queue_id:
-
-                    # add the queue id as a processing item to the window
-                    #  - this will be removed when the observer is notified at the end of the processing
-                    self.add_window_processing(window_id=search_window_id, processing_item=queue_id)
-
-                    def window_indexing_done():
-                        """
-                        We use this as a callback to update the text window when the done indexing observer is notified
-                        """
-
-                        ready_for_search()
-
-                        # remove the processing queue item from the window
-                        self.remove_window_processing(window_id=search_window_id, processing_item=queue_id)
-
-                    def window_indexing_failed():
-                        """
-                        We use this as a callback to update the text window
-                        when the failed indexing observer is notified
-                        """
-
-                        self.notify_via_messagebox(
-                            message="The indexing was either canceled or it failed for this search. \n"
-                                    "Please re-open this window if you want to try again."
-                            .format(search_window_title),
-                            type='error',
-                            parent=search_window,
-                            message_log="Indexing failed for search window {}.".format(search_window_title)
+                            action='update_done_indexing_search_file_path_{}'
+                            .format(text_search_item.search_file_path_id),
+                            callback=window_indexing_done,
+                            dettach_after_call=True
                         )
 
-                        # close this window
-                        self.destroy_advanced_search_window(search_window_id)
+                        # add window observer to track when the queue failed/canceled processing
+                        self.add_observer_to_window(
+                            window_id=search_window_id,
+                            action='update_fail_indexing_search_file_path_{}'
+                            .format(text_search_item.search_file_path_id),
+                            callback=window_indexing_failed,
+                            dettach_after_call=True
+                        )
 
-                    # add window observer to track when the queue is done processing
-                    self.add_observer_to_window(
-                        window_id=search_window_id,
-                        action='update_done_indexing_search_file_path_{}'.format(search_item.search_file_path_id),
-                        callback=window_indexing_done,
-                        dettach_after_call=True
-                    )
+                        # open the queue window
+                        self.open_queue_window()
 
-                    # add window observer to track when the queue failed/canceled processing
-                    self.add_observer_to_window(
-                        window_id=search_window_id,
-                        action='update_fail_indexing_search_file_path_{}'.format(search_item.search_file_path_id),
-                        callback=window_indexing_failed,
-                        dettach_after_call=True
-                    )
+                        # check if the processing isn't already done by the time we reach this
+                        # - sometimes the queue is so fast that we miss the observer notification
+                        queue_item = self.toolkit_ops_obj.processing_queue.get_item(queue_id)
+                        if queue_item['status'] == 'done':
+                            window_indexing_done()
 
-                    # open the queue window
-                    self.open_queue_window()
+                # if the total file size is smaller than 150kb, process it now
+                elif not in_queue:
 
-                    # check if the processing isn't already done by the time we reach this
-                    # - sometimes the queue is so fast that we miss the observer notification
-                    queue_item = self.toolkit_ops_obj.processing_queue.get_item(queue_id)
-                    if queue_item['status'] == 'done':
-                        window_indexing_done()
+                    self._text_window_update(
+                        search_window_id, help_console_info+'Processing for a moment...', clear=True)
 
-            # if the total file size is smaller than 150kb, process it now
-            elif not in_queue:
+                    # use the toolkit method of indexing text
+                    self.toolkit_ops_obj.index_text(search_file_paths=text_search_file_paths)
+
+                # when this is done, remove the processing text item from the window
+                self.remove_window_processing(window_id=search_window_id, processing_item=thread)
+
+                # if the window is no longer processing anything, we're ready for search
+                if not self.is_window_processing(window_id=search_window_id):
+                    ready_for_search()
+
+            # create a new thread to prevent locking the window
+            processing_thread = Thread(target=lambda: process_text_items(processing_thread))
+            # start the thread
+            processing_thread.start()
+
+            # add the processing item to the window so it "knows" that it's processing something
+            self.add_window_processing(window_id=search_window_id, processing_item=processing_thread)
+
+        # VIDEO SEARCH
+        if video_search_file_paths and video_search_item.search_file_paths:
+
+            def process_video_items(thread):
 
                 self._text_window_update(
                     search_window_id, help_console_info+'Processing for a moment...', clear=True)
 
-                # use the toolkit method of indexing text
-                self.toolkit_ops_obj.index_text(search_file_paths=search_file_paths)
+                # load the video search
+                video_search_item.load_index_paths()
 
-                ready_for_search()
+                self._text_window_update(
+                    search_window_id, help_console_info+'Loading video search...', clear=True)
 
-            # when this is done, remove the processing item from the window
-            self.remove_window_processing(window_id=search_window_id, processing_item=thread)
+                # load the clip model
+                video_search_item.load_model()
 
-        # create a new thread to prevent locking the window
-        processing_thread = Thread(target=lambda: process_items(processing_thread))
-        # start the thread
-        processing_thread.start()
+                # when this is done, remove the processing text item from the window
+                self.remove_window_processing(window_id=search_window_id, processing_item=thread)
 
-        # add the processing item to the window so it "knows" that it's processing something
-        self.add_window_processing(window_id=search_window_id, processing_item=processing_thread)
+                # if the window is no longer processing anything, we're ready for search
+                if not self.is_window_processing(window_id=search_window_id):
+                    ready_for_search()
+
+            # create a new thread to prevent locking the window
+            processing_video_thread = Thread(target=lambda: process_video_items(processing_video_thread))
+            # start the thread
+            processing_video_thread.start()
+
+            # add the processing item to the window so it "knows" that it's processing something
+            self.add_window_processing(window_id=search_window_id, processing_item=processing_video_thread)
+
 
         # if the parent of the window is not the main window
         if parent_window != self.root:
@@ -10476,17 +10570,17 @@ class toolkit_UI():
             parent_window.search_window = search_window
 
         # add the search item to the search window
-        search_window.search_item = search_item
+        search_window.text_search_item = text_search_item
 
         # add the button to the left frame of the search window
 
         # SEARCH BUTTONS
-        self._add_button_to_side_frames_of_window(search_window_id, side='left',
-                                                  button_text='Change model',
-                                                  button_command=
-                                                  lambda search_window_id=search_window_id:
-                                                  self.button_search_change_model(search_window_id),
-                                                  sub_frame="Search")
+        # self._add_button_to_side_frames_of_window(search_window_id, side='left',
+        #                                           button_text='Change model',
+        #                                           button_command=
+        #                                           lambda search_window_id=search_window_id:
+        #                                           self.button_search_change_model(search_window_id),
+        #                                           sub_frame="Search")
 
         self._add_button_to_side_frames_of_window(search_window_id, side='left',
                                                   button_text='List files',
@@ -10494,6 +10588,44 @@ class toolkit_UI():
                                                   lambda search_window_id=search_window_id:
                                                   self.button_search_list_files(search_window_id),
                                                   sub_frame="Search")
+
+        search_window.search_text_switch_var, search_window.search_text_switch_input = \
+            self._add_switch_to_side_frames_of_window(search_window_id, side='left',
+                                                      label_text='Search text',
+                                                      sub_frame="Search")
+
+        if text_search_item.search_file_paths:
+            search_window.search_text_switch_var.set(True)
+        else:
+            search_window.search_text_switch_var.set(False)
+            search_window.search_text_switch_input.pack_forget()
+            search_window.search_video_switch_input.pack_forget()
+
+        search_window.search_video_switch_var, search_window.search_video_switch_input =\
+            self._add_switch_to_side_frames_of_window(search_window_id, side='left',
+                                                      label_text='Search video',
+                                                      sub_frame="Search")
+
+        if video_search_item.search_file_paths:
+            search_window.search_video_switch_var.set(True)
+        else:
+            search_window.search_video_switch_var.set(False)
+            search_window.search_video_switch_input.pack_forget()
+            search_window.search_text_switch_input.pack_forget()
+
+        # don't let both be off, so if one gets off, turn the other on
+        def switch_search_text():
+
+            if search_window.search_text_switch_var.get() == 0:
+                search_window.search_video_switch_var.set(True)
+
+        def switch_search_video():
+
+            if search_window.search_video_switch_var.get() == 0:
+                search_window.search_text_switch_var.set(True)
+
+        search_window.search_text_switch_var.trace('w', lambda *args: switch_search_text())
+        search_window.search_video_switch_var.trace('w', lambda *args: switch_search_video())
 
         # SPACY BUTTONS
         # self._add_switch_to_side_frames_of_window(search_window_id, side='left',
@@ -10609,7 +10741,7 @@ class toolkit_UI():
 
         self._text_window_update(search_window_id, search_file_list)
 
-    def advanced_search(self, prompt, search_item, search_window_id):
+    def advanced_search(self, prompt, text_search_item=None, video_search_item=None, search_window_id=None):
         """
         This is the callback function for the advanced search window.
         It calls the search function of the search item and passes the prompt as the search query.
@@ -10618,6 +10750,10 @@ class toolkit_UI():
 
         # the window object
         search_window = self.get_window_by_id(search_window_id)
+
+        if search_window is None:
+            logger.error('Cannot search - the search window is not defined.')
+            return False
 
         # are we supposed to clear the window before each reply?
         clear_before_reply = self.stAI.get_app_setting('search_clear_before_results', default_if_none=True)
@@ -10659,14 +10795,14 @@ class toolkit_UI():
 
                     # load the model
                     try:
-                        search_item.load_model(model_name=model_name)
+                        text_search_item.load_model(model_name=model_name)
                     except:
                         self._text_window_update(search_window_id, 'Could not load model {}.'.format(model_name))
                         return
 
-            if search_item.model_name:
+            if text_search_item.model_name:
                 self._text_window_update(
-                    search_window_id, 'Using model {}'.format(search_item.model_name), clear=clear_before_reply)
+                    search_window_id, 'Using model {}'.format(text_search_item.model_name), clear=clear_before_reply)
             else:
                 self._text_window_update(
                     search_window_id,
@@ -10684,16 +10820,13 @@ class toolkit_UI():
             return
 
         elif prompt.lower() == '[listfiles]' or prompt.lower() == '[list files]':
-            self._advanced_search_list_files_in_window(search_window_id, search_item, clear=clear_before_reply)
+            self._advanced_search_list_files_in_window(search_window_id, text_search_item, clear=clear_before_reply)
             return
 
         # is the user trying to quit?
         elif prompt.lower() == '[quit]':
             self.destroy_advanced_search_window(search_window_id)
             return
-
-        # keep track of when we started the search
-        start_search_time = time.time()
 
         # if we reached this point, we're sending the prompt to the search item
         # but first, we need to make sure that the window is not processing
@@ -10707,25 +10840,86 @@ class toolkit_UI():
             )
             return
 
-        # perform the search
-        search_results, max_results = search_item.search(query=prompt)
+        # perform the text search if the user sent a text search item
+        # and if the search_window.search_text_switch_var exists and is set to True
+        if text_search_item is not None and hasattr(search_window, 'search_text_switch_var') \
+                and search_window.search_text_switch_var.get() is True:
+
+            self.advanced_search_text(
+                text_search_item=text_search_item, search_window_id=search_window_id, prompt=prompt,
+                clear_before_reply=clear_before_reply)
+
+            # set this to false so that the video search doesn't clear the window
+            clear_before_reply = False
+
+        else:
+            text_search_item = None
+
+        if video_search_item and hasattr(search_window, 'search_video_switch_var') \
+                and search_window.search_video_switch_var.get() is True:
+
+            # add some space between the text and video results
+            # if text_search_item is not None:
+
+            #     # get the search window text element
+            #     results_text_element = self.text_windows[search_window_id]['text_widget']
+
+            #     # add a new line to separate the text and video results
+            #     results_text_element.insert(ctk.END, "\n")
+
+            self.advanced_search_video(
+                video_search_item=video_search_item, search_window_id=search_window_id, prompt=prompt,
+                clear_before_reply=clear_before_reply)
+
+        else:
+            video_search_item = None
+
+        # use this to make sure we have a new prompt prefix for the next search
+        if text_search_item is not None or video_search_item is not None:
+            self._text_window_update(search_window_id, 'Ready for new search.', scroll_to='1.1')
+        else:
+
+            if search_window.search_video_switch_var.get() is False \
+                    and search_window.search_text_switch_var.get() is False:
+
+                self.notify_via_messagebox('warning', message="Both text and video search are disabled.")
+
+            self._text_window_update(search_window_id, 'Ready for new search.', clear=clear_before_reply)
+
+    def _format_time_for_search_results(self, time_in_seconds=None):
+        """
+        Formats the time in seconds to a human readable format
+        """
+
+        return "{:02d}:{:02d}:{:02d}.{:03d}" \
+            .format(int(time_in_seconds // 3600),
+                    int((time_in_seconds // 60) % 60),
+                    int(time_in_seconds % 60),
+                    int((time_in_seconds % 1) * 1000)
+                    )
+
+    def advanced_search_text(self, text_search_item, search_window_id, prompt, clear_before_reply=True):
+
+        # keep track of when we started the search
+        start_search_time = time.time()
+
+        search_results, max_results = text_search_item.search(query=prompt)
 
         # get the search window text element
         results_text_element = self.text_windows[search_window_id]['text_widget']
 
         # how long did the search take?
-        total_search_time = time.time() - start_search_time
+        # total_search_time = time.time() - start_search_time
 
         # now add the search results to the search results window
         if len(search_results) > 0:
 
             # clear the search window if we're supposed to
             if clear_before_reply:
-
                 self._text_window_update(search_window_id, '', clear=clear_before_reply)
 
                 # but add back the search term before the results
-                results_text_element.insert(ctk.END, prompt+"\n\n")
+                results_text_element.insert(ctk.END, prompt + "\n\n")
 
             # add text to the search window
             # self._text_window_update(search_window_id + '_B', 'Searched in files...')
@@ -10745,9 +10939,9 @@ class toolkit_UI():
                     # add the search term header
                     # if we haven't cleared the previous results,
                     # we need to somehow mark the beginning of the new results, so that they're easier to spot
-                    if not clear_before_reply:
-                        results_text_element.insert(ctk.END, 'Searching for: "' + result_search_term + '"\n')
-                        results_text_element.insert(ctk.END, '--------------------------------------\n')
+                    #if not clear_before_reply:
+                    #    results_text_element.insert(ctk.END, 'Searching for: "' + result_search_term + '"\n')
+                    #    results_text_element.insert(ctk.END, '--------------------------------------\n')
 
                     results_text_element.insert(ctk.END, 'Top {} closest phrases:\n\n'.format(max_results))
 
@@ -10756,6 +10950,12 @@ class toolkit_UI():
 
                 # add the result text
                 text_result = result['text']
+
+                # replace new lines with spaces
+                text_result = text_result.replace('\n', ' ')
+
+                # remove double spaces
+                text_result = text_result.replace('  ', ' ')
 
                 # add the result text
                 results_text_element.insert(ctk.END, str(text_result).strip() + '\n')
@@ -10767,15 +10967,26 @@ class toolkit_UI():
                 # if the type is a transcription
                 if result['type'] == 'transcription':
 
-                    time_str = "second {:.2f}".format(result['transcript_time']) \
-                        if result['timecode'] is None else result['timecode']
+                    # time_str = "{:.2f}".format(result['transcript_time']) \
+                    #    if result['timecode'] is None else result['timecode']
 
-                    results_text_element.insert(ctk.END, ' -- Transcript Line {} ({}) \n'
-                                                .format(result['segment_index'], time_str))
+                    # for the time string, we either use the timecode or the transcript time
+                    if result['timecode'] is None:
+
+                        # format the time string to HH:MM:SS.MS
+                        time_str = self._format_time_for_search_results(result['transcript_time'])
+
+                    else:
+                        time_str = result['timecode']
+
+                    # add the time string to the result text
+                    results_text_element.insert(ctk.END, '{} '.format(time_str))
 
                     # add the transcription file path and segment index to the result
-                    results_text_element.insert(ctk.END, ' -- Transcript: {}\n'
-                                                .format(result['name']))
+                    results_text_element.insert(ctk.END, '- {} '.format(result['name']))
+
+                    # add a new line
+                    results_text_element.insert(ctk.END, '\n')
 
                     # add a tag to the above text to make it clickable
                     tag_name = 'clickable_{}'.format(result['idx'])
@@ -10808,12 +11019,14 @@ class toolkit_UI():
                 # if the type is a transcription
                 elif result['type'] == 'text':
                     # add the transcription file path and segment index to the result
-                    results_text_element.insert(ctk.END, ' -- File: {}\n'
+                    results_text_element.insert(ctk.END, '{}\n'
                                                 .format(os.path.basename(result['file_path'])))
 
                     # add a tag to the above text to make it clickable
                     tag_name = 'clickable_{}'.format(result['idx'])
                     results_text_element.tag_add(tag_name, current_insert_position, ctk.INSERT)
+
+                    print('tag_name', tag_name, result['idx'])
 
                     # hash the file path so we can use it as a window id
                     file_path_hash = hashlib.md5(result['file_path'].encode('utf-8')).hexdigest()
@@ -10837,25 +11050,41 @@ class toolkit_UI():
                 # if the type is a marker
                 elif result['type'] == 'marker':
 
-                    # add the timeline name
-                    results_text_element.insert(ctk.END, ' -- Marker at Frame: {}\n'.format(result['marker_index']))
-                    # results_text_element.insert(ctk.END, ' -- Source: Timeline Marker\n')
+                    # if we have timecode data for this result
+                    if result.get('timeline_fps', None) is not None \
+                            and result.get('timeline_start_tc', None) is not None:
 
-                    # add the project name
-                    results_text_element.insert(ctk.END, ' -- Project: {}\n'.format(result['project']))
+                        # convert the marker_index to timecode
+                        timecode = Timecode(result['timeline_fps'], frames=int(result['marker_index']))
+
+                        if result['timeline_start_tc'] != '00:00:00:00':
+
+                            try:
+                                timecode += Timecode(result['timeline_fps'], result['timeline_start_tc'])
+
+                            except:
+                                pass
+
+                        marker_index_or_time_str = str(timecode)
+
+                    else:
+                        marker_index_or_time_str = "frame {}".format(result['marker_index'])
 
                     # add the timeline name
-                    results_text_element.insert(ctk.END, ' -- Timeline: {}\n'.format(result['timeline']))
+                    results_text_element.insert(
+                        ctk.END, 'Marker at {} - {}, project: {}\n'
+                        .format(marker_index_or_time_str, result['timeline'], result['project'])
+                    )
+
+                    # add a tag to the above text to make it clickable
+                    tag_name = 'clickable_{}'.format(result['idx'])
+                    results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
 
                 elif result['type'] == 'transcript_group':
 
                     # add the timeline name
-                    results_text_element.insert(ctk.END, ' -- Transcript Group\n')
-                    # results_text_element.insert(ctk.END, ' -- Source: Timeline Marker\n')
-
-                    # add the transcription file path
-                    results_text_element.insert(ctk.END, ' -- Transcript: {}\n'
-                                                .format(result['transcription_name']))
+                    results_text_element.insert(ctk.END, 'Transcript Group - {} \n'.
+                                                format(result['transcription_name']))
 
                     # add a tag to the above text to make it clickable
                     tag_name = 'clickable_{}'.format(result['idx'])
@@ -10873,28 +11102,33 @@ class toolkit_UI():
 
                 else:
                     # mention that the result source is unknown
-                    results_text_element.insert(ctk.END, ' -- Source: Unknown\n')
+                    results_text_element.insert(ctk.END, 'source unknown\n')
 
-                # add score to the result
-                # consider the result as low confidence if the score is less than 0.35
-                if result['score'] < 0.35:
-                    result_confidence = ' (Low)'
-                elif result['score'] > 0.8:
-                    result_confidence = ' (Good)'
-                else:
-                    result_confidence = ''
+                    # add a tag to the above text to make it clickable
+                    tag_name = 'clickable_{}'.format(result['idx'])
+                    results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
 
                 # show score if in debug mode
                 if self.stAI.debug_mode:
-                    results_text_element.insert(ctk.END,
-                                                ' -- Score: {:.4f}{}\n'.format(result['score'], result_confidence))
+
+                    # add score to the result
+                    # consider the result as low confidence if the score is less than 0.35
+                    if result['score'] < 0.35:
+                        result_confidence = ' (Low)'
+                    elif result['score'] > 0.8:
+                        result_confidence = ' (Good)'
+                    else:
+                        result_confidence = ''
+
+                    results_text_element.insert(
+                        ctk.END, ' -- Score: {:.4f}{}\n'.format(result['score'], result_confidence))
 
                 # highlight the tag when the mouse enters the tag
                 # (the unhighlight function is called when the mouse leaves the tag)
                 results_text_element.tag_bind(tag_name, '<Enter>',
                                               lambda event, tag_name=tag_name:
                                               self._highlight_result_tag(
-                                                  self.text_windows[search_window_id]['text_widget'], tag_name))
+                                                 self.text_windows[search_window_id]['text_widget'], tag_name))
 
                 # add a new line
                 results_text_element.insert(ctk.END, '\n')
@@ -10903,16 +11137,156 @@ class toolkit_UI():
                 scores.append(result['score'])
 
             # calculate the average score
-            average_score = round(sum(scores) / len(scores) * 10, 1)
+            # average_score = round(sum(scores) / len(scores) * 10, 1)
 
             # update the results text element
-            results_text_element.insert(ctk.END, '--------------------------------------\n')
-            results_text_element.insert(ctk.END, 'Search took {:.2f} seconds\n'.format(total_search_time))
-            results_text_element.insert(ctk.END, 'Average results score {:.1f} out of 10\n'.format(average_score))
-            results_text_element.insert(ctk.END, 'The last result is the closest to your search.\n')
+            results_text_element.insert(ctk.END, '--------------------------------------\n\n')
+            # results_text_element.insert(ctk.END, 'Search took {:.2f} seconds\n'.format(total_search_time))
+            # results_text_element.insert(ctk.END, 'Average results score {:.1f} out of 10\n'.format(average_score))
 
-            # use this to make sure we have a new prompt prefix for the next search
-            self._text_window_update(search_window_id, 'Ready for new search.')
+    @staticmethod
+    def cv2_image_to_tkinter(parent, cv2_image):
+
+        image = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB)
+
+        # resize the image proportionally, so that it's maximum 300 pixels wide or 300 pixels high
+        # (whichever comes first)
+        max_width = 500
+        max_height = 300
+
+        # get the image dimensions
+        height, width, channels = image.shape
+
+        # if the image is wider than it is high
+        if width > height:
+
+            # if the image is wider than the maximum width
+            if width > max_width:
+
+                # calculate the ratio of the new width to the old width
+                ratio = max_width / width
+
+                # calculate the new height
+                new_height = int(height * ratio)
+
+                # resize the image
+                image = cv2.resize(image, (max_width, new_height))
+
+        # if the image is higher than it is wide
+        else:
+
+            # if the image is higher than the maximum height
+            if height > max_height:
+
+                # calculate the ratio of the new height to the old height
+                ratio = max_height / height
+
+                # calculate the new width
+                new_width = int(width * ratio)
+
+                # resize the image
+                image = cv2.resize(image, (new_width, max_height))
+
+        # convert the image to a PIL image
+        pil_image = Image.fromarray(image)
+
+        # convert the PIL image to a Tkinter image
+        tk_image = ImageTk.PhotoImage(pil_image)
+
+        # save image to parent
+        if hasattr(parent, 'temp_images'):
+            parent.temp_images.append(tk_image)
+        else:
+            parent.temp_images = [tk_image]
+
+        return tk_image
+
+    def advanced_search_video(self, video_search_item, search_window_id, prompt, clear_before_reply=True):
+
+        # get the search window
+        window = self.get_window_by_id(search_window_id)
+
+        # whether to combine the patches of the same frame if they are similar
+        combine_patches = self.stAI.get_app_setting('clip_combine_patches', default_if_none=True)
+
+        # search
+        results, max_results = video_search_item.search(prompt, combine_patches=combine_patches)
+
+        if not results:
+            return False
+
+        # get the search window text element
+        results_text_element = self.text_windows[search_window_id]['text_widget']
+
+        # sort results by score
+        results = sorted(results, key=lambda x: x['score'], reverse=True)
+
+        if len(results) > 0:
+
+            # clear the search window if we're supposed to
+            if clear_before_reply:
+                self._text_window_update(search_window_id, '', clear=clear_before_reply)
+
+            results_text_element.insert(ctk.END, 'Top {} closest frames:\n\n'.format(max_results))
+
+            # take all the results and convert them frames to seconds
+            for result in results:
+
+                video_frame = video_search_item.video_frame(result['full_path'], result['frame'])
+
+                tk_image = self.cv2_image_to_tkinter(window, video_frame)
+
+                # add the image to the text element
+                results_text_element.image_create(tk.END, image=tk_image)
+
+                # add a new line
+                results_text_element.insert(ctk.END, '\n')
+
+                result_fps = result_start_tc = None
+
+                # there are two ways to get the fps and start timecode of the timeline
+                # todo: 1. from the transcription data
+                #
+                # 2. from the actual result, based on what the video index found (but without the start timecode)
+
+                # if we only have fps, we assume the start timecode is 00:00:00:00
+                if result.get('video_fps', None) is not None \
+                        and result.get('video_start_tc', '00:00:00:00') is not None:
+
+                    result_fps = result.get('video_fps')
+                    result_start_tc = result.get('video_start_tc', '00:00:00:00')
+
+                # if we have timecode data for this result
+                if result_fps is not None \
+                        and result_start_tc is not None:
+
+                    # convert the marker_index to timecode
+                    timecode = Timecode(result_fps, frames=int(result['frame']))
+
+                    if result_start_tc != '00:00:00:00':
+
+                        try:
+                            timecode += Timecode(result_fps, result_start_tc)
+
+                        except:
+                            pass
+
+                    frame_index_or_time_str = str(timecode)
+
+                else:
+                    frame_index_or_time_str = "Frame {}".format(result['frame'])
+
+                # add time code to the video file
+                results_text_element.insert(ctk.END, '{} - {}\n'.format(frame_index_or_time_str, result['path']))
+
+                if self.stAI.debug_mode:
+                    results_text_element.insert(
+                        ctk.END, ' -- Score: {:.4f}\n'.format(result['score']))
+
+                # add a new line
+                results_text_element.insert(ctk.END, '\n')
+
+            results_text_element.insert(ctk.END, '--------------------------------------\n\n')
 
     def destroy_advanced_search_window(self, window_id: str = None):
 
@@ -10966,16 +11340,18 @@ class toolkit_UI():
         """
 
         # get the search item from the search window
-        if search_window_id not in self.windows:
+        if not self.get_window_by_id(search_window_id):
             logger.error('Cannot change search model. The search window ID is not valid.')
             return False
 
-        if not hasattr(self.windows[search_window_id], 'search_item'):
+        search_window = self.get_window_by_id(search_window_id)
+
+        if not hasattr(search_window, 'text_search_item'):
             logger.error('Cannot change search model. The search window does not have a search item.')
             return False
 
         # get the current model name from the search item
-        current_model_name = self.windows[search_window_id].search_item.model_name
+        current_model_name = search_window.text_search_item.model_name
 
         # create a list of widgets for the input dialogue
         input_widgets = [
@@ -10985,7 +11361,7 @@ class toolkit_UI():
         # then we call the ask_dialogue function
         user_input = self.AskDialog(title='Change Advanced Search Model',
                                     input_widgets=input_widgets,
-                                    parent=self.windows[search_window_id],
+                                    parent=search_window,
                                     toolkit_UI_obj=self
                                     ).value()
 
@@ -10993,7 +11369,7 @@ class toolkit_UI():
             return False
 
         # bring the search window to the front
-        self.windows[search_window_id].focus_force()
+        search_window.focus_force()
 
         # and select the text widget
         self.text_windows[search_window_id]['text_widget'].focus_force()
@@ -11152,7 +11528,6 @@ class toolkit_UI():
                     self._text_window_update(assistant_window_id,
                                              "The context used for this conversation is:\n\n{}\n"
                                              .format(assistant_item.context))
-
                 return
 
             # is the user trying to quit?

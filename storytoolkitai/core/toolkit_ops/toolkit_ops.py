@@ -22,7 +22,7 @@ from storytoolkitai.core.logger import logger
 from storytoolkitai.integrations.mots_resolve import MotsResolve
 from .transcription import Transcription, TranscriptionSegment, TranscriptionUtils
 from .processing_queue import ProcessingQueue
-from .search import ToolkitSearch, SearchItem, TextSearch
+from .search import ToolkitSearch, SearchItem, TextSearch, VideoSearch, cv2
 from .assistant import ToolkitAssistant, AssistantGPT
 
 from timecode import Timecode
@@ -53,6 +53,7 @@ class NLE:
 
     # the current timeline fps
     current_timeline_fps = None
+    current_start_tc = None
 
     # the current bin
     current_bin = None
@@ -72,6 +73,7 @@ class NLE:
             = NLE.current_timeline_markers \
             = NLE.current_tc \
             = NLE.current_timeline_fps \
+            = NLE.current_start_tc \
             = NLE.current_bin \
             = None
 
@@ -1443,7 +1445,11 @@ class ToolkitOps:
             decoding_options = self.whisper_options(**other_options.get('whisper_options', {}))
 
             # do not send an empty string as the language
-            if decoding_options.get('language', None) and decoding_options.get('language', '') == '':
+            if 'language' in decoding_options and (
+                    not isinstance(decoding_options['language'], str)
+                    or decoding_options['language'] is None
+                    or decoding_options['language'] == ''
+            ):
                 del decoding_options['language']
 
             # run whisper transcribe on the audio segment
@@ -1970,6 +1976,20 @@ class ToolkitOps:
                                                      timeline_name=transcription.timeline_name,
                                                      link=True)
 
+        # get the queue item again, in case it was updated while we were transcribing
+        queue_item = self.processing_queue.get_item(queue_id=queue_id)
+        video_indexing_queue_ids = queue_item.get('video_indexing_queue_ids', False)
+
+        # if a video_indexing_queue_id is in this item's queue item,
+        # add the transcription file path to the video indexing queue item
+        # this is so that the video indexing function adds its own resulting file paths to this transcription
+        if video_indexing_queue_ids and isinstance(video_indexing_queue_ids, list):
+
+            for video_indexing_queue_id in video_indexing_queue_ids:
+                self.add_transcription_file_path_to_queue_item(
+                    queue_id=video_indexing_queue_id,
+                    transcription_file_path=transcription.transcription_file_path)
+
         # when done, change the status in the queue, clear the progress
         # and also add the transcription file path to the queue item
         self.processing_queue.update_queue_item(
@@ -1978,13 +1998,6 @@ class ToolkitOps:
             progress='',
             transcription_file_path=transcription.transcription_file_path
         )
-
-        # if a video_indexing_queue_id was provided, add the transcription file path to the video indexing queue item
-        # this is so that the video indexing function adds its own resulting file paths to this transcription
-        if other_options.get('video_indexing_queue_id', False):
-            self.add_transcription_file_path_to_queue_item(
-                queue_id=other_options.get('video_indexing_queue_id'),
-                transcription_file_path=transcription.transcription_file_path)
 
         return True if not return_path else transcription.transcription_file_path
 
@@ -2385,8 +2398,14 @@ class ToolkitOps:
         transcription_file_path = kwargs.get('transcription_file_path', None) \
             or os.path.join(target_dir, '{}.transcription.json'.format(os.path.basename(video_file_path)))
 
-        # if a transcription_file_path was passed, use it
-        transcription = Transcription(transcription_file_path)
+        # if a transcription_file_path was passed use it,
+        # but only if we don't have other transcription file paths
+        if kwargs.get('transcription_file_paths', None) is None:
+            transcription = Transcription(transcription_file_path)
+
+        # if we have more transcription_file_paths, we'll deal with them later
+        else:
+            transcription = None
 
         def frame_progress_callback(current_frame, total_frames):
             """
@@ -2452,11 +2471,11 @@ class ToolkitOps:
             for transcription_file_path in kwargs.get('transcription_file_paths', None):
 
                 self.add_video_index_paths_to_transcription(transcription_file_path=transcription_file_path,
+                                                            video_index_path=numpy_file_path)
 
-                                                         video_index_path=numpy_file_path)
-
-        # otherwise, if 'transcription_file_path' exists in kwargs, add the metadata path to that transcription
-        elif kwargs.get('transcription_file_path', None):
+        # otherwise, if 'transcription_file_path' exists in the transcription object,
+        # add the metadata path to that transcription
+        elif transcription is not None and transcription.transcription_file_path is not None:
             self.add_video_index_paths_to_transcription(transcription_file_path=transcription_file_path,
                                                         video_index_path=numpy_file_path)
 
@@ -2830,7 +2849,7 @@ class ToolkitOps:
 
     def save_markers_to_project_settings(self):
         '''
-        Saves the markers of the current timeline to the project settings
+        Saves the markers, the fps and the start_tc of the current timeline to the project settings
         :return:
         '''
 
@@ -2860,7 +2879,13 @@ class ToolkitOps:
             self.stAI.project_settings['timelines'][timeline_name]['markers'] \
                 = markers
 
-            # print(json.dumps(self.stAI.project_settings, indent=4))
+            if NLE.current_timeline_fps is not None:
+                self.stAI.project_settings['timelines'][timeline_name]['timeline_fps'] \
+                    = NLE.current_timeline_fps
+
+            if NLE.current_start_tc is not None:
+                self.stAI.project_settings['timelines'][timeline_name]['timeline_start_tc'] \
+                    = NLE.current_start_tc
 
             self.stAI.save_project_settings(project_name=project_name,
                                             project_settings=self.stAI.project_settings)
@@ -3173,10 +3198,18 @@ class ToolkitOps:
                         self.on_resolve('tc_changed')
 
                     # update current playhead timecode
-                    if (NLE.current_timeline_fps is not None and 'currentTC' not in resolve_data) \
+                    if (NLE.current_timeline_fps is not None and 'currentTimelineFPS' not in resolve_data) \
                             or NLE.current_timeline_fps != resolve_data['currentTimelineFPS']:
                         NLE.current_timeline_fps = resolve_data['currentTimelineFPS']
                         self.on_resolve('fps_changed')
+
+                    # update current playhead timecode
+                    if (NLE.current_start_tc is not None
+                        and 'currentTimeline' not in resolve_data
+                        and 'startTC' not in resolve_data['currentTimeline']) \
+                            or NLE.current_start_tc != resolve_data['currentTimeline']['startTC']:
+                        NLE.current_start_tc = resolve_data['currentTimeline']['startTC']
+                        self.on_resolve('start_tc_changed')
 
                     # was there a previous error?
                     if NLE.resolve is not None and NLE.resolve_error > 0:

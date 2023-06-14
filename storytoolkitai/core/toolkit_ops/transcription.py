@@ -207,7 +207,7 @@ class Transcription:
     def audio_file_path(self):
 
         # if the path is not absolute, make it absolute using the transcription file path
-        if not os.path.isabs(self._audio_file_path):
+        if self._audio_file_path is not None and not os.path.isabs(self._audio_file_path):
             return os.path.join(os.path.dirname(self.transcription_file_path), self._audio_file_path)
 
         return self._audio_file_path
@@ -216,7 +216,7 @@ class Transcription:
     def video_index_path(self):
 
         # if the path is not absolute, make it absolute using the transcription file path
-        if not os.path.isabs(self._video_index_path):
+        if self._video_index_path is not None and not os.path.isabs(self._video_index_path):
             return os.path.join(os.path.dirname(self.transcription_file_path), self._video_index_path)
 
         return self._video_index_path

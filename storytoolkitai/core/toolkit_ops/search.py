@@ -19,11 +19,13 @@ import torch
 from .transcription import Transcription, TranscriptionSegment, TranscriptionUtils
 from .textanalysis import TextAnalysis
 
+from .videoanalysis import ClipIndex, cv2
+
 
 class ToolkitSearch:
-    '''
+    """
     This is the main class for the search engine
-    '''
+    """
 
     def __init__(self, toolkit_ops_obj):
 
@@ -151,8 +153,8 @@ class SearchItem(ToolkitSearch):
         return hashlib.md5(search_file_paths.encode('utf-8')).hexdigest()
 
     @classmethod
-    def filter_file_paths(cls, search_paths: str or list = None) -> list or None:
-        '''
+    def filter_file_paths(cls, search_paths: str or list = None, file_validator: callable = None) -> list or None:
+        """
         This function will filter all the file paths and directories that are passed to it,
         do a recursive walk through the directories to include all the valid files (by extension)
         and return a list of file paths the are valid.
@@ -160,15 +162,21 @@ class SearchItem(ToolkitSearch):
         It also sorts them and removes duplicates.
 
         :param search_paths: list of file paths or directories
+        :param file_validator: a function that will be used to validate the file paths,
+                               by default it will use the is_file_searchable function from SearchItem
         :return: list of file paths
-        '''
+
+        """
+
+        if file_validator is None:
+            file_validator = cls.is_file_searchable
 
         filtered_search_file_paths = []
 
         # is this a search for a single file or a directory?
         # if it's a single file, we'll just add it to the search_file_paths list
         if search_paths is not None and type(search_paths) is str and os.path.isfile(search_paths) \
-                and cls._is_file_searchable(search_paths):
+                and file_validator(search_paths):
             filtered_search_file_paths = [search_paths]
 
         # if it's a list of files, we'll just add it to the search_file_paths list
@@ -176,7 +184,7 @@ class SearchItem(ToolkitSearch):
 
             # but we only add the path if it's a file
             for search_path in search_paths:
-                if os.path.isfile(search_path) and cls._is_file_searchable(search_path):
+                if os.path.isfile(search_path) and file_validator(search_path):
                     filtered_search_file_paths.append(search_path)
 
         # if it's a directory, we'll process all the files in the directory
@@ -189,7 +197,7 @@ class SearchItem(ToolkitSearch):
                     continue
 
                 for file in files:
-                    if cls._is_file_searchable(file):
+                    if file_validator(file):
                         filtered_search_file_paths.append(os.path.join(root, file))
 
         # remove duplicates
@@ -201,7 +209,7 @@ class SearchItem(ToolkitSearch):
         return filtered_search_file_paths
 
     @staticmethod
-    def _is_file_searchable(file_path):
+    def is_file_searchable(file_path):
         """
         Used in the process_file_paths function to identify the searchable files
         """
@@ -297,7 +305,7 @@ class TextSearch(SearchItem):
         return len(self._search_corpus_phrases) if self._search_corpus_phrases is not None else 0
 
     @staticmethod
-    def _is_file_searchable(file_path):
+    def is_file_searchable(file_path):
         """
         This identifies the searchable files and returns True if the file is searchable
         """
@@ -647,12 +655,23 @@ class TextSearch(SearchItem):
             # if the timeline has markers
             if 'markers' in timeline and type(timeline['markers']) is dict:
 
+                timeline_fps = timeline.get('timeline_fps', None)
+                timeline_start_tc = timeline.get('timeline_start_tc', None)
+
                 # loop through the markers
                 for marker in timeline['markers']:
 
-                    # add the marker name to the search corpus
-                    if 'name' in timeline['markers'][marker]:
-                        marker_content = timeline['markers'][marker]['name']
+                    # add the marker name and note to the search corpus
+                    if timeline['markers'][marker].get('name', None) or timeline['markers'][marker].get('note', None):
+
+                        marker_name = timeline['markers'][marker].get('name', None) + '\n' \
+                            if timeline['markers'][marker].get('name', None) else ''
+
+                        marker_content = "{} {}".format(marker_name, timeline['markers'][marker].get('note', None))
+
+                        # don't add if it's empty
+                        if marker_content == " ":
+                            continue
 
                         # add the marker name to the search corpus
                         search_corpus_phrases.append(marker_content)
@@ -667,27 +686,8 @@ class TextSearch(SearchItem):
                                                                       'timeline': timeline_name,
                                                                       'project': project_file_data[
                                                                           'name'],
-                                                                      'marker_index': marker,
-                                                                      'type': 'marker'
-                                                                      }
-
-                    # add the marker note to the search corpus
-                    if 'note' in timeline['markers'][marker]:
-                        marker_content = timeline['markers'][marker]['note']
-
-                        # add the marker name to the search corpus
-                        search_corpus_phrases.append(marker_content)
-
-                        # remember the project file path and the marker name
-                        # this is the marker index relative to the whole search corpus that
-                        general_segment_index = len(search_corpus_phrases)
-
-                        # add the marker to the search corpus association list
-                        search_corpus_assoc[general_segment_index] = {'file_path': project_file_path,
-                                                                      'text': marker_content,
-                                                                      'timeline': timeline_name,
-                                                                      'project': project_file_data[
-                                                                          'name'],
+                                                                      'timeline_fps': timeline_fps,
+                                                                      'timeline_start_tc': timeline_start_tc,
                                                                       'marker_index': marker,
                                                                       'type': 'marker'
                                                                       }
@@ -696,7 +696,7 @@ class TextSearch(SearchItem):
         return search_corpus_phrases, search_corpus_assoc
 
     def prepare_search_query(self, query, max_results: int = 5):
-        '''
+        """
         This interprets the query and prepares it for searching.
         With this, we can filter out and use certain arguments to perform the search
 
@@ -708,7 +708,7 @@ class TextSearch(SearchItem):
         :param max_results: the maximum number of results to return (can be overridden within the query)
         :param search_type: the type of search to perform (can be overridden within the query)
         :return:
-        '''
+        """
 
         search_type = self.search_type
 
@@ -765,12 +765,12 @@ class TextSearch(SearchItem):
         return query, search_type, max_results
 
     def load_model(self, model_name):
-        '''
+        """
         Loads the model specified by the user, but also clears the search corpus embeddings
         for the current search item
         :param model_name:
         :return:
-        '''
+        """
 
         # if the model name is different from the current model name,
         # clear the search corpus embeddings
@@ -830,20 +830,20 @@ class TextSearch(SearchItem):
 
         return None
 
-    def search(self, query: str):
-        '''
+    def search(self, query: str, max_results: int = 5):
+        """
         Searches the corpus for the query using the search type passed by the user
 
         In the future, we should use this for any type of search (incl. for frames etc.)
 
         :param query:
         :return:
-        '''
+        """
 
         self.query = query
 
         # prepare the query
-        query, search_type, max_results = self.prepare_search_query(query=self.query)
+        query, search_type, max_results = self.prepare_search_query(query=self.query, max_results=max_results)
 
         # now let's search the corpus based on the search type
         if search_type == 'semantic':
@@ -885,10 +885,10 @@ class TextSearch(SearchItem):
 
     @property
     def cache_exists(self):
-        '''
+        """
         Returns True if the search corpus cache file exists
         :return:
-        '''
+        """
 
         if self.corpus_cache_file_path is None:
             self._get_corpus_cache_file_path()
@@ -1101,7 +1101,7 @@ class TextSearch(SearchItem):
 
         return True
 
-    def search_semantic(self):
+    def search_semantic(self, **kwargs):
         """
         This function searches for a search term in a search corpus and returns the results.
         :return:
@@ -1158,7 +1158,8 @@ class TextSearch(SearchItem):
             top_results = torch.topk(cos_scores, k=top_k, sorted=True)
 
             # reverse the results so that they are in descending order
-            top_results = (top_results[0].tolist()[::-1], top_results[1].tolist()[::-1])
+            if kwargs.get('order') == 'desc':
+                top_results = (top_results[0].tolist()[::-1], top_results[1].tolist()[::-1])
 
             logger.debug('Found results.')
 
@@ -1185,7 +1186,7 @@ class TextSearch(SearchItem):
         return search_results, top_k
 
     def add_search_result(self, search_results, query, search_corpus_phrases, search_corpus_assoc, idx, score):
-        '''
+        """
         This function adds a search result to the search results list.
         :param search_results:
         :param query:
@@ -1193,7 +1194,7 @@ class TextSearch(SearchItem):
         :param idx:
         :param score:
         :return:
-        '''
+        """
 
         # sometimes the search corpus phrases are not in the search corpus assoc
         # which should not happen - it's most probably because of a text formatting issue
@@ -1248,6 +1249,8 @@ class TextSearch(SearchItem):
                 'type': search_corpus_assoc[int(idx)]['type'],
                 'marker_index': search_corpus_assoc[int(idx)]['marker_index'],
                 'timeline': search_corpus_assoc[int(idx)]['timeline'],
+                'timeline_fps': search_corpus_assoc[int(idx)]['timeline_fps'],
+                'timeline_start_tc': search_corpus_assoc[int(idx)]['timeline_start_tc'],
                 'project': search_corpus_assoc[int(idx)]['project']
             })
 
@@ -1311,6 +1314,154 @@ class SearchablePhrase:
     def __str__(self):
         return self.search_phrase
 
+
+class VideoSearch(SearchItem, ClipIndex):
+
+    _instances = {}
+
+    def __init__(self, *args, **kwargs):
+
+        # prevent initializing the instance more than once if it was already initialized
+        if hasattr(self, '_initialized') and self._initialized:
+            return
+
+        # load the video indexing paths from the search file paths
+        if kwargs.get('search_file_paths', None) is not None:
+            kwargs['search_file_paths'] \
+                = self.set_video_index_paths(self, search_file_paths=kwargs.get('search_file_paths', None))
+
+        # Initialize both supers
+        SearchItem.__init__(self, *args, **kwargs)
+
+        # remove toolkit_ops_obj from kwargs
+        kwargs.pop('toolkit_ops_obj', None)
+
+        kwargs.pop('search_file_paths', None)
+
+        ClipIndex.__init__(self, *args, **kwargs)
+
+    @staticmethod
+    def is_file_searchable(file_path):
+        """
+        This identifies the searchable files and returns True if the file is searchable
+        """
+        # for now,
+        # just check if the file ends with one of the extensions we're looking for
+
+        return file_path.endswith('.transcription.json')
+
+    @staticmethod
+    def set_video_index_paths(self, search_file_paths: List[str] = None):
+        """
+        This method sets the video indexing paths from the search file paths
+        """
+
+        if search_file_paths is None or len(search_file_paths) == 0:
+            return
+
+        video_indexing_paths = []
+
+        # load the video indexing paths
+        for search_file_path in search_file_paths:
+
+            # don't do anything if the file is not searchable
+            if not VideoSearch.is_file_searchable(search_file_path):
+                continue
+
+            transcription = Transcription(transcription_file_path=search_file_path)
+
+            # get the video indexing path
+            video_indexing_path = transcription.video_index_path
+
+            if video_indexing_path is None:
+                continue
+
+            # is the video indexing path a file?
+            if isinstance(video_indexing_path, str) and not os.path.isfile(video_indexing_path):
+                logger.warning('Cannot load video index file: {} from transcription {}'
+                               .format(video_indexing_path, search_file_path))
+                continue
+
+            # if there is a video indexing path, add it to the list
+            if video_indexing_path is not None:
+                video_indexing_paths.append(video_indexing_path)
+
+        # sort and only use unique paths
+        video_indexing_paths = list(set(video_indexing_paths))
+        video_indexing_paths.sort()
+
+        return video_indexing_paths
+
+    def load_index_paths(self):
+        """
+        This method loads the index paths from the search file paths
+        """
+
+        if self.search_file_paths is None or len(self.search_file_paths) == 0:
+            logger.debug('Cannot load index paths - the path list is empty.')
+            return
+
+        # load the index paths
+        self.load_into_instance(npy_paths=self.search_file_paths)
+
+    def prepare_search_query(self, query, max_results: int = 5):
+        """
+        This interprets the query and prepares it for searching.
+        With this, we can filter out and use certain arguments to perform the search
+
+        For eg:
+        [10] about AI - will search for phrase "about AI" and return the top 10 results
+
+        :param query:
+        :param max_results: the maximum number of results to return (can be overridden within the query)
+        :return:
+        """
+
+        # the users can include a "[num]" in the query to specify the number of results
+        # for eg. [10] if they do, then use that search type instead of the default
+        if re.search(r'\[(.+?)\]', query):
+            query_search_type = re.search(r'\[(.+?)\]', query).group(1)
+
+            # if we have a number between the brackets, then it's a max results value
+            if query_search_type.isdigit():
+                query_max_results = str(query_search_type)
+
+            # otherwise we use the [max_results] value
+            else:
+                query_max_results = str(max_results)
+
+            # if the max results is valid, use it
+            if query_max_results.isdigit():
+                max_results = int(query_max_results)
+
+            # remove the max results from the query
+            query = re.sub(r'\[(.+?)\]', '', query).strip()
+
+        # the user can divide multiple search terms with a | character
+        # if that is the case, split them into multiple queries
+        # so that we can search for each of them separately later
+        if '|' in query:
+            # split the query into multiple queries
+            query = query.split('|')
+
+        self.query = query
+        self.max_results = max_results
+
+        return query, max_results
+
+    def search(self, query, max_results: int = 5, threshold=35, combine_patches=True):
+        """
+        We're basically using the search method from ClipIndex, but first interpreting it through prepare_search_query
+        """
+
+        self.query, self.max_results = self.prepare_search_query(query, max_results)
+
+        results = super().search(self.query, self.max_results, threshold, combine_patches)
+
+        if results is None or len(results) == 0:
+            return None, 0
+
+        return results, len(results)
 
 class ToolkitSentenceTransformer(SentenceTransformer):
     """
