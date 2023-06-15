@@ -1539,8 +1539,6 @@ class toolkit_UI():
         if move:
             window.geometry('+{}+{}'.format(window_x, window_y))
 
-
-
     def create_or_open_window(self, parent_element: tk.Toplevel or tk = None, window_id: str = None,
                               title: str = None, resizable: tuple or bool = False,
                               type: str = None,
@@ -1629,6 +1627,9 @@ class toolkit_UI():
                                 self.windows[window_id].winfo_x(),
                                 window_y - (window_y + window_height - screen_height) if window_y > 20 else 20
                             ))
+
+                        # but also bring it back down if it's too high
+                        self._bring_window_inside_screen(self.windows[window_id])
 
                     # after the window is created, push it up if it's too low
                     self.windows[window_id].after(200, push_higher_if_too_low)
@@ -4834,11 +4835,12 @@ class toolkit_UI():
         if self.toolkit_ops_obj.add_media_to_queue(source_file_paths=file_paths, queue_id=queue_id,
                                                    video_indexing_settings=video_indexing_settings,
                                                    transcription_settings=transcription_settings):
-            # close the ingest window
-            self.destroy_window_(windows_dict=self.windows, window_id=ingest_window_id)
 
             # if we reached this point safely, just open the queue window
             self.open_queue_window()
+
+            # close the ingest window
+            self.destroy_window_(windows_dict=self.windows, window_id=ingest_window_id)
 
         return
 
@@ -10104,10 +10106,10 @@ class toolkit_UI():
         if self.create_or_open_window(parent_element=self.root, type='queue',
                                       window_id='queue', title='Queue', resizable=True):
 
-            queue_window = self.windows['queue']
+            queue_window = self.get_window_by_id('queue')
 
             # add a frame to hold all the queue items
-            self.windows['queue'].queue_items_frame = \
+            queue_window.queue_items_frame = \
                 queue_items_frame = ctk.CTkScrollableFrame(queue_window)
 
             # add a frame to hold the footer
@@ -10126,7 +10128,7 @@ class toolkit_UI():
             queue_window.minsize(600, 0)
 
             # add a cancel all button in the footer
-            self.windows['queue'].button_cancel_all = \
+            queue_window.button_cancel_all = \
                 button_cancel_all = ctk.CTkButton(bottom_footer, text='Cancel all')
 
             button_cancel_all.grid(row=0, column=0, sticky='e', **self.ctk_form_entry_paddings)
