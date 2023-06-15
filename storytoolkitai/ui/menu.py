@@ -12,6 +12,9 @@ from storytoolkitai.core.toolkit_ops.toolkit_ops import NLE
 from customtkinter import AppearanceModeTracker
 from customtkinter import ThemeManager
 
+from tkinter import font
+import ctypes
+
 
 class UImenus:
 
@@ -56,7 +59,41 @@ class UImenus:
         else:
             self.file_browser_name = 'File Browser'
 
+        # the font sizes for the menu bar
+        if platform.system() == 'Windows':
+            self._menu_font = self._set_scalable_menu_font()
+            self._menu_ui = {'font': self._menu_font}
+        else:
+            self._menu_ui = {}
+
+        self._loaded = False
+
+    def _set_scalable_menu_font(self):
+        """
+        This function sets the font for the menu bar.
+        """
+
+        menu_font = font.nametofont("TkMenuFont")
+        base_font_size = menu_font.actual()["size"]
+
+        # Retrieve the DPI scale factor
+        user32 = ctypes.windll.user32
+        self._scale_factor = user32.GetDpiForWindow(self.root.winfo_id()) / 96
+
+        # Set the base font size and apply the scaling factor
+        scaled_font_size = int(base_font_size * self._scale_factor)
+
+        # Create and configure the font
+        menu_font = font.nametofont("TkMenuFont")
+        menu_font.configure(size=scaled_font_size)
+
+        return menu_font
+
     def update_current_window_references(self):
+
+        # do not execute this if the menu is not loaded
+        if not self._loaded:
+            return
 
         # for Windows, we use the self.last_focused_window,
         # considering that the menu bar is part of the main window
@@ -490,7 +527,7 @@ class UImenus:
         '''
 
         # FILE MENU
-        self.filemenu = Menu(self.main_menubar, tearoff=0)
+        self.filemenu = Menu(self.main_menubar, tearoff=0, **self._menu_ui)
 
         # add open transcription file menu item
         self.filemenu.add_command(label="Open transcription file...", command=self.toolkit_UI_obj.open_transcript)
@@ -522,7 +559,7 @@ class UImenus:
         self.main_menubar.add_cascade(label="File", menu=self.filemenu)
 
         # EDIT MENU
-        self.editmenu = Menu(self.main_menubar, tearoff=0)
+        self.editmenu = Menu(self.main_menubar, tearoff=0, **self._menu_ui)
 
         self.editmenu.add_command(label="Find...", command=self.donothing,
                              accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+f")
@@ -557,7 +594,7 @@ class UImenus:
 
 
         # ADVANCED SEARCH MENU
-        self.searchmenu = Menu(self.main_menubar, tearoff=0)
+        self.searchmenu = Menu(self.main_menubar, tearoff=0, **self._menu_ui)
 
         self.searchmenu.add_command(label="Advanced Search in files...",
                                command=lambda: self.toolkit_UI_obj.open_advanced_search_window())
@@ -584,7 +621,7 @@ class UImenus:
         self.main_menubar.add_cascade(label="Search", menu=self.searchmenu)
 
         # ASSISTANT MENU
-        self.assistantmenu = Menu(self.main_menubar, tearoff=0)
+        self.assistantmenu = Menu(self.main_menubar, tearoff=0, **self._menu_ui)
         self.assistantmenu.add_command(label="Open Assistant...", command=self.toolkit_UI_obj.open_assistant_window)
 
         # ASSISTANT - TRANSCRIPT related menu items
@@ -597,7 +634,7 @@ class UImenus:
         self.main_menubar.add_cascade(label="Assistant", menu=self.assistantmenu)
 
         # INTEGRATIONS MENU
-        self.integrationsmenu = Menu(self.main_menubar, tearoff=0)
+        self.integrationsmenu = Menu(self.main_menubar, tearoff=0, **self._menu_ui)
 
         # add a title in the menu
         self.integrationsmenu.add_command(label="Connect to Resolve API",
@@ -644,8 +681,8 @@ class UImenus:
         self.main_menubar.add_cascade(label="Integrations", menu=self.integrationsmenu)
 
 
-        # ADD WINDOWS MENU
-        self.windowsmenu = Menu(self.main_menubar, tearoff=0)
+        # ADD WINDOW MENU
+        self.windowsmenu = Menu(self.main_menubar, tearoff=0, **self._menu_ui)
 
         # add a keep main on top menu item
         self.windowsmenu.add_checkbutton(label="Keep main window on top",
@@ -671,7 +708,7 @@ class UImenus:
         self.main_menubar.add_cascade(label="Window", menu=self.windowsmenu)
 
         # HELP MENU
-        self.helpmenu = Menu(self.main_menubar, tearoff=0)
+        self.helpmenu = Menu(self.main_menubar, tearoff=0, **self._menu_ui)
 
         # if this is not on MacOS, add the about button in the menu
         if platform.system() != 'Darwin':
@@ -712,6 +749,8 @@ class UImenus:
         self.helpmenu.add_command(label="Made by mots", command=self.open_mots)
 
         self.toolkit_UI_obj.root.config(menu=self.main_menubar)
+
+        self._loaded = True
 
         # this is probably initialized in the main window,
         # but do a first update nevertheless
