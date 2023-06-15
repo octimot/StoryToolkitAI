@@ -455,7 +455,7 @@ class ProcessingQueue:
 
     def cancel_if_canceled(self, queue_id):
         """
-        Checks if the a queue item has been canceled and cancels it if it has
+        Checks if the queue item has been canceled and cancels it if it has
         This usually happens if a process sends a 'canceled' status
         so that item is canceled when the current task is finished
 
@@ -830,21 +830,30 @@ class ProcessingQueue:
         reorder_queue = False
 
         # try to start the next item from the queue that can be started
-        while not self._item_can_start(queue_id=queue_id):
+        while not (can_start := self._item_can_start(queue_id=queue_id)):
 
             logger.debug('Item {} cannot start. Trying the next one.'.format(queue_id))
 
-            # add +1 to the queue index
-            queue_index += 1
+            # if we received a None from _item_can_start,
+            # it means that the item doesn't exist anymore relative to when we started the loop
+            # so we shouldn't increment the queue index
+            if can_start is not None:
+                # add +1 to the queue index
+                queue_index += 1
 
             # check if the queue index is out of range
             if queue_index >= len(self.queue):
                 # and abort if it is
-                logger.debug('None of the queue items are ready to start. Try again later.')
+                if len(self.queue) == 0:
+                    logger.debug("Queue is empty.")
+                else:
+                    logger.debug('None of the queue items are ready to start. Try again later.')
                 return False
 
             # get the next item in the queue
             queue_id = self.queue[queue_index]
+
+
 
         # todo: fix this
         """
@@ -938,6 +947,16 @@ class ProcessingQueue:
 
         if item_data is None:
             item_data = self.get_item(queue_id=queue_id)
+
+        # if the item was canceled, done or failed, it cannot start
+        if 'status' in item_data and item_data['status'] in ['canceled', 'done', 'failed']:
+
+            # remove it from the queue
+            queue_index = self._get_item_queue_index(queue_id=queue_id)
+            if queue_index is not None:
+                self.queue.pop(queue_index)
+
+            return None
 
         # if the item has no dependencies, it can start
         if 'dependencies' not in item_data:

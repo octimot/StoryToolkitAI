@@ -1450,7 +1450,9 @@ class toolkit_UI():
         if queue_items is not None and len(queue_items) > 0:
 
             quit_anyway = messagebox.askyesno(title="Are you sure?",
-                                              message="There are still items in the queue. Quit anyway?")
+                                              message="There are still items in the queue.\n"
+                                                      "These will be restarted when you restart StoryToolkitAI.\n\n"
+                                                      "Quit anyway?")
 
             # if the user doesn't want to quit anyway, return
             if not quit_anyway:
@@ -1505,6 +1507,39 @@ class toolkit_UI():
 
         # then focus on it
         window.focus_set()
+
+    @staticmethod
+    def _bring_window_inside_screen(window):
+        """
+        This checks if the window is over the top of the screen and moves it down if it is.
+        :param window: The window to check.
+        """
+
+        # get the window x and y position
+        window_x = window.winfo_x()
+        window_y = window.winfo_y()
+
+        move = False
+
+        # if the window's top position is over the top of the screen
+        if window.winfo_y() <= 0:
+            # set the window's top position to 10
+            window_y = 10
+
+            move = True
+
+        # if the window's left position is over the left of the screen
+        if window.winfo_x() <= 0:
+            # set the window's left position to 10
+            window_x = 10
+
+            move = True
+
+        # position the window
+        if move:
+            window.geometry('+{}+{}'.format(window_x, window_y))
+
+
 
     def create_or_open_window(self, parent_element: tk.Toplevel or tk = None, window_id: str = None,
                               title: str = None, resizable: tuple or bool = False,
@@ -4814,10 +4849,6 @@ class toolkit_UI():
                 message='Are you sure you want to cancel?',
                 parent=self.windows[window_id]
         ):
-
-            # assume the window is references in the windows dict
-            if parent_element is None:
-                parent_element = self.windows
 
             if queue_id is not None:
                 self.toolkit_ops_obj.processing_queue.update_queue_item(queue_id=queue_id, status='canceled')
@@ -9875,15 +9906,15 @@ class toolkit_UI():
     def update_queue_window(self, force_redraw=False):
 
         # get the queue window
-        queue_window = self.windows['queue']
+        queue_window = self.get_window_by_id('queue')
 
         # add the last_update attribute to the queue window if it doesn't exist
-        if not hasattr(self.windows['queue'], 'last_update'):
-            self.windows['queue'].last_update = time.time()
+        if not hasattr(queue_window, 'last_update'):
+            queue_window.last_update = time.time()
 
-        elif hasattr(self.windows['queue'], 'last_update') and not force_redraw:
+        elif hasattr(queue_window, 'last_update') and not force_redraw:
             # don't update the queue window if it was updated less than 0.5 seconds ago
-            if time.time() - self.windows['queue'].last_update < 0.5:
+            if time.time() - queue_window.last_update < 0.5:
                 return
 
         # load all the queue items
@@ -10119,6 +10150,9 @@ class toolkit_UI():
 
             # and then call the update function to fill the window up
             self.update_queue_window()
+
+            # make sure the windows top position is not over the top of the screen it's on
+            self._bring_window_inside_screen(queue_window)
 
             return True
 
