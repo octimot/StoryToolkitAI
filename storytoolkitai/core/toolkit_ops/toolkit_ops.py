@@ -520,11 +520,12 @@ class ToolkitOps:
                 c_name = name
 
             # pass the queue tasks via kwargs
-            # we're not all the transcription tasks into a single item but going through this loop,
+            # we're not adding all the transcription tasks into a single item but going through this loop,
             # because we want to be able to pass different settings for each task,
             # plus we want to see the progress on each queue item separately
             # therefore splitting them into separate queue items makes more sense
             kwargs['tasks'] = [c_task]
+            kwargs['task'] = c_task
 
             # pass the name and queue id
             kwargs['name'] = c_name
