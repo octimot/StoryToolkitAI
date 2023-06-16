@@ -667,8 +667,18 @@ class Transcription:
 
         return True
 
+    def add_segments(self, segments: list):
+        """
+        This adds a list of segments to the transcription and then re-sets the segments
+        """
 
-    def add_segment(self, segment: dict or object, segment_index: int = None):
+        for segment in segments:
+            self.add_segment(segment, skip_reset=True)
+
+        # reset the segments if not mentioned otherwise
+        self._set_segments()
+
+    def add_segment(self, segment: dict or object, segment_index: int = None, skip_reset=False):
         """
         This adds a segment to the transcription and then re-sets the segments.
         If a segment_index is passed, the segment will be added at that index, and the rest of the segments will be
@@ -702,7 +712,8 @@ class Transcription:
             self._segments.append(segment)
 
         # reset the segments
-        self._set_segments()
+        if not skip_reset:
+            self._set_segments()
 
         # set the dirty flag
         self.set_dirty()
