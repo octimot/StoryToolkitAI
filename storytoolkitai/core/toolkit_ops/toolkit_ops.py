@@ -1397,6 +1397,8 @@ class ToolkitOps:
             # and add them to the transcription
             if isinstance(result, dict) and 'segments' in result and result['segments']:
 
+                current_segment_batch = []
+
                 # take each segment and add the offset to the start and end time
                 for i, transcript_segment in enumerate(result['segments']):
 
@@ -1433,12 +1435,17 @@ class ToolkitOps:
                     # add the transcription of the audio segment to the results list
                     results['segments'].append(transcript_segment)
 
+                    # add the segment to the current batch
+                    current_segment_batch.append(transcript_segment)
+
                     # add the language to the result
                     results['whisper_language'] = result['language'] if 'language' in result else ''
 
-                    # add the segment to the transcription object (if any)
-                    if transcription is not None:
-                        transcription.add_segment(transcript_segment)
+                # add the segment to the transcription object (if any)
+                #  because it makes the Transcription object re-set all the segments each time
+                #  we need to have a bulk add
+                if transcription is not None:
+                    transcription.add_segments(current_segment_batch)
 
             # save the transcription for each audio segment
             if transcription is not None:
