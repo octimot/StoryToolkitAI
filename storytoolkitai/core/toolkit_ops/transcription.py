@@ -1958,7 +1958,7 @@ class TranscriptionUtils:
                 print(
                     f"{i}\n"
                     f"{start_str} --> "
-                    f"{end_str}\r\n"
+                    f"{end_str}\n"
                     f"{text_str}\r\n",
                     file=srt_file,
                     flush=True,
