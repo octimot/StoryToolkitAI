@@ -4514,11 +4514,12 @@ class toolkit_UI():
         if self.toolkit_ops_obj.add_media_to_queue(source_file_paths=file_paths, queue_id=queue_id,
                                                    video_indexing_settings=video_indexing_settings,
                                                    transcription_settings=transcription_settings):
-            # close the ingest window
-            self.destroy_window_(windows_dict=self.windows, window_id=ingest_window_id)
 
             # if we reached this point safely, just open the queue window
             self.open_queue_window()
+
+            # close the ingest window
+            self.destroy_window_(windows_dict=self.windows, window_id=ingest_window_id)
 
         return
 

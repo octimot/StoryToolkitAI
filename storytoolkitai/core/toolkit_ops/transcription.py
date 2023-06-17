@@ -684,8 +684,10 @@ class Transcription:
         # we need to add the transcription as a parent of the segment
         segment.parent_transcription = self
 
-        # get a new id for the segment
-        segment.id = self.generate_new_segment_id()
+        # if the segment's id or if it collides with another segment's id
+        if segment.id is None or segment.id in self._segment_ids.values():
+            # get a new id for the segment
+            segment.id = self.generate_new_segment_id()
 
         # if we're adding a segment at a specific index
         # and the index is valid
@@ -693,10 +695,12 @@ class Transcription:
 
             # add the segment at the index
             self._segments.insert(segment_index, segment)
+            self._has_segments = True
 
         # otherwise, add the segment to the end of the list
         else:
             self._segments.append(segment)
+            self._has_segments = True
 
         # reset the segments
         if not skip_reset:
