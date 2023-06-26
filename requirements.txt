@@ -38,3 +38,5 @@ darkdetect
 customtkinter @ git+https://github.com/octimot/CustomTkinter.git@32dacb3200534656a755ec8218b2725fa01b699f
 ftfy
 moviepy
+scikit-image
+scipy

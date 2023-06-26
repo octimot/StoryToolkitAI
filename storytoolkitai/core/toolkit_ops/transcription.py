@@ -460,10 +460,13 @@ class Transcription:
         # for transcription data to be valid
         # it needs to have segments which are a list
         # and either the list needs to be empty or the first item in the list needs to be a valid segment
-        if isinstance(self._segments, list) \
+        # or
+        # it should have a video video_index_path
+        if (isinstance(self._segments, list) \
                 and (len(self._segments) == 0
                      or (isinstance(self._segments[0], TranscriptionSegment) and self._segments[0].is_valid)
-                     or TranscriptionSegment(self._segments[0]).is_valid):
+                     or TranscriptionSegment(self._segments[0]).is_valid))\
+                or self._video_index_path:
             self._is_transcription_file = True
         else:
             self._is_transcription_file = False
@@ -697,8 +700,10 @@ class Transcription:
         # we need to add the transcription as a parent of the segment
         segment.parent_transcription = self
 
-        # get a new id for the segment
-        segment.id = self.generate_new_segment_id()
+        # if the segment's id or if it collides with another segment's id
+        if segment.id is None or segment.id in self._segment_ids.values():
+            # get a new id for the segment
+            segment.id = self.generate_new_segment_id()
 
         # if we're adding a segment at a specific index
         # and the index is valid
@@ -706,10 +711,12 @@ class Transcription:
 
             # add the segment at the index
             self._segments.insert(segment_index, segment)
+            self._has_segments = True
 
         # otherwise, add the segment to the end of the list
         else:
             self._segments.append(segment)
+            self._has_segments = True
 
         # reset the segments
         if not skip_reset:
@@ -906,18 +913,21 @@ class Transcription:
                 file_name = os.path.splitext(self.__transcription_file_path)[0]
 
             # if the srt file path is not set
-            if self._srt_file_path is None:
+            if self._srt_file_path is None and self.has_segments:
                 # set the srt file path
                 self._srt_file_path = file_name + '.srt'
 
             # if the txt file path is not set
-            if self._txt_file_path is None:
+            if self._txt_file_path is None and self.has_segments:
                 # set the txt file path
                 self._txt_file_path = file_name + '.txt'
 
             # make sure that the srt and txt file paths are not absolute
-            self._srt_file_path = os.path.basename(self._srt_file_path)
-            self._txt_file_path = os.path.basename(self._txt_file_path)
+            if self._srt_file_path is not None:
+                self._srt_file_path = os.path.basename(self._srt_file_path)
+
+            if self._txt_file_path is not None:
+                self._txt_file_path = os.path.basename(self._txt_file_path)
 
             # save the transcription to file to add the new paths
             if self._save():

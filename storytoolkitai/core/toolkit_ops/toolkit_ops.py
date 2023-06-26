@@ -412,6 +412,8 @@ class ToolkitOps:
             # create a video indexing job only if we have video indexing settings
             if has_video and video_indexing_settings is not None and isinstance(video_indexing_settings, dict):
 
+                video_indexing_settings['name'] = os.path.basename(source_file_path)
+
                 # add the video file path to the transcription settings
                 video_indexing_settings['video_file_path'] = source_file_path
 
@@ -1765,7 +1767,7 @@ class ToolkitOps:
             return None, None
 
         if len(audio_segments) > 1:
-            logger.info('Split audio {} into {} segments: {}'.format(
+            logger.debug('Split audio {} into {} segments: {}'.format(
                 kwargs.get('name', 'from file'),
                 len(audio_segments),
                 ', '.join([str(float(x[0]))+'-'+str(float(x[1])) for x in time_intervals])))
@@ -1864,7 +1866,7 @@ class ToolkitOps:
             debug_message = "Transcribing {} between: {}.".format(name, time_intervals_str)
         else:
             debug_message = "Transcribing {}.".format(name)
-        logger.info(debug_message)
+        # logger.info(debug_message)
 
         if self.is_UI_obj_available():
             self.toolkit_UI_obj.notify_via_os("Starting Transcription",
@@ -2397,6 +2399,9 @@ class ToolkitOps:
 
     def index_video(self, video_file_path, **kwargs):
 
+        indexing_options = kwargs.get('indexing_options', dict())
+        detection_options = kwargs.get('detection_options', dict())
+
         # the target dir is either something that was sent via other_options
         # or it's the directory of the video_file_path
         target_dir = kwargs.get('target_dir', None) or os.path.dirname(video_file_path)
@@ -2440,20 +2445,83 @@ class ToolkitOps:
             # keep going
             return True
 
-        self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='loading encoder')
+        self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='loading')
 
         # initialize the encoder
-        index = ClipIndex(device=self.torch_device)
+        index = ClipIndex(
+            path=video_file_path, device=self.torch_device, patch_divider=indexing_options.get('patch_divider', 1.9)
+        )
 
-        # cancel indexing if user requested it
-        if self.processing_queue.cancel_if_canceled(queue_id=kwargs.get('queue_id', None)):
-            return None
+        queue_id = kwargs.get('queue_id', None)
 
-        # update status
-        self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='indexing')
+        def detect_progress(**progress_kwargs):
 
+            # calculate the current progress in percent based on where we are in the total number of frames
+            # but also divide by 3 because even if STAGE 1 is fully done, we're only 33% done
+            progress = int(
+                int(progress_kwargs.get('current_frame_index', 1)) / int(progress_kwargs.get('total_frames', 1))
+                * 100 // 3)
+
+            # cancel indexing if user requested it
+            if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
+                return None
+
+            # update status+progress
+            self.processing_queue.update_queue_item(
+                queue_id=queue_id, status='detecting scenes', progress=progress)
+
+            return True
+
+        # STAGE 1 - detect scenes
+        shot_indexes = \
+            index.get_scene_changes(frame_progress_callback=detect_progress, **detection_options)
+
+        def analyze_progress(**progress_kwargs):
+
+            # calculate the current progress in percent based on where we are in the total number of frames
+            # but also divide by 3 and add 33% because even if STAGE 2 is fully done, we're only 66% done
+            progress = int(
+                int(progress_kwargs.get('current_frame_index', 1)) / int(progress_kwargs.get('total_frames', 1))
+                * 100 // 3) + 33
+
+            # cancel indexing if user requested it
+            if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
+                return None
+
+            # update status+progress
+            self.processing_queue.update_queue_item(
+                queue_id=queue_id, status='analyzing scenes', progress=progress)
+
+            return True
+
+        # STAGE 2 - analyze and filter scenes
+        detected_shots, _ = \
+            index.analyze_neighbor_shots(shot_indexes, path=video_file_path, frame_progress_callback=analyze_progress)
+
+        def index_progress(**progress_kwargs):
+
+            # calculate the current progress in percent based on where we are in the total number of frames
+            # but also divide by 3 and add 33% because even if STAGE 2 is fully done, we're only 66% done
+            progress = int(
+                int(progress_kwargs.get('current_frame_index', 1)) / int(progress_kwargs.get('total_frames', 1))
+                * 100 // 3) + 66
+
+            # cancel indexing if user requested it
+            if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
+                return None
+
+            # update status+progress
+            self.processing_queue.update_queue_item(
+                queue_id=queue_id, status='indexing', progress=progress)
+
+            return True
+
+        # STAGE 3 - index the video
         # index the video and return None if something went wrong
-        if not index.index_video(path=video_file_path, frame_progress_callback=frame_progress_callback,  **kwargs):
+        # if not index.index_video(path=video_file_path, frame_progress_callback=frame_progress_callback,  **kwargs):
+        if not index.index_video(
+                path=video_file_path, detected_shots=detected_shots,
+                skip_empty=2, frame_progress_callback=index_progress, **indexing_options):
             return None
 
         # cancel indexing if user requested it
@@ -2533,7 +2601,9 @@ class ToolkitOps:
         queue_item['device'] = self.torch_device_type_select()
         queue_item['item_type'] = 'index_video'
         queue_item['video_file_path'] = queue_item['source_file_path']
-        queue_item['shot_change_threshold'] = other_options.get('shot_change_threshold', None)
+
+        queue_item['indexing_options'] = other_options.get('indexing_options', dict())
+        queue_item['detection_options'] = other_options.get('detection_options', dict())
 
         return self.processing_queue.add_to_queue(**queue_item)
 
@@ -2949,6 +3019,15 @@ class ToolkitOps:
                             self.toolkit_UI_obj.open_transcription_window(
                                 transcription_file_path=transcription_file_path)
 
+                # update the main window
+                if NLE is not None and NLE.current_timeline_fps is not None:
+                    self.stAI.project_settings['timelines'][NLE.current_timeline['name']]['timeline_fps'] \
+                        = NLE.current_timeline_fps
+
+                if NLE is not None and NLE.current_start_tc is not None:
+                    self.stAI.project_settings['timelines'][NLE.current_timeline['name']]['timeline_start_tc'] \
+                        = NLE.current_start_tc
+
         # when the playhead has moved
         elif event_name == 'tc_changed':
             if self.toolkit_UI_obj is not None:
@@ -3211,12 +3290,14 @@ class ToolkitOps:
                         NLE.current_timeline_fps = resolve_data['currentTimelineFPS']
                         self.on_resolve('fps_changed')
 
-                    # update current playhead timecode
+                    # update start_tc timecode
                     if (NLE.current_start_tc is not None
                         and 'currentTimeline' not in resolve_data
                         and 'startTC' not in resolve_data['currentTimeline']) \
-                            or NLE.current_start_tc != resolve_data['currentTimeline']['startTC']:
-                        NLE.current_start_tc = resolve_data['currentTimeline']['startTC']
+                            or (resolve_data['currentTimeline'] is not None \
+                            and NLE.current_start_tc != resolve_data['currentTimeline']['startTC']):
+                        NLE.current_start_tc = \
+                            resolve_data['currentTimeline']['startTC'] if isinstance(resolve_data, dict) else None
                         self.on_resolve('start_tc_changed')
 
                     # was there a previous error?

@@ -29,6 +29,9 @@ class ToolkitSearch:
 
     def __init__(self, toolkit_ops_obj):
 
+        # todo replace toolkit_ops_obj and stAI with better object initialization
+        #  that has all the required parameters: device, search type etc.
+
         # load the toolkit ops object
         self.toolkit_ops_obj = toolkit_ops_obj
 
@@ -1118,7 +1121,7 @@ class TextSearch(SearchItem):
 
         # if the corpus is empty, abort
         if not self._search_corpus_phrases:
-            logger.warning('Search corpus empty.')
+            logger.debug('Text search corpus empty.')
             return [], 0
 
         logger.debug('Performing semantic search on {} phrases.'.format(len(self._search_corpus_phrases)))

@@ -895,12 +895,20 @@ class toolkit_UI():
             self.stAI.config['transcription_group_questions'] = input_variables['group_questions_var'].get()
             del input_variables['group_questions_var']
 
+
+
+            if input_variables['video_indexing_index_candidate_var'].get() == 'the first frame':
+                self.stAI.config['video_indexing_index_candidate'] = 'first'
+            else:
+                self.stAI.config['video_indexing_index_candidate'] = 'sharp'
+            del input_variables['video_indexing_index_candidate_var']
+
             # the video sensitivity needs a bit of conversion
-            sensitivity = input_variables['clip_shot_change_sensitivity_var'].get()
-            del input_variables['clip_shot_change_sensitivity_var']
+            # sensitivity = input_variables['clip_shot_change_sensitivity_var'].get()
+            # del input_variables['clip_shot_change_sensitivity_var']
 
             # the sensitivity is between 0 and 100, but the encoder expects a value between 255 (lowest) and 0 (highest)
-            self.stAI.config['clip_shot_change_sensitivity'] = 255 - int(sensitivity * 255 / 100)
+            # self.stAI.config['clip_shot_change_sensitivity'] = 255 - int(sensitivity * 255 / 100)
 
             # SAVE THE VARIABLES FROM HERE ON
 
@@ -1386,6 +1394,15 @@ class toolkit_UI():
         if value.isdigit():
             return True
         elif value == "":
+            return True
+        else:
+            return False
+
+    def only_allow_integers_non_null(self, value):
+        """
+        Validation function for the entry widget.
+        """
+        if value.isdigit():
             return True
         else:
             return False
@@ -2212,7 +2229,7 @@ class toolkit_UI():
 
         main_window.t_open_transcript = ctk.CTkButton(main_window.tool_buttons_frame,
                                                       **self.ctk_button_size,
-                                                      text="Open Transcript", command=lambda: self.open_transcript())
+                                                      text="Open Transcription", command=lambda: self.open_transcript())
 
         main_window.t_queue = ctk.CTkButton(main_window.tool_buttons_frame,
                                             **self.ctk_button_size,
@@ -4529,13 +4546,70 @@ class toolkit_UI():
 
         # then, the video indexing specific settings
         indexing_settings['video_file_path'] = kwargs.get('file_path', None)
-        indexing_settings['model_name'] \
-            = video_form_vars['clip_model_name_var'].get()
 
-        sensitivity = video_form_vars['clip_shot_change_sensitivity_var'].get()
+        # create the indexing options dict if it doesn't exist
+        # this will be passed to the index_video() function
+        if 'indexing_options' not in indexing_settings:
+            indexing_settings['indexing_options'] = dict()
 
-        # the sensitivity is between 0 and 100, but the encoder expects a value between 255 (lowest) and 0 (highest)
-        indexing_settings['shot_change_threshold'] = 255 - int(sensitivity * 255 / 100)
+        # this tells the indexing function to either use
+        # the first frame in the scene or the sharpest it can find until the scene changes
+        index_candidate = video_form_vars['video_indexing_index_candidate_var'].get()
+
+        if index_candidate == 'the first frame':
+            indexing_settings['indexing_options']['prefer_sharp'] = False
+        else:
+            indexing_settings['indexing_options']['prefer_sharp'] = True
+
+        # this tells the indexing function to either skip color blocks or not
+        indexing_settings['indexing_options']['skip_color_blocks'] = \
+            video_form_vars['video_indexing_skip_color_blocks_var'].get() \
+            if 'video_indexing_skip_color_blocks_var' in video_form_vars else True
+
+        # this tells the indexing function to either skip similar neighbors or not
+        indexing_settings['indexing_options']['skip_similar_neighbors'] = \
+            video_form_vars['video_indexing_skip_similar_neighbors_var'].get() \
+            if 'video_indexing_skip_similar_neighbors_var' in video_form_vars else True
+
+        # this sets the patch_divider for the indexing function depending on what kind of attention we're using
+        attention_type = video_form_vars['video_indexing_attention_type_var'].get() \
+            if 'video_indexing_attention_type_var' in video_form_vars else None
+
+        # if we want to focus on details, we need to split the picture into more patches
+        # this is useful for frames with a lot of content
+        if attention_type == 'details':
+            indexing_settings['indexing_options']['patch_divider'] = 3.9
+
+        # if we want to focus on the big picture, we need to split the picture into less patches
+        # this is useful if we're searching the general content of frames
+        # - that usually occupies a big portion of the frame
+        elif attention_type == 'big picture':
+            indexing_settings['indexing_options']['patch_divider'] = 1
+
+        # otherwise find a middle ground
+        else:
+            indexing_settings['indexing_options']['patch_divider'] = 1.9
+
+        # create the detection options dict if it doesn't exist
+        # this will be passed to the index_video() function
+        if 'detection_options' not in indexing_settings:
+            indexing_settings['detection_options'] = dict()
+
+        # how often do we want to check the content of the scene when detecting scenes?
+        indexing_settings['detection_options']['content_analysis_every'] = \
+            video_form_vars['scene_detection_content_analysis_var'].get() \
+            if 'scene_detection_content_analysis_var' in video_form_vars else 40
+
+        # use the expected_frequency to set the jump_every_frames ('low' - 40, 'medium' - 20, 'high' - 10)
+        expected_frequency = video_form_vars['scene_detection_expected_frequency_var'].get() \
+            if 'scene_detection_expected_frequency_var' in video_form_vars else 'medium'
+
+        if expected_frequency == 'low':
+            indexing_settings['detection_options']['jump_every_frames'] = 40
+        elif expected_frequency == 'high':
+            indexing_settings['detection_options']['jump_every_frames'] = 10
+        else:
+            indexing_settings['detection_options']['jump_every_frames'] = 20
 
         return indexing_settings
 
@@ -4630,9 +4704,11 @@ class toolkit_UI():
         # create the frames
         enable_disable_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
         video_indexing_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
+        scene_detection_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
 
         # create labels for the frames (and style them according to the theme)
         video_indexing_label = ctk.CTkLabel(parent, text='Video Indexing', **self.ctk_frame_label_settings)
+        scene_detection_label = ctk.CTkLabel(parent, text='Scene Detection', **self.ctk_frame_label_settings)
 
         # we're going to create the form_vars dict to store all the variables
         # we will use this dict at the end of the function to gather all the created tk variables
@@ -4645,6 +4721,8 @@ class toolkit_UI():
         video_indexing_label.grid(row=l_row + 1, column=0, sticky="ew", **self.ctk_frame_paddings)
         enable_disable_frame.grid(row=l_row + 2, column=0, sticky="ew", **self.ctk_frame_paddings)
         video_indexing_frame.grid(row=l_row + 3, column=0, sticky="ew", **self.ctk_frame_paddings)
+        scene_detection_label.grid(row=l_row + 4, column=0, sticky="ew", **self.ctk_frame_paddings)
+        scene_detection_frame.grid(row=l_row + 5, column=0, sticky="ew", **self.ctk_frame_paddings)
 
         # make the column expandable
         parent.columnconfigure(0, weight=1)
@@ -4664,47 +4742,192 @@ class toolkit_UI():
         video_indexing_enabled_input = ctk.CTkSwitch(enable_disable_frame, variable=video_indexing_enabled_var,
                                                    text='', **self.ctk_form_entry_settings)
 
+
+        # Focus: fine details, details, balanced, big picture
+        # Index:  / first frame ... in scene
+        # Index color-block frames: switch
+        # Skip neighbors with similar content
+
+        # THE ATTENTION
+        attention_type = \
+            kwargs.get('video_indexing_attention_type', None) \
+                if kwargs.get('video_indexing_attention_type', None) is not None \
+                else self.stAI.get_app_setting('video_indexing_attention_type', default_if_none='balanced')
+
+        form_vars['video_indexing_attention_type_var'] = \
+            video_indexing_attention_type_var = tk.StringVar(video_indexing_frame, value=attention_type)
+
+        video_indexing_attention_type_label = ctk.CTkLabel(
+            video_indexing_frame, text='Attention Type', **self.ctk_form_label_settings)
+        video_indexing_attention_type_input = ctk.CTkSegmentedButton(
+            video_indexing_frame, variable=video_indexing_attention_type_var,
+            values=['details', 'balanced'], dynamic_resizing=True)
+            #values=['details', 'balanced', 'big picture'], dynamic_resizing=True)
+
+        # THE FRAME SELECTION
+        video_indexing_index_candidate = \
+            kwargs.get('video_indexing_index_candidate', None) \
+                if kwargs.get('video_indexing_index_candidate', None) is not None \
+                else self.stAI.get_app_setting('video_indexing_index_candidate', default_if_none='sharp')
+
+        if video_indexing_index_candidate == 'first':
+            video_indexing_index_candidate = 'the first frame'
+        else:
+            video_indexing_index_candidate = 'a sharper frame'
+
+        form_vars['video_indexing_index_candidate_var'] = \
+            video_indexing_index_candidate_var = tk.StringVar(video_indexing_frame,
+                                                              value=video_indexing_index_candidate)
+
+        video_indexing_index_candidate_label = \
+            ctk.CTkLabel(video_indexing_frame, text='Index Candidate', **self.ctk_form_label_settings)
+        video_indexing_index_candidate_input = \
+            ctk.CTkSegmentedButton(
+                video_indexing_frame, variable=video_indexing_index_candidate_var,
+                values=['a sharper frame', 'the first frame'], dynamic_resizing=True)
+
+        # SKIP SINGLE COLOR FRAMES
+        video_indexing_skip_color_blocks = kwargs.get('video_indexing_skip_color_blocks', None) \
+            if kwargs.get('video_indexing_skip_color_blocks', None) is not None \
+            else self.stAI.get_app_setting('video_indexing_skip_color_blocks', default_if_none=True)
+
+        form_vars['video_indexing_skip_color_blocks_var'] = \
+            video_indexing_skip_color_blocks_var = tk.BooleanVar(video_indexing_frame,
+                                                     value=video_indexing_skip_color_blocks)
+        video_indexing_color_block_label = ctk.CTkLabel(video_indexing_frame, text='Skip Single Color Frames',
+                                                  **self.ctk_form_label_settings)
+        video_indexing_color_block_input = ctk.CTkSwitch(video_indexing_frame,
+                                                         variable=video_indexing_skip_color_blocks_var,
+                                                   text='', **self.ctk_form_entry_settings)
+
+        # SKIP SIMILAR NEIGHBORS
+        video_indexing_skip_similar_neighbors = kwargs.get('video_indexing_skip_similar_neighbors', None) \
+            if kwargs.get('video_indexing_skip_similar_neighbors', None) is not None \
+            else self.stAI.get_app_setting('video_indexing_skip_similar_neighbors', default_if_none=True)
+
+        form_vars['video_indexing_skip_similar_neighbors_var'] = \
+            video_indexing_skip_similar_neighbors_var = tk.BooleanVar(video_indexing_frame,
+                                                        value=video_indexing_skip_similar_neighbors)
+
+        video_indexing_skip_similar_neighbors_label = \
+            ctk.CTkLabel(video_indexing_frame, text='Skip Similar Neighbors', **self.ctk_form_label_settings)
+        video_indexing_skip_similar_neighbors_input = \
+            ctk.CTkSwitch(video_indexing_frame, variable=video_indexing_skip_similar_neighbors_var,
+                                                    text='', **self.ctk_form_entry_settings)
+
+
+        # SCENE DETECTION TAB
+
+        # EXPECTED SHOT CHANGE FREQUENCY
+        scene_detection_expected_frequency = \
+            kwargs.get('scene_detection_expected_frequency', None) \
+                if kwargs.get('scene_detection_expected_frequency', None) is not None \
+                else self.stAI.get_app_setting('scene_detection_expected_frequency', default_if_none='medium')
+
+        form_vars['scene_detection_expected_frequency_var'] = \
+            scene_detection_expected_frequency_var = tk.StringVar(scene_detection_frame,
+                                                                     value=scene_detection_expected_frequency)
+
+        scene_detection_expected_frequency_label = \
+            ctk.CTkLabel(scene_detection_frame, text='Expected Shot Frequency',
+                            **self.ctk_form_label_settings)
+
+        scene_detection_expected_frequency_input = \
+            ctk.CTkSegmentedButton(scene_detection_frame, variable=scene_detection_expected_frequency_var,
+
+                                      values=['low', 'medium', 'high'], dynamic_resizing=True)
+
+        # CONTENT ANALYSIS
+        scene_detection_content_analysis = \
+            kwargs.get('scene_detection_content_analysis', None) \
+                if kwargs.get('scene_detection_content_analysis', None) is not None \
+                else self.stAI.get_app_setting('scene_detection_content_analysis', default_if_none=40)
+
+        form_vars['scene_detection_content_analysis_var'] = \
+            scene_detection_content_analysis_var = tk.IntVar(scene_detection_frame,
+                                                                value=scene_detection_content_analysis)
+
+        scene_detection_content_analysis_label = \
+            ctk.CTkLabel(scene_detection_frame, text='Analyze Scenes',
+                            **self.ctk_form_label_settings)
+
+        scene_detection_content_analysis_frame = ctk.CTkFrame(scene_detection_frame, **self.ctk_frame_transparent)
+
+        scene_detection_content_analysis_unit_label1 = \
+            ctk.CTkLabel(scene_detection_content_analysis_frame, text='every')
+
+        scene_detection_content_analysis_input = \
+            ctk.CTkEntry(scene_detection_content_analysis_frame, textvariable=scene_detection_content_analysis_var,
+                         **self.ctk_form_entry_settings_half)
+
+        scene_detection_content_analysis_unit_label2 = \
+            ctk.CTkLabel(scene_detection_content_analysis_frame, text='frames')
+
+        scene_detection_content_analysis_unit_label1.pack(side=ctk.LEFT)
+        scene_detection_content_analysis_input.pack(side=ctk.LEFT, **self.ctk_form_paddings)
+        scene_detection_content_analysis_unit_label2.pack(side=ctk.LEFT)
+
+        # only allow integers in the scene_detection_content_analysis_input
+        scene_detection_content_analysis_input.configure(
+            validate="key",
+            validatecommand=(scene_detection_content_analysis_input.register(self.only_allow_integers_non_null), '%P')
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         # THE MODEL DROPDOWN
         # get the available models from ClipIndex, and the default model from the app settings
-        model_selected = \
-            kwargs.get('clip_model_name', None) \
-                if kwargs.get('clip_model_name', None) is not None \
-                else self.stAI.get_app_setting('clip_model_name', default_if_none='RN50x4')
+        # model_selected = \
+        #     kwargs.get('clip_model_name', None) \
+        #         if kwargs.get('clip_model_name', None) is not None \
+        #         else self.stAI.get_app_setting('clip_model_name', default_if_none='RN50x4')
 
         # create the model variable, label and input
-        form_vars['clip_model_name_var'] = \
-            model_name_var = tk.StringVar(video_indexing_frame, value=model_selected)
-        model_name_label = ctk.CTkLabel(video_indexing_frame, text='Model', **self.ctk_form_label_settings)
-        model_name_input = ctk.CTkOptionMenu(video_indexing_frame, variable=model_name_var,
-                                             values=ClipIndex.get_available_clip_models(),
-                                             **self.ctk_form_entry_settings)
+        # form_vars['clip_model_name_var'] = \
+        #     model_name_var = tk.StringVar(video_indexing_frame, value=model_selected)
+        # model_name_label = ctk.CTkLabel(video_indexing_frame, text='Model', **self.ctk_form_label_settings)
+        # model_name_input = ctk.CTkOptionMenu(video_indexing_frame, variable=model_name_var,
+        #                                      values=ClipIndex.get_available_clip_models(),
+        #                                      **self.ctk_form_entry_settings)
 
         # THE SHOT CHANGE SENSITIVITY
         # get the available models from ClipIndex, and the default model from the app settings
-        shot_change_sensitivity = \
-            kwargs.get('clip_shot_change_sensitivity', None) \
-                if kwargs.get('clip_shot_change_sensitivity', None) is not None \
-                else self.stAI.get_app_setting('clip_shot_change_sensitivity', default_if_none=13)
+        # shot_change_sensitivity = \
+        #     kwargs.get('clip_shot_change_sensitivity', None) \
+        #         if kwargs.get('clip_shot_change_sensitivity', None) is not None \
+        #         else self.stAI.get_app_setting('clip_shot_change_sensitivity', default_if_none=13)
 
         # convert the sensitivity to a value between 0 and 100
-        shot_change_sensitivity = 100 - int(shot_change_sensitivity * 100 / 255)
+        # shot_change_sensitivity = 100 - int(shot_change_sensitivity * 100 / 255)
 
         # create the variable, label and input
-        form_vars['clip_shot_change_sensitivity_var'] = \
-            sensitivity_var = tk.IntVar(video_indexing_frame, value=shot_change_sensitivity)
-        sensitivity_label \
-            = ctk.CTkLabel(video_indexing_frame, text='Shot Change Sensitivity', **self.ctk_form_label_settings)
+        # form_vars['clip_shot_change_sensitivity_var'] = \
+        #     sensitivity_var = tk.IntVar(video_indexing_frame, value=shot_change_sensitivity)
+        # sensitivity_label \
+        #     = ctk.CTkLabel(video_indexing_frame, text='Shot Change Sensitivity', **self.ctk_form_label_settings)
 
-        sensitivity_input_frame = ctk.CTkFrame(video_indexing_frame, **self.ctk_frame_transparent)
+        # sensitivity_input_frame = ctk.CTkFrame(video_indexing_frame, **self.ctk_frame_transparent)
 
-        sensitivity_input \
-            = ctk.CTkSlider(sensitivity_input_frame, from_=10, to=100, number_of_steps=18, variable=sensitivity_var,
-                            **self.ctk_form_entry_settings)
-        sensitivity_slider_value \
-            = ctk.CTkLabel(sensitivity_input_frame, textvariable=sensitivity_var, **self.ctk_form_label_settings)
+        # sensitivity_input \
+        #     = ctk.CTkSlider(sensitivity_input_frame, from_=10, to=100, number_of_steps=18, variable=sensitivity_var,
+        #                     **self.ctk_form_entry_settings)
+        # sensitivity_slider_value \
+        #     = ctk.CTkLabel(sensitivity_input_frame, textvariable=sensitivity_var, **self.ctk_form_label_settings)
 
-        sensitivity_input.pack(side=ctk.LEFT)
-        sensitivity_slider_value.pack(side=ctk.LEFT, **self.ctk_form_paddings)
+        # sensitivity_input.pack(side=ctk.LEFT)
+        # sensitivity_slider_value.pack(side=ctk.LEFT, **self.ctk_form_paddings)
 
         # ENABLE/DISABLE function
         def update_video_indexing_enabled(*f_args):
@@ -4713,11 +4936,15 @@ class toolkit_UI():
             if video_indexing_enabled_var.get():
                 # video_indexing_label.grid()
                 video_indexing_frame.grid()
+                scene_detection_label.grid()
+                scene_detection_frame.grid()
 
             # disable all the elements in the audio tab
             else:
                 # video_indexing_label.grid_remove()
                 video_indexing_frame.grid_remove()
+                scene_detection_label.grid_remove()
+                scene_detection_frame.grid_remove()
 
         # add enable/disable function to the transcription_enabled_var
         video_indexing_enabled_var.trace('w', update_video_indexing_enabled)
@@ -4729,11 +4956,22 @@ class toolkit_UI():
         video_indexing_enabled_label.grid(row=0, column=0, sticky="w", **self.ctk_form_paddings)
         video_indexing_enabled_input.grid(row=0, column=1, sticky="w", **self.ctk_form_paddings)
 
-        # VIDEO FRAME GRID
-        model_name_label.grid(row=1, column=0, sticky="w", **self.ctk_form_paddings)
-        model_name_input.grid(row=1, column=1, sticky="w", **self.ctk_form_paddings)
-        sensitivity_label.grid(row=2, column=0, sticky="w", **self.ctk_form_paddings)
-        sensitivity_input_frame.grid(row=2, column=1, sticky="w", **self.ctk_form_paddings)
+
+        # VIDEO INDEXING GRID
+        video_indexing_attention_type_label.grid(row=1, column=0, sticky="w", **self.ctk_form_paddings)
+        video_indexing_attention_type_input.grid(row=1, column=1, sticky="w", **self.ctk_form_paddings)
+        video_indexing_index_candidate_label.grid(row=2, column=0, sticky="w", **self.ctk_form_paddings)
+        video_indexing_index_candidate_input.grid(row=2, column=1, sticky="w", **self.ctk_form_paddings)
+        video_indexing_color_block_label.grid(row=3, column=0, sticky="w", **self.ctk_form_paddings)
+        video_indexing_color_block_input.grid(row=3, column=1, sticky="w", **self.ctk_form_paddings)
+        video_indexing_skip_similar_neighbors_label.grid(row=4, column=0, sticky="w", **self.ctk_form_paddings)
+        video_indexing_skip_similar_neighbors_input.grid(row=4, column=1, sticky="w", **self.ctk_form_paddings)
+
+        # SCENE DETECTION GRID
+        scene_detection_expected_frequency_label.grid(row=1, column=0, sticky="w", **self.ctk_form_paddings)
+        scene_detection_expected_frequency_input.grid(row=1, column=1, sticky="w", **self.ctk_form_paddings)
+        scene_detection_content_analysis_label.grid(row=2, column=0, sticky="w", **self.ctk_form_paddings)
+        scene_detection_content_analysis_frame.grid(row=2, column=1, sticky="w", **self.ctk_form_paddings)
 
         return form_vars
 
@@ -7323,6 +7561,10 @@ class toolkit_UI():
 
             window_transcription = self.get_window_transcription(window_id=window_id)
 
+            # if the transcription has no segments, just ignore this
+            if not window_transcription.has_segments:
+                return None
+
             # if we have some selected segments, use their start and end times
             if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0 \
                     and not ignore_selection:
@@ -7850,6 +8092,13 @@ class toolkit_UI():
             if window_id is None or text is None:
                 return False
 
+            # get the window transcription
+            window_transcription = self.get_window_transcription(window_id=window_id)
+
+            # ignore if the transcription doesn't have any segments
+            if not window_transcription.has_segments:
+                return None
+
             text.focus()
 
             # enable typing mode to disable some shortcuts
@@ -8199,7 +8448,7 @@ class toolkit_UI():
                 and os.path.exists(transcription_json_file_path.replace('.srt', '.transcription.json')):
 
             # ask user
-            if messagebox.askyesno(title="Open Transcript",
+            if messagebox.askyesno(title="Open Transcription",
                                    message='The file you selected is an SRT file, '
                                            'but a transcription.json file with the exact name '
                                            'exists in the same folder.\n\n'
@@ -8268,11 +8517,28 @@ class toolkit_UI():
             )
             return False
 
+        # todo make this work
+        # was this transcription flagged incomplete
+        if transcription.incomplete:
+            self.notify_via_messagebox(
+                title="Incomplete Transcription",
+                type="warning",
+                message="This transcription looks incomplete.\n\n" \
+                        "Which means that it's either still being processed, or that something went wrong.\n\n"
+                        "To fix this, you can simply press retranscribe "
+                        "and try to re-transcribe the parts that are missing."
+            )
+
         # use the transcription path id for the window id
         t_window_id = 't_window_{}'.format(transcription.transcription_path_id)
 
         # for the window title, we either used the passed title or the transcription name
         title = title if title else transcription.name
+
+        # if we don't have a transcription file name,
+        # just use the transcription file path without the .transcription.json extension
+        if title is None and transcription.transcription_file_path is not None:
+            title = os.path.basename(transcription.transcription_file_path).split('.transcription.json')[0]
 
         # create a window for the transcript if one doesn't already exist
         if self.create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title, resizable=True,
@@ -8389,7 +8655,7 @@ class toolkit_UI():
             # THE MAIN TEXT ELEMENT
 
             # does the json file actually contain transcript segments generated by whisper?
-            if transcription.has_segments:
+            if transcription.is_transcription_file:
 
                 # initialize the transcript text element
                 text = tk.Text(text_form_frame,
@@ -8419,26 +8685,31 @@ class toolkit_UI():
                 text_widget_line = 0
 
                 # take each transcript segment
-                for t_segment in transcription.get_segments():
+                segments = transcription.get_segments()
 
-                    # start counting the lines
-                    text_widget_line = text_widget_line + 1
+                # if there are segments
+                if segments:
 
-                    # if there is a text element, simply insert it in the window
-                    if t_segment.text:
+                    for t_segment in segments:
 
-                        # count the segments
-                        segment_count = segment_count + 1
+                        # start counting the lines
+                        text_widget_line = text_widget_line + 1
 
-                        # insert the text
-                        text.insert(ctk.END, t_segment.text.strip() + ' ')
+                        # if there is a text element, simply insert it in the window
+                        if t_segment.text:
 
-                        # if this is the longest segment, keep that in mind
-                        if len(t_segment.text) > longest_segment_num_char:
-                            longest_segment_num_char = len(t_segment.text)
+                            # count the segments
+                            segment_count = segment_count + 1
 
-                        # for now, just add 2 new lines after each segment:
-                        text.insert(ctk.END, '\n')
+                            # insert the text
+                            text.insert(ctk.END, t_segment.text.strip() + ' ')
+
+                            # if this is the longest segment, keep that in mind
+                            if len(t_segment.text) > longest_segment_num_char:
+                                longest_segment_num_char = len(t_segment.text)
+
+                            # for now, just add 2 new lines after each segment:
+                            text.insert(ctk.END, '\n')
 
                 # make the text read only
                 # and take into consideration the longest segment to adjust the width of the window
@@ -8485,7 +8756,7 @@ class toolkit_UI():
                 text.bind(
                     "<" + self.ctrl_cmd_bind + "-Button-1>",
                     lambda e, select_options=select_options:
-                    self.t_edit_obj.transcription_window_mouse(e, special_key='cmd',**select_options)
+                    self.t_edit_obj.transcription_window_mouse(e, special_key='cmd', **select_options)
                 )
 
                 # bind ALT/OPT + mouse Click to edit transcript
@@ -8644,15 +8915,15 @@ class toolkit_UI():
                 self.text_windows[t_window_id] = {'text_widget': text}
 
             # if no segment was found in the json file, alert the user
-            else:
-                no_segments_message = 'The file {} doesn\'t have any segments.'.format(
-                    os.path.basename(transcription_file_path))
+            # else:
+            #     no_segments_message = 'The file {} doesn\'t have any segments.'.format(
+            #         os.path.basename(transcription_file_path))
 
-                self.notify_via_messagebox(title='No segments',
-                                           message=no_segments_message,
-                                           type='warning'
-                                           )
-                self.destroy_window_(window_id=t_window_id)
+            #     self.notify_via_messagebox(title='No segments',
+            #                                message=no_segments_message,
+            #                                type='warning'
+            #                                )
+            #     self.destroy_window_(window_id=t_window_id)
 
             # keep this window on top if the user has that config option enabled
             if self.stAI.get_app_setting('transcripts_always_on_top', default_if_none=False):
