@@ -787,6 +787,10 @@ class ToolkitOps:
         speech_timestamps = [[speech_timestamp['start'] / sample_rate, speech_timestamp['end'] / sample_rate]
                              for speech_timestamp in speech_timestamps]
 
+        # if there are no speech_timestamps, return an empty list
+        if not speech_timestamps:
+            return []
+
         # combine all the speech_timestamps that are less than X seconds apart
         # this is to avoid having too many small segments
         speech_timestamps = self.combine_intervals(speech_timestamps,
@@ -806,6 +810,10 @@ class ToolkitOps:
         :param combine_min_time: the minimum time (seconds) between two timestamps to be combined
         :return:
         """
+
+        # if there are no intervals, return an empty list
+        if not intervals or not isinstance(intervals, list) or len(intervals) == 0:
+            return []
 
         # sort the timestamps by start time
         intervals = sorted(intervals, key=lambda x: x[0])
@@ -1730,6 +1738,16 @@ class ToolkitOps:
 
             # perform speech detection
             time_intervals = self.get_speech_intervals(audio_array)
+
+            # fail if no speech was detected
+            if len(time_intervals) == 0:
+                logger.info('No speech was detected in {}.'.format(kwargs.get('name', 'audio file')))
+
+                # update the queue item status
+                if queue_id is not None:
+                    self.processing_queue.update_queue_item(queue_id=queue_id, status='failed')
+
+                return None, None
 
         # if time_intervals was passed from the request, take them into consideration
         # but only if they are not boolean (True or False)
