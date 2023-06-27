@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.19.2] - 2023-06-27
+
+An early version of the Advanced Video Search feature! 
+Search for specific content in your video files just by typing plain text.
+Early update for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+
+### Added
+- Ingesting of video content which includes AI based scene detection and video content indexing
+- Advanced Video Search - search video content using plain text
+
+### Changed
+- Transcriptions are now done via the Ingest window
+
+### Fixes
+- Fixed a few bugs in the Queue system that were either preventing the queue from moving forward or causing crashes
+- Fixed a few bugs related with the transcription process which were introduced with the new UI
+- Fixed scaling issues on Windows
+
+### Known Issues
+- The new UI is causing some issues on the menu on Windows - to be fixed asap
+
 ## [0.19.1] - 2023-06-12
 
 ### Added
