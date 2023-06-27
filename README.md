@@ -14,6 +14,7 @@ transcripts and have conversations about them with AI.
 <img alt="StoryToolkitAI Interface" src="help/storytoolkitai_v0.19.0.png" width="750">
 
 ## Key Features
+- [x] **Full video indexing and search** (experimental, v. 0.19.2+)
 - [x] **Free Automatic Transcriptions** on your local machine
 - [x] **Free Automatic Translation** to English on your local machine
 - [x] **ChatGPT integration** - talk to AI about your content, or generate new ideas
@@ -31,7 +32,6 @@ transcripts and have conversations about them with AI.
 - [x] Direct import of subtitles into Resolve bin
 
 ### Planned Features
-- [ ] **Full video indexing and search** 
 - [ ] **Automatic Topic Classification** to help you discover ideas in your transcripts
 - [ ] **Speaker Diarization** 
 - [ ] **Paper Edit** and **Automatic Selects**

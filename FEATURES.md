@@ -257,7 +257,16 @@ adjust the text to sound further._
 _Note 2: You can also open the resulting .comp file in Fusion instead of using the copy-paste method, but you will have 
 to manually add whatever Input or Output nodes you need to make it work._
 
-## Advanced Transcript Search
+## Indexing Videos
+
+Starting with version 0.19.2, the tool can also automatically detect and index scenes in videos using AI.
+The index is used for searching of specific content in the video - more info on this feature coming soon!
+
+## Advanced Search
+
+Starting with version 0.19.2, the Advanced Search can also look into Video content - more info on this feature
+coming soon!
+
 Transcription windows have an "Advanced Search" button that will open up a separate search window. The system is now
 quite experimental and very raw, but it will allow you to search transcripts almost like you search something on Google.
 This means that whenever you enter your search term, the tool will try to understand its meaning and find the phrases
