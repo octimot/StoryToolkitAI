@@ -446,7 +446,18 @@ class ClipIndex:
         WORK IN PROGRESS - the pytorch ssim implementation doesn't return the same results as the skimage ssim
         """
 
-        ssim_index = ssim(frame1, frame2, multichannel=True, win_size=3)
+        try:
+
+            ssim_index = ssim(frame1, frame2, multichannel=True, win_size=3)
+
+        except ValueError:
+
+            logger.error("ValueError in ssim", exc_info=True)
+
+            logger.error("Frame 1 shape {}".format(frame1.shape))
+            logger.error("Frame 2 shape {}".format(frame2.shape))
+
+            ssim_index = 0
 
         return ssim_index
 
