@@ -1447,6 +1447,7 @@ class ToolkitOps:
 
             # if we have a transcription object, first delete any existing segments from this time interval
             if transcription is not None:
+                print('Deleting segments between {} and {}'.format(audio_segment_start, audio_segment_end))
                 transcription.delete_segments_between(start=audio_segment_start, end=audio_segment_end)
 
             # pre process the audio segment
