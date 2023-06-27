@@ -10305,7 +10305,7 @@ class toolkit_UI():
                 # add the name label
                 window_queue_item['name_var'] = \
                     name_var = ctk.StringVar(queue_window)
-                name_label = ctk.CTkLabel(queue_item_frame, textvariable=name_var)
+                name_label = ctk.CTkLabel(queue_item_frame, textvariable=name_var, anchor='w')
 
                 # expand the name label to fill the space
                 queue_item_frame.columnconfigure(0, weight=1)
@@ -11333,7 +11333,7 @@ class toolkit_UI():
                     tag_name = 'clickable_{}'.format(result['idx'])
                     results_text_element.tag_add(tag_name, current_insert_position, ctk.INSERT)
 
-                    print('tag_name', tag_name, result['idx'])
+                    # print('tag_name', tag_name, result['idx'])
 
                     # hash the file path so we can use it as a window id
                     file_path_hash = hashlib.md5(result['file_path'].encode('utf-8')).hexdigest()

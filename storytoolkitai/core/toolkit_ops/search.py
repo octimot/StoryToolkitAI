@@ -621,12 +621,13 @@ class TextSearch(SearchItem):
             # like punctuation marks
             if len(phrase) > self.stAI.get_app_setting(
                     setting_name='search_corpus_min_length', default_if_none=2):
-                # add the phrase to the search corpus
-                search_corpus_phrases.append(phrase.strip())
 
                 # remember the text file path and the phrase number
                 # this is the phrase index relative to the whole search corpus that
                 general_segment_index = len(search_corpus_phrases)
+
+                # add the phrase to the search corpus
+                search_corpus_phrases.append(phrase.strip())
 
                 # add the phrase to the search corpus association list
                 search_corpus_assoc[general_segment_index] = {'file_path': text_file_path,
@@ -1179,7 +1180,7 @@ class TextSearch(SearchItem):
                         query=self.query,
                         search_corpus_phrases=self._search_corpus_phrases,
                         search_corpus_assoc=self._search_corpus_assoc,
-                        idx=idx,
+                        idx=idx.item(),
                         score=score
                     )
 
