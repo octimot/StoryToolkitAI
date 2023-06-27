@@ -18,7 +18,7 @@ import ctypes
 
 class UImenus:
 
-    def __init__(self, toolkit_UI_obj):
+    def __init__(self, toolkit_UI_obj, parent=None):
 
         # declare the main objects
         self.toolkit_UI_obj = toolkit_UI_obj
@@ -30,11 +30,14 @@ class UImenus:
         # this is the main window
         self.root = self.toolkit_UI_obj.root
 
+        if parent is None:
+            parent = self.root
+
         # this is the main menubar (it's been declared in the main UI class to clear it before init)
-        self.main_menubar = Menu(self.root)
+        self.main_menubar = Menu(parent)
 
         # reset it for now so we don't see weird menus before it is populated
-        self.toolkit_UI_obj.root.config(menu=self.main_menubar)
+        parent.config(menu=self.main_menubar)
 
         # keep track of the current window id
         self.current_window_id = None

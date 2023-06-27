@@ -2944,6 +2944,7 @@ class toolkit_UI():
         This opens a text file in a new (or existing) text window
         :param file_path:
         :param window_id:
+        :param tag_text:
         :return:
         """
 
@@ -2963,27 +2964,36 @@ class toolkit_UI():
         # now open the text window
         self.open_text_window(initial_text=file_content, window_id=window_id, can_find=True, **kwargs)
 
-        # if we have a tag_text, tag the text in the window
-        if tag_text is not None and window_id in self.text_windows:
+        def tag_passed_text():
 
-            # get the text widget
-            text_widget = self.text_windows[window_id]['text_widget']
+            # if we have a tag_text, tag the text in the window
+            if tag_text is not None and window_id in self.text_windows:
 
-            # remove existing tags
-            text_widget.tag_delete('find_result_tag')
+                # get the text widget
+                text_widget = self.text_windows[window_id]['text_widget']
 
-            tag_index = text_widget.search(tag_text, 1.0, nocase=True, stopindex=ctk.END)
+                # remove existing tags
+                text_widget.tag_delete('find_result_tag')
 
-            # if we have a tag_index, tag the text
-            if tag_index != -1:
-                # tag the text
-                text_widget.tag_add('find_result_tag', f'{tag_index}', f'{tag_index} + {len(tag_text)}c')
+                tag_index = text_widget.search(tag_text, 1.0, nocase=True, stopindex="end")
 
-                # configure the tag
-                text_widget.tag_config('find_result_tag', foreground=self.theme_colors['red'])
+                # if we have a tag_index, tag the text
+                if tag_index != -1:
 
-                # scroll to the tag
-                text_widget.see(f'{tag_index}')
+                    # tag the text
+                    # text_widget.tag_add('find_result_tag', f'{tag_index}', f'{tag_index} + {len(tag_text)}c')
+                    text_widget.tag_add('find_result_tag', tag_index, '{}+{}c'.format(tag_index, len(tag_text)))
+
+                    # configure the tag
+                    text_widget.tag_config('find_result_tag', foreground=self.theme_colors['red'])
+
+                    # scroll to the tag
+                    text_widget.see(f'{tag_index}')
+
+        text_window = self.get_window_by_id(window_id)
+
+        # tag the text 50 ms after the window is opened
+        text_window.after(50, tag_passed_text)
 
     # FIND-REPLACE MODAL WINDOW
 
