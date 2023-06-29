@@ -897,6 +897,7 @@ class Transcription:
     def _save_auxiliaries(self):
         """
         This saves the srt and txt files next to the transcription file
+        and then updates the transcription file with the paths to the srt and txt files
         """
 
         # if the srt or txt file paths are not set
@@ -930,7 +931,8 @@ class Transcription:
                 self._txt_file_path = os.path.basename(self._txt_file_path)
 
             # save the transcription to file to add the new paths
-            if self._save():
+            # but don't save the auxiliaries again, or we might get into an endless recursion
+            if self._save(auxiliaries=False):
                 logger.debug('Updated auxiliaries paths in transcription file {}.'
                              .format(self.__transcription_file_path))
 

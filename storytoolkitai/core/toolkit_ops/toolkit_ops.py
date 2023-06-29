@@ -1447,7 +1447,6 @@ class ToolkitOps:
 
             # if we have a transcription object, first delete any existing segments from this time interval
             if transcription is not None:
-                print('Deleting segments between {} and {}'.format(audio_segment_start, audio_segment_end))
                 transcription.delete_segments_between(start=audio_segment_start, end=audio_segment_end)
 
             # pre process the audio segment
@@ -2572,6 +2571,8 @@ class ToolkitOps:
         numpy_file_path = embedding_paths[0]
 
         # if 'transcription_file_paths' exists in kwargs, add the metadata paths to all the transcriptions
+        # this should be the case if the user transcribed and translated the video before indexing it
+        # therefore creating more than one transcription file
         if kwargs.get('transcription_file_paths', None):
             for transcription_file_path in kwargs.get('transcription_file_paths', None):
 
