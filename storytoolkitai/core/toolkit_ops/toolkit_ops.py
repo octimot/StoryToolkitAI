@@ -2514,8 +2514,18 @@ class ToolkitOps:
             return True
 
         # STAGE 2 - analyze and filter scenes
-        detected_shots, _ = \
+        detected_shots = \
             index.analyze_neighbor_shots(shot_indexes, path=video_file_path, frame_progress_callback=analyze_progress)
+
+        # unpack the detected_shots if it's a tuple
+        if isinstance(detected_shots, tuple) and len(detected_shots) == 2:
+            detected_shots, _ = detected_shots
+
+        # otherwise, just stop the process
+        else:
+            self.processing_queue.cancel_item(queue_id=queue_id)
+            return None
+
 
         def index_progress(**progress_kwargs):
 
