@@ -35,9 +35,9 @@ from .media import MediaItem, VideoFileClip, AudioFileClip
 
 
 class NLE:
-    '''
+    """
     Use this class to store any data that is supposed to be shared with the NLE (for eg. Resolve)
-    '''
+    """
 
     # the current project name
     current_project = None
@@ -78,9 +78,9 @@ class NLE:
             = None
 
     def is_connected(self=None):
-        '''
+        """
         Check if the NLE is connected
-        '''
+        """
 
         if NLE.resolve is None:
             return False
@@ -3016,9 +3016,6 @@ class ToolkitOps:
 
                 # sync all the synced transcription windows
                 self.toolkit_UI_obj.update_all_transcription_windows()
-
-                # update the resolve buttons in the menu
-                self.toolkit_UI_obj.UI_menus.toggle_resolve_buttons()
 
         # when the timeline has changed
         elif event_name == 'timeline_changed':

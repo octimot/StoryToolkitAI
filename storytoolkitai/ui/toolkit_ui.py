@@ -965,7 +965,7 @@ class toolkit_UI():
 
                 # create a frame for the about window
                 about_frame = ctk.CTkFrame(about_window, **toolkit_UI.ctk_frame_transparent)
-                about_frame.pack(**self.toolkit_UI_obj.window_paddings)
+                about_frame.pack(**toolkit_UI.ctk_frame_paddings)
 
                 # add the app name text
                 app_name = 'StoryToolkitAI version ' + self.stAI.version
@@ -994,7 +994,7 @@ class toolkit_UI():
 
                 # the project page frame
                 project_page_frame = ctk.CTkFrame(about_frame, **toolkit_UI.ctk_frame_transparent)
-                project_page_frame.grid(column=1, row=3, sticky='w', pady=self.toolkit_UI_obj.paddings['pady'])
+                project_page_frame.grid(column=1, row=3, sticky='w', pady=toolkit_UI.ctk_form_paddings['pady'])
 
                 # add the project page label
                 project_page_label = ctk.CTkLabel(project_page_frame, text='Project page: ',
@@ -1036,19 +1036,14 @@ class toolkit_UI():
 
         self.UI_folder = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', '..', 'UI')
 
-        # add icon
-        try:
-            # set window/bar icon
-            self.UI_set_icon(self.root)
-
-        except:
-            logger.debug('Could not load StoryToolkitAI icon.')
+        # set window/bar icon
+        self.UI_set_icon(self.root)
 
         # initialize app items object
         self.app_items_obj = self.AppItemsUI(toolkit_UI_obj=self)
 
         # load menu object
-        self.UI_menus = UImenus(toolkit_UI_obj=self)
+        self.main_menu = UImenus(toolkit_UI_obj=self, parent=self.root)
 
         logger.debug('Running with TK {}'.format(self.root.call("info", "patchlevel")))
 
@@ -1377,15 +1372,21 @@ class toolkit_UI():
         Sets the bar icon for the window (only for windows)
         """
 
-        photo = tk.PhotoImage(file=os.path.join(self.UI_folder, 'StoryToolkitAI.png'))
-        window.wm_iconphoto(False, photo)
+        # add icon
+        try:
 
-        # set bar icon for windows
-        if sys.platform == 'win32':
-            window.iconbitmap(os.path.join(self.UI_folder, 'StoryToolkitAI.ico'))
+            photo = tk.PhotoImage(file=os.path.join(self.UI_folder, 'StoryToolkitAI.png'))
+            window.wm_iconphoto(False, photo)
 
-            # this hack is needed to override the 200ms icon replacement done by customtkinter
-            window.after(300, lambda: window.iconbitmap(os.path.join(self.UI_folder, 'StoryToolkitAI.ico')))
+            # set bar icon for windows
+            if sys.platform == 'win32':
+                window.iconbitmap(os.path.join(self.UI_folder, 'StoryToolkitAI.ico'))
+
+                # this hack is needed to override the 200ms icon replacement done by customtkinter
+                window.after(300, lambda: window.iconbitmap(os.path.join(self.UI_folder, 'StoryToolkitAI.ico')))
+
+        except:
+            logger.debug('Could not load StoryToolkitAI icon.', exc_info=True)
 
     def only_allow_integers(self, value):
         """
@@ -1560,7 +1561,7 @@ class toolkit_UI():
                               title: str = None, resizable: tuple or bool = False,
                               type: str = None,
                               close_action=None,
-                              open_multiple: bool = False, return_window: bool = False) \
+                              open_multiple: bool = False, return_window: bool = False, has_menubar: bool = False) \
             -> tk.Toplevel or str or bool:
         """
         This function creates a new window or opens an existing one based on the window_id.
@@ -1572,6 +1573,7 @@ class toolkit_UI():
         :param open_multiple: Allows to open multiple windows of the same type
                              (but adds the timestamp to the window_id for differentiations)
         :param return_window: If false, it just returns the window_id. If true, it returns the window object.
+        :param has_menubar: If true, the window will have a menubar
         :return: The window_id, the window object if return_window is True, or False if the window already exists
         """
 
@@ -1682,6 +1684,14 @@ class toolkit_UI():
 
             # then add the close action to the window, so that we can call it from anywhere else
             self.windows[window_id].close_action = close_action
+
+            # add the window id to the window object in case it needs to reference itself
+            self.windows[window_id].window_id = window_id
+
+            # add a top menu bar if the OS is not macOS - for macOS the top menu bar is enough
+            if has_menubar and sys.platform != "darwin":
+                self.windows[window_id].menu_bar = UImenus(toolkit_UI_obj=self, parent=self.windows[window_id])
+                self.windows[window_id].menu_bar.load_menubar()
 
             # also bind the close action to cmd+shift+w
             self.windows[window_id].bind("<" + self.ctrl_cmd_bind + "-Shift-W>", lambda event: close_action())
@@ -1827,8 +1837,10 @@ class toolkit_UI():
 
         if window_id in self.window_types:
             return self.window_types[window_id]
+        elif window_id == 'main':
+            return 'main'
         else:
-            logger.debug('Window type not found for window_id: ' + window_id)
+            logger.debug('Window type not found for window_id: {}'.format(window_id))
             return None
 
     def set_window_type(self, window_id: str, type: str) -> None:
@@ -1863,27 +1875,7 @@ class toolkit_UI():
         # change the focused window variable
         self.current_focused_window = window_id
 
-        # trigger the on_window_focus_change function
-        self.on_window_focus_change()
-
         # logger.debug("Window focused: " + window_id)
-
-    def on_window_focus_change(self):
-        """
-        This function is called when the focused window changes
-        :param window_id:
-        :return:
-        """
-
-        # if there is no main_menubar, return
-        if self.UI_menus.main_menubar is None:
-            return
-
-        # update any current window references in main menu
-        # this will be useful for any functions that need to know which window is currently focused
-        self.UI_menus.update_current_window_references()
-
-        # logger.debug("Window focus changed: " + window_id)
 
     def _add_side_subframe_to_window(self, parent_frame, sub_frame: str):
         """
@@ -2110,7 +2102,8 @@ class toolkit_UI():
             self.windows['main'].__dict__[frame_name].pack_forget()
 
             # then remove if from the visible frames list
-            self.windows['main'].main_window_visible_frames.remove(frame_name)
+            if frame_name in self.windows['main'].main_window_visible_frames:
+                self.windows['main'].main_window_visible_frames.remove(frame_name)
 
             return True
 
@@ -2298,7 +2291,7 @@ class toolkit_UI():
         main_window.bind("t", lambda event: self.button_ingest())
 
         # load menubar items
-        self.UI_menus.load_menubar()
+        self.main_menu.load_menubar()
 
         # load Tk mainloop
         self.root.mainloop()
@@ -2598,7 +2591,8 @@ class toolkit_UI():
                 parent_element=self.root, window_id=window_id, title=title, resizable=True,
                 type=type if type else 'text',
                 close_action=close_action,
-                open_multiple=kwargs.get('open_multiple', True)
+                open_multiple=kwargs.get('open_multiple', True),
+                has_menubar=kwargs.get('has_menubar', False),
         ):
 
             # create an entry in the text_windows dict
@@ -7843,9 +7837,6 @@ class toolkit_UI():
                     text_element.tag_config('l_selected', foreground=toolkit_UI.theme_colors['selected_blue_text'],
                                             background=self.toolkit_UI_obj.theme_colors['selected_blue_bg'])
 
-                # trigger the on_selection function
-                self.on_selection(window_id=window_id)
-
                 return True
 
             # if a single line was passed, add or remove it from the selection
@@ -7878,9 +7869,6 @@ class toolkit_UI():
                     text_element.tag_config('l_selected', foreground=toolkit_UI.theme_colors['selected_blue_text'],
                                             background=self.toolkit_UI_obj.theme_colors['selected_blue_bg'])
 
-            # trigger the on_selection function
-            self.on_selection(window_id=window_id)
-
             return True
 
         def go_to_first_selected_segment(self, window_id=None):
@@ -7902,15 +7890,6 @@ class toolkit_UI():
             if first_selected_segment:
                 # go to that segment using see
                 text_element.see(first_selected_segment[0])
-
-        def on_selection(self, window_id):
-            """
-            This is trigger when something is happening with the selection in the transcription window
-            - must be called from said function
-            """
-
-            # update the menu bar
-            self.toolkit_UI_obj.UI_menus.toggle_menu_for_transcription_selections(window_id=window_id)
 
         def auto_add_selection_to_group(self, t_window_id: str, confirm=False, auto_add_button=None) -> None:
             """
@@ -8554,7 +8533,8 @@ class toolkit_UI():
         if self.create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title, resizable=True,
                                       type='transcription',
                                       close_action=lambda t_window_id=t_window_id: \
-                                              self.destroy_transcription_window(t_window_id)
+                                              self.destroy_transcription_window(t_window_id),
+                                      has_menubar=True
                                       ):
 
             # add the Transcription object to this window
@@ -10662,7 +10642,8 @@ class toolkit_UI():
                                                      'search_window_id': search_window_id},
                                                  type='search',
                                                  open_multiple=open_multiple,
-                                                 window_width=60
+                                                 window_width=60,
+                                                 has_menubar=True
                                                  )
 
         # if the window was not created and is not in the list of windows, throw an error
@@ -11746,7 +11727,8 @@ class toolkit_UI():
                               },
                               window_width=60,
                               open_multiple=False,
-                              type='assistant'
+                              type='assistant',
+                              has_menubar=True
                               )
 
         # get this window object
@@ -11881,18 +11863,11 @@ class toolkit_UI():
     def on_connect_resolve_api_press(self):
 
         # update menu references
-        self.UI_menus.integrationsmenu.entryconfig('Connect to Resolve API', state='disabled')
         self.toolkit_ops_obj.resolve_enable()
 
         # now wait for resolve to connect
         while self.toolkit_ops_obj.resolve_api is None:
             time.sleep(0.01)
-
-        # now that resolve is connected, we can enable the Disable Resolve API menu item
-        self.UI_menus.integrationsmenu.entryconfig('Disable Resolve API', state='normal')
-
-        # update other menu references
-        self.UI_menus.update_current_window_references()
 
         # if the app config says that we should connect, ask the user if they still want that
         if self.toolkit_ops_obj.stAI.get_app_setting('disable_resolve_api', default_if_none=False) is True:
@@ -11900,23 +11875,19 @@ class toolkit_UI():
             # and ask the user if they want to always connect to Resolve API on startup
             always_connect = messagebox.askyesno(title='Always Connect?',
                                                  message='We\'re now connected to Resolve.\n\n'
-                                                         'Do you want to always connect to the Resolve API on tool startup?'
+                                                         'Do you want to always connect to the Resolve API '
+                                                         'on tool startup?'
                                                  )
+
+            time.sleep(0.1)
 
             if always_connect:
                 self.toolkit_ops_obj.stAI.save_config('disable_resolve_api', False)
 
     def on_disable_resolve_api_press(self):
 
-        # update menus
-        self.UI_menus.integrationsmenu.entryconfig('Connect to Resolve API', state='normal')
-        self.UI_menus.integrationsmenu.entryconfig('Disable Resolve API', state='disabled')
-
         # disable resolve api
         self.toolkit_ops_obj.resolve_disable()
-
-        # update other menu references
-        self.UI_menus.update_current_window_references()
 
         # if the app config says that we should connect, ask the user if they still want that
         if self.toolkit_ops_obj.stAI.get_app_setting('disable_resolve_api', default_if_none=False) is False:

@@ -33,14 +33,17 @@ class UImenus:
         if parent is None:
             parent = self.root
 
+        self.parent = parent
+
         # this is the main menubar (it's been declared in the main UI class to clear it before init)
-        self.main_menubar = Menu(parent)
+        self.menubar = Menu(parent)
 
         # reset it for now so we don't see weird menus before it is populated
-        parent.config(menu=self.main_menubar)
+        parent.config(menu=self.menubar)
 
         # keep track of the current window id
         self.current_window_id = None
+        self.current_window_type = None
 
         # create a variable to store the keep_on_top state of the current window
         self.keep_on_top_state = BooleanVar()
@@ -64,14 +67,14 @@ class UImenus:
 
         # the font sizes for the menu bar
         if platform.system() == 'Windows':
-            self._menu_font = self._set_scalable_menu_font()
+            self._menu_font = self._set_scalable_menu_font(parent)
             self._menu_ui = {'font': self._menu_font}
         else:
             self._menu_ui = {}
 
         self._loaded = False
 
-    def _set_scalable_menu_font(self):
+    def _set_scalable_menu_font(self, parent):
         """
         This function sets the font for the menu bar.
         """
@@ -84,7 +87,10 @@ class UImenus:
         self._scale_factor = user32.GetDpiForWindow(self.root.winfo_id()) / 96
 
         # Set the base font size and apply the scaling factor
-        scaled_font_size = int(base_font_size * self._scale_factor)
+        if parent == self.root:
+            scaled_font_size = int(base_font_size * self._scale_factor)
+        else:
+            scaled_font_size = base_font_size
 
         # Create and configure the font
         menu_font = font.nametofont("TkMenuFont")
@@ -98,419 +104,17 @@ class UImenus:
         if not self._loaded:
             return
 
-        # for Windows, we use the self.last_focused_window,
-        # considering that the menu bar is part of the main window
-        # and whenever we click on the menu bar, the main window is focused
-        if platform.system() == "Windows":
-            self.current_window_id = self.toolkit_UI_obj.last_focused_window
+        # set the window id
+        self.current_window_id = \
+            self.toolkit_UI_obj.current_focused_window if self.parent == self.root else self.parent.window_id
 
-        # for macOS, we use the self.current_focused_window variable
-        elif platform.system() == 'Darwin':
-            self.current_window_id = self.toolkit_UI_obj.current_focused_window
-
-        # we should also check for Linux at some point...
-        else:
-            self.current_window_id = None
-
-        # if the window doesn't exist, set it to 'main'
-        # - this is to prevent errors when closing windows
-        if self.current_window_id not in self.toolkit_UI_obj.windows:
-            self.current_window_id = 'main'
+        # set the window type
+        self.current_window_type = self.toolkit_UI_obj.get_window_type(self.current_window_id)
 
         # stop here if we don't have a window id
         if self.current_window_id is None:
             logger.debug('No window id found. Not updating the menu bar.')
             return
-
-        # if this is the main window
-        if self.current_window_id == 'main':
-            self.load_menu_for_main()
-
-        # if this is any other window
-        else:
-            self.load_menu_for_other(window_id=self.current_window_id,
-                                     window_type=self.toolkit_UI_obj.get_window_type(self.current_window_id))
-
-        # also update the state of the keep on top menu item
-        self.keep_on_top_state.set(self.toolkit_UI_obj.get_window_on_top_state(self.current_window_id))
-
-    def load_menu_for_main(self):
-        """
-        This function loads the menu bar considering that we're now in the main window.
-        """
-
-        # disable show the keep on top menu item
-        self.windowsmenu.entryconfig('Keep window on top', state=DISABLED)
-
-        # disable the close window menu item
-        self.windowsmenu.entryconfig('Close window', state=DISABLED)
-
-        self.disable_menu_for_non_transcriptions()
-
-        self.toggle_resolve_buttons()
-
-    def load_menu_for_other(self, window_id=None, window_type=None):
-        """
-        This function loads the menu bar considering that we're now in any other window except the main window.
-        """
-
-        # enable the keep on top menu item
-        self.windowsmenu.entryconfig('Keep window on top', state=NORMAL)
-
-        # enable the close window menu item (if a close_action exists)
-        # (if the window has a close_action, it means that it can be closed)
-        if hasattr(self.toolkit_UI_obj.windows[window_id], 'close_action') \
-            and self.toolkit_UI_obj.windows[window_id].close_action is not None:
-            self.windowsmenu.entryconfig('Close window', state=NORMAL)
-
-        # if the window doesn't have a close_action, disable the menu item
-        else:
-            self.windowsmenu.entryconfig('Close window', state=DISABLED)
-
-        # EDIT MENU FUNCTIONS
-
-        # enable find menu item if the window has a find function
-        if hasattr(self.toolkit_UI_obj.windows[window_id], 'find') \
-            and self.toolkit_UI_obj.windows[window_id].find is not None:
-
-            self.editmenu.entryconfig('Find...', state=NORMAL, command=self.toolkit_UI_obj.windows[window_id].find)
-
-        else:
-            self.editmenu.entryconfig('Find...', command=self.donothing, state=DISABLED)
-
-        # enable select all menu item depending on the window type
-        self.disable_menu_for_non_transcriptions()
-        self.disable_menu_for_non_search()
-
-        if window_type == 'transcription':
-            self.load_menu_for_transcriptions(window_id)
-
-        elif window_type == 'search':
-            self.load_menu_for_search(window_id)
-
-            self.revert_to_selectall(window_id)
-        else:
-            self.revert_to_selectall(window_id)
-
-        self.toggle_resolve_buttons()
-
-    def revert_to_selectall(self, window_id):
-        """
-        This is used for basically everything except transcriptions
-        """
-
-        self.editmenu.entryconfig('Select All',
-                                  state=NORMAL,
-                                  command=lambda: self.pass_key_event(window_id,
-                                                                      '<' + self.toolkit_UI_obj.ctrl_cmd_bind + '-a>'))
-
-    def disable_menu_for_non_search(self):
-        self.searchmenu.entryconfig("Change search model...", command=self.donothing, state=DISABLED)
-        self.searchmenu.entryconfig("List files used for search...", command=self.donothing, state=DISABLED)
-
-    def load_menu_for_search(self, window_id):
-        self.searchmenu.entryconfig("Change search model...", state=NORMAL,
-                                    command= lambda: self.toolkit_UI_obj.button_search_change_model(window_id))
-        self.searchmenu.entryconfig("List files used for search...",  state=NORMAL,
-                                    command= lambda: self.toolkit_UI_obj.button_search_list_files(window_id))
-
-    def load_menu_for_transcriptions(self, window_id):
-
-        # enable the Export as SRT menu item
-        self.filemenu.entryconfig('Export transcript as...', state=NORMAL,
-                                    command=lambda: self.toolkit_UI_obj.t_edit_obj.button_export_as(window_id)
-                                  )
-
-        self.filemenu.entryconfig('Export transcript as AVID DS...', state=NORMAL,
-                                    command=lambda: self.toolkit_UI_obj.t_edit_obj.button_export_as_avid_ds(window_id)
-                                  )
-
-        self.filemenu.entryconfig('Export transcript as Fusion Text...', state=NORMAL,
-                                    command=lambda:
-                                    self.toolkit_UI_obj.t_edit_obj.button_export_as_fusion_text_comp(window_id)
-                                  )
-
-        transcription_file_path = \
-            self.toolkit_UI_obj.t_edit_obj.get_window_transcription(window_id).transcription_file_path
-
-        self.filemenu.entryconfig(
-            "Show transcription in "+self.file_browser_name, state=NORMAL,
-            command=lambda: self.open_file_dir(transcription_file_path)
-        )
-
-        # enable the advanced search menu items relevant for transcriptions
-        self.searchmenu.entryconfig("Advanced Search in current transcript...", state=NORMAL,
-                                    command=lambda:
-                                    self.toolkit_UI_obj.open_advanced_search_window(
-                                        transcription_window_id=window_id)
-                                    )
-
-        self.editmenu.entryconfig("Go to timecode...", state=NORMAL,
-                                  command=lambda window_id=window_id:
-                                  self.toolkit_UI_obj.t_edit_obj.button_go_to_timecode(window_id=window_id)
-                                  )
-
-        # enable the group questions menu item
-        self.editmenu.entryconfig('Group questions', state=NORMAL,
-                                  command=lambda:
-                                  self.toolkit_UI_obj.t_edit_obj.button_group_questions(window_id)
-                                  )
-
-        # enable this for project search
-        # self.searchmenu.entryconfig("Advanced Search in current project...", state=NORMAL)
-
-        # if segments are selected, enable the menu items for segment selection
-        self.toggle_menu_for_transcription_selections(window_id)
-
-        # toggle the menu items for resolve related functions
-        if NLE.is_connected() and NLE.current_timeline is not None:
-            self.enable_menu_for_resolve_transcription(window_id)
-        else:
-            self.disable_menu_for_resolve_transcription()
-
-    def toggle_menu_for_transcription_selections(self, window_id):
-
-        # if segments are selected, enable the menu items for segment selection
-        if self.toolkit_UI_obj.t_edit_obj.has_selected_segments(window_id):
-            self.enable_menu_for_transcription_selections(window_id)
-
-        # otherwise, disable them
-        else:
-            self.disable_menu_for_transcription_selections()
-
-    def enable_menu_for_transcription_selections(self, window_id):
-        '''
-        This is used to enable the menu items
-        that are only relevant for transcription windows,
-        when a user has selected segments.
-        '''
-
-        self.editmenu.entryconfig('Select All',
-                                  state=NORMAL,
-                                  command=lambda window_id=window_id:
-                                    self.toolkit_UI_obj.t_edit_obj.button_select_deselect_all(window_id)
-                                  )
-
-        self.editmenu.entryconfig("Copy to Clipboard with TC", state=NORMAL,
-                                  command=lambda window_id=window_id:
-                                  self.toolkit_UI_obj.t_edit_obj.button_copy_segments_to_clipboard(
-                                      window_id,
-                                      with_timecodes=True,
-                                      per_line=True
-                                      )
-                                  )
-        self.editmenu.entryconfig("Copy to Clipboard with Block TC", state=NORMAL,
-                                  command=lambda window_id=window_id:
-                                  self.toolkit_UI_obj.t_edit_obj.button_copy_segments_to_clipboard(
-                                      window_id,
-                                      with_timecodes=True
-                                      )
-                                  )
-
-        self.editmenu.entryconfig("Add to Group", state=NORMAL,
-                                  command=lambda window_id=window_id:
-                                  self.toolkit_UI_obj.t_edit_obj.button_add_to_group(window_id=window_id, only_add=True)
-        )
-
-
-        self.editmenu.entryconfig("Re-transcribe...", state=NORMAL,
-                                  command=lambda window_id=window_id:
-                                  self.toolkit_UI_obj.t_edit_obj.button_retranscribe(window_id=window_id)
-                                  )
-
-        #self.editmenu.entryconfig("Delete segment", state=NORMAL,
-        #                          )
-
-        self.assistantmenu.entryconfig("Send to Assistant", state=NORMAL,
-                                       command=lambda window_id=window_id:
-                                       self.toolkit_UI_obj.t_edit_obj.button_send_to_assistant(window_id=window_id,
-                                                                                               with_timecodes=False)
-                                       )
-        self.assistantmenu.entryconfig("Send to Assistant with TC", state=NORMAL,
-                                       command=lambda window_id=window_id:
-                                        self.toolkit_UI_obj.t_edit_obj.button_send_to_assistant(window_id=window_id,
-                                                                                                with_timecodes=True)
-                                       )
-
-        if not NLE.is_connected() or NLE.current_timeline is None:
-            self.disable_menu_for_resolve_transcription_selections()
-        else:
-            self.enable_menu_for_resolve_transcription_selections(window_id)
-
-    def disable_menu_for_transcription_selections(self):
-        '''
-        This is used to enable the menu items
-        that are only relevant for transcription windows,
-        when a user has selected segments.
-        '''
-
-        self.editmenu.entryconfig('Copy to Clipboard with TC', state=DISABLED)
-        self.editmenu.entryconfig('Copy to Clipboard with Block TC', state=DISABLED)
-        self.editmenu.entryconfig('Add to Group', state=DISABLED)
-        self.editmenu.entryconfig('Re-transcribe...', state=DISABLED)
-        #self.editmenu.entryconfig('Delete segment', state=DISABLED)
-
-        self.assistantmenu.entryconfig("Send to Assistant", state=DISABLED)
-        self.assistantmenu.entryconfig("Send to Assistant with TC", state=DISABLED)
-
-        self.disable_menu_for_resolve_transcription_selections()
-
-    def disable_menu_for_resolve_transcription_selections(self):
-        '''
-        This is used to disable the menu items
-        that are only relevant for transcription windows,
-        when a user has not selected segments or Resolve is not connected.
-        '''
-        self.integrationsmenu.entryconfig("Quick Selection to Markers", command=self.donothing, state=DISABLED)
-        self.integrationsmenu.entryconfig("Selection to Markers", command=self.donothing, state=DISABLED)
-
-    def enable_menu_for_resolve_transcription_selections(self, window_id):
-        '''
-        This is used to enable the menu items
-        that are only relevant for transcription windows,
-        when a user has selected segments and Resolve is connected.
-        '''
-
-        self.integrationsmenu.entryconfig("Quick Selection to Markers", state=NORMAL,
-                                          command=lambda window_id=window_id:
-                                          self.toolkit_UI_obj.t_edit_obj
-                                          .button_segments_to_markers(window_id=window_id, prompt=False)
-                                          )
-        self.integrationsmenu.entryconfig("Selection to Markers", state=NORMAL,
-                                          command=lambda window_id=window_id:
-                                          self.toolkit_UI_obj.t_edit_obj
-                                          .button_segments_to_markers(window_id=window_id, prompt=True)
-                                          )
-
-    def enable_menu_for_resolve_transcription(self, window_id):
-        '''
-        This is used to enable the menu items
-        that are only relevant for transcriptions
-        when Resolve is connected.
-        '''
-
-
-        self.integrationsmenu.entryconfig("Markers to Segments", state=NORMAL,
-                                          command=lambda window_id=window_id:
-                                          self.toolkit_UI_obj.t_edit_obj.button_markers_to_segments(window_id=window_id)
-                                          )
-
-        self.integrationsmenu.entryconfig("Move Playhead to Selection Start", state=NORMAL,
-                                          command=lambda window_id=window_id:
-                                          self.toolkit_UI_obj.t_edit_obj.go_to_selected_time(window_id=window_id,
-                                                                                             position='start')
-                                          )
-        self.integrationsmenu.entryconfig("Move Playhead to Selection End", state=NORMAL,
-                                          command=lambda window_id=window_id:
-                                          self.toolkit_UI_obj.t_edit_obj.go_to_selected_time(window_id=window_id,
-                                                                                             position='end')
-                                          )
-
-        self.integrationsmenu.entryconfig("Align Segment Start to Playhead", state=NORMAL,
-                                          command=lambda window_id=window_id:
-                                          self.toolkit_UI_obj.t_edit_obj.align_line_to_playhead(
-                                              window_id=window_id,
-                                              position='start')
-                                          )
-        self.integrationsmenu.entryconfig("Align Segment End to Playhead", state=NORMAL,
-                                          command=lambda window_id=window_id:
-                                          self.toolkit_UI_obj.t_edit_obj.align_line_to_playhead(
-                                              window_id=window_id,
-                                              position='end')
-                                          )
-
-    def disable_menu_for_resolve_transcription(self):
-        '''
-        This is used to disable the menu items
-        that are only relevant for transcriptions
-        when Resolve is connected.
-        '''
-        self.integrationsmenu.entryconfig("Move Playhead to Selection Start", command=self.donothing, state=DISABLED)
-        self.integrationsmenu.entryconfig("Move Playhead to Selection End", command=self.donothing, state=DISABLED)
-        self.integrationsmenu.entryconfig("Align Segment Start to Playhead", state=DISABLED)
-        self.integrationsmenu.entryconfig("Align Segment End to Playhead", state=DISABLED)
-
-        self.integrationsmenu.entryconfig("Markers to Segments", state=DISABLED)
-
-    def disable_menu_for_non_transcriptions(self):
-        '''
-        This is used to disable the menu items
-        that are only relevant for transcriptions.
-        '''
-        # disable transcription selection menu items
-        # (including ones that are relevant for selections with Resolve connected)
-        self.disable_menu_for_transcription_selections()
-
-        # disable transcription resolve menu items
-        self.disable_menu_for_resolve_transcription()
-
-        # disable Export as
-        self.filemenu.entryconfig("Export transcript as...", state=DISABLED)
-        self.filemenu.entryconfig("Export transcript as AVID DS...", state=DISABLED)
-        self.filemenu.entryconfig("Export transcript as Fusion Text...", state=DISABLED)
-        self.filemenu.entryconfig("Show transcription in " + self.file_browser_name, state=DISABLED)
-
-        # disable go to timecode
-        self.editmenu.entryconfig("Go to timecode...", state=DISABLED)
-
-        # disable group questions
-        self.editmenu.entryconfig("Group questions", state=DISABLED)
-
-        # disable other transcription menu items
-        #self.searchmenu.entryconfig("Advanced Search in current transcription...", state=DISABLED)
-
-        self.searchmenu.entryconfig("Advanced Search in current transcript...", state=DISABLED)
-        #self.searchmenu.entryconfig("Advanced Search in current project...", state=DISABLED)
-
-    def toggle_resolve_buttons(self):
-        """
-        This refreshes the general buttons that are related to resolve
-        """
-
-        # toggle the menu items for general resolve related functions
-        if NLE.is_connected() and NLE.current_timeline is not None:
-            self.integrationsmenu.entryconfig("Render and Transcribe Timeline",
-                                              command=self.toolkit_UI_obj.button_nle_transcribe_timeline,
-                                              state=NORMAL)
-            self.integrationsmenu.entryconfig("Render and Translate Timeline",
-                                              command=lambda:
-                                              self.toolkit_UI_obj.button_nle_transcribe_timeline(
-                                                  transcription_task='translate'),
-                                              state=NORMAL)
-            self.integrationsmenu.entryconfig(
-                "Copy Timeline Markers to Timeline Bin Clip",
-                command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
-                    'copy_markers_timeline_to_clip', self.toolkit_UI_obj),
-                state=NORMAL)
-            self.integrationsmenu.entryconfig(
-                "Copy Timeline Bin Clip Markers to Timeline",
-                command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
-                    'copy_markers_clip_to_timeline', self.toolkit_UI_obj),
-                state=NORMAL)
-            self.integrationsmenu.entryconfig(
-                "Render Markers to Stills",
-                command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
-                    'render_markers_to_stills', self.toolkit_UI_obj),
-                state=NORMAL)
-            self.integrationsmenu.entryconfig(
-                "Render Markers to Clips",
-                command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
-                    'render_markers_to_clips', self.toolkit_UI_obj),
-                state=NORMAL)
-
-        else:
-            self.integrationsmenu.entryconfig("Render and Transcribe Timeline", command=self.donothing,
-                                              state=DISABLED)
-            self.integrationsmenu.entryconfig("Render and Translate Timeline", command=self.donothing,
-                                              state=DISABLED)
-            self.integrationsmenu.entryconfig("Copy Timeline Markers to Timeline Bin Clip",
-                                              command=self.donothing, state=DISABLED)
-            self.integrationsmenu.entryconfig("Copy Timeline Bin Clip Markers to Timeline",
-                                              command=self.donothing, state=DISABLED)
-            self.integrationsmenu.entryconfig("Render Markers to Clips",
-                                              command=self.donothing, state=DISABLED)
-            self.integrationsmenu.entryconfig("Render Markers to Stills",
-                                              command=self.donothing, state=DISABLED)
 
     def pass_key_event(self, window_id, key_event):
         '''
@@ -523,14 +127,47 @@ class UImenus:
         self.toolkit_UI_obj.windows[window_id].event_generate(key_event)
 
     def load_menubar(self):
-        '''
+        """
         This loads all the items in the menu bar.
-        Using update_current_window_references()
-        we can then update the menu bar depending on which window is currently focused.
-        '''
+
+        After the menu bar is loaded, we're going to use postcommand to enable or disable menu items
+        depending on the window that is focused / selection etc.
+
+        """
 
         # FILE MENU
-        self.filemenu = Menu(self.main_menubar, tearoff=0, **self._menu_ui)
+        self._load_file_menu()
+
+        # EDIT MENU
+        self._load_edit_menu()
+
+        # ADVANCED SEARCH MENU
+        self._load_search_menu()
+
+        # ASSISTANT MENU
+        self._load_assistant_menu()
+
+        # INTEGRATIONS MENU
+        self._load_integrations_menu()
+
+        # ADD WINDOW MENU
+        self._load_window_menu()
+
+        # HELP MENU
+        self._load_help_menu()
+
+        # add the menu bar to the root window
+        self.parent.config(menu=self.menubar)
+
+        # set the loaded flag to True
+        self._loaded = True
+
+    def _load_file_menu(self):
+        """
+        Loads the file menu
+        """
+
+        self.filemenu = Menu(self.menubar, tearoff=0, **self._menu_ui)
 
         # add open transcription file menu item
         self.filemenu.add_command(label="Open transcription file...", command=self.toolkit_UI_obj.open_transcript)
@@ -555,26 +192,73 @@ class UImenus:
 
         # FILE MENU - other app related items
         self.filemenu.add_separator()
-        self.filemenu.add_command(label="Show transcription in "+self.file_browser_name, command=self.open_userdata_dir)
+        self.filemenu.add_command(label="Show transcription in " + self.file_browser_name, command=self.donothing)
         self.filemenu.add_command(label="Open configuration folder", command=self.open_userdata_dir)
         self.filemenu.add_command(label="Open last used folder", command=self.open_last_dir)
 
-        self.main_menubar.add_cascade(label="File", menu=self.filemenu)
+        self.menubar.add_cascade(label="File", menu=self.filemenu)
 
-        # EDIT MENU
-        self.editmenu = Menu(self.main_menubar, tearoff=0, **self._menu_ui)
+        def toggle_file_menu_items():
+
+            # make sure we know which window is focused etc.
+            self.update_current_window_references()
+
+            if self.current_window_type == 'transcription':
+
+                # enable the Export as SRT menu item
+                self.filemenu.entryconfig('Export transcript as...', state=NORMAL,
+                                          command=lambda: self.toolkit_UI_obj.t_edit_obj.button_export_as(
+                                              self.current_window_id)
+                                          )
+
+                self.filemenu.entryconfig('Export transcript as AVID DS...', state=NORMAL,
+                                          command=lambda: self.toolkit_UI_obj.t_edit_obj.button_export_as_avid_ds(
+                                              self.current_window_id)
+                                          )
+
+                self.filemenu.entryconfig('Export transcript as Fusion Text...', state=NORMAL,
+                                          command=lambda:
+                                          self.toolkit_UI_obj.t_edit_obj.button_export_as_fusion_text_comp(
+                                              self.current_window_id)
+                                          )
+
+                transcription_file_path = \
+                    self.toolkit_UI_obj.t_edit_obj.get_window_transcription(self.current_window_id) \
+                        .transcription_file_path
+
+                self.filemenu.entryconfig(
+                    "Show transcription in " + self.file_browser_name, state=NORMAL,
+                    command=lambda: self.open_file_dir(transcription_file_path)
+                )
+
+            # if this is not a transcription window, disable the non-relevant menu items
+            else:
+                self.filemenu.entryconfig('Export transcript as...', state=DISABLED)
+                self.filemenu.entryconfig('Export transcript as AVID DS...', state=DISABLED)
+                self.filemenu.entryconfig('Export transcript as Fusion Text...', state=DISABLED)
+                self.filemenu.entryconfig("Show transcription in " + self.file_browser_name, state=DISABLED)
+
+        # add a postcommand to the file menu to enable/disable menu items depending on the current window
+        self.filemenu.configure(postcommand=toggle_file_menu_items)
+
+    def _load_edit_menu(self):
+        """
+        Loads the edit menu
+        """
+
+        self.editmenu = Menu(self.menubar, tearoff=0, **self._menu_ui)
 
         self.editmenu.add_command(label="Find...", command=self.donothing,
-                             accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+f")
+                                  accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+f")
 
         self.editmenu.add_command(label="Select All", command=self.donothing,
-                             accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+a")
+                                  accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+a")
 
         self.editmenu.entryconfig('Find...', state=DISABLED)
 
         # EDIT - TRANSCRIPT related menu items
         # but disable all edit - transcript menu items
-        # and let them be enabled when a transcript window is focused (see update_current_window_references())
+        # and let them be enabled when a transcript window is focused
         self.editmenu.add_separator()
         self.editmenu.add_command(label="Copy to Clipboard with TC", command=self.donothing, state=DISABLED,
                                   accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+Shift+c")
@@ -587,23 +271,130 @@ class UImenus:
         self.editmenu.add_separator()
         self.editmenu.add_command(label="Go to timecode...", command=self.donothing, state=DISABLED,
                                   accelerator='=')
-        #self.editmenu.add_command(label="Delete segment", command=self.donothing, state=DISABLED,
+        # self.editmenu.add_command(label="Delete segment", command=self.donothing, state=DISABLED,
         #                          accelerator="BackSpace")
         self.editmenu.add_separator()
         self.editmenu.add_command(label="Group questions", command=self.donothing, state=DISABLED)
 
         # show the edit menu
-        self.main_menubar.add_cascade(label="Edit", menu=self.editmenu)
+        self.menubar.add_cascade(label="Edit", menu=self.editmenu)
 
+        def toggle_edit_menu_items():
 
-        # ADVANCED SEARCH MENU
-        self.searchmenu = Menu(self.main_menubar, tearoff=0, **self._menu_ui)
+            # make sure we know which window is focused etc.
+            self.update_current_window_references()
+
+            # get the window
+            window = self.toolkit_UI_obj.get_window_by_id(self.current_window_id)
+
+            # enable find menu item if the window has a find function
+            if window is not None \
+                    and hasattr(window, 'find') \
+                    and window.find is not None:
+
+                self.editmenu.entryconfig(
+                    'Find...', state=NORMAL, command=window.find)
+
+            # disable the find menu item if the window has no find function
+            else:
+                self.editmenu.entryconfig('Find...', command=self.donothing, state=DISABLED)
+
+            # toggle stuff depending on the current window type
+            if self.current_window_type == 'transcription':
+
+                self.editmenu.entryconfig("Go to timecode...", state=NORMAL,
+                                          command=lambda:
+                                          self.toolkit_UI_obj.t_edit_obj.button_go_to_timecode(
+                                              window_id=self.current_window_id)
+                                          )
+
+                # enable the group questions menu item
+                self.editmenu.entryconfig('Group questions', state=NORMAL,
+                                          command=lambda:
+                                          self.toolkit_UI_obj.t_edit_obj.button_group_questions(self.current_window_id)
+                                          )
+
+                self.editmenu.entryconfig('Select All',
+                                          state=NORMAL,
+                                          command=lambda:
+                                          self.toolkit_UI_obj.t_edit_obj.button_select_deselect_all(
+                                              self.current_window_id)
+                                          )
+
+                # if this transcription has selected segments enable the relevant menu items
+                if self.toolkit_UI_obj.t_edit_obj.has_selected_segments(self.current_window_id):
+
+                    self.editmenu.entryconfig("Copy to Clipboard with TC", state=NORMAL,
+                                              command=lambda:
+                                              self.toolkit_UI_obj.t_edit_obj.button_copy_segments_to_clipboard(
+                                                  self.current_window_id,
+                                                  with_timecodes=True,
+                                                  per_line=True)
+                                              )
+                    self.editmenu.entryconfig("Copy to Clipboard with Block TC", state=NORMAL,
+                                              command=lambda:
+                                              self.toolkit_UI_obj.t_edit_obj.button_copy_segments_to_clipboard(
+                                                  self.current_window_id,
+                                                  with_timecodes=True)
+                                              )
+
+                    self.editmenu.entryconfig("Add to Group", state=NORMAL,
+                                              command=lambda:
+                                              self.toolkit_UI_obj.t_edit_obj.button_add_to_new_group(
+                                                  window_id=self.current_window_id, only_add=True)
+                                              )
+
+                    self.editmenu.entryconfig("Re-transcribe...", state=NORMAL,
+                                              command=lambda:
+                                              self.toolkit_UI_obj.t_edit_obj.button_retranscribe(
+                                                  window_id=self.current_window_id)
+                                              )
+
+                # if no segments are selected in this transcription just disable the irrelevant items
+                else:
+                    self.editmenu.entryconfig("Copy to Clipboard with TC", state=DISABLED)
+                    self.editmenu.entryconfig("Copy to Clipboard with Block TC", state=DISABLED)
+                    self.editmenu.entryconfig("Add to Group", state=DISABLED)
+                    self.editmenu.entryconfig("Re-transcribe...", state=DISABLED)
+
+            else:
+
+                # there's nothing to select on the main window,
+                # so just disable the select all menu item
+                if self.current_window_type == 'main':
+                    self.editmenu.entryconfig('Select All', state=DISABLED)
+
+                else:
+                    self.editmenu.entryconfig(
+                        'Select All',
+                        state=NORMAL,
+                        command=lambda: self.pass_key_event(
+                            self.current_window_id, '<' + self.toolkit_UI_obj.ctrl_cmd_bind + '-a>')
+                    )
+
+                # disable transcription related menu items
+                self.editmenu.entryconfig("Go to timecode...", state=DISABLED)
+                self.editmenu.entryconfig("Group questions", state=DISABLED)
+                self.editmenu.entryconfig('Copy to Clipboard with TC', state=DISABLED)
+                self.editmenu.entryconfig('Copy to Clipboard with Block TC', state=DISABLED)
+                self.editmenu.entryconfig('Add to Group', state=DISABLED)
+                self.editmenu.entryconfig('Re-transcribe...', state=DISABLED)
+
+        # add a postcommand to the edit menu to enable/disable menu items depending on the current window
+        self.editmenu.configure(postcommand=toggle_edit_menu_items)
+
+    def _load_search_menu(self):
+        """
+        Create the search menu
+        """
+
+        self.searchmenu = Menu(self.menubar, tearoff=0, **self._menu_ui)
 
         self.searchmenu.add_command(label="Advanced Search in files...",
-                               command=lambda: self.toolkit_UI_obj.open_advanced_search_window())
+                                    command=lambda: self.toolkit_UI_obj.open_advanced_search_window())
         self.searchmenu.add_command(label="Advanced Search in folders...",
-                               command= lambda: self.toolkit_UI_obj.open_advanced_search_window(select_dir=True))
-        #searchmenu.add_command(label="Search entire project...",
+                                    command=lambda: self.toolkit_UI_obj.open_advanced_search_window(select_dir=True))
+        # searchmenu.add_command(label="Search entire project...",
         #                       command=self.toolkit_UI_obj.open_advanced_search_window)
 
         self.searchmenu.add_separator()
@@ -612,80 +403,271 @@ class UImenus:
 
         # ADVANCED SEARCH - TRANSCRIPT related menu items
         # but disabled for now
-        # let them be enabled when a transcript window is focused (see update_current_window_references())
+        # let them be enabled when a transcript window is focused)
         self.searchmenu.add_separator()
-        #self.searchmenu.add_command(label="Advanced Search in current project...", command=self.donothing,
+        # self.searchmenu.add_command(label="Advanced Search in current project...", command=self.donothing,
         #                            state=DISABLED)
-        #self.searchmenu.add_command(label="Advanced Search in current transcription...", command=self.donothing,
+        # self.searchmenu.add_command(label="Advanced Search in current transcription...", command=self.donothing,
         #                            state=DISABLED)
-        self.searchmenu.add_command(label="Advanced Search in current transcript...", command=self.donothing,
+        self.searchmenu.add_command(label="Advanced Search in current transcription...", command=self.donothing,
                                     state=DISABLED)
 
-        self.main_menubar.add_cascade(label="Search", menu=self.searchmenu)
+        self.menubar.add_cascade(label="Search", menu=self.searchmenu)
 
-        # ASSISTANT MENU
-        self.assistantmenu = Menu(self.main_menubar, tearoff=0, **self._menu_ui)
+        def toggle_search_menu_items():
+
+            # make sure we know which window is focused etc.
+            self.update_current_window_references()
+
+            if self.current_window_type == 'transcription':
+                self.searchmenu.entryconfig("Advanced Search in current transcription...", state=NORMAL,
+                                            command=lambda:
+                                            self.toolkit_UI_obj.open_advanced_search_window(
+                                                transcription_window_id=self.current_window_id)
+                                            )
+            else:
+                self.searchmenu.entryconfig("Advanced Search in current transcription...", state=DISABLED)
+
+            if self.current_window_type == 'search':
+                self.searchmenu.entryconfig("Change search model...", state=NORMAL,
+                                            command= lambda: self.toolkit_UI_obj.button_search_change_model(
+                                                self.current_window_id))
+                self.searchmenu.entryconfig("List files used for search...",  state=NORMAL,
+                                            command= lambda: self.toolkit_UI_obj.button_search_list_files(
+                                                self.current_window_id))
+            else:
+                self.searchmenu.entryconfig("Change search model...", command=self.donothing, state=DISABLED)
+                self.searchmenu.entryconfig("List files used for search...", command=self.donothing, state=DISABLED)
+
+        # add a postcommand to the search menu to enable/disable menu items depending on the current window
+        self.searchmenu.configure(postcommand=toggle_search_menu_items)
+
+    def _load_assistant_menu(self):
+        """
+        Create the assistant menu
+        """
+
+        self.assistantmenu = Menu(self.menubar, tearoff=0, **self._menu_ui)
         self.assistantmenu.add_command(label="Open Assistant...", command=self.toolkit_UI_obj.open_assistant_window)
 
         # ASSISTANT - TRANSCRIPT related menu items
         self.assistantmenu.add_separator()
         self.assistantmenu.add_command(label="Send to Assistant", command=self.donothing, state=DISABLED,
-                                  accelerator='o')
+                                       accelerator='o')
         self.assistantmenu.add_command(label="Send to Assistant with TC", command=self.donothing, state=DISABLED,
-                                  accelerator="Shift+o")
+                                       accelerator="Shift+o")
 
-        self.main_menubar.add_cascade(label="Assistant", menu=self.assistantmenu)
+        self.menubar.add_cascade(label="Assistant", menu=self.assistantmenu)
 
-        # INTEGRATIONS MENU
-        self.integrationsmenu = Menu(self.main_menubar, tearoff=0, **self._menu_ui)
+        def toggle_assistant_menu_items():
+
+            # make sure we know which window is focused etc.
+            self.update_current_window_references()
+
+            # if this is a transcription window enable the relevant menu items
+            if self.current_window_type == 'transcription':
+
+                self.assistantmenu.entryconfig("Send to Assistant", state=NORMAL,
+                                               command=lambda:
+                                               self.toolkit_UI_obj.t_edit_obj.button_send_to_assistant(
+                                                   window_id=self.current_window_id,
+                                                   with_timecodes=False)
+                                               )
+                self.assistantmenu.entryconfig("Send to Assistant with TC", state=NORMAL,
+                                               command=lambda:
+                                               self.toolkit_UI_obj.t_edit_obj.button_send_to_assistant(
+                                                   window_id=self.current_window_id,
+                                                   with_timecodes=True)
+                                               )
+            else:
+                self.assistantmenu.entryconfig("Send to Assistant", state=DISABLED)
+                self.assistantmenu.entryconfig("Send to Assistant with TC", state=DISABLED)
+
+        # add a postcommand to the assistant menu to enable/disable menu items depending on the current window
+        self.assistantmenu.configure(postcommand=toggle_assistant_menu_items)
+
+    def _load_integrations_menu(self):
+        """
+        Create the integrations menu
+        """
+
+        self.integrationsmenu = Menu(self.menubar, tearoff=0, **self._menu_ui)
 
         # add a title in the menu
-        self.integrationsmenu.add_command(label="Connect to Resolve API",
-                                     command=self.toolkit_UI_obj.on_connect_resolve_api_press)
-        self.integrationsmenu.add_command(label="Disable Resolve API",
-                                     command=self.toolkit_UI_obj.on_disable_resolve_api_press)
+        self.integrationsmenu.add_command(
+            label="Connect to Resolve API", command=self.toolkit_UI_obj.on_connect_resolve_api_press)
+        self.integrationsmenu.add_command(
+            label="Disable Resolve API", command=self.toolkit_UI_obj.on_disable_resolve_api_press)
 
         # INTEGRATIONS - GENERAL RESOLVE menu items
         self.integrationsmenu.add_separator()
-        self.integrationsmenu.add_command(label="Render and Transcribe Timeline", command=self.donothing, state=DISABLED)
-        self.integrationsmenu.add_command(label="Render and Translate Timeline", command=self.donothing, state=DISABLED)
-        self.integrationsmenu.add_command(label="Copy Timeline Markers to Timeline Bin Clip",
-                                          command=self.donothing, state=DISABLED)
-        self.integrationsmenu.add_command(label="Copy Timeline Bin Clip Markers to Timeline",
-                                          command=self.donothing, state=DISABLED)
-        self.integrationsmenu.add_command(label="Render Markers to Clips", command=self.donothing, state=DISABLED)
-        self.integrationsmenu.add_command(label="Render Markers to Stills", command=self.donothing, state=DISABLED)
+        self.integrationsmenu.add_command(
+            label="Render and Transcribe Timeline", command=self.donothing, state=DISABLED)
+        self.integrationsmenu.add_command(
+            label="Render and Translate Timeline", command=self.donothing, state=DISABLED)
+        self.integrationsmenu.add_command(
+            label="Copy Timeline Markers to Timeline Bin Clip", command=self.donothing, state=DISABLED)
+        self.integrationsmenu.add_command(
+            label="Copy Timeline Bin Clip Markers to Timeline", command=self.donothing, state=DISABLED)
+        self.integrationsmenu.add_command(
+            label="Render Markers to Clips", command=self.donothing, state=DISABLED)
+        self.integrationsmenu.add_command(
+            label="Render Markers to Stills", command=self.donothing, state=DISABLED)
 
         # INTEGRATIONS - TRANSCRIPT related menu items
         self.integrationsmenu.add_separator()
-        self.integrationsmenu.add_command(label="Quick Selection to Markers", command=self.donothing, state=DISABLED,
-                                          accelerator="m")
-        self.integrationsmenu.add_command(label="Selection to Markers", command=self.donothing, state=DISABLED,
-                                          accelerator="Shift+m")
-        self.integrationsmenu.add_command(label="Markers to Segments", command=self.donothing, state=DISABLED,
-                                          accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+m")
-        self.integrationsmenu.add_command(label="Move Playhead to Selection Start", command=self.donothing, state=DISABLED,
-                                          accelerator=';')
-        self.integrationsmenu.add_command(label="Move Playhead to Selection End", command=self.donothing, state=DISABLED,
-                                          accelerator="'")
-        self.integrationsmenu.add_command(label="Align Segment Start to Playhead", command=self.donothing, state=DISABLED,
-                                          accelerator=':')
-        self.integrationsmenu.add_command(label="Align Segment End to Playhead", command=self.donothing, state=DISABLED,
-                                          accelerator='"')
+        self.integrationsmenu.add_command(
+            label="Quick Selection to Markers", command=self.donothing, state=DISABLED, accelerator="m")
+        self.integrationsmenu.add_command(
+            label="Selection to Markers", command=self.donothing, state=DISABLED, accelerator="Shift+m")
+        self.integrationsmenu.add_command(
+            label="Markers to Segments", command=self.donothing, state=DISABLED,
+            accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+m")
+        self.integrationsmenu.add_command(
+            label="Move Playhead to Selection Start", command=self.donothing, state=DISABLED, accelerator=';')
+        self.integrationsmenu.add_command(
+            label="Move Playhead to Selection End", command=self.donothing, state=DISABLED, accelerator="'")
+        self.integrationsmenu.add_command(
+            label="Align Segment Start to Playhead", command=self.donothing, state=DISABLED, accelerator=':')
+        self.integrationsmenu.add_command(
+            label="Align Segment End to Playhead", command=self.donothing, state=DISABLED, accelerator='"')
 
-        # determine the state of the two menu items depending whether Resolve API is disabled or not
-        if not self.toolkit_ops_obj.disable_resolve_api:
-            self.integrationsmenu.entryconfig("Connect to Resolve API", state="disabled")
-            self.integrationsmenu.entryconfig("Disable Resolve API", state="normal")
-        else:
-            self.integrationsmenu.entryconfig("Connect to Resolve API", state="normal")
-            self.integrationsmenu.entryconfig("Disable Resolve API", state="disabled")
+        self.menubar.add_cascade(label="Integrations", menu=self.integrationsmenu)
 
-        self.main_menubar.add_cascade(label="Integrations", menu=self.integrationsmenu)
+        def toggle_integrations_menu_items():
 
+            # make sure we know which window is focused etc.
+            self.update_current_window_references()
 
-        # ADD WINDOW MENU
-        self.windowsmenu = Menu(self.main_menubar, tearoff=0, **self._menu_ui)
+            if not NLE.is_connected():
+                self.integrationsmenu.entryconfig("Connect to Resolve API", state=NORMAL)
+                self.integrationsmenu.entryconfig("Disable Resolve API", state=DISABLED)
+
+            else:
+                self.integrationsmenu.entryconfig("Connect to Resolve API", state=DISABLED)
+                self.integrationsmenu.entryconfig("Disable Resolve API", state=NORMAL)
+
+            # toggle the menu items for general resolve related functions
+            if NLE.is_connected() and NLE.current_timeline is not None:
+                self.integrationsmenu.entryconfig("Render and Transcribe Timeline",
+                                                  command=self.toolkit_UI_obj.button_nle_transcribe_timeline,
+                                                  state=NORMAL)
+                self.integrationsmenu.entryconfig("Render and Translate Timeline",
+                                                  command=lambda:
+                                                  self.toolkit_UI_obj.button_nle_transcribe_timeline(
+                                                      transcription_task='translate'),
+                                                  state=NORMAL)
+                self.integrationsmenu.entryconfig(
+                    "Copy Timeline Markers to Timeline Bin Clip",
+                    command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
+                        'copy_markers_timeline_to_clip', self.toolkit_UI_obj),
+                    state=NORMAL)
+                self.integrationsmenu.entryconfig(
+                    "Copy Timeline Bin Clip Markers to Timeline",
+                    command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
+                        'copy_markers_clip_to_timeline', self.toolkit_UI_obj),
+                    state=NORMAL)
+                self.integrationsmenu.entryconfig(
+                    "Render Markers to Stills",
+                    command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
+                        'render_markers_to_stills', self.toolkit_UI_obj),
+                    state=NORMAL)
+                self.integrationsmenu.entryconfig(
+                    "Render Markers to Clips",
+                    command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
+                        'render_markers_to_clips', self.toolkit_UI_obj),
+                    state=NORMAL)
+
+            else:
+                self.integrationsmenu.entryconfig("Render and Transcribe Timeline", command=self.donothing,
+                                                  state=DISABLED)
+                self.integrationsmenu.entryconfig("Render and Translate Timeline", command=self.donothing,
+                                                  state=DISABLED)
+                self.integrationsmenu.entryconfig("Copy Timeline Markers to Timeline Bin Clip",
+                                                  command=self.donothing, state=DISABLED)
+                self.integrationsmenu.entryconfig("Copy Timeline Bin Clip Markers to Timeline",
+                                                  command=self.donothing, state=DISABLED)
+                self.integrationsmenu.entryconfig("Render Markers to Clips",
+                                                  command=self.donothing, state=DISABLED)
+                self.integrationsmenu.entryconfig("Render Markers to Stills",
+                                                  command=self.donothing, state=DISABLED)
+
+            # if this is a transcription window enable the relevant menu items
+            if self.current_window_type == 'transcription' \
+                    and NLE.is_connected() and NLE.current_timeline is not None:
+                self.integrationsmenu.entryconfig("Markers to Segments", state=NORMAL,
+                                                  command=lambda:
+                                                  self.toolkit_UI_obj.t_edit_obj.button_markers_to_segments(
+                                                      window_id=self.current_window_id)
+                                                  )
+
+                self.integrationsmenu.entryconfig("Move Playhead to Selection Start", state=NORMAL,
+                                                  command=lambda:
+                                                  self.toolkit_UI_obj.t_edit_obj.go_to_selected_time(
+                                                      window_id=self.current_window_id,
+                                                      position='start')
+                                                  )
+                self.integrationsmenu.entryconfig("Move Playhead to Selection End", state=NORMAL,
+                                                  command=lambda:
+                                                  self.toolkit_UI_obj.t_edit_obj.go_to_selected_time(
+                                                      window_id=self.current_window_id,
+                                                      position='end')
+                                                  )
+
+                self.integrationsmenu.entryconfig("Align Segment Start to Playhead", state=NORMAL,
+                                                  command=lambda:
+                                                  self.toolkit_UI_obj.t_edit_obj.align_line_to_playhead(
+                                                      window_id=self.current_window_id,
+                                                      position='start')
+                                                  )
+                self.integrationsmenu.entryconfig("Align Segment End to Playhead", state=NORMAL,
+                                                  command=lambda:
+                                                  self.toolkit_UI_obj.t_edit_obj.align_line_to_playhead(
+                                                      window_id=self.current_window_id,
+                                                      position='end')
+                                                  )
+
+            else:
+                self.integrationsmenu.entryconfig(
+                    "Move Playhead to Selection Start", command=self.donothing, state=DISABLED)
+                self.integrationsmenu.entryconfig(
+                    "Move Playhead to Selection End", command=self.donothing, state=DISABLED)
+                self.integrationsmenu.entryconfig(
+                    "Align Segment Start to Playhead", state=DISABLED)
+                self.integrationsmenu.entryconfig(
+                    "Align Segment End to Playhead", state=DISABLED)
+                self.integrationsmenu.entryconfig(
+                    "Markers to Segments", state=DISABLED)
+
+            # if this is a transcription window
+            # and there are selected segments enable the relevant menu items
+            if self.current_window_type == 'transcription' \
+                    and self.toolkit_UI_obj.t_edit_obj.has_selected_segments(window_id=self.current_window_id) \
+                    and NLE.is_connected() and NLE.current_timeline is not None:
+
+                self.integrationsmenu.entryconfig("Quick Selection to Markers", state=NORMAL,
+                                                  command=lambda:
+                                                  self.toolkit_UI_obj.t_edit_obj.button_segments_to_markers(
+                                                      window_id=self.current_window_id, prompt=False)
+                                                  )
+                self.integrationsmenu.entryconfig("Selection to Markers", state=NORMAL,
+                                                  command=lambda:
+                                                  self.toolkit_UI_obj.t_edit_obj.button_segments_to_markers(
+                                                      window_id=self.current_window_id, prompt=True)
+                                                  )
+
+            else:
+                self.integrationsmenu.entryconfig(
+                    "Quick Selection to Markers", command=self.donothing, state=DISABLED)
+                self.integrationsmenu.entryconfig(
+                    "Selection to Markers", command=self.donothing, state=DISABLED)
+
+        # add a postcommand to the integrations menu to enable/disable menu items depending on the current window
+        self.integrationsmenu.configure(postcommand=toggle_integrations_menu_items)
+
+    def _load_window_menu(self):
+
+        self.windowsmenu = Menu(self.menubar, tearoff=0, **self._menu_ui)
 
         # add a keep main on top menu item
         self.windowsmenu.add_checkbutton(label="Keep main window on top",
@@ -693,25 +675,70 @@ class UImenus:
                                     command=self.keep_main_window_on_top)
 
         # add a keep on top menu item
-        self.windowsmenu.add_checkbutton(label="Keep window on top",
-                                    variable=self.keep_on_top_state,
-                                    command=self.keep_current_window_on_top)
+        self.windowsmenu.add_checkbutton(
+            label="Keep window on top",
+            variable=self.keep_on_top_state,
+            command=self.keep_current_window_on_top)
 
         # add a close window menu item
-        self.windowsmenu.add_command(label="Close window",
-                                command=self.close_current_window,
-                                accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+Shift+W")
+        self.windowsmenu.add_command(
+            label="Close window",
+            command=self.close_current_window,
+            accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+Shift+W")
 
         # add open groups menu item
-        self.windowsmenu.add_separator()
-        self.windowsmenu.add_command(label="Open Transcript Groups", command=self.donothing,
-                                     state="disabled", accelerator="Shift+G")
+        # self.windowsmenu.add_separator()
+        # self.windowsmenu.add_command(label="Open Transcript Groups", command=self.donothing,
+        #                              state="disabled", accelerator="Shift+G")
 
         # add cascade
-        self.main_menubar.add_cascade(label="Window", menu=self.windowsmenu)
+        self.menubar.add_cascade(label="Window", menu=self.windowsmenu)
 
-        # HELP MENU
-        self.helpmenu = Menu(self.main_menubar, tearoff=0, **self._menu_ui)
+        def toggle_window_menu_items():
+
+            # make sure we know which window is focused etc.
+            self.update_current_window_references()
+
+            if self.current_window_type == 'main':
+                # disable show the keep on top menu item
+                self.windowsmenu.entryconfig('Keep window on top', state=DISABLED)
+
+                # disable the close window menu item
+                self.windowsmenu.entryconfig('Close window', state=DISABLED)
+
+            else:
+                # enable show the keep on top menu item
+                self.windowsmenu.entryconfig('Keep window on top', state=NORMAL)
+
+                # get the window object
+                window = self.toolkit_UI_obj.get_window_by_id(self.current_window_id)
+
+                # enable the close window menu item (if a close_action exists)
+                # (if the window has a close_action, it means that it can be closed)
+                if hasattr(window, 'close_action') \
+                        and window.close_action is not None:
+                    self.windowsmenu.entryconfig('Close window', state=NORMAL)
+
+                # if the window doesn't have a close_action, disable the menu item
+                else:
+                    self.windowsmenu.entryconfig('Close window', state=DISABLED)
+
+            # also update the state of the keep on top menu item
+            # which will reflect the keep on top state of the current window
+            self.keep_on_top_state.set(
+                self.toolkit_UI_obj.get_window_on_top_state(self.current_window_id)
+                if self.toolkit_UI_obj.get_window_on_top_state(self.current_window_id) is not None
+                else False)
+
+        # add a postcommand to the window menu to enable/disable menu items depending on the current window
+        self.windowsmenu.configure(postcommand=toggle_window_menu_items)
+
+    def _load_help_menu(self):
+        """
+        Load the help menu
+        """
+
+        self.helpmenu = Menu(self.menubar, tearoff=0, **self._menu_ui)
 
         # if this is not on MacOS, add the about button in the menu
         if platform.system() != 'Darwin':
@@ -736,28 +763,20 @@ class UImenus:
             # also bind to the cmd+q key combination
             self.toolkit_UI_obj.root.createcommand("tk::mac::Quit", lambda: self.toolkit_UI_obj.on_exit())
 
-            system_menu = tk.Menu(self.main_menubar, name='apple')
+            system_menu = tk.Menu(self.menubar, name='apple')
             # system_menu.add_command(command=lambda: self.w.call('tk::mac::standardAboutPanel'))
             # system_menu.add_command(command=lambda: self.updater.checkForUpdates())
 
             # system_menu.entryconfigure(0, label="About")
             system_menu.entryconfigure(1, label="Check for Updates...")
-            # self.main_menubar.add_cascade(menu=system_menu)
+            # self.menubar.add_cascade(menu=system_menu)
 
             self.helpmenu.add_command(label="Go to project page", command=self.open_project_page)
 
-        self.main_menubar.add_cascade(label="Help", menu=self.helpmenu)
+        self.menubar.add_cascade(label="Help", menu=self.helpmenu)
         self.helpmenu.add_command(label="Features info", command=self.open_features_info)
         self.helpmenu.add_command(label="Report an issue", command=self.open_issue)
         self.helpmenu.add_command(label="Made by mots", command=self.open_mots)
-
-        self.toolkit_UI_obj.root.config(menu=self.main_menubar)
-
-        self._loaded = True
-
-        # this is probably initialized in the main window,
-        # but do a first update nevertheless
-        self.update_current_window_references()
 
     def keep_current_window_on_top(self):
 
@@ -800,7 +819,8 @@ class UImenus:
     def translate_audio_files(self):
         self.toolkit_UI_obj.button_ingest(transcription_task='translate', video_indexing_enabled=False)
 
-    def donothing(self):
+    @staticmethod
+    def donothing():
         return
 
     def open_last_dir(self):
@@ -837,36 +857,51 @@ class UImenus:
         elif platform.system() == 'Linux':
             subprocess.call(['xdg-open', self.stAI.user_data_path])
 
-    def open_file_dir(self, file_path):
-        '''
+    @staticmethod
+    def open_file_dir(file_path):
+        """
         This takes the user to the directory of the file in question using the OS file manager.
-        '''
+        """
         # if we're on a Mac, use Finder to show the file
         if platform.system() == 'Darwin':
             subprocess.call(['open', '-R', file_path])
         elif platform.system() == 'Windows':
-            subprocess.call(['explorer', '/select,', file_path])
+            file_path = os.path.normpath(file_path)
+
+            # make sure the file_path is a valid path to prevent security issues
+            if not os.path.exists(file_path):
+                logger.debug('Invalid file path: {}'.format(file_path))
+                return
+
+            # single command string to be provided as argument to the shell
+            cmd = 'explorer /select,"{}"'.format(file_path)
+
+            # pass the command to the shell
+            subprocess.call(cmd, shell=True)
+
         # if we're on Linux, open the user data dir in the file manager
         elif platform.system() == 'Linux':
             subprocess.call(['xdg-open', os.path.dirname(file_path)])
 
-
-
-    def open_project_page(self):
+    @staticmethod
+    def open_project_page():
         webbrowser.open_new("http://storytoolkit.ai")
         return
 
-    def open_features_info(self):
+    @staticmethod
+    def open_features_info():
         webbrowser.open_new("https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md")
         return
 
-    def open_issue(self):
+    @staticmethod
+    def open_issue():
         webbrowser.open_new("https://github.com/octimot/StoryToolkitAI/issues")
         return
 
     def about_dialog(self):
         self.app_items_obj.open_about_window()
 
-    def open_mots(self):
+    @staticmethod
+    def open_mots():
         webbrowser.open_new("https://mots.us")
         return
