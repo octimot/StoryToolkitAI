@@ -1,5 +1,6 @@
 from storytoolkitai.core.logger import *
 import json
+import time
 
 class toolkit_CLI:
 
@@ -41,6 +42,20 @@ class toolkit_CLI:
 
             try:
                 logger.info('Rendering Resolve job {} via CLI...'.format(args.resolve_render_job))
+
+                # ignore whatever the user has set for the resolve api connection, and connect if needed
+                self.toolkit_ops_obj.resolve_enable()
+
+                # now wait for resolve to connect
+                count = 0
+                while self.toolkit_ops_obj.resolve_api is None:
+                    time.sleep(0.01)
+                    count += 1
+
+                    if count > 500:
+                        logger.error('Resolve is not connected. Please open Resolve and try again.')
+                        return
+
                 self.toolkit_ops_obj.resolve_api.render(render_jobs=[args.resolve_render_job],
                                                         resolve_objects=None,
                                                         stills=False,
