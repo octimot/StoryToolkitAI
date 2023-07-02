@@ -3531,8 +3531,14 @@ class ToolkitOps:
 
             logger.debug("Sending resolve_render command via CLI")
 
+            # instead of py, use the python executable that is running this code to make sure we're in the same env
+            python_executable = sys.executable
+
+            # get the path to the script that is running this code
+            main_script_path = os.path.realpath(sys.argv[0])
+
             # start the render process via CLI
-            subprocess.Popen(['python', 'storytoolkitai', '--mode', 'cli',
+            subprocess.Popen([python_executable, main_script_path, '--mode', 'cli',
                               '--output-dir', '"{}"'.format(target_dir),
                               '--resolve-render-job', render_job_id,
                               '--resolve-render-data', '"{}"'.format(json.dumps(render_job_render_data))]
