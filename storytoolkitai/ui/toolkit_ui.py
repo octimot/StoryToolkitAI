@@ -5733,7 +5733,6 @@ class toolkit_UI():
             # if we reached this point, import the srt file to the bin
             self.toolkit_ops_obj.resolve_api.import_media(full_srt_file_path)
 
-
         def sync_with_playhead_update(self, window_id, sync=None):
 
             if window_id not in self.sync_with_playhead:
@@ -5796,12 +5795,140 @@ class toolkit_UI():
             return self.transcript_editing[window_id]
 
         @staticmethod
-        def get_line_char_from_click(self, event, text_element=None):
+        def get_line_char_from_click(event, text_widget=None):
 
-            index = text_element.index("@%s,%s" % (event.x, event.y))
+            index = text_widget.index("@%s,%s" % (event.x, event.y))
             line, char = index.split(".")
 
             return line, char
+
+        def _transcription_window_context_menu(self, event=None, window_id: str = None, **attributes):
+            """
+            This creates a context menu for the text widget in the transcription window.
+            """
+
+            # get the window object
+            window = self.toolkit_UI_obj.get_window_by_id(window_id=window_id)
+
+            # get the text widget from the event
+            text_widget = event.widget
+
+            # get the line and char from the click
+            line, char = self.get_line_char_from_click(event, text_widget=text_widget)
+            line = int(line)
+            char = int(char)
+
+            # spawn the context menu
+            context_menu = tk.Menu(text_widget, tearoff=0)
+
+            # add the menu items
+            # if there is a selection
+            if text_widget.tag_ranges("sel"):
+                context_menu.add_command(label="Copy", command=lambda: text_widget.event_generate("<<Copy>>"))
+
+                # add a separator
+                context_menu.add_separator()
+
+            # add select segment
+            context_menu.add_command(
+                label="Select/Deselect Segment",
+                command=lambda: self.segment_to_selection(window_id, text_widget, line),
+                accelerator="v"
+            )
+
+            # add the select/deselect all option
+            context_menu.add_command(
+                label="Select/Deselect All Segments",
+                command=lambda: self.button_select_deselect_all(window_id, text_element=text_widget),
+                accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+a"
+            )
+
+            # if the window has a selection
+            if self.has_selected_segments(window_id=window_id):
+
+                # add separator
+                context_menu.add_separator()
+
+                # add send to assistant
+                context_menu.add_command(
+                    label="Send to Assistant",
+                    command=lambda: self.button_send_to_assistant(window_id),
+                    accelerator="o"
+                )
+
+                context_menu.add_command(
+                    label="Send to Assistant with TC",
+                    command=lambda: self.button_send_to_assistant(window_id=window_id, with_timecodes=True),
+                    accelerator="Shift+O"
+                )
+
+                # add: add to new group
+                context_menu.add_command(
+                    label="Add to New Group",
+                    command=lambda: self.button_add_to_new_group(window_id),
+                    accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+g"
+                )
+
+                # copy selected segments
+                context_menu.add_command(
+                    label="Copy with TC",
+                    command=lambda: self.button_copy_segments_to_clipboard(
+                        window_id, with_timecodes=True, per_line=True),
+                    accelerator="Shift+"+self.toolkit_UI_obj.ctrl_cmd_bind + "+c"
+                )
+
+                context_menu.add_command(
+                    label="Copy with Block TC",
+                    command=lambda: self.button_copy_segments_to_clipboard(
+                        window_id, with_timecodes=True, per_line=False),
+                    accelerator="Shift+C"
+                )
+
+                context_menu.add_command(
+                    label="Re-transcribe",
+                    command=lambda: self.button_retranscribe(window_id=window_id),
+                    accelerator="t"
+                )
+
+            # if this is a transcription window enable the relevant menu items
+            if NLE.is_connected() and NLE.current_timeline is not None:
+
+                context_menu.add_separator()
+
+                context_menu.add_command(
+                    label="Markers to Segments",
+                    command=lambda: self.toolkit_UI_obj.t_edit_obj.button_markers_to_segments(
+                        window_id=window_id)
+                )
+
+                # if the window has a selection
+                if self.has_selected_segments(window_id=window_id):
+
+                    context_menu.add_command(
+                        label="Move Playhead to Selection Start",
+                        command=lambda: self.go_to_selected_time(
+                            window_id=window_id, position='start')
+                    )
+                    context_menu.add_command(
+                        label="Move Playhead to Selection End",
+                        command=lambda: self.go_to_selected_time(
+                            window_id=window_id, position='end')
+                    )
+                    context_menu.add_command(
+                        label="Align Segment Start to Playhead",
+                        command=lambda: self.align_line_to_playhead(
+                            window_id=window_id, position='start')
+                    )
+                    context_menu.add_command(
+                        label="Align Segment End to Playhead",
+                        command=lambda: self.align_line_to_playhead(
+                            window_id=window_id, position='end')
+                    )
+
+            # display the context menu
+            context_menu.tk_popup(event.x_root, event.y_root)
+
+            return
 
         def transcription_window_keypress(self, event=None, **attributes):
             """
@@ -6231,7 +6358,8 @@ class toolkit_UI():
             # open the ingest window with the transcription file to show the re-transcribing options
             self.toolkit_UI_obj.open_ingest_window(
                 transcription_file_path=self.get_window_transcription(window_id=window_id).transcription_file_path,
-                time_intervals=time_intervals, retranscribe=True
+                time_intervals=time_intervals, retranscribe=True,
+                video_indexing_enabled=False
             )
 
             # close the transcription window
@@ -8762,6 +8890,16 @@ class toolkit_UI():
                     lambda e: self.t_edit_obj.edit_transcript(
                         window_id=t_window_id, text=text, status_label=status_label)
                 )
+
+                # add right click for context menu
+                text.bind(
+                    '<Button-3>', lambda e: self.t_edit_obj._transcription_window_context_menu(
+                        e, window_id=t_window_id))
+
+                # make context menu work on mac trackpad too
+                text.bind(
+                    '<Button-2>', lambda e: self.t_edit_obj._transcription_window_context_menu(
+                        e, window_id=t_window_id))
 
                 # FIND BUTTON
 
