@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.19.3] - 2023-07-04
+
+Early update for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+
+### Added
+- Transcript context menu - right click on segments to access features
+
+### Changed
+- On Windows: menus are now available on each window
+- When Re-transcribing, user must manually enable Video Indexing otherwise it will be skipped
+- Better FFmpeg check on startup - needed for processing video files
+
+### Fixes
+- Fixed a bug that was preventing the tool from rendering Timelines in Resolve
+- Fixed a few bugs related to the menu bar
+- Fixed a bug that was preventing grouping of questions on Windows
+
 ## [0.19.2] - 2023-06-27
 
 An early version of the Advanced Video Search feature! 
@@ -10,7 +27,7 @@ Early update for Patreon Frequent Users and Producers only - more info on [patre
 
 ### Added
 - Ingesting of video content which includes AI based scene detection and video content indexing
-- Advanced Video Search - search video content using plain text
+- Advanced Video Search - find anything you can describe with words in your footage
 
 ### Changed
 - Transcriptions are now done via the Ingest window
