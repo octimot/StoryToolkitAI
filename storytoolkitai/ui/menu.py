@@ -884,17 +884,17 @@ class UImenus:
             subprocess.call(['xdg-open', os.path.dirname(file_path)])
 
     @staticmethod
-    def open_project_page():
+    def open_project_page(*args, **kwargs):
         webbrowser.open_new("http://storytoolkit.ai")
         return
 
     @staticmethod
-    def open_features_info():
+    def open_features_info(*args, **kwargs):
         webbrowser.open_new("https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md")
         return
 
     @staticmethod
-    def open_issue():
+    def open_issue(*args, **kwargs):
         webbrowser.open_new("https://github.com/octimot/StoryToolkitAI/issues")
         return
 
@@ -902,6 +902,6 @@ class UImenus:
         self.app_items_obj.open_about_window()
 
     @staticmethod
-    def open_mots():
+    def open_mots(*args, **kwargs):
         webbrowser.open_new("https://mots.us")
         return

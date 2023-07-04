@@ -114,9 +114,11 @@ except:
     # keep this message in the console for a bit
     time.sleep(5)
 
+from storytoolkitai.core.storytoolkitai import StoryToolkitAI
+
+StoryToolkitAI.check_ffmpeg()
 
 from storytoolkitai.core.toolkit_ops.toolkit_ops import ToolkitOps
-from storytoolkitai.core.storytoolkitai import StoryToolkitAI
 
 from storytoolkitai.ui.toolkit_ui import run_gui
 from storytoolkitai.ui.toolkit_cli import run_cli

@@ -53,6 +53,7 @@ class toolkit_UI():
     theme_colors['selected_blue_bg'] = ctk.ThemeManager.theme["CTkButton"]["hover_color"][1]
 
     # UI paddings and other settings
+    ctk_full_window_frame_paddings = {'padx': 20, 'pady': 20}
     ctk_frame_paddings = {'padx': 5, 'pady': 5}
     ctk_form_paddings_ext = {'padx': 10, 'pady': 5}
     ctk_form_entry_paddings = {'padx': 10, 'pady': 10}
@@ -965,7 +966,7 @@ class toolkit_UI():
 
                 # create a frame for the about window
                 about_frame = ctk.CTkFrame(about_window, **toolkit_UI.ctk_frame_transparent)
-                about_frame.pack(**toolkit_UI.ctk_frame_paddings)
+                about_frame.pack(**toolkit_UI.ctk_full_window_frame_paddings)
 
                 # add the app name text
                 app_name = 'StoryToolkitAI version ' + self.stAI.version
@@ -1035,6 +1036,14 @@ class toolkit_UI():
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
 
         self.UI_folder = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', '..', 'UI')
+
+        # if the UI_folder wasn't found, try to find it relative to the directory of the main script
+        if not os.path.isdir(self.UI_folder):
+            self.UI_folder = os.path.join(os.path.dirname(os.path.realpath(sys.argv[0])), '..', 'UI')
+
+        # if the UI_folder wasn't found, try to find it relative to the directory of the main script
+        if not os.path.isdir(self.UI_folder):
+            self.UI_folder = os.path.join(os.path.dirname(os.path.realpath(sys.argv[0])), 'UI')
 
         # set window/bar icon
         self.UI_set_icon(self.root)

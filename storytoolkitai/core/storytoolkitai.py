@@ -585,55 +585,69 @@ class StoryToolkitAI:
         # return false (and the online version) if the local and the online versions match
         return False, online_version_raw
 
-    def check_ffmpeg(self):
+    @staticmethod
+    def check_ffmpeg(stAI = None):
 
         # check if ffmpeg is installed
 
         try:
 
-            # first, check if the user added the ffmpeg path to the app settings
-            ffmpeg_path_custom = self.get_app_setting(setting_name='ffmpeg_path')
+            if stAI is not None:
 
-            # if the ffmpeg path is not empty
-            if ffmpeg_path_custom is not None and ffmpeg_path_custom != '':
+                # first, check if the user added the FFmpeg path to the app settings
+                ffmpeg_path_custom = StoryToolkitAI.get_app_setting(setting_name='ffmpeg_path')
 
-                logger.debug('Found ffmpeg path in app config: {}'.format(ffmpeg_path_custom))
+                # if the ffmpeg path is not empty
+                if ffmpeg_path_custom is not None and ffmpeg_path_custom != '':
 
-                if os.path.isfile(ffmpeg_path_custom):
+                    logger.debug('Found FFmpeg path in app config: {}'.format(ffmpeg_path_custom))
 
-                    # add it to the environment variables
-                    os.environ['FFMPEG_BINARY'] = ffmpeg_path_custom
+                    if isinstance(ffmpeg_path_custom, str) and os.path.isfile(ffmpeg_path_custom):
 
-                else:
-                    logger.warning('The ffmpeg path {} found in app config is not valid.'
-                                   .format(ffmpeg_path_custom))
+                        # add it to the environment variables
+                        os.environ['FFMPEG_BINARY'] = ffmpeg_path_custom
 
-                    ffmpeg_path_custom = None
+                    else:
+                        logger.warning('The FFmpeg path {} found in app config is not valid.'
+                                       .format(ffmpeg_path_custom))
+
+                        ffmpeg_path_custom = None
+
+            else:
+                ffmpeg_path_custom = None
 
             # otherwise try to find the binary next to the app
+            # this is most likely the case for standalone releases
             if ffmpeg_path_custom is None:
 
+                main_script_path = os.path.realpath(sys.argv[0])
+
+                # ffmpeg should be in the same folder as the main script
+                ffmpeg_path = os.path.join(os.path.dirname(main_script_path), 'ffmpeg')
+
                 # and if it exists, define the environment variable for ffmpeg for this session
-                if os.path.exists('ffmpeg'):
-                    logger.debug('Found ffmpeg in current working directory.')
-                    os.environ['FFMPEG_BINARY'] = 'ffmpeg'
+                if os.path.isfile(ffmpeg_path):
+                    logger.debug('Found FFmpeg in current working directory.')
+                    os.environ['FFMPEG_BINARY'] = ffmpeg_path
+                else:
+                    logger.debug('FFmpeg not found in current working directory.')
 
             # and check if it's working
 
-            logger.debug('Looking for ffmpeg in env variable.')
+            logger.debug('Looking for FFmpeg in env variable.')
 
             # get the FFMPEG_BINARY variable
             ffmpeg_binary = os.getenv('FFMPEG_BINARY')
 
             # if the variable is empty, try to find ffmpeg in the PATH
             if ffmpeg_binary is None or ffmpeg_binary == '':
-                logger.debug('FFMPEG_BINARY env variable is empty. Looking for ffmpeg in PATH.')
+                logger.debug('FFMPEG_BINARY env variable is empty. Looking for FFmpeg in PATH.')
                 import shutil
                 ffmpeg_binary = ffmpeg_binary if ffmpeg_binary else shutil.which('ffmpeg')
 
             # if ffmpeg is still not found in the path either, try to brute force it
             if ffmpeg_binary is None:
-                logger.debug('FFMPEG_BINARY environment variable not set. Trying to use "ffmpeg".')
+                logger.debug('FFMPEG_BINARY environment variable not set. Trying to execute "FFmpeg".')
                 ffmpeg_binary = 'ffmpeg'
 
             cmd = [
@@ -644,24 +658,20 @@ class StoryToolkitAI:
             # check if ffmpeg answers the call
             exit_code = subprocess.call(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-            logger.debug('FFMPEG exit code: {}'.format(exit_code))
+            logger.debug('FFmpeg exit code: {}'.format(exit_code))
 
             if exit_code == 1:
-                logger.info('FFMPEG found at {}'.format(ffmpeg_binary))
+                logger.debug('FFmpeg found at {}'.format(ffmpeg_binary))
 
             else:
-                logger.error('FFMPEG not found on this machine, some features will not work')
+                logger.error('FFmpeg not found on this machine. Please install it and try again.')
+                return False
 
             # if it does, just return true
             return True
 
         except FileNotFoundError:
-
-            # print the exact exception
-            import traceback
-            traceback_str = traceback.format_exc()
-
-            logger.error(traceback_str)
+            logger.error('FFmpeg not found on this machine. Please install it and try again.')
 
             # if the ffmpeg binary wasn't found, we presume that ffmpeg is not installed on the machine
             return False
