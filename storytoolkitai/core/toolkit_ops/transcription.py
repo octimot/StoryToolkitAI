@@ -5,6 +5,7 @@ import json
 import hashlib
 import shutil
 import time
+from datetime import datetime
 import re
 from threading import Timer
 
@@ -1275,7 +1276,8 @@ class Transcription:
         :return: the group id
         """
         for i in range(100):
-            group_id = "{}{}".format(group_name.strip().lower().replace(' ', ''), time.strftime('%Y%m%d%H%M%S%f'))
+            group_id = "{}{}".format(group_name.strip().lower().replace(' ', ''),
+                                     datetime.now().strftime('%Y%m%d%H%M%S%f'))
 
             if not self._transcript_groups or group_id not in self._transcript_groups:
                 return group_id
