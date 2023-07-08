@@ -5,6 +5,8 @@ import platform
 import subprocess
 import time
 
+from threading import Thread
+
 from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_NAME, initial_target_dir
 from storytoolkitai.core.logger import logger
 from storytoolkitai.core.logger import Style as loggerStyle
@@ -62,7 +64,7 @@ class StoryToolkitAI:
         self.debug_mode = False
 
         if not self.cli_args or not self.cli_args.mode == 'cli':
-            self.check_api_token()
+            self.check_api_thread()
 
         # add a variable that holds usage statistics
         # this is only preserved until the app is closed
@@ -448,12 +450,22 @@ class StoryToolkitAI:
         # if the setting key, or any of the stuff above wasn't found
         return None
 
+    def check_api_thread(self, api_token=None):
+        """
+        This opens a thread that checks if the user token is valid
+        """
+
+        check_api_thread = Thread(target=self.check_api_token, kwargs={'api_token': api_token})
+        check_api_thread.start()
+
+        return
+
     def check_api_token(self, api_token=None):
-        '''
+        """
         This checks if the user token is valid
         If no token is set, it will return False without performing the check
         :return:
-        '''
+        """
 
         # if the user token is empty, False or '0' ('0' needed for backwards compatibility)
         if api_token is None or api_token == '' or not api_token or api_token == '0':
