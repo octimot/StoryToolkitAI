@@ -10,6 +10,7 @@ from threading import Thread
 from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_NAME, initial_target_dir
 from storytoolkitai.core.logger import logger
 from storytoolkitai.core.logger import Style as loggerStyle
+from storytoolkitai.core.post_update import post_update
 
 from requests import get
 
@@ -63,6 +64,15 @@ class StoryToolkitAI:
 
         self.debug_mode = False
 
+        # trigger post_update if necessary
+        if post_update(self.version, self.get_app_setting('last_update'), is_standalone=self.standalone):
+
+            # save the current version as the last_post_update
+            self.save_config('last_update', self.version)
+
+            # restart the app to make sure the changes are applied
+            self.restart()
+
         if not self.cli_args or not self.cli_args.mode == 'cli':
             self.check_api_thread()
 
@@ -91,6 +101,22 @@ class StoryToolkitAI:
         self.transcript_backup_interval = \
             self.get_app_setting(setting_name='backup_transcription_saves_every_n_hours', default_if_none=2)
 
+    def restart(self):
+        """
+        This attempts to restart the app.
+
+        """
+        try:
+            # restart the app while passing all the arguments
+            if not self.standalone:
+                os.execl(sys.executable, sys.executable, *sys.argv)
+            else:
+                # if we're running the standalone version, we need to pass the arguments
+                # as a list of strings
+                subprocess.Popen([sys.executable] + sys.argv)
+
+        except:
+            logger.error('Could not restart StoryToolkitAI. Please restart the app manually.')
 
     def update_statistics(self, key, value):
         '''

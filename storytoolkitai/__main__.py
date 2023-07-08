@@ -20,7 +20,7 @@ logger.debug('\n--------------\n'
     ' '.join(map(str, platform.win32_ver() + platform.mac_ver())),
     '.'.join(map(str, sys.version_info))))
 
-# check if the user is running the any version of Python 3.10
+# check if the user is running any version of Python 3.10
 if sys.version_info.major != 3 or sys.version_info.minor != 10:
 
     logger.warning('You are running Python {}.{}.{}.\n'.format(*sys.version_info) +
@@ -50,6 +50,8 @@ if not os.path.exists(requirements_file_path):
 try:
 
     # check if all the requirements are met
+    # important: this does not check if the correct versions of the packages are installed
+    # so if a specific version if required, we need to deal with it in the post_update() function
     import pkg_resources
 
     pkg_resources.require(open(requirements_file_path, mode='r'))
