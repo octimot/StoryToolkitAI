@@ -11384,15 +11384,15 @@ class toolkit_UI():
         # how long did the search take?
         # total_search_time = time.time() - start_search_time
 
+        # clear the search window if we're supposed to
+        if clear_before_reply:
+            self._text_window_update(search_window_id, '', clear=clear_before_reply)
+
+            # but add back the search term before the results
+            results_text_element.insert(ctk.END, prompt + "\n\n")
+
         # now add the search results to the search results window
         if len(search_results) > 0:
-
-            # clear the search window if we're supposed to
-            if clear_before_reply:
-                self._text_window_update(search_window_id, '', clear=clear_before_reply)
-
-                # but add back the search term before the results
-                results_text_element.insert(ctk.END, prompt + "\n\n")
 
             # add text to the search window
             # self._text_window_update(search_window_id + '_B', 'Searched in files...')
@@ -11617,6 +11617,11 @@ class toolkit_UI():
             # results_text_element.insert(ctk.END, 'Search took {:.2f} seconds\n'.format(total_search_time))
             # results_text_element.insert(ctk.END, 'Average results score {:.1f} out of 10\n'.format(average_score))
 
+        else:
+            results_text_element.insert(ctk.END, 'No text results found for {}.\n\n'.format(prompt))
+            results_text_element.insert(ctk.END, '--------------------------------------\n\n')
+
+
     @staticmethod
     def cv2_image_to_tkinter(parent, cv2_image):
 
@@ -11694,11 +11699,11 @@ class toolkit_UI():
         # sort results by score
         results = sorted(results, key=lambda x: x['score'], reverse=True)
 
-        if len(results) > 0:
+        # clear the search window if we're supposed to
+        if clear_before_reply:
+            self._text_window_update(search_window_id, '', clear=clear_before_reply)
 
-            # clear the search window if we're supposed to
-            if clear_before_reply:
-                self._text_window_update(search_window_id, '', clear=clear_before_reply)
+        if len(results) > 0:
 
             results_text_element.insert(ctk.END, 'Top {} closest frames:\n\n'.format(max_results))
 
@@ -11769,6 +11774,10 @@ class toolkit_UI():
                 # add a new line
                 results_text_element.insert(ctk.END, '\n')
 
+            results_text_element.insert(ctk.END, '--------------------------------------\n\n')
+
+        else:
+            results_text_element.insert(ctk.END, 'No video results found for {}.\n\n'.format(prompt))
             results_text_element.insert(ctk.END, '--------------------------------------\n\n')
 
     def destroy_advanced_search_window(self, window_id: str = None):
