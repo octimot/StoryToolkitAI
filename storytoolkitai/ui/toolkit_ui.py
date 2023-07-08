@@ -11713,15 +11713,25 @@ class toolkit_UI():
                         and result_start_tc is not None:
 
                     # convert the marker_index to timecode
-                    timecode = Timecode(result_fps, frames=int(result['frame']))
+                    # but only if we're not at frame 0
+                    if result['frame'] != 0:
+                        timecode = Timecode(result_fps, frames=int(result['frame']))
 
-                    if result_start_tc != '00:00:00:00':
+                    else:
+                        timecode = '00:00:00:00'
+
+                    # if the start timecode is not 00:00:00:00 and we're not at frame 0
+                    if result_start_tc != '00:00:00:00' and result['frame'] != 0:
 
                         try:
                             timecode += Timecode(result_fps, result_start_tc)
 
                         except:
                             pass
+
+                    # if we're at frame 0 and there is a start timecode, use that
+                    elif result_start_tc != '00:00:00:00' and result['frame'] == 0:
+                        timecode = result_start_tc
 
                     frame_index_or_time_str = str(timecode)
 
