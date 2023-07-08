@@ -2461,7 +2461,28 @@ class toolkit_UI():
 
                 if self.text_windows[window_id]['text_widget'].index('insert') \
                         == str(last_line) + '.' + str(prompt_prefix_length):
+
                     return 'break'
+
+            # if there is a selection
+            if self.text_windows[window_id]['text_widget'].tag_ranges('sel'):
+
+                # get the last line of the text widget
+                last_line = (self.text_windows[window_id]['text_widget'].index('end-1c linestart')).split('.')[0]
+
+                # get the length of prompt_prefix
+                prompt_prefix_length = len(kwargs.get('prompt_prefix', ''))
+
+                # get the end of the selection
+                selection_end = self.text_windows[window_id]['text_widget'].index('sel.last')
+
+                # reset the selection to the beginning of the prompt prefix - last line, prompt prefix length
+                self.text_windows[window_id]['text_widget'].tag_remove('sel', 'sel.first', 'sel.last')
+                self.text_windows[window_id]['text_widget'].tag_add(
+                   'sel', str(last_line) + '.' + str(prompt_prefix_length), selection_end)
+
+                # only then return
+                return
 
         return
 
@@ -2586,6 +2607,7 @@ class toolkit_UI():
                                         window_id, the prompt_prefix and the prompt as kwargs
         :param action_buttons: A list of action buttons to add to the window. Each button is a dict with the following
                                 keys: text, command
+        :param type: The type of text window (text, search etc.)
         :return:
         """
 
@@ -2658,7 +2680,7 @@ class toolkit_UI():
             # set up the text element where we'll add the actual transcript
             self.windows[window_id].textbox = \
                 text = tk.Text(text_form_frame,
-                               font=(self.console_font),
+                               font=self.console_font,
                                width=kwargs.get('window_width', 45),
                                height=kwargs.get('window_height', 30),
                                wrap=tk.WORD,
@@ -11013,7 +11035,6 @@ class toolkit_UI():
 
             # add the processing item to the window so it "knows" that it's processing something
             self.add_window_processing(window_id=search_window_id, processing_item=processing_video_thread)
-
 
         # if the parent of the window is not the main window
         if parent_window != self.root:
