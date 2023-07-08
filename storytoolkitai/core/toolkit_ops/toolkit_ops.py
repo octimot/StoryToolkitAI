@@ -430,6 +430,15 @@ class ToolkitOps:
                 queued.append(current_queue_id)
                 video_indexing_queue_ids.append(current_queue_id)
 
+            # if there is no video, but the file looks like a video file, log this
+            elif not has_video \
+                and (source_file_path.endswith('.mp4')
+                     or source_file_path.endswith('.mov')
+                     or source_file_path.endswith('.avi')):
+
+                logger.debug('Skipping video indexing for file {} - no video streams found or codec unknown.'
+                             .format(source_file_path))
+
             # if we have both audio and video indexing queue ids,
             # we need to let the transcription queue items know about the video indexing queue ids
             if transcription_queue_ids and video_indexing_queue_ids:

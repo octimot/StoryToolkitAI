@@ -5093,6 +5093,13 @@ class toolkit_UI():
             # close the ingest window
             self.destroy_window_(windows_dict=self.windows, window_id=ingest_window_id)
 
+        # if this returns false, it means that there are no files to ingest
+        else:
+            self.notify_via_messagebox(type='warning',
+                                       message='Cannot start ingest. See log for more details. ',
+                                       parent=self.get_window_by_id(ingest_window_id)
+                                       )
+
         return
 
     def button_cancel_ingest(self, window_id, queue_id, parent_element=None, dont_ask=False):
