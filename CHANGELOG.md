@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.19.4] - 2023-07-08
+
+Early update for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+
+### Changed
+- Faster transcriptions due to new OpenAI Whisper patch
+- Better signaling of invalid files in the Ingest window
+
+### Fixes
+- Fixed a bug that caused incomplete video search results, when the found frame was at frame 0
+- Fixed a bug that prevented the tool from rendering Timelines in Resolve on Windows (standalone version)
+- Disallow deleting of text beyond prompt in advanced search window
+- Better handling of text and video results in the Advanced Search window
+- Other optimizations and bug fixes
+
 ## [0.19.3] - 2023-07-04
 
 Early update for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
