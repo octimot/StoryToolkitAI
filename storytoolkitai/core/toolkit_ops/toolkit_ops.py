@@ -3543,12 +3543,19 @@ class ToolkitOps:
             # get the path to the script that is running this code
             main_script_path = os.path.realpath(sys.argv[0])
 
+            command = [python_executable, main_script_path, '--mode', 'cli',
+                      '--output-dir', '"{}"'.format(target_dir),
+                      '--resolve-render-job', render_job_id,
+                      '--resolve-render-data', '"{}"'.format(json.dumps(render_job_render_data))]
+
+            # if we're on Windows and this is a standalone build, we don't need the python executable
+            if sys.platform == 'win32' and self.stAI.standalone:
+
+                # remove the python executable from the command
+                command.pop(0)
+
             # start the render process via CLI
-            subprocess.Popen([python_executable, main_script_path, '--mode', 'cli',
-                              '--output-dir', '"{}"'.format(target_dir),
-                              '--resolve-render-job', render_job_id,
-                              '--resolve-render-data', '"{}"'.format(json.dumps(render_job_render_data))]
-                             )
+            subprocess.Popen(command)
 
             # return the render job info
             return render_job_info
