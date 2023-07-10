@@ -6,7 +6,7 @@
 If you don't want to get your hands dirty with terminal commands, check if there is a release available for your 
 platform [here](https://github.com/octimot/StoryToolkitAI/releases).
 
-We do, however, recommend doing your best to install the non-standalone version of the tool using the instructions
+We do, however, recommend doing your best to install the git version of the tool using the instructions
 below. This would allow you to get the latest features and bug fixes as soon as they are released.
 
 ### StoryToolkitAI is free but we need your help
@@ -17,12 +17,12 @@ in your work.
 
 ---
 
-## Installing the Non-Standalone version
+## Installing the tool from source (GIT version)
 
 ### Quick Info before we start
 
 #### Caution
-If you want to try to install a non-standalone version, please keep in mind that you might end up ruining your computer, 
+If you want to try to install from source, please keep in mind that you might end up ruining your computer, 
 destroying the Internet, starting AI apocalypse, losing your job, and/or marry your lost non-identical twin by mistake - 
 not necessarily in that order and highly unlikely as a result of trying to install this, but still slightly possible. 
 
@@ -43,50 +43,52 @@ versions).**
 
 #### For Patrons 
 
-_If you have access to the early-updates private repo, use `StoryToolkitAI-dev` instead of `StoryToolkitAI` 
-in all the commands below._
+_If you have access to the early-updates private repo and don't know how to clone or pull from it, 
+message us on Patreon and we'll help you make it work._
 
 ## Mac OS
-In the Terminal:
 
-#### 1. You'll need Homebrew
+#### 0. Open Terminal
+
+Using Finder, go to the Folder where you want to install StoryToolkitAI.
+Right-click on it and select "New Terminal at Folder". 
+
+Once a terminal window opens, go through the following steps.
+
+#### 1. Homebrew will make your life easier:
+
+Install Homebrew:
 
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 In case Homebrew installation fails, please check [this page](https://docs.brew.sh/Common-Issues) for troubleshooting.
 
 The most common reason why brew installations fail is because Xcode Command Line Tools isn't installed. 
-So, try adding them using `xcode-select --install`.
+So, install that using `xcode-select --install`.
 
-#### 2. You'll need Python 3.10, Python Tkinter, Git, and FFMPEG:
+#### 2. You'll need Python 3.10, Python Tkinter, Git, FFMPEG and Rust:
 
     brew install python@3.10
     brew install python-tk@3.10
     brew install git
     brew install ffmpeg
+    brew install rust
 
-#### 3. Install virtualenv:
+#### 3. Download StoryToolkitAI:
 
-We recommend running the tool inside a virtual environment like virtualenv. This is not required, but it prevents
-messing up your Python installation, for that, you need to install virtualenv:
+Download from GitHub using this command:
 
-    python3.10 -m pip install virtualenv
-
-_Note: if the pip command above doesn't work, try to use pip3 (and use pip3 for the next steps too)_
-
-#### 4. Download StoryToolkitAI:
-
-First, go to the Folder you want to install StoryToolkit in via Finder.
-Right-click on it and select "New Terminal at Folder". Once you get another terminal window open, run:
-
-    git clone git@github.com:octimot/StoryToolkitAI.git
+    git clone https://github.com/octimot/StoryToolkitAI.git
 
 This should download the app in the folder that you chose.
 
-#### 5. Set up a virtual environment
-Now create a virtual environment (to prevent messing up with other python packages you may have installed on your OS for other stuff):
+#### 4. Set up a virtual environment
+We recommend running the tool inside a virtual environment like virtualenv. This is not required, but it prevents
+messing up your Python installation.
 
-    python3.10 -m virtualenv -p python3.10 venv
+First, create a virtual environment:
+
+    python3.10 -m venv venv
 
 Right now, your installation folder should contain 2 other folders, and the tree should look like this:
 
@@ -94,26 +96,24 @@ Right now, your installation folder should contain 2 other folders, and the tree
     +- StoryToolkitAI
     +- venv
 
-#### 6. Activate virtual environment
+#### 5. Activate virtual environment
 Now enable the virtual environment (this means that all the packages you'll install now via pip will be contained in the
 virtual environment, meaning that for the tool to work you'll ALWAYS have to activate the virtual environment first
 using the following command!)
 
-    source venv/bin/activate
+From the installation folder, run:
 
-#### 7. Install OpenAI Whisper
+    source StoryToolkitAI/venv/bin/activate
+
+#### 6. Install OpenAI Whisper
 _Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
 If you followed the previous steps, your terminal prompt should now have `(venv)` before everything else._
 
     pip install -U git+https://github.com/openai/whisper.git@248b6cb124225dd263bb9bd32d060b6517e067f8
 
-For more info regarding Whisper installation, please check https://github.com/openai/whisper 
+For more info regarding Whisper installation, please check https://github.com/openai/whisper
 
-If you are seeing an error message like `error: subprocess-exited-with-error` (or similar), 
-you might need to install rust first. If you already installed homebrew, it should be as easy as `brew install rust`,
-if things get uneasy, see the instructions [here](https://www.rust-lang.org/learn/get-started)
-
-#### 8. Install all the stuff the tool requires:
+#### 7. Install all the stuff the tool requires:
 _Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
 If you followed the previous steps, your terminal prompt should now have `(venv)` before everything else._
 
@@ -123,20 +123,17 @@ If you are running the tool on a machine with an NVIDIA CUDA GPU, make sure you 
 
     pip uninstall torch
     pip cache purge
-    pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
-
-_Note: If Resolve Studio is not turned on or not available, the transcription and translation functions will work on 
-normal wav files too. Simply press the transcribe or translate buttons and follow the process._
+    pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu118
 
 #### That's it!
 Inside the virtual environment, you should now be able to start the tool:
 
     python StoryToolkitAI/storytoolkitai
 
-_Note: After restart of the machine or your terminal window, never forget to activate the virtual environment before
-starting the app. In the folder where you created venv, run:_
+_Note: If you restart your machine or open a new terminal window, you need to activate the virtual environment again
+before starting the app._ In the installation folder, run:
 
-    source venv/bin/activate
+    source StoryToolkitAI/venv/bin/activate
     
 ## Windows
 
@@ -149,7 +146,8 @@ installation folder.
 #### 1. Download and install Python
 Download the latest Python 3.10 version from [the official Python website](https://www.python.org/downloads/).
 
-_Note: only use other Python installers / versions if you know what you're doing._
+_Note: Do not use the Python installers available from the Windows Store. Only use other Python installers / versions
+if you know what you're doing._
 
 Then simply install it on your machine using the default settings.
 
@@ -157,11 +155,12 @@ To check if you installed the right version, open the Command Prompt and run:
 
     py --version
 
-And something like `Python 3.10.11` should appear. Anything else besides 3.10.X means that you're in uncharted
+Something like `Python 3.10.11` should appear. Anything else besides 3.10.X means that you're in uncharted
 territories! If that is the case, we recommend uninstalling all Python versions (if you don't need them of course)
 and reinstalling Python 3.10.
 
 #### 2. Download and install GIT for Windows
+
 Download it from [here](https://git-scm.com/download/win) and then install it.
 
 #### 3. Install virtualenv
@@ -174,14 +173,19 @@ simply run:
 
     py -3.10 -m pip install virtualenv
 
-#### 4. Download and install FFMPEG
-The simplest approach is to use a package manager like [Choco](https://chocolatey.org/install). Once you follow the
-installation steps for "Individual Use" on that page, you can install FFMPEG using this command:
+#### 4. Download and install FFMPEG via Chocolatey
+The simplest way to install FFMPEG on windows is to use a package manager like [Choco](https://chocolatey.org/install), 
+but feel free to skip this step if you already have FFMPEG or if you know of a better way to install it.
+
+Open PowerShell as Admin, and run:
+
+    Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+If you're running into issues please read the [Choco installation guide](https://chocolatey.org/install).
+
+Once Choco is installed, you can install FFMPEG using this command:
 
     choco install ffmpeg
-
-Alternatively, you can also try to download FFMPEG from [here](https://www.gyan.dev/ffmpeg/builds/) and manually 
-install it, but you may need to manually add some environment variables after installation.
 
 #### 5. Download StoryToolkitAI:
 
@@ -206,7 +210,9 @@ Now enable the virtual environment (this means that all the packages you'll inst
 virtual environment, meaning that for the tool to work **you'll ALWAYS have to activate the virtual environment first**
 using the following command!)
 
-    venv\Scripts\activate.bat
+From your installation folder, run:
+
+    StoryToolkitAI\venv\Scripts\activate.bat
 
 #### 8. Install OpenAI Whisper
 Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. If you followed the previous steps, your terminal prompt should now have (venv) before everything else.
@@ -225,57 +231,44 @@ If you are running the tool on a machine with an NVIDIA CUDA GPU, make sure you 
     
     pip uninstall torch torchaudio torchvision
     pip cache purge
-    pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu117
+    pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu118
 
 _Note: If Resolve Studio is not turned on or not available, the transcription and translation functions will work on 
 normal wav files too. Simply press the transcribe or translate buttons and follow the process._
 
 #### That's it!
-Inside the virtual environment, you should now be able to start the tool:
+Inside the virtual environment, you should now be able to start the tool from the installation folder:
 
     py StoryToolkitAI\storytoolkitai
 
-_Note: After restart of the machine or your terminal window, never forget to activate the virtual environment before
-starting the app. In the folder where you created venv, run:_
+_Note: If you restart your machine or open a new terminal window, you need to activate the virtual environment again
+before starting the app._ In the installation folder, run:
 
-    venv\Scripts\activate.bat
+    StoryToolkitAI\venv\Scripts\activate.bat
 
-_Note: if you're using a version earlier than 0.18.0, the old run command was: `python StoryToolkitAI/app.py`_
+## Running the git version
 
-## Running the non-standalone tool
-
-If you haven't downloaded the app in a binary format, simply activate the virtual environment and start the tool:
+From your installation folder, run:
 
 ### On windows:
 
-    venv\Scripts\activate.bat
+    StoryToolkitAI\venv\Scripts\activate.bat
     py StoryToolkitAI\storytoolkitai
 
 ### On Mac OS:
 
-    source venv/bin/activate
+    source StoryToolkitAI/venv/bin/activate
     python StoryToolkitAI/storytoolkitai
 
 The tool should pop up now on the screen
 
 <img src="help/storytoolkitai_v0.19.0.png" width="600">
 
-_Note: if you're using a version earlier than 0.18.0, the old run commands were: 
-`python StoryToolkitAI/app.py`_ (macOS), or `py StoryToolkitAI\app.py` (Windows)
-
-## Updates on the non-standalone tool
-To update the tool, simply pull the latest changes from the repository while inside the folder where you installed the 
-tool:
+## Updates on the git version of the tool
+To update the tool, simply pull the latest changes from the repository. For this, 
+you need to go inside the StoryToolkitAI folder from your installation folder and run:
 
     git pull
-
-Also make sure to always check for package updates after pulling a new version of the tool: 
-
-     # on Windows
-    pip install -r StoryToolkitAI\requirements.txt
-
-    # on MacOS
-    pip install -r StoryToolkitAI/requirements.txt
 
 ## Feedback
 
