@@ -8,9 +8,6 @@ of AI.**
 The tool works locally on your machine, independent of any other editing software, but it also integrates with DaVinci 
 Resolve Studio 18 and above.
 
-An editing tool that uses AI to transcribe, understand content and search for anything in your footage, 
-integrated with ChatGPT and Davinci Resolve Studio.
-
 <img alt="StoryToolkitAI Interface" src="help/storytoolkitai_v0.19.0.png" width="750">
 
 ## Key Features
