@@ -2,6 +2,8 @@
 
 [Click here to the main project page](https://github.com/octimot/StoryToolkitAI)
 
+###  This page might contain references that are outdated, but will be updated soon!
+
 ## Transcriptions
 
 ### Transcription Results
@@ -257,7 +259,16 @@ adjust the text to sound further._
 _Note 2: You can also open the resulting .comp file in Fusion instead of using the copy-paste method, but you will have 
 to manually add whatever Input or Output nodes you need to make it work._
 
-## Advanced Transcript Search
+## Indexing Videos
+
+Starting with version 0.19.2, the tool can also automatically detect and index scenes in videos using AI.
+The index is used for searching of specific content in the video - more info on this feature coming soon!
+
+## Advanced Search
+
+Starting with version 0.19.2, the Advanced Search can also look into Video content - more info on this feature
+coming soon!
+
 Transcription windows have an "Advanced Search" button that will open up a separate search window. The system is now
 quite experimental and very raw, but it will allow you to search transcripts almost like you search something on Google.
 This means that whenever you enter your search term, the tool will try to understand its meaning and find the phrases
@@ -369,6 +380,32 @@ over and over again, unless you're trying to follow something relevant from the 
 
 _Note: The Resolve API integration is not available on the Free version of Resolve, you need to have a working Studio 
 license installed on your machine to use this feature._
+
+### Initial Setup
+
+#### 1. You need Resolve Studio 18 or later
+The free version of Resolve doesn't provide API access.
+
+#### 2. Enable Local Scripting in Resolve
+Make sure that, in Davinci Resolve Preferences -> General, "External Scripting using" is set to Local. 
+
+#### 3. You need to have Python installed (also for the standalone version)
+
+The tool connects to the Resolve API using Python, so you need to have that installed on your machine.
+
+Make sure that whatever Python version you're using in your virtual environment to start the tool is not older than your 
+most recent Python version installed on your machine - for eg. if you used Python 3.10 in your virtual environment, you
+must make sure that 3.11 is not installed on your machine, otherwise the tool might not start or the Resolve connection
+might not work!
+
+**Using the standalone version** requires you to have either Python 3.9 (tool versions older than 0.19) 
+or Python 3.10 (tool versions newer than 0.19) installed. If you have a more recent version of Python 
+installed than what is required, the tool might not start or the Resolve connection might not work!
+
+_Fixing Python installations:_ If you have Resolve installed on your system and it looks like you have the correct
+version of Python too, but the tool or the connection to Resolve still don't work, you should first try to fix your
+Python installation by simply re-installing it using the installer from [the official Python website]
+(https://www.python.org/downloads/)
 
 ### Connecting to the Resolve API
 Starting with version 0.18.1, the tool starts with the Resolve API connection disabled since many folks don't have
@@ -508,3 +545,69 @@ Other shortcuts etc.
 `--debug` - This will show all the debug info in the console
 
 ---
+
+
+# Known Issues
+
+### First time using a feature takes longer
+The first time you use a specific model, it will take a bit longer to start the process because 
+the tool needs to download the model on your local machine. But, after the model is saved on your machine, 
+the operation should take less. This applies to transcribing, indexing and searching.
+
+### Hallucinations during audio silence
+In some cases, on chunks of audio that are silent, Whisper sometimes writes phrases that aren't there. This is a known
+issue. To prevent that from happening, try using the pre-detect speech option in the Transcription Settings Window.
+
+### Tool doesn't start or doesn't connect to Resolve
+If you have Resolve installed, there's most likely a conflict.
+Please read the Davinci Resolve Studio integrations section above for more info.
+
+### Tool freezing during Resolve playback
+Currently, the tool gets stuck as it waits a reply from the Resolve API, while Resolve is playing back, but it gets
+un-stuck as soon as the playhead stops moving. This will be fixed in a future update soon.
+
+### Timecode issues with 23.976 timelines
+A bug in the Resolve API which sometimes reports 23.976 fps as 23fps creates a bunch of issues mainly for operations
+that use timecode (transcript to playhead navigation, adding markers at the precise frame etc.). Unfortunately, this
+can only be fixed by Blackmagic within Resolve itself (fingers crossed for an update?)
+
+### RuntimeError: CUDA out of memory
+If you get this message while transcribing on the GPU, it means that your GPU doesn't have enough memory to run the
+model you have selected. The solution is to either use a smaller model, or to transcribe on the CPU.
+
+### Tool freezes when chatting with Assistant
+The Assistant feature requires an active connection with OpenAI servers, which sometimes can be slow or unresponsive.
+We'll try to improve this behavior in the future.
+
+### Permission denied errors
+If you get something similar to this error (or anything related to the .cache folder): 
+
+  ```
+  PermissionError: [Errno 13] Permission denied: '/Users/[your user]/.cache/torch/hub/trusted_list', 
+  ```
+
+it's most likely because due to some some ssl certificate issue (issue #77) , so it's best if you delete the old hub 
+cache, like this:
+
+#### On macOS
+Open terminal, and execute
+
+rm -rf /Users/USERNAME/.cache/hub
+rm -rf /Users/USERNAME/.cache/torch
+rm -rf /Users/USERNAME/.cache/whisper
+replace USERNAME with your MacOS user
+
+#### On Windows
+Open CMD, and execute
+
+rmdir /s /q C:\Users\USERNAME\.cache\hub
+rmdir /s /q C:\Users\USERNAME\.cache\torch
+rmdir /s /q C:\Users\USERNAME\.cache\whisper
+replace USERNAME with your Windows user
+
+Keep in mind that if you do this, the first time you transcribe or search something it will need to re-download the models, so it will take a bit longer.
+
+
+### Please report any other issues
+As mentioned, the tool is in a super raw state of development. Please report anything weird that you notice, and we'll 
+look into it.
