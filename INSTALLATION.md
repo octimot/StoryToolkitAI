@@ -103,7 +103,7 @@ using the following command!)
 
 From the installation folder, run:
 
-    source StoryToolkitAI/venv/bin/activate
+    source venv/bin/activate
 
 #### 6. Install OpenAI Whisper
 _Note: starting with step 7, you need to make sure that you are installing packages inside the virtual environment. 
@@ -133,7 +133,7 @@ Inside the virtual environment, you should now be able to start the tool:
 _Note: If you restart your machine or open a new terminal window, you need to activate the virtual environment again
 before starting the app._ In the installation folder, run:
 
-    source StoryToolkitAI/venv/bin/activate
+    source venv/bin/activate
     
 ## Windows
 
@@ -257,7 +257,7 @@ From your installation folder, run:
 
 ### On Mac OS:
 
-    source StoryToolkitAI/venv/bin/activate
+    source venv/bin/activate
     python StoryToolkitAI/storytoolkitai
 
 The tool should pop up now on the screen
