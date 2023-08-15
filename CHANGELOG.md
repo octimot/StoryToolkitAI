@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.19.5] - 2023-08-15
+
+### Added
+- Ability to copy text from Assistant, Search and other text windows via right-click, top menu or Ctrl+C
+- Right-click on Transcript segment now shows the start and end timecodes of the segment
+
+### Fixes
+- Fixed a bug that was not allowing the entry of the API Token for new installations
+
 ## [0.19.4] - 2023-07-08
 
 Early update for Patreon Frequent Users and Producers only - more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)

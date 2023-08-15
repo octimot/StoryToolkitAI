@@ -11,7 +11,7 @@ Resolve Studio 18 and above.
 <img alt="StoryToolkitAI Interface" src="help/storytoolkitai_v0.19.0.png" width="750">
 
 ## Key Features
-- [x] **Full video indexing and search** (early Patreon release, v. 0.19.2+)
+- [x] **Full video indexing and search** (v. 0.19.2+ - [How-To](https://www.youtube.com/watch?v=UDwOvBqS1X8))
 - [x] **Free Automatic Transcriptions** on your local machine
 - [x] **Free Automatic Translation** to English on your local machine
 - [x] **ChatGPT integration** - talk to AI about your content, or generate new ideas
