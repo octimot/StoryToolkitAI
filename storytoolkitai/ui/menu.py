@@ -254,6 +254,9 @@ class UImenus:
         self.editmenu.add_command(label="Select All", command=self.donothing,
                                   accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+a")
 
+        self.editmenu.add_command(label="Copy", command=self.donothing,
+                                  accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+c")
+
         self.editmenu.entryconfig('Find...', state=DISABLED)
 
         # EDIT - TRANSCRIPT related menu items
@@ -301,6 +304,9 @@ class UImenus:
 
             # toggle stuff depending on the current window type
             if self.current_window_type == 'transcription':
+
+                if hasattr(window, 'text_widget'):
+                    self._copy_menu_item_if_selection_exists(text_widget=window.text_widget)
 
                 self.editmenu.entryconfig("Go to timecode...", state=NORMAL,
                                           command=lambda:
@@ -357,20 +363,22 @@ class UImenus:
                     self.editmenu.entryconfig("Add to Group", state=DISABLED)
                     self.editmenu.entryconfig("Re-transcribe...", state=DISABLED)
 
+            # toggle stuff for non-transcription windows
             else:
 
-                # there's nothing to select on the main window,
-                # so just disable the select all menu item
-                if self.current_window_type == 'main':
-                    self.editmenu.entryconfig('Select All', state=DISABLED)
-
-                else:
+                # if the window has a text widget
+                if hasattr(window, 'text_widget'):
                     self.editmenu.entryconfig(
                         'Select All',
                         state=NORMAL,
                         command=lambda: self.pass_key_event(
                             self.current_window_id, '<' + self.toolkit_UI_obj.ctrl_cmd_bind + '-a>')
                     )
+                    self._copy_menu_item_if_selection_exists(text_widget=window.text_widget)
+
+                else:
+                    self.editmenu.entryconfig('Select All', state=DISABLED)
+                    self.editmenu.entryconfig('Copy', state=DISABLED)
 
                 # disable transcription related menu items
                 self.editmenu.entryconfig("Go to timecode...", state=DISABLED)
@@ -777,6 +785,18 @@ class UImenus:
         self.helpmenu.add_command(label="Features info", command=self.open_features_info)
         self.helpmenu.add_command(label="Report an issue", command=self.open_issue)
         self.helpmenu.add_command(label="Made by mots", command=self.open_mots)
+
+    def _copy_menu_item_if_selection_exists(self, text_widget):
+
+        # if there is a selection, enable the copy menu item
+        if text_widget.tag_ranges("sel"):
+            self.editmenu.entryconfig(
+                'Copy',
+                state=NORMAL,
+                command=lambda: text_widget.event_generate("<<Copy>>"))
+
+        else:
+            self.editmenu.entryconfig("Copy", state=DISABLED)
 
     def keep_current_window_on_top(self):
 

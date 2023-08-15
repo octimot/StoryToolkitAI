@@ -2307,6 +2307,14 @@ class toolkit_UI():
 
         return
 
+    @staticmethod
+    def get_line_char_from_click(event, text_widget=None):
+
+        index = text_widget.index("@%s,%s" % (event.x, event.y))
+        line, char = index.split(".")
+
+        return line, char
+
     # TEXT WINDOWS
 
     def _text_window_entry(self, window_id, event, **kwargs):
@@ -2582,6 +2590,58 @@ class toolkit_UI():
 
         self.text_windows[window_id]['prompt_prefix'] = prefix
 
+    def _text_window_context_menu(self, event=None, window_id: str=None, **attributes):
+        """
+        This function creates a context menu for the text widget in the text window
+        """
+
+        # get the window object
+        window = self.get_window_by_id(window_id=window_id)
+
+        # get the text widget from the event
+        text_widget = event.widget
+
+        # get the line and char from the click
+        line, char = self.get_line_char_from_click(event, text_widget=text_widget)
+        line = int(line)
+        char = int(char)
+
+        # spawn the context menu
+        context_menu = tk.Menu(text_widget, tearoff=0)
+
+        # add the menu items
+        # if there is a selection
+        if text_widget.tag_ranges("sel"):
+            context_menu.add_command(label="Copy", command=lambda: text_widget.event_generate("<<Copy>>"))
+
+            # add the de-select all option
+            context_menu.add_command(label="Deselect", command=lambda: text_widget.tag_remove("sel", "1.0", "end"))
+
+        else:
+            # add the select all option
+            context_menu.add_command(label="Select All", command=lambda: text_widget.tag_add("sel", "1.0", "end"))
+
+            # add a separator
+            # context_menu.add_separator()
+
+        # display the context menu
+        context_menu.tk_popup(event.x_root, event.y_root)
+
+    def _text_window_keypress(self, event=None, window_id: str=None, **attributes):
+
+        window = self.get_window_by_id(window_id=window_id)
+
+        if window is None:
+            return
+
+        if event.keysym == 'c' and attributes.get('special_key', None) == 'cmd':
+
+            if hasattr(window, 'text_widget') and window.text_widget.tag_ranges("sel"):
+                window.text_widget.event_generate("<<Copy>>")
+
+            return 'break'
+
+
     def open_text_window(self, window_id=None, title: str = 'Console', initial_text: str = None,
                          can_find: bool = False, user_prompt: bool = False, prompt_prefix: str = None,
                          prompt_callback: callable = None, prompt_callback_kwargs: dict = None,
@@ -2678,7 +2738,7 @@ class toolkit_UI():
 
             # create the text widget
             # set up the text element where we'll add the actual transcript
-            self.windows[window_id].textbox = \
+            self.windows[window_id].text_widget = \
                 text = tk.Text(text_form_frame,
                                font=self.console_font,
                                width=kwargs.get('window_width', 45),
@@ -2713,6 +2773,16 @@ class toolkit_UI():
             # then show the text element
             text.pack(anchor='w', expand=True, fill='both', **self.ctk_full_textbox_frame_paddings)
 
+            # add right click for context menu
+            text.bind(
+                '<Button-3>', lambda e: self._text_window_context_menu(
+                    e, window_id=window_id))
+
+            # make context menu work on mac trackpad too
+            text.bind(
+                '<Button-2>', lambda e: self._text_window_context_menu(
+                    e, window_id=window_id))
+
             # if the user can enter text, enable the text field and process any input
             if user_prompt:
 
@@ -2728,6 +2798,13 @@ class toolkit_UI():
                                                   prompt_callback=prompt_callback,
                                                   prompt_callback_kwargs=prompt_callback_kwargs,
                                                   **kwargs))
+
+                # bind CMD/CTRL + key presses to text window actions
+                text.bind(
+                    "<" + self.ctrl_cmd_bind + "-KeyPress>",
+                    lambda e: self._text_window_keypress(
+                        event=e, window_id=window_id, special_key='cmd')
+                )
 
                 # focus on the text element
                 text.focus_set()
@@ -5832,14 +5909,6 @@ class toolkit_UI():
 
             return self.transcript_editing[window_id]
 
-        @staticmethod
-        def get_line_char_from_click(event, text_widget=None):
-
-            index = text_widget.index("@%s,%s" % (event.x, event.y))
-            line, char = index.split(".")
-
-            return line, char
-
         def _transcription_window_context_menu(self, event=None, window_id: str = None, **attributes):
             """
             This creates a context menu for the text widget in the transcription window.
@@ -5852,7 +5921,7 @@ class toolkit_UI():
             text_widget = event.widget
 
             # get the line and char from the click
-            line, char = self.get_line_char_from_click(event, text_widget=text_widget)
+            line, char = self.toolkit_UI_obj.get_line_char_from_click(event, text_widget=text_widget)
             line = int(line)
             char = int(char)
 
@@ -8905,14 +8974,15 @@ class toolkit_UI():
             if transcription.is_transcription_file:
 
                 # initialize the transcript text element
-                text = tk.Text(text_form_frame,
-                               name='transcript_text',
-                               font=self.transcript_font,
-                               width=45, height=30,
-                               **self.ctk_full_textbox_paddings,
-                               wrap=tk.WORD,
-                               background=self.theme_colors['black'],
-                               foreground=self.theme_colors['normal'])
+                t_window.text_widget = \
+                    text = tk.Text(text_form_frame,
+                                   name='transcript_text',
+                                   font=self.transcript_font,
+                                   width=45, height=30,
+                                   **self.ctk_full_textbox_paddings,
+                                   wrap=tk.WORD,
+                                   background=self.theme_colors['black'],
+                                   foreground=self.theme_colors['normal'])
 
                 # add a scrollbar to the text element
                 text_scrollbar = ctk.CTkScrollbar(text_form_frame)
