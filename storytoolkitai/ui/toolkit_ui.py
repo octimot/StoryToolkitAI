@@ -803,7 +803,7 @@ class toolkit_UI():
 
             # if the user has entered a new API token, check if it's valid
             if input_variables['api_token_var'].get() != '' \
-                    and input_variables['api_token_var'].get() != self.stAI.config['api_token']:
+                    and input_variables['api_token_var'].get() != self.stAI.config.get('api_token', None):
 
                 if not self.stAI.check_api_token(input_variables['api_token_var'].get()):
                     self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Error', message='Invalid API token.')
