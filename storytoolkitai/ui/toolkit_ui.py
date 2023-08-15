@@ -5856,6 +5856,9 @@ class toolkit_UI():
             line = int(line)
             char = int(char)
 
+            # get the segment at the click
+            segment = self.get_segment(window_id=window_id, line=line)
+
             # spawn the context menu
             context_menu = tk.Menu(text_widget, tearoff=0)
 
@@ -5867,16 +5870,28 @@ class toolkit_UI():
                 # add a separator
                 context_menu.add_separator()
 
+            # THE SELECT SEGMENT BUTTON
+
+            select_button_text = "Select Segment"
+            if self.is_selected(window_id=window_id, line=line):
+                select_button_text = "Deselect Segment"
+
             # add select segment
             context_menu.add_command(
-                label="Select/Deselect Segment",
+                label=select_button_text,
                 command=lambda: self.segment_to_selection(window_id, text_widget, line),
                 accelerator="v"
             )
 
+            # THE SELECT ALL BUTTON
+            select_all_button_text = "Select All Segments"
+
+            if self.has_selected_segments(window_id=window_id):
+                select_all_button_text = "Deselect All Segments"
+
             # add the select/deselect all option
             context_menu.add_command(
-                label="Select/Deselect All Segments",
+                label=select_all_button_text,
                 command=lambda: self.button_select_deselect_all(window_id, text_element=text_widget),
                 accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+a"
             )
@@ -5962,6 +5977,38 @@ class toolkit_UI():
                         command=lambda: self.align_line_to_playhead(
                             window_id=window_id, position='end')
                     )
+
+            # add a separator
+            context_menu.add_separator()
+
+            # use timecode if available
+            window_transcription = self.get_window_transcription(window_id=window_id)
+            timecode_data = window_transcription.get_timecode_data()
+
+            if timecode_data is not False and timecode_data is not [None, None]:
+                segment_start = window_transcription.seconds_to_timecode(
+                    seconds=segment.start, fps=timecode_data[0], start_tc_offset=timecode_data[1])
+
+                segment_end = window_transcription.seconds_to_timecode(
+                    seconds=segment.end, fps=timecode_data[0], start_tc_offset=timecode_data[1])
+
+                segment_info = "{} to {}".format(segment_start, segment_end)
+
+                if self.stAI.debug_mode:
+                    segment_info = "\nTime: {:.4f} to {:.4f}".format(segment.start, segment.end)
+
+            else:
+                segment_start = segment.start
+                segment_end = segment.end
+
+                # add the segment info as a disabled menu item
+                if self.stAI.debug_mode:
+                    segment_info = "Time: {:.4f} to {:.4f}".format(segment.start, segment.end)
+                else:
+                    segment_info = "Time: {:.2f} to {:.2f}".format(segment_start, segment_end)
+
+
+            context_menu.add_command(label=segment_info, state=tk.DISABLED)
 
             # display the context menu
             context_menu.tk_popup(event.x_root, event.y_root)
@@ -7107,6 +7154,28 @@ class toolkit_UI():
 
             return False
 
+        def get_segment(self, window_id, line=None, segment_index=None):
+            """
+            This returns the segment object based on the line number in the text widget or the segment index
+            """
+
+            if segment_index is None and line is not None:
+                segment_index = line - 1
+
+            if segment_index is None:
+                return None
+
+            window_transcription = self.get_window_transcription(window_id=window_id)
+
+            if window_transcription is None:
+                logger.error('Cannot get segment info No transcription found for window {}'.format(window_id))
+                return None
+
+            # get the segment info
+            segment = window_transcription.get_segment(segment_index=segment_index)
+
+            return segment
+
         def align_line_to_playhead(self, window_id, position, line_index=None):
             """
             Aligns a transcript line to the playhead (only works if Resolve is connected)
@@ -7487,6 +7556,28 @@ class toolkit_UI():
 
             if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0:
                 return True
+
+            return False
+
+        def is_selected(self, window_id, line=None, segment=None):
+            """
+            Tell whether the given text widget line or transcription segment is selected
+            """
+
+            # if the line is None, calculate the line number from the segment
+            if line is None and segment is not None:
+                line = int(segment) + 1
+
+            # if the segment is None, return False
+            if line is None:
+                return False
+
+            # if the window has selected segments
+            if self.has_selected_segments(window_id=window_id):
+
+                # if the segment is in the selected segments list
+                if line in self.selected_segments[window_id]:
+                    return True
 
             return False
 
