@@ -1,5 +1,5 @@
 wheel
-certifi==2022.9.24
+certifi>=2023.7.22
 charset-normalizer==2.1.1
 ffmpeg-python==0.2.0
 filelock==3.8.0
