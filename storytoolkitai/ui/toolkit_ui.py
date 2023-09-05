@@ -2641,7 +2641,6 @@ class toolkit_UI():
 
             return 'break'
 
-
     def open_text_window(self, window_id=None, title: str = 'Console', initial_text: str = None,
                          can_find: bool = False, user_prompt: bool = False, prompt_prefix: str = None,
                          prompt_callback: callable = None, prompt_callback_kwargs: dict = None,
@@ -5965,6 +5964,15 @@ class toolkit_UI():
                 accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+a"
             )
 
+            # THIS MAKES SURE WE SEE THE SELECTION CONTEXT MENU WITHOUT A SELECTION
+            # temporary solution to force the context menu to always think there are selected segments
+            none_selected = False
+            if not self.has_selected_segments(window_id=window_id):
+                none_selected = True
+
+                # temporary select the segment at the click
+                self.segment_to_selection(window_id, text_widget, line)
+
             # if the window has a selection
             if self.has_selected_segments(window_id=window_id):
 
@@ -6076,11 +6084,14 @@ class toolkit_UI():
                 else:
                     segment_info = "Time: {:.2f} to {:.2f}".format(segment_start, segment_end)
 
-
             context_menu.add_command(label=segment_info, state=tk.DISABLED)
 
             # display the context menu
             context_menu.tk_popup(event.x_root, event.y_root)
+
+            # this will deselect the temporary selection
+            if none_selected:
+                self.segment_to_selection(window_id, text_widget, line)
 
             return
 
@@ -8982,7 +8993,10 @@ class toolkit_UI():
                                    **self.ctk_full_textbox_paddings,
                                    wrap=tk.WORD,
                                    background=self.theme_colors['black'],
-                                   foreground=self.theme_colors['normal'])
+                                   foreground=self.theme_colors['normal'],
+                                   highlightcolor=self.theme_colors['dark'],
+                                   highlightbackground=self.theme_colors['dark'],
+                                   )
 
                 # add a scrollbar to the text element
                 text_scrollbar = ctk.CTkScrollbar(text_form_frame)
@@ -11781,7 +11795,6 @@ class toolkit_UI():
         else:
             results_text_element.insert(ctk.END, 'No text results found for {}.\n\n'.format(prompt))
             results_text_element.insert(ctk.END, '--------------------------------------\n\n')
-
 
     @staticmethod
     def cv2_image_to_tkinter(parent, cv2_image):
