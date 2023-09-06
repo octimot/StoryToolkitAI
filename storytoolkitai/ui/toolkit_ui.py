@@ -1739,6 +1739,10 @@ class toolkit_UI():
         # also remove any observers that are registered for this window
         self.remove_observer_from_window(window_id=window_id)
 
+        # remove the window from the window_types dictionary
+        if window_id in self.window_types:
+            del self.window_types[window_id]
+
         # destroy the window once the mainloop is idle
         windows_dict[window_id].after_idle(windows_dict[window_id].destroy)
 
