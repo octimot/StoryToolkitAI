@@ -169,6 +169,14 @@ class UImenus:
 
         self.filemenu = Menu(self.menubar, tearoff=0, **self._menu_ui)
 
+        # add story file menu items
+        self.filemenu.add_command(label="New story...",
+                                  command=self.toolkit_UI_obj.open_new_story_editor_window)
+        self.filemenu.add_command(label="Open story file...",
+                                  command=self.toolkit_UI_obj.open_story_editor_window)
+
+        self.filemenu.add_separator()
+
         # add open transcription file menu item
         self.filemenu.add_command(label="Open transcription file...", command=self.toolkit_UI_obj.open_transcript)
         self.filemenu.add_separator()
@@ -181,6 +189,12 @@ class UImenus:
         self.filemenu.add_command(label="Translate audio files...", command=self.translate_audio_files)
 
         # FILE MENU - export items
+        self.filemenu.add_separator()
+
+        self.filemenu.add_command(label='Export story as TXT...', state=DISABLED)
+        # self.filemenu.add_command(label='Export story as EDL...', state=DISABLED)
+        # self.filemenu.add_command(label='Export story as PDF...', state=DISABLED)
+
         self.filemenu.add_separator()
         # add Export as... menu item, but keep it disabled until a relevant window is focused
         self.filemenu.add_command(label="Export transcript as...", state=DISABLED,
@@ -237,6 +251,24 @@ class UImenus:
                 self.filemenu.entryconfig('Export transcript as AVID DS...', state=DISABLED)
                 self.filemenu.entryconfig('Export transcript as Fusion Text...', state=DISABLED)
                 self.filemenu.entryconfig("Show transcription in " + self.file_browser_name, state=DISABLED)
+
+            if self.current_window_type =='story_editor':
+
+                # enable the Export as TXT menu item
+                self.filemenu.entryconfig('Export story as TXT...', state=NORMAL,
+                                          command=lambda: self.toolkit_UI_obj.StoryEdit.button_export_as_txt(
+                                              window_id=self.current_window_id, toolkit_UI_obj=self.toolkit_UI_obj)
+                                          )
+
+                # enable the Export as EDL menu item
+                # self.filemenu.entryconfig('Export story as EDL...', state=DISABLED,
+                #                           command=lambda: self.toolkit_UI_obj.StoryEdit.button_export_as_edl(
+                #                               window_id=self.current_window_id, toolkit_UI_obj=self.toolkit_UI_obj)
+                #                           )
+
+            else:
+                self.filemenu.entryconfig('Export story as TXT...', state=DISABLED)
+                # self.filemenu.entryconfig('Export story as EDL...', state=DISABLED)
 
         # add a postcommand to the file menu to enable/disable menu items depending on the current window
         self.filemenu.configure(postcommand=toggle_file_menu_items)

@@ -1,3 +1,5 @@
+import json
+
 from storytoolkitai.core.toolkit_ops.toolkit_ops import *
 
 import copy
@@ -1714,6 +1716,9 @@ class toolkit_UI():
             # focus on the window after 100ms
             self.windows[window_id].after(100, lambda window_id=window_id: self.focus_window(window_id=window_id))
 
+            # add window_id to the window object
+            self.windows[window_id].window_id = window_id
+
             # return the window_id or the window object
             if return_window:
                 return self.windows[window_id]
@@ -2068,6 +2073,17 @@ class toolkit_UI():
 
         return None
 
+    def get_window_status_label_text(self, window_id):
+
+        if (window := self.get_window_by_id(window_id)) is None:
+            logger.warning('Cannot update status label for window with id {} - window not found.'.format(window_id))
+            return False
+
+        if hasattr(window, 'status_label'):
+            return window.status_label.cget('text')
+
+        return None
+
     def update_window_status_label(self, window_id, text='', color=None):
 
         if (window := self.get_window_by_id(window_id)) is None:
@@ -2237,6 +2253,12 @@ class toolkit_UI():
                                                       **self.ctk_button_size,
                                                       text="Open Transcription", command=lambda: self.open_transcript())
 
+        # THE STORY BUTTON
+        main_window.open_story = ctk.CTkButton(main_window.tool_buttons_frame,
+                                               **self.ctk_button_size,
+                                                  text="Open Story",
+                                                    command=lambda: self.open_story_editor_window())
+
         main_window.t_queue = ctk.CTkButton(main_window.tool_buttons_frame,
                                             **self.ctk_button_size,
                                             text="Queue",
@@ -2278,9 +2300,10 @@ class toolkit_UI():
 
         main_window.t_ingest.grid(row=1, column=1, **self.ctk_main_paddings)
         main_window.t_open_transcript.grid(row=1, column=2, **self.ctk_main_paddings)
-        main_window.t_queue.grid(row=1, column=3, **self.ctk_main_paddings)
-        main_window.t_adv_search.grid(row=1, column=4, **self.ctk_main_paddings)
-        main_window.open_assistant.grid(row=1, column=5, **self.ctk_main_paddings)
+        main_window.open_story.grid(row=1, column=3, **self.ctk_main_paddings)
+        main_window.t_queue.grid(row=1, column=4, **self.ctk_main_paddings)
+        main_window.t_adv_search.grid(row=1, column=5, **self.ctk_main_paddings)
+        main_window.open_assistant.grid(row=1, column=6, **self.ctk_main_paddings)
 
         # make column 1 the size of the window
         # main_window.tool_buttons_frame.grid_columnconfigure(1, weight=1)
@@ -2604,6 +2627,14 @@ class toolkit_UI():
 
         # get the text widget from the event
         text_widget = event.widget
+
+        index = text_widget.index(f"@{event.x},{event.y}")
+        tags = text_widget.tag_names(index)
+
+        # if the item at the click position has the tag 'has_context_menu', do nothing
+        # assuming that the context menu for it is defined some place else
+        if 'has_context_menu' in tags:
+            return
 
         # get the line and char from the click
         line, char = self.get_line_char_from_click(event, text_widget=text_widget)
@@ -5983,6 +6014,31 @@ class toolkit_UI():
                 # add separator
                 context_menu.add_separator()
 
+                # the add to story sub-menu
+                add_to_story_menu = tk.Menu(context_menu, tearoff=0)
+
+                # the "New Story" button
+                add_to_story_menu.add_command(
+                    label="New Story...",
+                    command=lambda: self.button_add_to_new_story(window_id=window_id)
+                )
+                add_to_story_menu.add_separator()
+
+                story_editor_windows = self.toolkit_UI_obj.get_all_windows_of_type('story_editor')
+
+                for story_editor_window_id in story_editor_windows:
+
+                    story_editor_window = self.toolkit_UI_obj.get_window_by_id(window_id=story_editor_window_id)
+
+                    add_to_story_menu.add_command(
+                        label="{}".format(story_editor_window.title()),
+                        command=lambda: self.button_add_to_story(
+                            window_id=window_id, story_editor_window_id=story_editor_window_id)
+                    )
+
+                # add the add to story sub-menu
+                context_menu.add_cascade(label="Add to Story", menu=add_to_story_menu)
+
                 # add send to assistant
                 context_menu.add_command(
                     label="Send to Assistant",
@@ -6440,6 +6496,46 @@ class toolkit_UI():
 
             self.toolkit_UI_obj.open_assistant_window(assistant_window_id='assistant',
                                                       transcript_text=full_text.strip())
+
+        def button_add_to_story(self, window_id, story_editor_window_id):
+
+            text, full_text, start_sec, end_sec \
+                = self.get_segments_or_selection(window_id, split_by='line',
+                                                 add_time_column=False, timecodes=False)
+
+            # get the transcription object associated with this window
+            transcription = self.get_window_transcription(window_id=window_id)
+
+            new_lines = []
+
+            for line in text:
+                new_lines.append({
+                    'text': line.get('text', '').strip(),
+                    'type': 'transcription_segment',
+                    'source_start': line.get('start', 0),
+                    'source_end': line.get('end', line.get('start', 0.01)),
+                    'transcription_file_path': transcription.transcription_file_path,
+                    'source_file_path': transcription.audio_file_path,
+                    'source_fps': transcription.timeline_fps,
+                    'source_start_tc': transcription.timeline_start_tc,
+                })
+
+            if new_lines:
+                story_editor_window = self.toolkit_UI_obj.get_window_by_id(story_editor_window_id)
+
+                toolkit_UI.StoryEdit.paste_to_story_editor(
+                    window=story_editor_window, lines_to_paste=new_lines,
+                    toolkit_UI_obj=self.toolkit_UI_obj)
+
+                # save the story
+                toolkit_UI.StoryEdit.save_story(window_id=story_editor_window, toolkit_UI_obj=self.toolkit_UI_obj)
+
+        def button_add_to_new_story(self, window_id):
+
+            # first open a new story
+            if story_editor_window := self.toolkit_UI_obj.open_new_story_editor_window():
+                self.button_add_to_story(window_id, story_editor_window.window_id)
+
 
         def button_add_to_new_group(self, window_id, only_add=True):
             """
@@ -8823,7 +8919,7 @@ class toolkit_UI():
         self.open_transcription_window(transcription_file_path=transcription_json_file_path, **options)
 
     def open_transcription_window(self, title=None, transcription_file_path=None,
-                                  select_line_no=None, add_to_selection=None, select_group=None):
+                                  select_line_no=None, add_to_selection=None, select_group=None, goto_time=None):
 
         # Note: most of the transcription window functions are stored in the TranscriptEdit class
         transcription = Transcription(transcription_file_path=transcription_file_path)
@@ -9298,7 +9394,7 @@ class toolkit_UI():
         else:
 
             # get the current window and the transcript groups module
-            current_tk_window = self.get_window_by_id(t_window_id)
+            t_window = current_tk_window = self.get_window_by_id(t_window_id)
             transcript_groups_module = current_tk_window.transcript_groups_module
 
             # so update all the windows just to make sure that all the elements are in the right state
@@ -9322,6 +9418,12 @@ class toolkit_UI():
         # also select any group that may have been passed
         if select_group is not None:
             transcript_groups_module.select_group(group_id=select_group, show_first_segment=True)
+
+        # select the line at the given time in seconds if goto_time was passed
+        if goto_time is not None:
+            self.set_active_segment_by_time(
+                transcript_sec=goto_time, window_id=t_window_id,
+                text_widget=t_window.text_widget, transcription=transcription, toolkit_UI_obj=self)
 
     def update_transcription_window(self, window_id, update_all: bool = True, **update_attr):
         """
@@ -9523,21 +9625,10 @@ class toolkit_UI():
         else:
             transcript_sec = 0
 
-        # remove the current_time segment first
-        update_attr['text'].tag_delete('current_time')
-
-        # find out on which text segment we are now
-        for index, segment in enumerate(transcription.get_segments()):
-
-            # if the transcript timecode in seconds is between the start and the end of this line
-            if segment.start <= transcript_sec < segment.end - 0.01:
-                text_widget_line = index + 1
-
-                # set the line as the active segment on the timeline
-                self.t_edit_obj.set_active_segment(
-                    window_id=window_id, text_widget=update_attr['text'], text_widget_line=text_widget_line)
-
-        update_attr['text'].tag_config('current_time', foreground=self.theme_colors['white'])
+        # todo: test if Resolve to transcript sync works with this new method
+        self.set_active_segment_by_time(
+            transcript_sec=transcript_sec, window_id=window_id,
+            text_widget=update_attr['text'], transcription=transcription, toolkit_UI_obj=self)
 
         # highlight current line on transcript
         # update_attr['text'].tag_add('current_time')
@@ -9546,6 +9637,28 @@ class toolkit_UI():
         self.t_edit_obj.current_window_tc[window_id] = NLE.current_tc
 
         return update_attr
+
+    @staticmethod
+    def set_active_segment_by_time(transcript_sec, window_id, text_widget, transcription, toolkit_UI_obj):
+        """
+        This attempts to find the closest segment to the transcript_sec time (in seconds)
+        """
+
+        # remove the current_time segment first
+        text_widget.tag_delete('current_time')
+
+        # find out which segment matches the passed transcript_sec
+        for index, segment in enumerate(transcription.get_segments()):
+
+            # if the transcript timecode in seconds is between the start and the end of this line
+            if segment.start <= transcript_sec < segment.end - 0.01:
+                text_widget_line = index + 1
+
+                # set the line as the active segment on the timeline
+                toolkit_UI_obj.t_edit_obj.set_active_segment(
+                    window_id=window_id, text_widget=text_widget, text_widget_line=text_widget_line)
+
+        text_widget.tag_config('current_time', foreground=toolkit_UI.theme_colors['white'])
 
     def sync_all_transcription_windows(self):
 
@@ -10453,6 +10566,1668 @@ class toolkit_UI():
                 raise ValueError("Invalid orientation: {}".format(scrollable_frame._orientation))
 
             return visible_range[0] <= label_range[0] and visible_range[1] >= label_range[1]
+
+    # STORY EDITOR WINDOW FUNCTIONS
+
+    class StoryEdit:
+
+        @classmethod
+        def edit_story_text(cls, window_id, toolkit_UI_obj):
+
+            if window_id is None:
+                logger.error('Cannot edit story. No window id provided.')
+                return False
+
+            # get the window
+            window = toolkit_UI_obj.get_window_by_id(window_id)
+
+            # get the story text
+            story_text = window.text_widget.get('1.0', 'end-1c')
+
+            window.typing = True
+            window.editing = True
+
+            window.text_widget.focus()
+
+            # ESCAPE key defocuses from widget (and implicitly saves the story, see below)
+            window.text_widget.bind('<Escape>',
+                                    lambda e: cls.defocus_text(
+                                        window_id=window_id, toolkit_UI_obj=toolkit_UI_obj)
+                                    )
+
+            # text focusout saves story
+            window.text_widget.bind('<FocusOut>',
+                                    lambda e: cls.on_text_widget_defocus(
+                                        e, window_id=window_id, toolkit_UI_obj=toolkit_UI_obj)
+                                    )
+
+            # bind CMD/CTRL + key events
+            window.text_widget.bind("<" + toolkit_UI_obj.ctrl_cmd_bind + "-KeyPress>",
+                                    lambda e: toolkit_UI.StoryEdit.on_edit_press(
+                                        e, window=window, toolkit_UI_obj=toolkit_UI_obj, special_key='cmd')
+                                    )
+
+            # on any other button press, process through the on_edit_press function
+            window.text_widget.bind('<Key>',
+                                    lambda e: cls.on_edit_press(
+                                        e, window=window, toolkit_UI_obj=toolkit_UI_obj)
+                                    )
+
+            window.text_widget.config(state=ctk.NORMAL)
+
+        @staticmethod
+        def is_story_changed(window_id, toolkit_UI_obj):
+            """
+            We're using the window.story_lines list to compare it with the window.story.lines list (not the text widget)
+            """
+
+            changed = False
+
+            # get the window
+            window = toolkit_UI_obj.get_window_by_id(window_id)
+
+            # if the lists have different lengths, the story has changed
+            if len(window.story_lines) != len(window.story.lines):
+                return True
+
+            # take each line and compare it to the corresponding line in the story object
+            for line_num, line in enumerate(window.story_lines):
+
+                # if the line is different than the one in the story object
+                if line.get('text', '') != window.story.lines[line_num].text\
+                        or line.get('type', 'text') != window.story.lines[line_num].type:
+
+                    # set the changed flag to True
+                    return True
+
+            if not changed:
+                toolkit_UI_obj.update_window_status_label(
+                    window_id=window_id, text='Story unchanged.', color='normal')
+
+            # if we got here, the story is unchanged
+            return changed
+
+        @classmethod
+        def on_text_widget_defocus(cls, e, window_id, toolkit_UI_obj):
+            """
+            This function is called when the user clicks outside of the transcript text widget
+            """
+
+            if window_id is None:
+                return False
+
+            # if the transcript was changed
+            if cls.is_story_changed(window_id=window_id, toolkit_UI_obj=toolkit_UI_obj):
+                cls.on_press_save_story(e, window_id=window_id, toolkit_UI_obj=toolkit_UI_obj)
+
+        @classmethod
+        def defocus_text(cls, window_id, toolkit_UI_obj):
+
+            window = toolkit_UI_obj.get_window_by_id(window_id)
+
+            # defocus from transcript text
+            tk_transcription_window = window.text_widget.winfo_toplevel()
+            tk_transcription_window.focus()
+
+            # disable text editing again
+            window.text_widget.config(state=ctk.DISABLED)
+
+            # unbind all the editing keys
+            cls.unbind_editing_keys(window.text_widget)
+
+        @staticmethod
+        def unbind_editing_keys(text_widget):
+            text_widget.unbind('<Escape>')
+            text_widget.unbind('<Key>')
+
+        @classmethod
+        def on_press_save_story(cls, e, window_id, toolkit_UI_obj):
+
+            window = toolkit_UI_obj.get_window_by_id(window_id)
+
+            # disable text editing again
+            window.text_widget.config(state=ctk.DISABLED)
+
+            # unbind all the editing keys
+            cls.unbind_editing_keys(window.text_widget)
+
+            # deactivate typing and editing
+            window.typing = False
+            window.editing = False
+
+            # save the story
+            cls.save_story(window_id=window_id, toolkit_UI_obj=toolkit_UI_obj)
+
+        @staticmethod
+        def save_story(window_id, toolkit_UI_obj, force=False, sec=1):
+
+            # use the window_id to get the window object
+            if isinstance(window_id, str):
+                window = toolkit_UI_obj.get_window_by_id(window_id)
+
+            # or if the window object was passed instead of its id, make use of it
+            else:
+                window = window_id
+                window_id = window.window_id
+
+            # replace all the lines in the story object with the lines in the window.story_lines list
+            window.story.replace_all_lines(window.story_lines)
+
+            return window.story.save_soon(
+                backup=toolkit_UI_obj.stAI.story_backup_interval,
+                force=force,
+                if_successful=lambda: toolkit_UI.StoryEdit.update_status_label_after_save(
+                    window_id=window_id, toolkit_UI_obj=toolkit_UI_obj, save_status=True),
+                if_failed=lambda: toolkit_UI.StoryEdit.update_status_label_after_save(
+                    window_id=window_id, toolkit_UI_obj=toolkit_UI_obj, save_status='fail'),
+                if_none=lambda: toolkit_UI.StoryEdit.update_status_label_after_save(
+                    window_id=window_id, toolkit_UI_obj=toolkit_UI_obj),
+                sec=sec
+            )
+
+        @staticmethod
+        def update_status_label_after_save(window_id, toolkit_UI_obj, save_status=None):
+
+            if save_status is True:
+                # show the user that the transcript was saved
+                toolkit_UI_obj.update_window_status_label(
+                    window_id=window_id, text='Story saved.', color='normal')
+
+            # in case anything went wrong while saving,
+            # let the user know about it
+            elif save_status == 'fail':
+                toolkit_UI_obj.update_window_status_label(
+                    window_id=window_id, text='Story save failed.', color='bright_red')
+
+            # in case the save status is False
+            # assume that nothing needed saving
+            else:
+                toolkit_UI_obj.update_window_status_label(
+                    window_id=window_id, text='Story unchanged.', color='normal')
+
+        @staticmethod
+        def update_text_widget(window_id: str or object, toolkit_UI_obj, story_lines=None):
+
+            # assume that we're getting the window object if the window_id is not a string
+            window = toolkit_UI_obj.get_window_by_id(window_id) if isinstance(window_id, str) else window_id
+
+            # if we don't have story lines, get them from the story object
+            if story_lines is None:
+                story_lines = window.story_lines
+
+            # if we still don't have story lines, stop
+            if story_lines is None:
+                return None
+
+            # get the text widget state so we can restore it after updating the text widget
+            text_widget_state = window.text_widget.cget('state')
+
+            window.text_widget.config(state=ctk.NORMAL)
+
+            # clear the text widget
+            window.text_widget.delete('1.0', 'end')
+
+            # add the story lines to the text widget
+            for line in story_lines:
+
+                current_line_no = window.text_widget.index('end-1c').split('.')[0]
+
+                # if the line is a dict, get the text from the dict
+                line_text = line.get('text', None)
+
+                # add the line to the text widget
+                window.text_widget.insert('end', line_text + '\n')
+
+                if line.get('type', 'text') != 'text':
+
+                    # add a tag to the new line
+                    window.text_widget.tag_add(
+                        'line_external_{}'.format(current_line_no),
+                        '{}.0'.format(int(current_line_no)),
+                        '{}.end'.format(int(current_line_no))
+                    )
+
+                    # change the background color to superblack
+                    window.text_widget.tag_config(
+                        'line_external_{}'.format(current_line_no), foreground=toolkit_UI.theme_colors['supernormal'])
+
+            # remove the last newline character
+            window.text_widget.delete('end-1c')
+
+            # restore the text widget state
+            window.text_widget.config(state=text_widget_state)
+
+            return True
+
+        @classmethod
+        def add_undo_step(cls, window):
+
+            # take a snapshot of the current story lines
+            # current_story_lines = window.story_lines.copy()
+            current_story_lines = copy.deepcopy(window.story_lines)
+
+            if not hasattr(window, 'story_lines_undo_steps'):
+                window.story_lines_undo_steps = []
+
+            # if we have more than 30 undo steps, remove the oldest one
+            if len(window.story_lines_undo_steps) > 30:
+                del window.story_lines_undo_steps[0]
+
+            line, char, _ = cls.get_current_line_char(window.text_widget)
+
+            # add the current story lines and the cursor position to the undo steps
+            window.story_lines_undo_steps.append({'story_lines': current_story_lines, 'pos': (line, char)})
+
+            window.text_widget.edit_separator()
+
+            # also reset the redo steps
+            window.story_lines_redo_steps = []
+
+        @classmethod
+        def recall_undo_redo(cls, window, toolkit_UI_obj, undo=True):
+
+            reverted_step = {'story_lines': [], 'pos': (0, 0)}
+
+            # if we're undoing
+            if undo:
+
+                if hasattr(window, 'story_lines_undo_steps') and len(window.story_lines_undo_steps) > 0:
+
+                    # get the last undo step
+                    reverted_step = window.story_lines_undo_steps.pop()
+
+                    # if we have more than 30 redo steps, remove the oldest one
+                    if len(window.story_lines_redo_steps) > 30:
+                        del window.story_lines_redo_steps[0]
+
+                    # add the current story lines and insert position to the redo steps
+                    line, char, _ = cls.get_current_line_char(window.text_widget)
+                    current_story_lines = copy.deepcopy(window.story_lines)
+                    window.story_lines_redo_steps.append({'story_lines': current_story_lines, 'pos': (line, char)})
+
+                    # set the story lines to the last undo step
+                    window.story_lines = reverted_step['story_lines']
+
+                    cls.update_text_widget(window_id=window, toolkit_UI_obj=toolkit_UI_obj)
+
+            # if we're redoing
+            else:
+
+                if hasattr(window, 'story_lines_redo_steps') and len(window.story_lines_redo_steps) > 0:
+
+                    # get the last redo step
+                    reverted_step = window.story_lines_redo_steps.pop()
+
+                    # add the current story lines and insert position to the redo steps
+                    line, char, _ = cls.get_current_line_char(window.text_widget)
+                    current_story_lines = copy.deepcopy(window.story_lines)
+                    window.story_lines_undo_steps.append({'story_lines': current_story_lines, 'pos': (line, char)})
+
+                    # set the story lines to the last redo step
+                    window.story_lines = reverted_step['story_lines']
+
+                    cls.update_text_widget(window_id=window, toolkit_UI_obj=toolkit_UI_obj)
+
+            # get the position of the cursor on the undo/redo step
+            line, char = reverted_step.get('pos')
+
+            # go to the line we were on before the undo, but only if it exists
+            if line != 0:
+                window.text_widget.mark_set('insert', '{}.{}'.format(line, char))
+
+            # move the scroll to the line we were on before the undo if it's not in view
+            if not cls.is_line_in_view(window.text_widget, line):
+                window.text_widget.see('insert')
+
+        @staticmethod
+        def label_to_not_saved(window, toolkit_UI_obj):
+
+            # change label to 'Not saved'
+            if toolkit_UI_obj.get_window_status_label_text(window_id=window.window_id) != 'Changes not saved.':
+                toolkit_UI_obj.update_window_status_label(
+                    window_id=window.window_id, text='Changes not saved.', color='red')
+
+        @classmethod
+        def on_edit_press(cls, e, window, toolkit_UI_obj, special_key=None):
+
+            # we're using the window object here instead of the window_id to optimize performance
+            # since we're using this function on every key press
+            line, char, end_char = cls.get_current_line_char(window.text_widget)
+
+            # move the index on the current line
+            story_line_index = int(line) - 1
+
+            # prepare a function to deal with the active selection on some key presses
+            def delete_active_selection():
+
+                if window.text_widget.tag_ranges('sel'):
+
+                    # get the current key press
+                    current_key = e.keysym
+
+                    # call this same function, while triggering the DELETE key
+                    e.keysym = 'Delete'
+
+                    # simulate the DELETE key press to delete the selection
+                    cls.on_edit_press(e, window, toolkit_UI_obj, special_key='')
+
+                    # restore the current key press
+                    e.keysym = current_key
+
+                return False
+
+            # first capture the special key presses
+            # COPY and CUT
+            if (special_key == 'cmd' and e.keysym.lower() == 'c') \
+                    or (special_key == 'cmd' and e.keysym == 'x'):
+
+                # if there's an active selection, process it
+                if window.text_widget.tag_ranges('sel'):
+
+                    # get the start and end of the selection
+                    sel_start_line, sel_start_char = window.text_widget.index('sel.first').split('.')
+                    sel_end_line, sel_end_char = window.text_widget.index('sel.last').split('.')
+
+                    # convert to int
+                    sel_start_line = int(sel_start_line)
+                    sel_start_char = int(sel_start_char)
+                    sel_end_line = int(sel_end_line)
+                    sel_end_char = int(sel_end_char)
+
+                    # this clears the real clipboard
+                    clipboard_text = ''
+                    window.clipboard_clear()
+
+                    # clear the story editor clipboard
+                    window.story_list_clipboard = []
+
+                    for c_line in range(sel_start_line, sel_end_line+1):
+
+                        current_line = copy.deepcopy(cls.get_line(window, line_index=int(c_line) - 1))
+
+                        # this might happen if we're selecting text beyond the last line of the story
+                        if current_line is None:
+                            continue
+
+                        # if the line is a text line, mind the start and end chars
+                        if 'type' not in current_line or current_line['type'] == 'text':
+
+                            if c_line == sel_start_line and sel_start_char > 0:
+                                if c_line == sel_end_line:
+                                    # for the case when we're selecting text from a single line
+                                    current_line['text'] = current_line['text'][sel_start_char:sel_end_char]
+                                else:
+                                    current_line['text'] = current_line['text'][sel_start_char:]
+
+                            # if this is the last line, only keep the text before the end char
+                            elif c_line == sel_end_line:
+                                current_line['text'] = current_line['text'][:sel_end_char]
+
+                        # add to story editor clipboard
+                        window.story_list_clipboard.append(current_line)
+
+                        # add to real clipboard
+                        clipboard_text += current_line['text'] + '\n'
+
+                    # remove the last newline character, if it's a new line
+                    if clipboard_text.endswith('\n'):
+                        clipboard_text = clipboard_text[:-1]
+
+                    # add the text to the real clipboard
+                    window.clipboard_append(clipboard_text)
+
+                    # if we're cutting, delete the selection
+                    if special_key == 'cmd' and e.keysym == 'x':
+
+                        # but simply call this same function, while triggering the DELETE key
+                        e.keysym = 'Delete'
+                        cls.on_edit_press(e, window, toolkit_UI_obj, special_key='')
+
+                return 'break'
+
+            # SELECT ALL
+            elif special_key == 'cmd' and e.keysym.lower() == 'a':
+                pass
+
+            # UNDO
+            elif special_key == 'cmd' and not e.state & 0x1 and e.keysym.lower() == 'z':
+                cls.recall_undo_redo(window, toolkit_UI_obj, undo=True)
+                return 'break'
+
+            # REDO
+            elif special_key == 'cmd' and e.state & 0x1 and e.keysym.lower() == 'z':
+                cls.recall_undo_redo(window, toolkit_UI_obj, undo=False)
+                return 'break'
+
+            # FIND
+            elif special_key == 'cmd' and e.keysym.lower() == 'f':
+                pass
+
+            # SAVE
+            elif special_key == 'cmd' and e.keysym.lower() == 's':
+                # save the story
+                cls.save_story(window_id=window.window_id, toolkit_UI_obj=toolkit_UI_obj, sec=0)
+                return 'break'
+
+            # PASTE
+            elif special_key == 'cmd' and e.keysym.lower() == 'v':
+
+                delete_active_selection()
+
+                # make sure we know where the cursor is
+                line, char, end_char = cls.get_current_line_char(window.text_widget)
+
+                # move the index on the current line
+                story_line_index = int(line) - 1
+
+                cls.paste_to_story_editor(window=window, toolkit_UI_obj=toolkit_UI_obj, line=line, char=char)
+                return 'break'
+
+            # DEL, BACKSPACE
+            # if we have an active selection and the user pressed the delete, backspace key
+            elif (e.keysym == 'BackSpace' or e.keysym == 'Delete') \
+                    and window.text_widget.tag_ranges('sel'):
+
+                # get the start and end of the selection
+                selection_start = window.text_widget.index('sel.first')
+                selection_end = window.text_widget.index('sel.last')
+
+                # we must remove the lines from the list since it's going to be removed from the text widget
+                # get the start and end line numbers
+                start_line = int(selection_start.split('.')[0])
+                end_line = int(selection_end.split('.')[0])
+
+                # get the start and end char numbers
+                start_char = int(selection_start.split('.')[1])
+                end_char = int(selection_end.split('.')[1])
+
+                # make sure that the end_line also exists in the story lines list
+                # - if the user also selected the very last line of the text index (end-1c)
+                #   then the end_line will be one line after the last line in the story lines list
+                #   (due to how tkinter text widget works)
+                #   so we need to make sure that the end_line is not greater than the number of lines in the story
+                if end_line > len(window.story_lines):
+                    end_line = len(window.story_lines)
+
+                    # and set the character to the last character in the line
+                    end_char = window.text_widget.index('{}.end'.format(end_line)).split('.')[1]
+
+                # are the first or the last lines text lines?
+                first_line_is_text = \
+                    'type' not in window.story_lines[start_line-1] \
+                    or window.story_lines[start_line-1]['type'] == 'text'
+
+                last_line_is_text = \
+                    'type' not in window.story_lines[end_line-1] \
+                    or window.story_lines[end_line-1]['type'] == 'text'
+
+                # get the text of the first line until the start char
+                first_line_text \
+                    = window.text_widget.get('{}.0'.format(start_line), '{}.{}'.format(start_line, start_char))
+
+                # get the text of the last line, from the end char until the end of the line
+                last_line_text \
+                    = window.text_widget.get('{}.{}'.format(end_line, end_char), '{}.end'.format(end_line))
+
+                cls.add_undo_step(window)
+                cls.label_to_not_saved(window, toolkit_UI_obj=toolkit_UI_obj)
+                window.text_widget.edit_modified(True)
+
+                # delete the lines from the story lines list
+                for c_line in range(start_line, end_line+1):
+
+                    # we're not using the c_line variable here because the line numbers decrease after each deletion
+                    cls.del_line(window=window, line_index=int(start_line)-1)
+
+                # decide what to leave on the remaining line
+                new_line_text = None
+                insert_cursor_char = 0
+                if first_line_is_text:
+                    new_line_text = first_line_text
+                    insert_cursor_char = len(first_line_text)
+
+                if last_line_is_text and new_line_text is not None:
+                    new_line_text += last_line_text
+
+                elif last_line_is_text:
+                    new_line_text = last_line_text
+
+                if new_line_text is not None:
+                    cls.add_line(window=window, line_index=start_line-2,
+                                 line_data=new_line_text, toolkit_UI_obj=toolkit_UI_obj)
+
+                # update the text widget
+                cls.update_text_widget(window_id=window, toolkit_UI_obj=toolkit_UI_obj)
+
+                # take the cursor to the beginning of the first line
+                window.text_widget.mark_set('insert', '{}.{}'.format(start_line, insert_cursor_char))
+
+                return 'break'
+
+            # if the user pressed the backspace key
+            # and we're at the beginning of the line and the line is not the first line
+            elif e.keysym == 'BackSpace' and char == '0' and line != '1':
+
+                # if the previous line is not a text line, just delete the line and move the cursor up
+                if window.story_lines[story_line_index - 1]['type'] != 'text':
+
+                    # but only delete if the current line is empty
+                    if window.story_lines[story_line_index]['text'] == '':
+
+                        cls.add_undo_step(window)
+                        cls.label_to_not_saved(window, toolkit_UI_obj=toolkit_UI_obj)
+
+                        # delete the current line from the story lines list
+                        cls.del_line(window=window, line_index=story_line_index)
+
+                        # delete the current line from the text widget
+                        window.text_widget.delete('{}.0'.format(int(line)), '{}.end+1c'.format(int(line)))
+
+                    # move the cursor to the end of the previous line
+                    window.text_widget.mark_set('insert', '{}.end'.format(int(line) - 1))
+
+                    return 'break'
+
+                # if this line is a text line merge it with the previous line
+                if window.story_lines[story_line_index]['type'] == 'text':
+
+                    # get the text of the previous line
+                    previous_line_text = \
+                        window.text_widget.get('{}.0'.format(int(line) - 1), '{}.end'.format(int(line) - 1))
+
+                    # get the text of the current line
+                    current_line_text = \
+                        window.text_widget.get('{}.0'.format(line), '{}.end'.format(line))
+
+                    # merge the two lines
+                    new_line_text = previous_line_text + current_line_text
+
+                    cls.add_undo_step(window)
+                    cls.label_to_not_saved(window, toolkit_UI_obj=toolkit_UI_obj)
+                    window.text_widget.edit_modified(True)
+
+                    # delete the current line from the story lines list
+                    cls.del_line(window=window, line_index=story_line_index)
+
+                    # set the previous line text
+                    cls.set_line(
+                        window=window, line_index=story_line_index - 1,
+                        line_data=new_line_text, toolkit_UI_obj=toolkit_UI_obj
+                    )
+
+                    return
+
+                # if this is not a text line
+                else:
+                    # just move to the last character of the previous line
+                    insert_position = '{}.end'.format(int(line) - 1)
+                    window.text_widget.mark_set('insert', insert_position)
+
+                    if not cls.is_line_in_view(window.text_widget, line_no=int(line)-1):
+                        window.text_widget.see('insert')
+
+                    return 'break'
+
+            # if the user pressed the delete key
+            # and we're at the end of the line and the line is not the last line
+            elif e.keysym == 'Delete' and char == end_char and line != window.text_widget.index('end').split('.')[0]:
+
+                # if the next line is not a text line, delete this current line
+                if window.story_lines[story_line_index + 1]['type'] != 'text':
+
+                    # but only delete if the current line is empty
+                    if window.story_lines[story_line_index]['text'] == '':
+
+                        cls.add_undo_step(window)
+                        cls.label_to_not_saved(window, toolkit_UI_obj=toolkit_UI_obj)
+
+                        # delete the current line from the story lines list
+                        cls.del_line(window=window, line_index=story_line_index)
+
+                        # delete the current line from the text widget
+                        window.text_widget.delete('{}.0'.format(int(line)), '{}.end+1c'.format(int(line)))
+
+                    # move the cursor to the beginning of the next line
+                    window.text_widget.mark_set('insert', '{}.0'.format(int(line) + 1))
+
+                    return 'break'
+
+                # move the cursor to the beginning of the next line
+                # window.text_widget.mark_set('insert', '{}.end'.format(int(line) + 1))
+
+                # if this line is a text line merge it with the next line
+                if window.story_lines[story_line_index]['type'] == 'text':
+
+                    # get the text of the next line
+                    next_line_text = \
+                        window.text_widget.get('{}.0'.format(int(line) + 1), '{}.end'.format(int(line) + 1))
+
+                    # get the text of the current line
+                    current_line_text = \
+                        window.text_widget.get('{}.0'.format(line), '{}.end'.format(line))
+
+                    # merge the two lines
+                    new_line_text = current_line_text + next_line_text
+
+                    cls.add_undo_step(window)
+                    cls.label_to_not_saved(window, toolkit_UI_obj=toolkit_UI_obj)
+                    window.text_widget.edit_modified(True)
+
+                    # delete the next line from the story lines list
+                    cls.del_line(window=window, line_index=story_line_index + 1)
+
+                    # set the current line text
+                    cls.set_line(
+                        window=window, line_index=story_line_index,
+                        line_data=new_line_text, toolkit_UI_obj=toolkit_UI_obj
+                    )
+
+                    return
+
+                # otherwise just take the cursor to the beginning of the next line
+                else:
+                    # just move to the last character of the previous line
+                    insert_position = '{}.0'.format(int(line) + 1)
+                    window.text_widget.mark_set('insert', insert_position)
+
+                    if not cls.is_line_in_view(window.text_widget, line_no=int(line)+1):
+                        window.text_widget.see('insert')
+
+                    return 'break'
+
+            elif e.keysym == 'Return':
+
+                delete_active_selection()
+
+                # make sure we know where the cursor is
+                line, char, end_char = cls.get_current_line_char(window.text_widget)
+
+                # move the index on the current line
+                story_line_index = int(line) - 1
+
+                # if this is a text line
+                if window.story_lines[story_line_index]['type'] == 'text':
+                    # get the text that we're going to move to the next line
+                    new_line_text = window.text_widget.get('{}.{}'.format(line, char), '{}.end'.format(line))
+
+                    # what's the text that will stay on this line?
+                    remaining_line_text = window.text_widget.get('{}.0'.format(line), '{}.{}'.format(line, char))
+
+                    # delete the text that we're going to move to the next line from the current line
+                    window.text_widget.delete('{}.{}'.format(line, char), '{}.end'.format(line))
+
+                    # add a new line
+                    window.text_widget.insert('{}.{}'.format(line, char), '\n')
+
+                    # add the new line text to the next line in the text widget
+                    window.text_widget.insert('{}.0'.format(int(line) + 1), new_line_text)
+
+                    # take the cursor to the beginning of the next line
+                    window.text_widget.mark_set('insert', '{}.0'.format(int(line) + 1))
+
+                    cls.add_undo_step(window)
+                    cls.label_to_not_saved(window, toolkit_UI_obj=toolkit_UI_obj)
+                    window.text_widget.edit_modified(True)
+
+                    # now deal with the two lines in the story lines list
+                    cls.set_line(
+                        window=window, line_index=story_line_index, line_data=remaining_line_text,
+                        toolkit_UI_obj=toolkit_UI_obj)
+
+                    # add a new line to the story lines list
+                    cls.add_line(
+                        window=window, line_index=story_line_index, line_data=new_line_text,
+                        toolkit_UI_obj=toolkit_UI_obj)
+
+                    if not cls.is_line_in_view(window.text_widget, line_no=int(line)+1):
+                        window.text_widget.see('insert')
+
+                # if this is not a text line
+                else:
+
+                    # insert a new line in the text widget to trigger the creation of a new line
+                    window.text_widget.insert('{}.end'.format(line, char), '\n')
+
+                    # then move the cursor to the new line
+                    window.text_widget.mark_set('insert', '{}.0'.format(int(line) + 1))
+
+                    # see the cursor if it's not in view
+                    if not cls.is_line_in_view(window.text_widget, line_no=int(line)+1):
+                        window.text_widget.see('insert')
+
+                    # add the new line to the story lines list
+                    cls.add_line(window=window, line_index=story_line_index,
+                                 line_data='', toolkit_UI_obj=toolkit_UI_obj)
+
+                    return 'break'
+
+                return 'break'
+
+            # for navigation keys, just do whatever tkinter does
+            elif e.keysym in ['Up', 'Down', 'Left', 'Right', 'Home', 'End', 'Prior', 'Next']:
+                return
+
+            # DEL and BACKSPACE for non-text lines
+            elif 'type' in window.story_lines[story_line_index] \
+                and window.story_lines[story_line_index]['type'] != 'text' \
+                and e.keysym in ['BackSpace', 'Delete']:
+
+                # add an undo step
+                cls.add_undo_step(window)
+                cls.label_to_not_saved(window, toolkit_UI_obj=toolkit_UI_obj)
+
+                # delete the line
+                cls.del_line(window=window, line_index=story_line_index)
+
+                # update the text widget
+                cls.update_text_widget(window_id=window, toolkit_UI_obj=toolkit_UI_obj)
+
+                # go to the previous line
+                insert_line = int(line)
+                if e.keysym == 'BackSpace' and int(line) > 1:
+                    window.text_widget.mark_set('insert', '{}.0'.format(insert_line))
+
+                # stay on this line
+                elif e.keysym == 'Delete' and line != window.text_widget.index('end').split('.')[0]:
+                    insert_line = int(line)
+                    window.text_widget.mark_set('insert', '{}.0'.format(insert_line))
+
+                # go to the previous line
+                elif e.keysym == 'Delete' and line == window.text_widget.index('end').split('.')[0]:
+                    window.text_widget.mark_set('insert', '{}.end'.format(insert_line))
+
+                # stay on this line
+                elif e.keysym == 'BackSpace' and int(line) == 1:
+                    insert_line = int(line)
+                    window.text_widget.mark_set('insert', '{}.0'.format(insert_line))
+
+                # see the cursor
+                if not cls.is_line_in_view(window.text_widget, line_no=insert_line):
+                    window.text_widget.see('insert')
+
+                return 'break'
+
+            # block any other key presses if we're not on a text line
+            elif 'type' in window.story_lines[story_line_index] \
+                and window.story_lines[story_line_index]['type'] != 'text':
+                logger.debug('Blocked key press on non-text line')
+                return 'break'
+
+            # if the user pressed a key that represents a character
+            elif e.char:
+
+                delete_active_selection()
+
+                # make sure we know where the cursor is
+                line, char, end_char = cls.get_current_line_char(window.text_widget)
+
+                # move the index on the current line
+                story_line_index = int(line) - 1
+
+                # if this is a text line
+                if window.story_lines[story_line_index]['type'] == 'text':
+
+                    # add the new character to the text widget
+                    window.text_widget.insert('{}.{}'.format(line, char), e.char)
+
+                    # get the text of the line from the window
+                    line_text = window.text_widget.get('{}.0'.format(line), '{}.end'.format(line))
+
+                    cls.add_undo_step(window)
+                    cls.label_to_not_saved(window, toolkit_UI_obj=toolkit_UI_obj)
+                    window.text_widget.edit_modified(True)
+
+                    cls.set_line(
+                        window=window, line_index=story_line_index, line_data=line_text, toolkit_UI_obj=toolkit_UI_obj)
+
+                    # if the line is not in view, show it
+                    if not cls.is_line_in_view(window.text_widget, line_no=int(line)):
+                        window.text_widget.see('insert')
+
+                    return 'break'
+
+                # if this is not a text line
+                else:
+
+                    # insert a new line in the text widget to trigger the creation of a new line
+                    window.text_widget.insert('{}.end'.format(line, char), '\n')
+
+                    # then move the cursor to the new line
+                    window.text_widget.mark_set('insert', '{}.0'.format(int(line) + 1))
+
+                    # if the line is not in view, show it
+                    if not cls.is_line_in_view(window.text_widget, line_no=int(line) + 1):
+                        window.text_widget.see('insert')
+
+                    cls.add_undo_step(window)
+                    cls.label_to_not_saved(window, toolkit_UI_obj=toolkit_UI_obj)
+
+                    # add the new line to the story lines list
+                    cls.add_line(window=window, line_index=story_line_index,
+                                 line_data='', toolkit_UI_obj=toolkit_UI_obj)
+
+                    # and then trigger the on_edit_press function again
+                    cls.on_edit_press(e, window=window, toolkit_UI_obj=toolkit_UI_obj)
+
+                    return 'break'
+
+            # if we reached this point, we need to make sure that whatever action happens once we exit this function
+            # is reflected in the story lines list
+            # but since we have no way of knowing what the action will be since tkinter doesn't tell us here,
+            # we just start a timer that will update the story lines list
+
+            def update_story_lines_list():
+
+                # get the text of the line from the window
+                line_text = window.text_widget.get('{}.0'.format(line), '{}.end'.format(line))
+
+                # update the story lines list
+                cls.set_line(
+                    window=window, line_index=story_line_index, line_data=line_text, toolkit_UI_obj=toolkit_UI_obj)
+
+            # start the timer
+            window.after(20, update_story_lines_list)
+
+        @classmethod
+        def is_line_in_view(cls, text_widget, line_no):
+
+            # get the top and bottom lines in view
+            top_line, bottom_line = cls.lines_in_view(text_widget)
+
+            # if the line is in view, return True
+            if int(top_line) <= int(line_no) <= int(bottom_line):
+                return True
+
+            return False
+
+        @staticmethod
+        def lines_in_view(text_widget):
+
+            # use '1.0' represents the position of the first char in Text widgets
+            # which is line 1, character 0
+            top = text_widget.index('1.0')
+
+            # yview returns a tuple (start, end) which represents the fraction of the
+            # text that is currently visible. Multiply the 'end' value by the total number
+            # of lines to get the bottom line number
+            bottom = text_widget.index('@0,%d' % int(text_widget['height']))
+
+            # split by '.' and get line numbers
+            top_line = int(top.split('.')[0])
+            bottom_line = int(bottom.split('.')[0])
+
+            return top_line, bottom_line
+
+        @classmethod
+        def paste_to_story_editor(cls, window, toolkit_UI_obj, line=None, char=None, lines_to_paste=None):
+
+            # print('passed line, char', line, char)
+
+            # throttle the paste event to 100ms to avoid colliding with another paste event
+            time.sleep(0.1)
+
+            # if we don't have lines_to_paste to paste that were sent in the function call
+            # use the clipboard (real + story_list_clipboard)
+            if lines_to_paste is None:
+
+                # this is the text from the real clipboard
+                pasted_text = window.clipboard_get()
+
+                # if the pasted text is empty, stop
+                if not pasted_text:
+                    return 'break'
+
+                # add an undo step
+                cls.add_undo_step(window)
+                cls.label_to_not_saved(window, toolkit_UI_obj=toolkit_UI_obj)
+
+                pasted_lines = pasted_text.split('\n')
+
+                # if we have an active selection, remove it to make room for the pasted text
+                if window.text_widget.tag_ranges('sel'):
+
+                    # get whatever status the text widget is in
+                    text_widget_state = window.text_widget.cget('state')
+
+                    # enable editing
+                    window.text_widget.config(state=ctk.NORMAL)
+
+                    # simulate pressing the delete key
+                    window.text_widget.event_generate('<Delete>')
+
+                    # restore the text widget state
+                    window.text_widget.config(state=text_widget_state)
+
+                # if the window doesn't have a story_list_clipboard, create it
+                if not hasattr(window, 'story_list_clipboard'):
+                    window.story_list_clipboard = []
+
+                # we need to compare the story_list_clipboard with the text we have in the real clipboard
+                # since we will eventually use the story_list_clipboard to paste the text and build the story lines list
+                for pasted_line_index, pasted_line in enumerate(pasted_lines):
+
+                    # if the story_list_clipboard at this index doesn't exist
+                    if len(window.story_list_clipboard) <= pasted_line_index:
+                        window.story_list_clipboard.append({'text': pasted_line, 'type': 'text'})
+
+                    # if the text of don't match, update the story_list_clipboard
+                    elif 'text' not in window.story_list_clipboard[pasted_line_index] \
+                        or window.story_list_clipboard[pasted_line_index]['text'] != pasted_line:
+
+                        window.story_list_clipboard[pasted_line_index]['text'] = pasted_line
+                        window.story_list_clipboard[pasted_line_index]['type'] = 'text'
+
+                # if for some reason our story_list_clipboard is empty, stop
+                if len(window.story_list_clipboard) == 0:
+                    logger.debug('Nothing to paste - story_list_clipboard is empty')
+                    return 'break'
+
+                # remove all other lines from the story_list_clipboard that are beyond the length of the pasted lines
+                window.story_list_clipboard = window.story_list_clipboard[:len(pasted_lines)]
+
+                # use this variable to paste the lines into the story editor
+                lines_to_paste = window.story_list_clipboard
+
+            if not isinstance(lines_to_paste, list):
+                logger.error('Unable to paste to story editor - lines_to_paste is not a list')
+                return None
+
+            # now deal with the actual PASTING in both the text widget and the window.story_lines list
+
+            # memorize the insert char so we can go to it after pasting
+            insert_char = len(lines_to_paste[-1]['text'])
+
+            # get the text widget state so we can restore it after updating the text widget
+            text_widget_state = window.text_widget.cget('state')
+
+            # enable editing
+            window.text_widget.config(state=ctk.NORMAL)
+
+            # get the current line and char
+            # todo: implement the line, char attributes above
+            line, char, _ = cls.get_current_line_char(window.text_widget)
+            # print('line, char here', line, char)
+
+            # how many lines does the tkinter text widget have?
+            # we always subtract 1 because tkinter adds an extra line at the end
+            # text_widget_line_count = int(window.text_widget.index('end').split('.')[0])-1
+
+            # we will use these to add text to the lines we're pasting if we're pasting into a text line
+            first_line_text_part = ''
+            last_line_text_part = ''
+            paste_into_text_line = False
+
+            # if the current line in the story editor window is a text line
+            # we will need to eventually split it in two
+            current_line = cls.get_line(window, line_index=int(line)-1)
+
+            # is the current line a text line?
+            if 'type' not in current_line or current_line['type'] == 'text':
+                first_line_text_part = current_line['text'][:int(char)]
+                last_line_text_part = current_line['text'][int(char):]
+                paste_into_text_line = True
+                insert_line_add = 1
+            else:
+                insert_line_add = 1
+
+            paste_into_line_index = current_line_index = int(line) - 1
+            remove_first_line_index = None
+            for list_clipboard_line_index, list_clipboard_story_line in enumerate(lines_to_paste):
+
+                current_line_index = paste_into_line_index + list_clipboard_line_index
+
+                # if this is the first line we're pasting
+                # and if we pasted into a text line and what we're pasting is also a text line
+                if list_clipboard_line_index == 0 \
+                    and paste_into_text_line and list_clipboard_story_line['type'] == 'text':
+
+                    # add the first part of the current line to the pasted line
+                    list_clipboard_story_line['text'] = first_line_text_part + list_clipboard_story_line['text']
+
+                    # we need to remove the first line only after the entire process is finished
+                    # to avoid messing up the line indexes count in this loop
+                    remove_first_line_index = current_line_index
+
+                # if this is the last line we're pasting
+                # and if we pasted into a text line and what we're pasting is also a text line
+                elif list_clipboard_line_index == len(lines_to_paste) - 1 \
+                    and paste_into_text_line and list_clipboard_story_line['type'] == 'text':
+
+                    # add the last part of the current line to the pasted line
+                    list_clipboard_story_line['text'] = list_clipboard_story_line['text'] + last_line_text_part
+
+                    # reset the last_line_text_part
+                    last_line_text_part = ''
+
+                # add the line to the story lines list
+                cls.add_line(line_index=current_line_index, line_data=list_clipboard_story_line,
+                             toolkit_UI_obj=toolkit_UI_obj, window=window)
+
+            # if we still have a last_line_text_part after pasting, we need to add it to the next line
+            if last_line_text_part != '':
+                current_line_index += 1
+
+                cls.add_line(line_index=current_line_index, line_data={'text': last_line_text_part, 'type': 'text'},
+                             toolkit_UI_obj=toolkit_UI_obj, window=window)
+
+            # remove the remove_first_line_index if it exists
+            if remove_first_line_index is not None:
+                cls.del_line(window=window, line_index=remove_first_line_index)
+
+            # re-generate the text widget
+            cls.update_text_widget(window_id=window, toolkit_UI_obj=toolkit_UI_obj)
+
+            # go to the line at the end of the pasted text
+            window.text_widget.mark_set('insert', '{}.{}'.format(current_line_index + 1 + insert_line_add, insert_char))
+
+            # see the cursor if it's not in view
+            if not cls.is_line_in_view(window.text_widget, line_no=current_line_index + 1 + insert_line_add):
+                window.text_widget.see('insert')
+
+            # revert the text widget state to whatever it was before
+            window.text_widget.config(state=text_widget_state)
+
+            return 'break'
+
+        @staticmethod
+        def get_line(window, line_index: int):
+            """
+            This gets a line from the story lines list (not from the text widget)
+            :param window: the window object
+            :param line_index: the index of the line to get (0-based, -1 from the text widget line number!)
+            """
+
+            if not hasattr(window, 'story_lines'):
+                logger.error('Cannot get line. No story lines attached to window.')
+                return None
+
+            # make sure the line index is within the story lines range
+            # allow minus values to get the last lines
+            if line_index >= len(window.story_lines) or line_index < -len(window.story_lines):
+                return None
+
+            # get the story line from the window
+            return window.story_lines[line_index]
+
+        @staticmethod
+        def del_line(window, line_index: int) -> dict or None:
+            """
+            This deletes a line from the story lines list and returns the deleted line
+            :param window: the window object
+            :param line_index: the index of the line to delete (0-based, -1 from the text widget line number!)
+            """
+
+            # does the window have a story line list?
+            if not hasattr(window, 'story_lines'):
+                logger.error('Cannot delete line - no story lines list attached to window.')
+                return None
+
+            # make sure the line index is within the story lines range
+            # allow minus values to get the last lines
+            if -len(window.story_lines) < int(line_index) < len(window.story_lines):
+
+                # clear the modified flag
+                window.text_widget.edit_modified(False)
+
+                return window.story_lines.pop(line_index)
+
+        @staticmethod
+        def set_line(window, line_index: int, line_data: dict or str, toolkit_UI_obj):
+            """
+            This sets a line in the story lines list (not in the text widget)
+            :param window: the window object
+            :param line_index: the index of the line to set (0-based, -1 from the text widget line number!)
+            :param line_data: the line data to set (if it's just a string, we'll assume it's the line text)
+            :param toolkit_UI_obj: the toolkit UI object
+            """
+
+            # does the window have a story line list?
+            if not hasattr(window, 'story_lines'):
+                logger.error('Cannot set line. No story lines list attached to window.')
+                return None
+
+            # does the line index exist?
+            if line_index != 0 and line_index >= len(window.story_lines):
+                logger.error('Cannot set line. Line index {} does not exist.'.format(line_index))
+                return None
+
+            # allow the first line to be set even if the story lines list is empty
+            elif line_index == 0 and len(window.story_lines) == 0:
+                window.story_lines.append({'text': ''})
+
+            # if the line data is a string, and the story_line type is text,
+            # only modify the line text
+            if isinstance(line_data, str) \
+                and ('type' not in window.story_lines[line_index] or window.story_lines[line_index]['type'] == 'text'):
+                window.story_lines[line_index]['text'] = line_data
+                window.story_lines[line_index]['type'] = 'text'
+
+            elif isinstance(line_data, str) \
+                    and 'type' in window.story_lines[line_index] \
+                    and window.story_lines[line_index]['type'] != 'text':
+                logger.error('Cannot set non-text line only by text. You must update using the source.')
+                return
+
+            # otherwise, replace the line dict with the new line data
+            else:
+                window.story_lines[line_index] = line_data
+
+            # if the line doesn't contain a type, make it a text line
+            if 'type' not in window.story_lines[line_index]:
+                window.story_lines[line_index]['type'] = 'text'
+
+            # clear the modified flag
+            window.text_widget.edit_modified(False)
+
+        @classmethod
+        def add_line(cls, window, line_index: int, line_data: dict or str, toolkit_UI_obj):
+            """
+            This adds a line to the story lines list (not in the text widget)
+            :param window: the window object
+            :param line_index: the index of the line to add (0-based, -1 from the text widget line number!)
+            :param line_data: the line data to add (if it's just a string, we'll assume it's the line text)
+            :param toolkit_UI_obj: the toolkit UI object
+            """
+
+            # does the window have a story line list?
+            if not hasattr(window, 'story_lines'):
+                logger.error('Cannot set line. No story lines list attached to window.')
+                return None
+
+            # add an empty list element at the line index
+            window.story_lines.insert(line_index+1, {'text': ''})
+
+            # then set the line data
+            cls.set_line(
+               window=window, line_index=line_index+1, line_data=line_data, toolkit_UI_obj=toolkit_UI_obj)
+
+            # clear the modified flag
+            window.text_widget.edit_modified(False)
+
+        @staticmethod
+        def get_current_line_char(text_widget):
+
+            # get the position of the cursor on the text widget
+            line_no, insert_char = text_widget.index(ctk.INSERT).split('.')
+
+            # get the index of the last character of the text widget line where the cursor is
+            _, end_char = text_widget.index("{}.end".format(line_no)).split('.')
+
+            return line_no, insert_char, end_char
+
+        @classmethod
+        def story_editor_context_menu(cls, e, window_id, toolkit_UI_obj):
+
+            window = toolkit_UI_obj.get_window_by_id(window_id)
+
+            # line, char, end_char = cls.get_current_line_char(window.text_widget)
+
+            # get the line and char at click event
+            line, char = window.text_widget.index("@{},{}".format(e.x, e.y)).split('.')
+
+            clicked_story_line = cls.get_line(window=window, line_index=int(line)-1)
+
+            # spawn the context menu
+            context_menu = tk.Menu(window.text_widget, tearoff=0)
+
+            # add the menu items
+
+            # COPY + PASTE
+            if window.text_widget.tag_ranges("sel") or window.clipboard_get():
+                # show COPY if there is a selection
+                if window.text_widget.tag_ranges("sel"):
+                    context_menu.add_command(
+                        label="Copy", command=lambda: window.text_widget.event_generate("<<Copy>>"))
+
+                # show PASTE if there is something in the clipboard
+                if window.clipboard_get():
+                   context_menu.add_command(
+                       label="Paste",
+                       command=lambda: cls.paste_to_story_editor(
+                           window=window, toolkit_UI_obj=toolkit_UI_obj, line=line, char=char)
+                   )
+
+                # add a separator
+                context_menu.add_separator()
+
+            # transcription stuff
+            if 'type' in clicked_story_line and clicked_story_line['type'] == 'transcription_segment'\
+                and 'transcription_file_path' in clicked_story_line:
+
+                # add a separator
+                context_menu.add_separator()
+
+                # open transcription window at segment
+
+                transcription = Transcription(clicked_story_line['transcription_file_path'])
+
+                context_menu.add_command(
+                    label=transcription.name,
+                    state=tk.DISABLED
+                )
+
+                # use timecode if available
+                timecode_data = transcription.get_timecode_data()
+
+                if timecode_data is not False and timecode_data is not [None, None]:
+                    segment_start = transcription.seconds_to_timecode(
+                        seconds=clicked_story_line['source_start'], fps=timecode_data[0], start_tc_offset=timecode_data[1])
+
+                    segment_end = transcription.seconds_to_timecode(
+                        seconds=clicked_story_line['source_end'], fps=timecode_data[0], start_tc_offset=timecode_data[1])
+
+                    segment_info = "{} to {}".format(segment_start, segment_end)
+
+                    if toolkit_UI_obj.stAI.debug_mode:
+                        segment_info = "\n{:.4f} to {:.4f}"\
+                            .format(clicked_story_line['source_start'], clicked_story_line['source_end'])
+
+                else:
+                    segment_start = clicked_story_line['source_start']
+                    segment_end = clicked_story_line['source_end']
+
+                    # add the segment info as a disabled menu item
+                    if toolkit_UI_obj.stAI.debug_mode:
+                        segment_info = "{:.4f} to {:.4f}"\
+                            .format(clicked_story_line['source_start'], clicked_story_line['source_end'])
+                    else:
+                        segment_info = "{:.2f} to {:.2f}".format(segment_start, segment_end)
+
+                # open transcription window at segment
+                context_menu.add_command(
+                    label=segment_info,
+                    command=lambda: toolkit_UI_obj.open_transcription_window(
+                        transcription_file_path=clicked_story_line['transcription_file_path'],
+                        goto_time=clicked_story_line['source_start'],
+                    )
+                )
+
+
+            # display the context menu
+            context_menu.tk_popup(e.x_root, e.y_root)
+
+            return
+        
+        @classmethod
+        def button_export_as_txt(cls, window_id, export_file_path=None, toolkit_UI_obj=None):
+            """
+            Exports the story as a TXT file
+            """
+
+            # get the window story
+            window = toolkit_UI_obj.get_window_by_id(window_id)
+
+            # first make sure that the story is saved
+            # - this should also update the story lines list in the object
+            cls.save_story(window_id=window_id, toolkit_UI_obj=toolkit_UI_obj, sec=0)
+
+            # wait a moment
+            time.sleep(0.1)
+
+            # get the story file path from the window
+            story_file_path = window.story.story_file_path
+
+            # if we still don't have a story file path, return
+            if story_file_path is None:
+                logger.debug('No story file path found.')
+                return False
+
+            # if we don't have a save file path, ask the user for it
+            if export_file_path is None:
+                # ask the user where to save the file
+                export_file_path = filedialog.asksaveasfilename(title='Save as Text',
+                                                                initialdir=os.path.dirname(story_file_path),
+                                                                initialfile=os.path.basename(story_file_path)
+                                                                .replace('.story.json', '.txt'),
+                                                                filetypes=[('TXT files', '*.txt')],
+                                                                defaultextension='.txt')
+
+                # if the user pressed cancel, return
+                if export_file_path is None or export_file_path == '':
+                    logger.debug('User canceled save as TXT.')
+                    return False
+
+            # write the TXT file
+            if window.story.lines is not None \
+                    or window.story.lines != [] \
+                    or len(window.story) > 0:
+
+                # write the TXT file
+                StoryUtils.write_txt(
+                    story_lines=window.story.lines, txt_file_path=export_file_path)
+
+                # notify the user
+                toolkit_UI_obj.notify_via_messagebox(title='Text file export',
+                                                          message='The text file was exported successfully.',
+                                                          type='info'
+                                                          )
+
+                # focus back on the window
+                toolkit_UI_obj.focus_window(window_id)
+
+                return True
+
+            else:
+                # notify the user
+                toolkit_UI_obj.notify_via_messagebox(title='No story data',
+                                                          message='No story data was found.',
+                                                          type='warning'
+                                                          )
+
+                # focus back on the window
+                toolkit_UI_obj.focus_window(window_id)
+
+                return False
+
+        @classmethod
+        def button_export_as_edl(cls, window_id, export_file_path=None, toolkit_UI_obj=None):
+            """
+            Exports the story as a EDL file
+            """
+
+            # get the window story
+            window = toolkit_UI_obj.get_window_by_id(window_id)
+
+            # first make sure that the story is saved
+            # - this should also update the story lines list in the object
+            cls.save_story(window_id=window_id, toolkit_UI_obj=toolkit_UI_obj, sec=0)
+
+            # wait a moment
+            time.sleep(0.1)
+
+            # get the story file path from the window
+            story_file_path = window.story.story_file_path
+
+            # if we still don't have a story file path, return
+            if story_file_path is None:
+                logger.debug('No story file path found.')
+                return False
+
+            # if we don't have a save file path, ask the user for it
+            if export_file_path is None:
+                # ask the user where to save the file
+                export_file_path = filedialog.asksaveasfilename(title='Save as Text',
+                                                                initialdir=os.path.dirname(story_file_path),
+                                                                initialfile=os.path.basename(story_file_path)
+                                                                .replace('.story.json', '.edl'),
+                                                                filetypes=[('EDL files', '*.edl')],
+                                                                defaultextension='.edl')
+
+                # if the user pressed cancel, return
+                if export_file_path is None or export_file_path == '':
+                    logger.debug('User canceled save as EDL.')
+                    return False
+
+            # write the EDL file
+            if window.story.lines is not None \
+                    or window.story.lines != [] \
+                    or len(window.story) > 0:
+
+                # write the EDL file
+                StoryUtils.write_edl(
+                    story_lines=window.story.lines, edl_file_path=export_file_path)
+
+                # notify the user
+                toolkit_UI_obj.notify_via_messagebox(title='EDL file export',
+                                                          message='The EDL file was exported successfully.',
+                                                          type='info'
+                                                          )
+
+                # focus back on the window
+                toolkit_UI_obj.focus_window(window_id)
+
+                return True
+
+            else:
+                # notify the user
+                toolkit_UI_obj.notify_via_messagebox(title='No story data',
+                                                          message='No story data was found.',
+                                                          type='warning'
+                                                          )
+
+                # focus back on the window
+                toolkit_UI_obj.focus_window(window_id)
+
+                return False
+
+    def open_new_story_editor_window(self):
+        """
+        This makes the user choose a file path for the new story and then opens a new story editor window
+        """
+
+        # ask the user where to save the story
+        story_file_path = self.ask_for_save_file(
+            title='New Story',
+            filetypes=[('Story files', '.sts')]
+        )
+
+        # if the user didn't choose a file path, stop
+        if not story_file_path:
+            return False
+
+        # remove the file if it already exists
+        if os.path.exists(story_file_path):
+
+            # just remove it (the OS should have asked for confirmation already)
+            os.remove(story_file_path)
+
+        # and add an empty line to it to make sure that it passes the story file validation
+        story = Story(story_file_path=story_file_path)
+
+        story.add_line({'text': '', 'type': 'text'})
+        story.set('name', os.path.basename(story_file_path).split('.')[0])
+        story.save_soon(backup=False, force=True, sec=0)
+
+        time.sleep(0.1)
+
+        # open the story editor window and return it
+        return self.open_story_editor_window(story_file_path=story_file_path)
+
+    def open_story_editor_window(self, title=None, story_file_path=None):
+
+        if story_file_path is None:
+
+            # ask the user which story file to open
+            story_file_path = filedialog.askopenfilename(
+                initialdir=self.stAI.initial_target_dir,
+                title='Open Story',
+                filetypes=[('Story files', '.sts')]
+            )
+
+            if not story_file_path:
+                return False
+
+            self.stAI.update_initial_target_dir(os.path.dirname(story_file_path))
+
+        story = Story(story_file_path=story_file_path)
+
+        if not story.exists:
+            self.notify_via_messagebox(
+                title='Not found',
+                type='error',
+                message='The story file {} cannot be found.'
+                .format(story.story_file_path)
+            )
+            return False
+
+        if not story.is_story_file:
+            self.notify_via_messagebox(
+                title='Invalid Story file',
+                type='error',
+                message='The file {} is not a valid story file.'
+                .format(story.story_file_path)
+            )
+            return False
+
+        # use the story path id for the window id
+        window_id = "story_editor_{}".format(story_file_path)
+
+        title = title if title else (story.name if story.name else 'Story Editor')
+
+        if self.create_or_open_window(
+                parent_element=self.root, window_id=window_id, title=title, resizable=True,
+                close_action=lambda window_id=window_id: self.destroy_story_editor_window(window_id),
+                type="story_editor", has_menubar=True):
+
+            # get the window
+            window = self.get_window_by_id(window_id)
+
+            # attach the story object to the window
+            window.story = story
+
+            # the story lines list will be used to store the story lines
+            # and we initialize them with whatever is in the story object
+            window.story_lines = story.to_dict().get('lines', [])
+
+            # some attributes we'll use later
+            window.typing = False
+            window.edited = False
+
+            # UI stuff
+
+            # create the left frame
+            window.left_frame = ctk.CTkFrame(window, name='left_frame', **self.ctk_frame_transparent)
+            window.left_frame.grid(row=0, column=0, sticky="ns", **self.ctk_side_frame_button_paddings)
+            window.left_frame.grid_forget()
+
+            # create the middle frame to hold the text element
+            window.middle_frame = ctk.CTkFrame(window, name='middle_frame', **self.ctk_frame_transparent)
+            window.middle_frame.grid(row=0, column=1, sticky="nsew")
+
+            # create a frame for the text element inside the middle frame
+            window.text_form_frame = ctk.CTkFrame(window.middle_frame, name='text_form_frame',
+                                           **self.ctk_frame_transparent)
+            window.text_form_frame.grid(row=0, column=0, sticky="nsew")
+
+            # make the text_form_frame expand to fill the middle_frame
+            window.middle_frame.grid_rowconfigure(0, weight=1)
+            window.middle_frame.grid_columnconfigure(0, weight=1)
+
+            # create the right frame to hold other stuff, like transcript groups etc.
+            window.right_frame = ctk.CTkFrame(window, name='right_frame', **self.ctk_frame_transparent)
+            window.right_frame.grid(row=0, column=2, sticky="ns", **self.ctk_side_frame_button_paddings)
+            window.right_frame.grid_forget()
+
+            # add a footer frame
+            window.footer_frame = ctk.CTkFrame(window, name='footer_frame', **self.ctk_frame_transparent)
+            window.footer_frame.grid(row=1, column=0, columnspan=3, sticky="ew", **self.ctk_frame_paddings)
+
+            # add a minimum size for the frame2 column
+            window.grid_columnconfigure(1, weight=1, minsize=200)
+
+            # Add column and row configuration for resizing
+            window.grid_rowconfigure(0, weight=1)
+
+            # initialize the story text element
+            window.text_widget = tk.Text(window.text_form_frame,
+                               name='story_text',
+                               font=self.transcript_font,
+                               width=45, height=30,
+                               **self.ctk_full_textbox_paddings,
+                               wrap=tk.WORD,
+                               background=self.theme_colors['black'],
+                               foreground=self.theme_colors['normal'],
+                               highlightcolor=self.theme_colors['dark'],
+                               highlightbackground=self.theme_colors['dark'],
+                               )
+
+            # add a scrollbar to the text element
+            text_scrollbar = ctk.CTkScrollbar(window.text_form_frame)
+            text_scrollbar.configure(command=window.text_widget.yview)
+            text_scrollbar.pack(side=ctk.RIGHT, fill=ctk.Y, pady=5)
+
+            # configure the text element to use the scrollbar
+            window.text_widget.config(yscrollcommand=text_scrollbar.set)
+
+            # update the text widget with the story lines
+            toolkit_UI.StoryEdit.update_text_widget(
+                window_id=window, toolkit_UI_obj=self, story_lines=window.story_lines)
+
+            # disable the text widget and set its width to 50 characters
+            window.text_widget.config(state=ctk.DISABLED, width=50)
+
+            # set the top, in-between and bottom text spacing
+            window.text_widget.config(spacing1=0, spacing2=0.2, spacing3=5)
+
+            # then show the text element
+            window.text_widget.pack(anchor='w', expand=True, fill='both', **self.ctk_full_textbox_frame_paddings)
+
+            # add a status label to print out current transcription status
+            window.status_label = ctk.CTkLabel(window.footer_frame, name='status_label',
+                                        text="", anchor='w', **self.ctk_frame_transparent)
+            window.status_label.grid(row=0, column=0, sticky='ew', **self.ctk_footer_status_paddings)
+
+            # bind mouse Click to edit story
+            window.text_widget.bind(
+                "<Button-1>",
+                lambda e: toolkit_UI.StoryEdit.edit_story_text(
+                    window_id=window_id, toolkit_UI_obj=self)
+            )
+
+            # bind CMD/CTRL + e to edit story
+            window.bind(
+                "<" + self.ctrl_cmd_bind + "-e>",
+                lambda e: toolkit_UI.StoryEdit.edit_story_text(
+                    window_id=window_id, toolkit_UI_obj=self)
+            )
+
+            # bind CMD/CTRL + s to save story
+            # this is also binded on the text widget itself
+            window.bind(
+                "<" + self.ctrl_cmd_bind + "-s>",
+                lambda e: toolkit_UI.StoryEdit.save_story(window_id=window_id, toolkit_UI_obj=self, sec=0)
+            )
+
+            # if the user presses CTRL/CMD+F, open the find window
+            window.bind('<' + self.ctrl_cmd_bind + '-f>',
+                                         lambda event:
+                                         self.open_find_replace_window(
+                                             parent_window_id=window_id,
+                                             title="Find in {}".format(title)
+                                         )
+                                         )
+
+            # let's add the .find attribute to the window, so that the UI_menu can use it
+            window.find = lambda: self.open_find_replace_window(
+                parent_window_id=window_id,
+                title="Find in {}".format(title)
+            )
+
+            # add this window to the list of text windows - we need this for the find window
+            self.text_windows[window_id] = {'text_widget': window.text_widget}
+
+            # add right click for context menu
+            window.text_widget.bind(
+                '<Button-3>', lambda e: self.StoryEdit.story_editor_context_menu(
+                    e, window_id=window_id, toolkit_UI_obj=self))
+
+            # make context menu work on mac trackpad too
+            window.text_widget.bind(
+                '<Button-2>', lambda e: self.StoryEdit.story_editor_context_menu(
+                    e, window_id=window_id, toolkit_UI_obj=self))
+
+        return window
+
+    def destroy_story_editor_window(self, window_id):
+        """
+        This function destroys a story editor window
+        :param window_id:
+        :return:
+        """
+
+        # close any find windows
+        if 'find_window_id' in self.text_windows[window_id]:
+            find_window_id = self.text_windows[window_id]['find_window_id']
+
+            # call the default destroy window function to destroy the find window
+            self.destroy_find_replace_window(window_id=find_window_id)
+
+        # clear the text windows dict
+        if window_id in self.text_windows:
+            del self.text_windows[window_id]
+
+        # call the default destroy window function
+        self.destroy_window_(windows_dict=self.windows, window_id=window_id)
 
     # QUEUE WINDOW
 
@@ -11643,6 +13418,9 @@ class toolkit_UI():
                     tag_name = 'clickable_{}'.format(result['idx'])
                     results_text_element.tag_add(tag_name, current_insert_position, tk.INSERT)
 
+                    # add the tag 'has_context_menu' so that the text window doesn't fire its own context menu
+                    results_text_element.tag_add('has_context_menu', current_insert_position, tk.INSERT)
+
                     # add the transcription file path and segment index to the tag
                     # so we can use it to open the transcription window with the transcription file and jump to the segment
                     results_text_element.tag_bind(tag_name, '<Button-1>',
@@ -11667,7 +13445,39 @@ class toolkit_UI():
                                                       add_to_selection=all_lines)
                                                   )
 
-                # if the type is a transcription
+                    # SEARCH RESULT CONTEXT MENU
+                    # add right click for context menu
+                    # results_text_element.tag_bind(tag_name,
+                    #     '<Button-3>', lambda e: self._text_window_context_menu(
+                    #         e, window_id=search_window_id))
+
+                    # results_text_element.bindtags((tag_name, str(results_text_element), "Text", "."))
+
+                    segment_indexes = [int(result_line_no) - 1 for result_line_no in result['all_lines']]
+
+                    results_text_element.tag_bind(
+                        tag_name,
+                        '<Button-3>',
+                        lambda e, result_segment_indexes=segment_indexes[:],
+                               transcription_file_path=result['transcription_file_path']:
+                        self._text_search_result_context_menu(
+                            e, segment_indexes=result_segment_indexes,
+                            transcription_file_path=transcription_file_path
+                        )
+                    )
+
+                    results_text_element.tag_bind(
+                        tag_name,
+                        '<Button-2>',
+                        lambda e, result_segment_indexes=segment_indexes[:],
+                               transcription_file_path=result['transcription_file_path']:
+                        self._text_search_result_context_menu(
+                            e, segment_indexes=result_segment_indexes,
+                            transcription_file_path=transcription_file_path
+                        )
+                    )
+
+                # if the type is text
                 elif result['type'] == 'text':
                     # add the transcription file path and segment index to the result
                     results_text_element.insert(ctk.END, '{}\n'
@@ -11798,6 +13608,110 @@ class toolkit_UI():
         else:
             results_text_element.insert(ctk.END, 'No text results found for {}.\n\n'.format(prompt))
             results_text_element.insert(ctk.END, '--------------------------------------\n\n')
+
+    def _text_search_result_context_menu(self, event, segment_indexes, transcription_file_path):
+
+        # get the text widget from the event
+        text_widget = event.widget
+
+        # get the line and char from the click
+        line, char = self.get_line_char_from_click(event, text_widget=text_widget)
+        line = int(line)
+        char = int(char)
+
+        # spawn the context menu
+        context_menu = tk.Menu(text_widget, tearoff=0)
+
+        # add the menu items
+        # if there is a selection
+        if text_widget.tag_ranges("sel"):
+            context_menu.add_command(label="Copy",
+                                     command=lambda: text_widget.event_generate("<<Copy>>"))
+
+            # add the de-select all option
+            context_menu.add_command(label="Deselect",
+                                     command=lambda: text_widget.tag_remove("sel", "1.0", "end"))
+
+        else:
+            # add the select all option
+            context_menu.add_command(label="Select All",
+                                     command=lambda: text_widget.tag_add("sel", "1.0", "end"))
+
+            # add a separator
+            # context_menu.add_separator()
+
+        # add separator
+        context_menu.add_separator()
+
+        # the add to story sub-menu
+        add_to_story_menu = tk.Menu(context_menu, tearoff=0)
+
+        # the "New Story" button
+        add_to_story_menu.add_command(
+            label="New Story...",
+            command=lambda:
+            self.button_add_text_result_to_new_story(
+                segment_indexes=segment_indexes, transcription_file_path=transcription_file_path)
+        )
+        add_to_story_menu.add_separator()
+
+        story_editor_windows = self.get_all_windows_of_type('story_editor')
+
+        for story_editor_window_id in story_editor_windows:
+            story_editor_window = self.get_window_by_id(window_id=story_editor_window_id)
+
+            add_to_story_menu.add_command(
+                label="{}".format(story_editor_window.title()),
+                command=lambda: self.button_add_text_result_to_story(
+                    segment_indexes=segment_indexes, transcription_file_path=transcription_file_path,
+                    story_editor_window_id=story_editor_window_id)
+            )
+
+        # add the add to story sub-menu
+        context_menu.add_cascade(label="Add to Story", menu=add_to_story_menu)
+
+        # display the context menu
+        context_menu.tk_popup(event.x_root, event.y_root)
+
+    def button_add_text_result_to_new_story(self, segment_indexes, transcription_file_path: str):
+
+        # first open a new story
+        if story_editor_window := self.open_new_story_editor_window():
+            self.button_add_text_result_to_story(segment_indexes, transcription_file_path, story_editor_window.window_id)
+
+    def button_add_text_result_to_story(self, segment_indexes, transcription_file_path: str, story_editor_window_id: str):
+
+        transcription = Transcription(transcription_file_path)
+
+        new_lines = list()
+
+        for segment_index in segment_indexes:
+
+            segment = transcription.get_segment(segment_index=segment_index)
+
+            new_lines.append({
+                'text': segment.text.strip(),
+                'type': 'transcription_segment',
+                'source_start': segment.start if segment.start is not None else 0.0,
+                'source_end': segment.end if segment.end is not None else 0.01,
+                'transcription_file_path': transcription.transcription_file_path,
+                'source_file_path': transcription.audio_file_path,
+                'source_fps': transcription.timeline_fps,
+                'source_start_tc': transcription.timeline_start_tc,
+            })
+
+        if new_lines:
+            story_editor_window = self.get_window_by_id(story_editor_window_id)
+
+            toolkit_UI.StoryEdit.paste_to_story_editor(
+                window=story_editor_window, lines_to_paste=new_lines,
+                toolkit_UI_obj=self)
+
+            # save the story
+            toolkit_UI.StoryEdit.save_story(window_id=story_editor_window, toolkit_UI_obj=self)
+
+        pass
+
 
     @staticmethod
     def cv2_image_to_tkinter(parent, cv2_image):
@@ -12134,21 +14048,20 @@ class toolkit_UI():
             # is the user asking for help?
             if prompt.lower() == '[help]':
 
-                help_reply = "StoryToolkitAI Assistant uses gpt-3.5-turbo by default.\n" \
-                             "For that model, you might be billed by OpenAI around $0.002 for every 1000 tokens. " \
-                             "See openai https://openai.com/pricing for more info. \n\n" \
-                             "Every time you ask something, the OpenAI will receive the entire conversation. " \
-                             "The longer the conversation, the more tokens you are using on each request.\n" \
-                             "Use [usage] to keep track of your usage in this Assistant window.\n\n" \
-                             "Use [calc] to get the minimum number of tokens you're sending with each request.\n\n" \
-                             "Use [reset] to reset the conversation, while preserving any contexts. " \
-                             "This will make the Assistant forget the entire conversation," \
-                             "but also reduce the tokens you're sending to OpenAI.\n" \
-                             "Use [resetall] to reset the conversation and any context. " \
-                             "But also reduce the amount of information you're sending on each request.\n\n" \
-                             "Use [context] to see the context text.\n\n" \
-                             "Use [exit] to exit the Assistant.\n\n" \
-                             "Now, just ask something..."
+                help_reply = "You are using OpenAI {}.\n".format(assistant_item.model_name)
+                help_reply += "See openai https://openai.com/pricing for more info and the actual model pricing. \n\n" \
+                              "Every time you ask something, the OpenAI will receive the entire conversation. " \
+                              "The longer the conversation, the more tokens you are using on each request.\n" \
+                              "Use [usage] to keep track of your usage in this Assistant window.\n\n" \
+                              "Use [calc] to get the minimum number of tokens you're sending with each request.\n\n" \
+                              "Use [reset] to reset the conversation, while preserving any contexts. " \
+                              "This will make the Assistant forget the entire conversation," \
+                              "but also reduce the tokens you're sending to OpenAI.\n" \
+                              "Use [resetall] to reset the conversation and any context. " \
+                              "But also reduce the amount of information you're sending on each request.\n\n" \
+                              "Use [context] to see the context text.\n\n" \
+                              "Use [exit] to exit the Assistant.\n\n" \
+                              "Now, just ask something..."
 
                 # use this to make sure we have a new prompt prefix for the next search
                 self._text_window_update(assistant_window_id, help_reply)
@@ -12161,17 +14074,22 @@ class toolkit_UI():
                     num_tokens = assistant_item.calculate_history()
                     calc_reply = "The stored conversation, including context totals cca. {} tokens.\n".format(
                         num_tokens)
-                    calc_reply += "That's probably ${:.6f}\n" \
-                                  "(might not be accurate, check OpenAI pricing)\n" \
-                        .format(num_tokens * assistant_item.price / 1000)
+
+                    if assistant_item.model_name == 'gpt-3.5-turbo':
+                        calc_reply += "That's probably ${:.6f}\n" \
+                                      "(might not be accurate, check OpenAI pricing)\n" \
+                            .format(num_tokens * assistant_item.price / 1000)
+
                     calc_reply += "This is the minimum amount of tokens you send on each request, " \
                                   "plus your message, unless you reset."
                     self._text_window_update(assistant_window_id, calc_reply)
 
                 usage_reply = "You have used {} tokens in this Assistant window.\n".format(assistant_item.usage)
-                usage_reply += "That's probably ${:.6f}\n" \
-                               "(might not be accurate, check OpenAI pricing)" \
-                    .format(assistant_item.usage * assistant_item.price / 1000)
+
+                if assistant_item.model_name == 'gpt-3.5-turbo':
+                    usage_reply += "That's probably ${:.6f}\n" \
+                                   "(might not be accurate, check OpenAI pricing)" \
+                        .format(assistant_item.usage * assistant_item.price / 1000)
                 self._text_window_update(assistant_window_id, usage_reply)
                 return
 

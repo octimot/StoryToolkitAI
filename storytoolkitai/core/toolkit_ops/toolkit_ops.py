@@ -21,6 +21,7 @@ from storytoolkitai.core.logger import logger
 
 from storytoolkitai.integrations.mots_resolve import MotsResolve
 from .transcription import Transcription, TranscriptionSegment, TranscriptionUtils
+from .story import Story, StoryLine, StoryUtils
 from .processing_queue import ProcessingQueue
 from .search import ToolkitSearch, SearchItem, TextSearch, VideoSearch, cv2
 from .assistant import ToolkitAssistant, AssistantGPT
@@ -372,9 +373,19 @@ class ToolkitOps:
         # if there are valid source file paths, add each of them to the queue
         for source_file_path in valid_source_file_paths:
 
-            # check if there are audio and video streams in the file
+            logger.debug('Reading {} to add to the queue.'.format(source_file_path))
+
+            # check if there are audio streams in the file
             has_audio = MediaItem.has_audio(source_file_path)
+
+            logger.debug('File {} {} a valid audio stream.'
+                         .format(source_file_path, 'has' if has_audio else 'does not have'))
+
+            # check if there are valid video streams in the file
             has_video = MediaItem.has_video(source_file_path)
+
+            logger.debug('File {} {} a valid video stream.'
+                         .format(source_file_path, 'has' if has_video else 'does not have'))
 
             # these two will hold all the queue ids of created for this file
             transcription_queue_ids = []
