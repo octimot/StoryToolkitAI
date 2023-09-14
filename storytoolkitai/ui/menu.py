@@ -858,7 +858,7 @@ class UImenus:
 
         # if we're on Windows, open the user data dir in Explorer
         elif platform.system() == 'Windows':
-            subprocess.call(['explorer', self.stAI.initial_target_dir])
+            subprocess.call(['explorer', os.path.normpath(self.stAI.initial_target_dir)])
 
         # if we're on Linux, open the user data dir in the file manager
         elif platform.system() == 'Linux':

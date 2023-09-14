@@ -82,7 +82,7 @@ class StoryToolkitAI:
 
         # keep track of the initial_target_dir for this session
         # this is the directory that the user has last used in the file dialogs
-        self.initial_target_dir = initial_target_dir
+        self.initial_target_dir = self.get_app_setting('last_target_dir', initial_target_dir)
 
         # check if a new version of the app exists on GitHub
         # but use either the release version number or version.py,
@@ -138,6 +138,15 @@ class StoryToolkitAI:
 
         # otherwise return the value
         return self.statistics[key]
+
+    def update_initial_target_dir(self, new_target_dir=None):
+
+        if new_target_dir != self.initial_target_dir:
+
+            self.initial_target_dir = new_target_dir
+            self.save_config('last_target_dir', self.initial_target_dir)
+
+        return self.initial_target_dir
 
     def user_data_dir_exists(self, create_if_not=True):
         '''

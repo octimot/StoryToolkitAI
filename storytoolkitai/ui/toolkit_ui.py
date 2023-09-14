@@ -10818,7 +10818,7 @@ class toolkit_UI():
                 # update the last selected dir
                 if selected_file_path:
                     search_file_paths = selected_file_path
-                    self.stAI.initial_target_dir = selected_file_path
+                    self.stAI.update_initial_target_dir(selected_file_path)
 
             else:
                 # ask the user to select the searchable files to use in the search corpus
@@ -10844,8 +10844,7 @@ class toolkit_UI():
                         search_paths=selected_file_path,
                         file_validator=validate_either
                     )
-
-                    self.stAI.initial_target_dir = os.path.dirname(selected_file_path[0])
+                    self.stAI.update_initial_target_dir(os.path.dirname(selected_file_path[0]))
 
             # if resolve is connected, save the last target dir
             if NLE.is_connected() and search_file_paths \
@@ -12301,7 +12300,7 @@ class toolkit_UI():
         # if an initial target dir was passed
         if target_dir is not None:
             # assign it as the initial_target_dir
-            self.stAI.initial_target_dir = target_dir
+            self.stAI.update_initial_target_dir(target_dir)
 
         # put the UI on top
         # self.root.wm_attributes('-topmost', True)
@@ -12318,11 +12317,11 @@ class toolkit_UI():
 
         # remember which directory the user selected for next time
         if isinstance(target_dir, str):
-            self.stAI.initial_target_dir = target_dir
+            self.stAI.update_initial_target_dir(target_dir)
 
         # use the first directory in the tuple
         elif isinstance(target_dir, tuple):
-            self.stAI.initial_target_dir = target_dir[0]
+            self.stAI.update_initial_target_dir(target_dir[0])
 
         return target_dir
 
@@ -12390,7 +12389,7 @@ class toolkit_UI():
         # if an initial target_dir was passed
         if target_dir is not None:
             # assign it as the initial_target_dir
-            self.stAI.initial_target_dir = target_dir
+            self.stAI.update_initial_target_dir(target_dir)
 
         # put the UI on top
         # self.root.wm_attributes('-topmost', True)
@@ -12409,7 +12408,8 @@ class toolkit_UI():
             return False
 
         # remember what the user selected for next time
-        self.stAI.initial_target_dir = os.path.dirname(target_file if isinstance(target_file, str) else target_file[0])
+        self.stAI.update_initial_target_dir(
+            os.path.dirname(target_file if isinstance(target_file, str) else target_file[0]))
 
         return target_file
 
@@ -12418,14 +12418,17 @@ class toolkit_UI():
         # if an initial target_dir was passed
         if target_dir is not None:
             # assign it as the initial_target_dir
-            self.stAI.initial_target_dir = target_dir
+            self.stAI.update_initial_target_dir(target_dir)
 
         # put the UI on top
         # self.root.wm_attributes('-topmost', True)
         self.root.lift()
 
+        if 'title' not in kwargs:
+            kwargs['title'] = "Save file.."
+
         # ask the user via os dialog which file to use
-        target_file = filedialog.asksaveasfilename(title="Save file..", initialdir=self.stAI.initial_target_dir,
+        target_file = filedialog.asksaveasfilename(initialdir=self.stAI.initial_target_dir,
                                                    **kwargs)
 
         # what happens if the user cancels
@@ -12433,7 +12436,7 @@ class toolkit_UI():
             return False
 
         # remember what the user selected for next time
-        self.stAI.initial_target_dir = os.path.dirname(target_file)
+        self.stAI.update_initial_target_dir(os.path.dirname(target_file))
 
         return target_file
 
