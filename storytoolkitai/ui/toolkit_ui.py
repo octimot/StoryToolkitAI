@@ -10745,8 +10745,8 @@ class toolkit_UI():
                 toolkit_UI_obj.update_window_status_label(
                     window_id=window_id, text='Story unchanged.', color='normal')
 
-        @staticmethod
-        def update_text_widget(window_id: str or object, toolkit_UI_obj, story_lines=None):
+        @classmethod
+        def update_text_widget(cls, window_id: str or object, toolkit_UI_obj, story_lines=None):
 
             # assume that we're getting the window object if the window_id is not a string
             window = toolkit_UI_obj.get_window_by_id(window_id) if isinstance(window_id, str) else window_id
@@ -10763,6 +10763,9 @@ class toolkit_UI():
             text_widget_state = window.text_widget.cget('state')
 
             window.text_widget.config(state=ctk.NORMAL)
+
+            # remember the scroll position
+            text_widget_scroll_position = window.text_widget.yview()[0]
 
             # clear the text widget
             window.text_widget.delete('1.0', 'end')
@@ -10796,6 +10799,10 @@ class toolkit_UI():
 
             # restore the text widget state
             window.text_widget.config(state=text_widget_state)
+
+            # restore the scroll position
+            # - this is not 100% precise but better than any other solution...
+            window.text_widget.yview_moveto(text_widget_scroll_position)
 
             return True
 
@@ -11101,6 +11108,9 @@ class toolkit_UI():
 
                 # take the cursor to the beginning of the first line
                 window.text_widget.mark_set('insert', '{}.{}'.format(start_line, insert_cursor_char))
+
+                if not cls.is_line_in_view(window.text_widget, line_no=int(start_line)):
+                    window.text_widget.see('insert')
 
                 return 'break'
 
@@ -11442,19 +11452,19 @@ class toolkit_UI():
 
         @staticmethod
         def lines_in_view(text_widget):
+            # yview returns a tuple (start, end)
+            start, end = text_widget.yview()
 
-            # use '1.0' represents the position of the first char in Text widgets
-            # which is line 1, character 0
-            top = text_widget.index('1.0')
+            # get the total number of lines
+            total_lines = int(text_widget.index('end').split('.')[0])
 
-            # yview returns a tuple (start, end) which represents the fraction of the
-            # text that is currently visible. Multiply the 'end' value by the total number
-            # of lines to get the bottom line number
-            bottom = text_widget.index('@0,%d' % int(text_widget['height']))
+            # calculate line numbers from start and end using total_lines
+            top_line = int(round(start * total_lines)) + 1
 
-            # split by '.' and get line numbers
-            top_line = int(top.split('.')[0])
-            bottom_line = int(bottom.split('.')[0])
+            # end * total_lines could be in between a line (a float number). We
+            # use math.ceil to always round up to the nearest integer to make sure
+            # the last visible line is included.
+            bottom_line = int(end * total_lines)
 
             return top_line, bottom_line
 
