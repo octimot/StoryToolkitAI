@@ -4,8 +4,9 @@ import whisper
 
 import argparse
 import os
+import traceback
 import warnings
-from typing import TYPE_CHECKING, Optional, Tuple, Union, List
+from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -21,7 +22,7 @@ from whisper.audio import (
     pad_or_trim,
     load_audio,
 )
-from whisper.decoding import DecodingOptions, DecodingResult, decode, detect_language
+from whisper.decoding import DecodingOptions, DecodingResult
 from whisper.timing import add_word_timestamps
 from whisper.tokenizer import LANGUAGES, TO_LANGUAGE_CODE, get_tokenizer
 from whisper.utils import (
@@ -47,6 +48,8 @@ AUDIO_SAMPLES_PER_TOKEN = HOP_LENGTH * 2
 # define the audio time per token (most likely 0.02)
 AUDIO_TIME_PER_TOKEN = AUDIO_SAMPLES_PER_TOKEN / SAMPLE_RATE
 
+if TYPE_CHECKING:
+    from whisper.model import Whisper
 
 #from dtw import dtw
 #import string
@@ -168,7 +171,7 @@ def transcribe(
         decode_options["fp16"] = False
 
     # Pad 30-seconds of silence to the input audio, for slicing
-    mel = log_mel_spectrogram(audio, padding=N_SAMPLES)
+    mel = log_mel_spectrogram(audio, model.dims.n_mels, padding=N_SAMPLES)
     content_frames = mel.shape[-1] - N_FRAMES
 
     if decode_options.get("language", None) is None:
@@ -185,7 +188,12 @@ def transcribe(
 
     language: str = decode_options["language"]
     task: str = decode_options.get("task", "transcribe")
-    tokenizer = get_tokenizer(model.is_multilingual, language=language, task=task)
+    tokenizer = get_tokenizer(
+        model.is_multilingual,
+        num_languages=model.num_languages,
+        language=language,
+        task=task,
+    )
 
     if word_timestamps and task == "translate":
         logger.warning("Word-level timestamps on translations may not be reliable.")
@@ -220,7 +228,11 @@ def transcribe(
                 and decode_result.avg_logprob < logprob_threshold
             ):
                 needs_fallback = True  # average log probability is too low
-
+            if (
+                no_speech_threshold is not None
+                and decode_result.no_speech_prob > no_speech_threshold
+            ):
+                needs_fallback = False  # silence
             if not needs_fallback:
                 break
 
@@ -292,8 +304,8 @@ def transcribe(
                 # no voice activity check
                 should_skip = result.no_speech_prob > no_speech_threshold
                 if (
-                        logprob_threshold is not None
-                        and result.avg_logprob > logprob_threshold
+                    logprob_threshold is not None
+                    and result.avg_logprob > logprob_threshold
                 ):
                     # don't skip if the logprob is high enough, despite the no_speech_prob
                     should_skip = False
@@ -320,10 +332,10 @@ def transcribe(
                 for current_slice in slices:
                     sliced_tokens = tokens[last_slice:current_slice]
                     start_timestamp_pos = (
-                            sliced_tokens[0].item() - tokenizer.timestamp_begin
+                        sliced_tokens[0].item() - tokenizer.timestamp_begin
                     )
                     end_timestamp_pos = (
-                            sliced_tokens[-1].item() - tokenizer.timestamp_begin
+                        sliced_tokens[-1].item() - tokenizer.timestamp_begin
                     )
                     current_segments.append(
                         new_segment(
@@ -341,19 +353,19 @@ def transcribe(
                 else:
                     # otherwise, ignore the unfinished segment and seek to the last timestamp
                     last_timestamp_pos = (
-                            tokens[last_slice - 1].item() - tokenizer.timestamp_begin
+                        tokens[last_slice - 1].item() - tokenizer.timestamp_begin
                     )
                     seek += last_timestamp_pos * input_stride
             else:
                 duration = segment_duration
                 timestamps = tokens[timestamp_tokens.nonzero().flatten()]
                 if (
-                        len(timestamps) > 0
-                        and timestamps[-1].item() != tokenizer.timestamp_begin
+                    len(timestamps) > 0
+                    and timestamps[-1].item() != tokenizer.timestamp_begin
                 ):
                     # no consecutive timestamps but it has a timestamp; use the last one.
                     last_timestamp_pos = (
-                            timestamps[-1].item() - tokenizer.timestamp_begin
+                        timestamps[-1].item() - tokenizer.timestamp_begin
                     )
                     duration = last_timestamp_pos * time_precision
 
@@ -417,8 +429,8 @@ def transcribe(
                 [
                     {"id": i, **segment}
                     for i, segment in enumerate(
-                    current_segments, start=len(all_segments)
-                )
+                        current_segments, start=len(all_segments)
+                    )
                 ]
             )
             all_tokens.extend(
@@ -448,9 +460,9 @@ def transcribe(
                                                                    save_to_file=False, progress=progress)
 
     return dict(
-        text=tokenizer.decode(all_tokens[len(initial_prompt_tokens):]),
+        text=tokenizer.decode(all_tokens[len(initial_prompt_tokens) :]),
         segments=all_segments,
-        language=language
+        language=language,
     )
 
 

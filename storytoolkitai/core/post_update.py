@@ -1,3 +1,5 @@
+import os.path
+
 from storytoolkitai.core.logger import logger
 import packaging
 
@@ -40,7 +42,7 @@ def post_update(current_version, last_version, is_standalone=False):
     return True
 
 
-def post_update_0_19_4(is_standalone=False):
+def post_update_0_19_6(is_standalone=False):
 
     # not needed if we are running in standalone mode
     if is_standalone:
@@ -53,6 +55,7 @@ def post_update_0_19_4(is_standalone=False):
     try:
         # uninstall openai-whisper package so we can re-install it and make sure we have the correct commit
         subprocess.check_call([sys.executable, '-m', 'pip', 'uninstall', '-y', 'openai-whisper'])
+        logger.info('Uninstalled openai-whisper package to re-install relevant version on restart.')
 
     except Exception as e:
         logger.error('Failed to uninstall openai-whisper package: {}'.format(e))
@@ -60,21 +63,17 @@ def post_update_0_19_4(is_standalone=False):
 
         return False
 
-    # install requirements.txt
-    try:
-        # don't use cache dir
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt', '--no-cache-dir'])
-    except Exception as e:
-        logger.error('Failed to install requirements.txt: {}'.format(e))
-        logger.warning('Please install the requirements.txt manually.')
-
-        return False
+    # once this is uninstalled,
+    # the correct openai-whisper package should be
+    # re-installed when the tool restarts and the requirements.txt check is performed
 
     return True
 
 # this is a dictionary of all the post_update functions
 # make sure to keep them in order
+# but remove update functions from the past which uninstall and install requirements.txt
+# (for eg. 0.19.4 was uninstalling openai-whisper and reinstalling requirements.txt)
 post_update_functions = {
-    '0.19.4': post_update_0_19_4
+    '0.19.6': post_update_0_19_6,
 }
 
