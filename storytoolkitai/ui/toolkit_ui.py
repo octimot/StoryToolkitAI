@@ -11893,11 +11893,13 @@ class toolkit_UI():
             # if we don't have a save file path, ask the user for it
             if export_file_path is None:
                 # ask the user where to save the file
-                export_file_path = filedialog.asksaveasfilename(title='Save as Text',
+                export_file_path = filedialog.asksaveasfilename(title='Save Story as Text or Fountain',
                                                                 initialdir=os.path.dirname(story_file_path),
                                                                 initialfile=os.path.basename(story_file_path)
                                                                 .replace('.story.json', '.txt'),
-                                                                filetypes=[('TXT files', '*.txt')],
+                                                                filetypes=[('TXT files', '*.txt'),
+                                                                           ('Fountain files', '*.fountain')
+                                                                           ],
                                                                 defaultextension='.txt')
 
                 # if the user pressed cancel, return
