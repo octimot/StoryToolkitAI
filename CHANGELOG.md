@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.19.6] - 2023-11-29
+
+### Changed
+- Added support for OpenAI Whisper Large_v3 model
+
+### Fixes
+- Fixed a bug that was preventing the tool from indexing single-shot videos
+
 ## [0.19.5] - 2023-08-15
 
 ### Added
