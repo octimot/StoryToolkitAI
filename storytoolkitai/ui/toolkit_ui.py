@@ -6080,6 +6080,12 @@ class toolkit_UI():
                     accelerator="t"
                 )
 
+                context_menu.add_command(
+                    label="Edit",
+                    command=lambda: self.edit_transcript(window_id=window_id),
+                    accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+e"
+                )
+
             # if this is a transcription window enable the relevant menu items
             if NLE.is_connected() and NLE.current_timeline is not None:
 
@@ -8513,10 +8519,15 @@ class toolkit_UI():
             # prevent RETURN key from adding another line break in the text
             return 'break'
 
-        def edit_transcript(self, window_id=None, text=None, status_label=None):
+        def edit_transcript(self, window_id=None):
 
-            if window_id is None or text is None:
+            if window_id is None:
+                logger.error('Unable to edit transcript - no window id or text widget was passed.')
                 return False
+
+            # get the text widget from the window
+            window = self.toolkit_UI_obj.get_window_by_id(window_id=window_id)
+            text = window.text_widget
 
             # get the window transcription
             window_transcription = self.get_window_transcription(window_id=window_id)
@@ -9193,15 +9204,13 @@ class toolkit_UI():
                 # bind ALT/OPT + mouse Click to edit transcript
                 text.bind(
                     "<" + self.alt_bind + "-Button-1>",
-                    lambda e: self.t_edit_obj.edit_transcript(
-                        window_id=t_window_id, text=text, status_label=status_label)
+                    lambda e: self.t_edit_obj.edit_transcript(window_id=t_window_id)
                 )
 
                 # bind CMD/CTRL + e to edit transcript
                 self.windows[t_window_id].bind(
                     "<" + self.ctrl_cmd_bind + "-e>",
-                    lambda e: self.t_edit_obj.edit_transcript(
-                        window_id=t_window_id, text=text, status_label=status_label)
+                    lambda e: self.t_edit_obj.edit_transcript(window_id=t_window_id)
                 )
 
                 # add right click for context menu
@@ -9625,7 +9634,6 @@ class toolkit_UI():
         else:
             transcript_sec = 0
 
-        # todo: test if Resolve to transcript sync works with this new method
         self.set_active_segment_by_time(
             transcript_sec=transcript_sec, window_id=window_id,
             text_widget=update_attr['text'], transcription=transcription, toolkit_UI_obj=self)
