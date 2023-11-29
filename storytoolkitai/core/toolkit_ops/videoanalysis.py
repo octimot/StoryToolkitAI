@@ -1310,7 +1310,8 @@ class ClipIndex:
         scene_start_frame_index = None
 
         # store all the frame indexes where we detected a shot change
-        scene_changes = []
+        # but always add the first frame to the list, since we always start with a shot change...
+        scene_changes = [current_frame_index]
 
         # some statistics
         total_detected = 0
