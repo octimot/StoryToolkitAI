@@ -13536,7 +13536,10 @@ class toolkit_UI():
                             and result.get('timeline_start_tc', None) is not None:
 
                         # convert the marker_index to timecode
-                        timecode = Timecode(result['timeline_fps'], frames=int(result['marker_index']))
+                        timecode = Timecode(
+                            result['timeline_fps'],
+                            frames=int(result['marker_index']) if int(result['marker_index']) != 0 else None
+                        )
 
                         if result['timeline_start_tc'] != '00:00:00:00':
 
