@@ -3526,10 +3526,35 @@ class toolkit_UI():
                 widget_name = widget['name']
 
                 # get the widget label
-                widget_label = widget['label']
+                widget_label = widget.get('label', '')
 
                 # get the widget default value
-                widget_default_value = widget['default_value']
+                widget_default_value = widget.get('default_value', None)
+
+                # don't allow more than X characters per line in the label
+                # - so add a new line after X characters but keep full words
+                label_split = widget.get('label_split', None)
+                if label_split:
+                    words = widget_label.split(' ')
+                    split_lines = []
+                    current_line = ""
+
+                    for word in words:
+                        # If adding the new word exceeds the maximum line length, start a new line.
+                        if len(current_line) + len(word) + (1 if current_line else 0) > label_split:
+                            split_lines.append(current_line)
+                            current_line = word
+                        else:
+                            # Otherwise, append the word to the current line.
+                            if current_line:
+                                current_line += " "
+                            current_line += word
+
+                    # Add the last processed line if it's non-empty
+                    if current_line:
+                        split_lines.append(current_line)
+
+                    widget_label = '\n'.join(split_lines)
 
                 # add the label
                 label = ctk.CTkLabel(input_frame, text=widget_label)
@@ -3558,29 +3583,41 @@ class toolkit_UI():
                     input_value = tk.BooleanVar(input_frame, widget_default_value)
                     input_widget = ctk.CTkCheckBox(input_frame, variable=input_value)
 
+                elif widget['type'] == 'switch':
+                    input_value = tk.BooleanVar(input_frame, widget_default_value)
+                    input_widget = ctk.CTkSwitch(input_frame, variable=input_value, text='')
+
                 # text widget
                 elif widget['type'] == 'text':
                     input_value = tk.StringVar(input_frame, widget_default_value)
                     input_widget = tk.Text(input_frame, height=5, width=30)
                     input_widget.insert(1.0, widget_default_value)
 
-                # if we don't have a valid widget, skip
-                if input_widget is None:
-                    continue
-
-                # if we reached this point, we have a valid widget
-                have_input_widgets = True
+                elif widget['type'] == 'label':
+                    input_value = None
+                    input_widget = None
 
                 # add the widget to the window
-                label.grid(row=row, column=0, sticky='e', **toolkit_UI.ctk_askdialog_input_paddings)
-                input_widget.grid(row=row, column=1, sticky='w', **toolkit_UI.ctk_askdialog_input_paddings)
+                if input_widget:
 
-                # add the widget to the user_input dictionary
-                self.return_value[widget_name] = input_value
+                    label.grid(row=row, column=0, sticky='e', **toolkit_UI.ctk_askdialog_input_paddings)
+                    input_widget.grid(row=row, column=1, sticky='w', **toolkit_UI.ctk_askdialog_input_paddings)
 
-                # focus on the first input widget
-                if row == 1:
-                    input_widget.focus_set()
+                    # add the widget to the user_input dictionary
+                    self.return_value[widget_name] = input_value
+
+                    # focus on the first input widget
+                    if row == 1:
+                        input_widget.focus_set()
+
+                    # if we reached this point, we have a valid widget
+                    have_input_widgets = True
+
+                # if we don't have an input_widget it must mean that we're only adding a label which spans 2 columns
+                # and has the text aligned to the left
+                else:
+                    label.configure(anchor='w', justify='left')
+                    label.grid(row=row, column=0, columnspan=2, sticky='w', **toolkit_UI.ctk_askdialog_input_paddings)
 
             # if we have no input widgets, return
             if not have_input_widgets:
@@ -7588,6 +7625,8 @@ class toolkit_UI():
 
             # create a list of widgets for the input dialogue
             input_widgets = [
+                {'name': 'info', 'label': 'Please enter the timecode info for the transcription {}.'
+                 .format(window_transcription.name), 'label_split': 52, 'type': 'label'},
                 {'name': 'timeline_start_tc', 'label': 'Start Timecode:', 'type': 'entry',
                  'default_value': default_start_tc},
                 {'name': 'timeline_fps', 'label': 'Frame Rate:', 'type': 'entry',
@@ -7623,9 +7662,11 @@ class toolkit_UI():
 
                     # set the new timecode data
                     window_transcription.set_timecode_data(
-                        timeline_fps = user_input['timeline_fps'],
-                        timeline_start_tc = user_input['timeline_start_tc']
+                        timeline_fps=user_input['timeline_fps'],
+                        timeline_start_tc=user_input['timeline_start_tc']
                     )
+
+                    logger.debug('Set timecode data for {}'.format(window_transcription.transcription_file_path))
 
                     # if we reached this point, return the fps and start_tc
                     return user_input['timeline_fps'], user_input['timeline_start_tc']
@@ -11827,7 +11868,7 @@ class toolkit_UI():
                 # use timecode if available
                 timecode_data = transcription.get_timecode_data()
 
-                if timecode_data is not False and timecode_data is not [None, None]:
+                if timecode_data is not False and timecode_data is not (None, None):
                     segment_start = transcription.seconds_to_timecode(
                         seconds=clicked_story_line['source_start'], fps=timecode_data[0], start_tc_offset=timecode_data[1])
 
@@ -11837,7 +11878,7 @@ class toolkit_UI():
                     segment_info = "{} to {}".format(segment_start, segment_end)
 
                     if toolkit_UI_obj.stAI.debug_mode:
-                        segment_info = "\n{:.4f} to {:.4f}"\
+                        segment_info += "\n{:.4f} to {:.4f}"\
                             .format(clicked_story_line['source_start'], clicked_story_line['source_end'])
 
                 else:
@@ -11865,7 +11906,109 @@ class toolkit_UI():
             context_menu.tk_popup(e.x_root, e.y_root)
 
             return
-        
+
+        @classmethod
+        def check_timecode_data(cls, window_id, toolkit_UI_obj, add_timecode_data=False):
+            """
+            This takes each line that has a transcription as a source and updates the timecode data in the story lines.
+            If the transcription doesn't have timecode data, the user will be asked to add it
+            if add_timecode_data is True.
+            """
+
+            # get the window to get the window.story
+            window = toolkit_UI_obj.get_window_by_id(window_id)
+
+            # we're using this list to keep track of the transcriptions we've already asked the user about
+            asked_timecode_data = []
+
+            logger.debug('Checking timecode data for story lines of {}.'.format(window.story.name))
+
+            story_timecodes_changed = False
+
+            # loop through the story lines
+            for line in window.story_lines:
+
+                source_transcription_file_path = line.get('transcription_file_path', None)
+
+                if source_transcription_file_path and source_transcription_file_path in asked_timecode_data:
+                    continue
+
+                if line.get('type', None) != 'transcription_segment' and line.get('type', None) != 'video_segment':
+                    continue
+
+                # open the source transcription for this line
+                source_transcription = Transcription(source_transcription_file_path)
+
+                if not source_transcription:
+                    # notify user
+                    toolkit_UI_obj.notify_via_messagebox(
+                        title='Transcription {} not found'
+                            .format(os.path.basename(source_transcription_file_path)),
+                        message="Transcription {} not found.\n"
+                                "We need access to the transcription file to retrieve the timecode data."
+                            .format(os.path.basename(source_transcription_file_path)),
+                        message_log="Unable to check timecode data - transcription not found: {} "
+                            .format(source_transcription_file_path),
+                        parent=window,
+                        type='warning'
+                    )
+
+                    # don't mention this transcription again
+                    asked_timecode_data.append(source_transcription_file_path)
+
+                    continue
+
+                timecode_data = source_transcription.get_timecode_data()
+
+                # if the transcription doesn't have timecode data, ask the user to edit it
+                # but only if we're supposed to add_timecode_data
+                if add_timecode_data and (not timecode_data or timecode_data == (None, None)) \
+                        and source_transcription_file_path not in asked_timecode_data:
+
+                    timecode_data = toolkit_UI_obj.t_edit_obj.ask_for_transcription_timecode_data(
+                        window_id=window_id,
+                        transcription=source_transcription,
+                        default_start_tc='01:00:00:00'
+                    )
+
+                    # if the user pressed cancel for this transcription, don't show the message again
+                    if not timecode_data or timecode_data == (None, None):
+
+                        # notify user
+                        toolkit_UI_obj.notify_via_messagebox(
+                            title='Timeline timecode info not available'
+                            .format(os.path.basename(source_transcription_file_path)),
+                            message="Timeline timecode info not available for {}.\n\n"
+                                    "The lines related to this transcription will be skipped on story export "
+                                    "if they don't contain the timecode data."
+                            .format(os.path.basename(source_transcription_file_path)),
+                            message_log="Timecode data not available for: {} "
+                            .format(source_transcription_file_path),
+                            parent=window,
+                            type='warning'
+                        )
+
+                        # don't ask again
+                        asked_timecode_data.append(source_transcription_file_path)
+
+                # if we received useful timecode_data
+                # let's see if we have to update the line timecode data
+                if timecode_data is not None or timecode_data != (None, None):
+
+                    # update the timecode data in the story lines if its different compared to the source
+                    if line.get('source_fps', None) != timecode_data[0] and timecode_data[0] is not None:
+                        story_timecodes_changed = True
+                        line['source_fps'] = timecode_data[0]
+
+                    if line.get('source_start_tc', None) != timecode_data[1] and timecode_data[1] is not None:
+                        story_timecodes_changed = True
+                        line['source_start_tc'] = timecode_data[1]
+
+            if story_timecodes_changed:
+                # save the story function (this will also copy window.story_lines to window.story.lines)
+                cls.save_story(window_id=window_id, toolkit_UI_obj=toolkit_UI_obj, sec=0)
+
+
         @classmethod
         def button_export_as_txt(cls, window_id, export_file_path=None, toolkit_UI_obj=None):
             """
@@ -11963,21 +12106,99 @@ class toolkit_UI():
                 logger.debug('No story file path found.')
                 return False
 
+            # LINES TIMECODE DATA
+            cls.check_timecode_data(window_id, toolkit_UI_obj=toolkit_UI_obj, add_timecode_data=True)
+
+            # EDL EXPORT SETTINGS
+            # create a list of widgets for the input dialogue
+            input_widgets = [
+                {'name': 'edl_name', 'label': 'Name:', 'type': 'entry',
+                 'default_value': window.story.name},
+                {'name': 'edl_start_tc', 'label': 'Start Timecode:', 'type': 'entry',
+                 'default_value': '01:00:00:00'},
+                {'name': 'edl_fps', 'label': 'Frame Rate:', 'type': 'entry',
+                 'default_value': 24},
+                {'name': 'use_timelines', 'label': 'Use Timelines:', 'type': 'switch',
+                 'default_value': False},
+                {'name': 'export_notes', 'label': 'Export Notes:', 'type': 'switch',
+                 'default_value': True}
+            ]
+
+            edl_name = None
+            edl_fps = None
+            edl_start_tc = None
+            use_timelines = None
+
+            # loop this until we get something useful
+            while edl_start_tc is None or edl_fps is None:
+
+                try:
+                    # then we call the ask_dialogue function
+                    user_input = toolkit_UI_obj.AskDialog(title='EDL Export Settings',
+                                                          input_widgets=input_widgets,
+                                                          parent=window,
+                                                          cancel_return=None,
+                                                          toolkit_UI_obj=toolkit_UI_obj
+                                                          ).value()
+
+                    # if the user clicked cancel, stop the loop
+                    if user_input is None:
+                        return False
+                except:
+                    logger.error('Error while asking for timecode data.', exc_info=True)
+                    return False
+
+                # validate the user input
+                try:
+
+                    # try to see if the timecode is valid
+                    start_tc = Timecode(
+                        user_input['edl_fps'],
+                        user_input['edl_start_tc'] if user_input['edl_start_tc'] != '00:00:00:00' else None)
+
+                    # if we reached this point, take the values
+                    edl_name = user_input['edl_name']
+                    edl_fps = user_input['edl_fps']
+                    edl_start_tc = user_input['edl_start_tc']
+                    use_timelines = user_input['use_timelines']
+                    export_notes = user_input['export_notes']
+
+                    # and break from the loop
+                    break
+
+                except:
+
+                    logger.warning('Invalid Timecode or Frame Rate: {} @ {}'
+                                   .format(user_input['edl_start_tc'], user_input['edl_fps']),
+                                   exc_info=True
+                                   )
+
+                    # notify user
+                    toolkit_UI_obj.notify_via_messagebox(title='Timecode or Frame Rate error',
+                                                         message="The Start Timecode or Frame Rate "
+                                                                 "you entered is invalid. Please try again.",
+                                                         message_log="Invalid Timecode or Frame Rate.",
+                                                         parent=window,
+                                                         type='warning')
+
+            # THE SAVE PATH
             # if we don't have a save file path, ask the user for it
             if export_file_path is None:
                 # ask the user where to save the file
-                export_file_path = filedialog.asksaveasfilename(title='Save as Text',
-                                                                initialdir=os.path.dirname(story_file_path),
-                                                                initialfile=os.path.basename(story_file_path)
-                                                                .replace('.story.json', '.edl'),
-                                                                filetypes=[('EDL files', '*.edl')],
-                                                                defaultextension='.edl')
+                export_file_path = filedialog.asksaveasfilename(
+                    title='Save as Text',
+                    initialdir=os.path.dirname(story_file_path),
+                    initialfile= \
+                        edl_name if edl_name else (os.path.basename(story_file_path).replace('.story.json', '.edl')),
+                    filetypes=[('EDL files', '*.edl')],
+                    defaultextension='.edl')
 
                 # if the user pressed cancel, return
                 if export_file_path is None or export_file_path == '':
                     logger.debug('User canceled save as EDL.')
                     return False
 
+            # EXPORTING
             # write the EDL file
             if window.story.lines is not None \
                     or window.story.lines != [] \
@@ -11985,7 +12206,11 @@ class toolkit_UI():
 
                 # write the EDL file
                 StoryUtils.write_edl(
-                    story_lines=window.story.lines, edl_file_path=export_file_path)
+                    story_name=window.story.name if not edl_name else edl_name,
+                    story_lines=window.story.lines,
+                    edl_file_path=export_file_path,
+                    edit_timeline_fps=edl_fps, edit_timeline_start_tc=edl_start_tc,
+                    use_timelines=use_timelines, export_notes=export_notes)
 
                 # notify the user
                 toolkit_UI_obj.notify_via_messagebox(title='EDL file export',

@@ -12,6 +12,7 @@ from threading import Timer
 from timecode import Timecode
 
 from storytoolkitai.core.logger import logger
+from .transcription import Transcription
 
 
 class Story:
@@ -800,7 +801,7 @@ class StoryLine:
         If the line has a parent, it flags it as dirty.
         """
 
-        allowed_attributes = ['text']
+        allowed_attributes = ['text', 'source_fps', 'source_start_tc', 'transcription_file_path', 'source_file_path',]
 
         if key in allowed_attributes:
             setattr(self, '_'+key, value)
@@ -1063,7 +1064,164 @@ class StoryUtils:
                 )
 
     @staticmethod
-    def write_edl(story_lines: list, edl_file_path: str):
+    def prepare_export(
+            story_lines: list, edit_timeline_fps: float = 24,
+            edit_timeline_start_tc=None, use_timelines=None, export_blocks=True, export_notes=True):
+
+        if not story_lines:
+            return
+
+        # make sure we're not passing 0 as a timecode (it's not valid)
+        if edit_timeline_start_tc == '00:00:00:00':
+            edit_timeline_start_tc = None
+
+        edit_timeline_start_tc = Timecode(edit_timeline_fps, start_timecode=edit_timeline_start_tc)
+
+        # the first edit starts at the timeline start timecode
+        edit_start_tc = edit_timeline_start_tc
+
+        # first process each line
+        lines_to_export = []
+        last_file_name = None
+        last_line_end_tc = None
+        files = []
+        for line in story_lines:
+
+            # skip if the line is not a transcription segment or video segment
+            if line.type != 'transcription_segment' and line.type != 'video_segment':
+
+                if line.type == 'text':
+
+                    # check if the trimmed line starts with [[ and ends with ]]
+                    if export_notes and line.text.strip().startswith('[[') and line.text.strip().endswith(']]'):
+
+                        # it means that this is a note line (fountain format)
+                        # so consider it as a marker line
+                        line_start_tc = edit_start_tc
+                        line_end_tc = line_start_tc + 1
+
+                        edit_end_tc = edit_start_tc + 1
+
+                        # append the line to the list
+                        lines_to_export.append({
+                            'start_tc': line_start_tc,
+                            'end_tc': line_end_tc,
+                            'edit_start_tc': edit_start_tc,
+                            'edit_end_tc': edit_end_tc,
+                            'marker': line.text+' |M: Note| D:1'
+                        })
+
+                        continue
+
+                last_file_name = None
+                last_line_end_tc = None
+                continue
+
+            source_fps = line.source_fps if line.source_fps else None
+            source_start_tc = line.source_start_tc \
+                if line.source_start_tc \
+                and line.source_start_tc != '00:00:00:00' else None
+
+            if use_timelines:
+
+                # try to use the transcription timeline name as the file name
+                try:
+                    source_transcription = Transcription(transcription_file_path=line.transcription_file_path)
+
+                    if source_transcription.timeline_name:
+                        file_name = source_transcription.timeline_name
+
+                    else:
+                        logger.warning('Cannot use the timeline name for {} - timeline name not set for transcription.'
+                                    .format(line.transcription_file_path))
+                        file_name = os.path.basename(line.source_file_path)
+
+                except:
+                    logger.warning('Cannot use the timeline name for {} - transcription inaccessible.'
+                                   .format(line.transcription_file_path))
+                    file_name = os.path.basename(line.source_file_path)
+
+            else:
+                file_name = os.path.basename(line.source_file_path)
+
+            if not source_fps or not source_start_tc:
+                line_text = line.text if line.text else ''
+                logger.warning('Skipping line "{}" because timeline_fps or timeline_start_tc are not set.'
+                               .format(' '.join(line_text.split(' ')[:4]) + '...')
+                               )
+                continue
+
+            # initialize the timeline start tc as a Timecode object
+            source_start_tc = Timecode(source_fps, start_timecode=source_start_tc)
+
+            try:
+                line_start_tc = Timecode(framerate=source_fps, start_seconds=line.source_start)
+
+            # if the start timecode is not valid, we set it to 00:00:00:00 by not passing a start_seconds
+            except ValueError:
+                line_start_tc = Timecode(framerate=source_fps)
+
+            try:
+                line_end_tc = Timecode(framerate=source_fps, start_seconds=line.source_end)
+
+            # if the end timecode is not valid, we set it to 00:00:00:00
+            # this would be very weird though, because it means that the line has no duration
+            except ValueError:
+                line_end_tc = Timecode(framerate=source_fps)
+
+            # now add the timeline start tc to the media start tc and end tc
+            line_start_tc = line_start_tc + source_start_tc
+            line_end_tc = line_end_tc + source_start_tc
+
+            # how many frames are between the media start and end?
+            if line_start_tc == '00:00:00:00':
+                line_duration = line_end_tc.frames
+
+            elif line_end_tc == '00:00:00:00':
+                line_duration = 0
+
+            else:
+                line_duration = line_end_tc - line_start_tc
+
+            if line_duration == 0:
+                logger.warning('Skipping line {} because it contains 0 frames.'.format(line.text))
+                continue
+
+            edit_end_tc = edit_start_tc + line_duration
+
+            # if the file name and the start timecode of the line are the same as the last line
+            # we just update the end timecode of the last line to chunk the lines together
+            if export_blocks and last_file_name == file_name and last_line_end_tc == line_start_tc:
+                lines_to_export[-1]['end_tc'] = line_end_tc
+                lines_to_export[-1]['edit_end_tc'] = edit_end_tc
+
+            # otherwise, add the line to the list
+            else:
+                lines_to_export.append({
+                    'start_tc': line_start_tc,
+                    'end_tc': line_end_tc,
+                    'edit_start_tc': edit_start_tc,
+                    'edit_end_tc': edit_end_tc,
+                    'file_name': file_name
+                })
+
+                # add the source file path to the list of files
+                if line.source_file_path and line.source_file_path not in files:
+                    files.append(line.source_file_path)
+
+            # remember the filename and the start timecode of the last line
+            last_file_name = file_name
+            last_line_end_tc = line_end_tc
+
+            # the next edit starts where the previous edit ended
+            edit_start_tc = edit_end_tc
+
+        return lines_to_export, files
+
+    @classmethod
+    def write_edl(cls, story_name: str, story_lines: list, edl_file_path: str,
+                  edit_timeline_fps: float = 24, edit_timeline_start_tc=None, use_timelines=None,
+                  export_blocks=True, export_notes=True):
         """
         Write the story lines to a file in EDL format.
         """
@@ -1080,15 +1238,17 @@ class StoryUtils:
         # * FROM CLIP NAME: C001_08241140_C001.braw
         #
         # Segment 1:
-        # - Video source identified as "AX"
-        # - Type of source is "Video"
-        # - Type of transition is "Cut"
+        # - Video source identified as "AX" - i.e. Auxiliary source
+        # - Type of source is "Video" (V)
+        # - Type of transition is "Cut" (C)
         # - The source clip starts at "11:40:39:07" and ends at "12:04:09:00"
         # - In the edited sequence, it will appear starting at "01:00:00:00" and ending at "01:23:29:17"
         # - The name of the video clip being used is "C001_08241140_C001.braw"
         #
         # Segment 2:
-        # - Audio source identified as "AX"
+        # - Audio source identified as "AX" - i.e. Auxiliary source
+        # - Type of source is "Audio" (A)
+        # - Type of transition is "Cut" (C)
         # - The same details for source start time, end time, and the time frame in the final sequence apply.
         # - The same video clip "C001_08241140_C001.braw" is used for audio as well.
         #
@@ -1100,22 +1260,90 @@ class StoryUtils:
         # - these can also be V2, A2 etc. depending on which track they are on.
         # The "C" stands for "Cut," the type of transition between clips.
 
-        if not story_lines:
-            return
+        lines_to_export, _ = cls.prepare_export(
+                            story_lines=story_lines,
+                            edit_timeline_fps=edit_timeline_fps,
+                            edit_timeline_start_tc=edit_timeline_start_tc,
+                            use_timelines=use_timelines,
+                            export_blocks=export_blocks,
+                            export_notes=export_notes
+                        )
+
+        if not lines_to_export:
+            logger.warning('Aborting. No lines to export.')
+            return None
 
         with open(edl_file_path, "w", encoding="utf-8") as edl_file_path:
-            for line in story_lines:
 
-                if line.type == 'transcription_segment' or line.type == 'video_segment':
+            # first write the header
+            edl_file_path.write("TITLE: {}\n".format(story_name))
 
-                    # todo we need to ask for timeline_fps and timeline_start_tc
-                    #  if they're not set for the transcription
+            # is this drop frame or non-drop frame?
+            if float(edit_timeline_fps) == 29.97 or float(edit_timeline_fps) == 59.94:
+                edl_file_path.write("FCM: DROP FRAME\n\n")
 
-                    print(line.source_file_path)
-                    print(line.source_start)
-                    print(line.source_end)
-                    print(line.to_dict())
+            else:
+                edl_file_path.write("FCM: NON-DROP FRAME\n\n")
 
+            edit_count = 1
+            for line in lines_to_export:
 
-                # if the file ends with .wav, .mp3 or .aac, it's an audio file - so we won't add the video part
+                file_name = line.get('file_name', '')
 
+                # if the file doesn't end with .wav, .mp3 or .aac, it's not just an audio file
+                # - so we add the video portion of the edit too
+                if file_name \
+                    and not file_name.endswith('.wav') \
+                    and not file_name.endswith('.mp3') \
+                    and not file_name.endswith('.aac'):
+
+                    # 001  AX       V     C        00:00:35:17 00:30:16:02 01:00:00:00 01:00:20:09
+                    # * FROM CLIP NAME: C001_08241140_C001.braw
+                    #
+
+                    # write the edit line for the video portion
+                    edl_file_path.write("{:03d}  AX       V     C        {} {} {} {}\n".format(
+                        edit_count,
+                        line['start_tc'],
+                        line['end_tc'],
+                        line['edit_start_tc'],
+                        line['edit_end_tc'],
+                    ))
+
+                    # write the source file name
+                    edl_file_path.write("* FROM CLIP NAME: {}\n\n".format(line['file_name']))
+
+                    edit_count += 1
+
+                if file_name:
+
+                    # 002  AX       A     C        00:00:35:17 00:30:16:02 01:00:00:00 01:00:20:09
+                    # * FROM CLIP NAME: C001_08241140_C001.braw
+
+                    # write the edit line for the audio portion
+                    edl_file_path.write("{:03d}  AX       A     C        {} {} {} {}\n".format(
+                        edit_count,
+                        line['start_tc'],
+                        line['end_tc'],
+                        line['edit_start_tc'],
+                        line['edit_end_tc'],
+                    ))
+
+                    # write the source file name
+                    edl_file_path.write("* FROM CLIP NAME: {}\n\n".format(line['file_name']))
+
+                elif 'marker' in line:
+                    edl_file_path.write("{:03d}  AX       V     C        {} {} {} {}\n".format(
+                        edit_count,
+                        line['start_tc'],
+                        line['end_tc'],
+                        line['edit_start_tc'],
+                        line['edit_end_tc'],
+                    ))
+                    edl_file_path.write(line.get('text', '') + line.get('marker'))
+                    edl_file_path.write('\n\n')
+
+                # increment the edit count
+                edit_count += 1
+
+        return edl_file_path

@@ -192,7 +192,7 @@ class UImenus:
         self.filemenu.add_separator()
 
         self.filemenu.add_command(label='Export story as TXT or Fountain...', state=DISABLED)
-        # self.filemenu.add_command(label='Export story as EDL...', state=DISABLED)
+        self.filemenu.add_command(label='Export story as EDL...', state=DISABLED)
         # self.filemenu.add_command(label='Export story as PDF...', state=DISABLED)
 
         self.filemenu.add_separator()
@@ -261,14 +261,14 @@ class UImenus:
                                           )
 
                 # enable the Export as EDL menu item
-                # self.filemenu.entryconfig('Export story as EDL...', state=DISABLED,
-                #                           command=lambda: self.toolkit_UI_obj.StoryEdit.button_export_as_edl(
-                #                               window_id=self.current_window_id, toolkit_UI_obj=self.toolkit_UI_obj)
-                #                           )
+                self.filemenu.entryconfig('Export story as EDL...', state=NORMAL,
+                                          command=lambda: self.toolkit_UI_obj.StoryEdit.button_export_as_edl(
+                                              window_id=self.current_window_id, toolkit_UI_obj=self.toolkit_UI_obj)
+                                          )
 
             else:
                 self.filemenu.entryconfig('Export story as TXT or Fountain...', state=DISABLED)
-                # self.filemenu.entryconfig('Export story as EDL...', state=DISABLED)
+                self.filemenu.entryconfig('Export story as EDL...', state=DISABLED)
 
         # add a postcommand to the file menu to enable/disable menu items depending on the current window
         self.filemenu.configure(postcommand=toggle_file_menu_items)
