@@ -19,7 +19,7 @@ class MediaItem:
         # the name of the media item is the basename of the path
         self._name = os.path.basename(path)
 
-        self._type = None
+        self._type = self.get_media_type()
 
         self._duration = None
         self._metadata = None
@@ -63,7 +63,20 @@ class MediaItem:
         """
         Returns the duration of the media item.
         """
-        pass
+
+        try:
+            if self._type == 'video':
+                clip = VideoFileClip(self.path)
+                self._duration = clip.duration
+                return clip.duration
+
+            elif self._type == 'audio':
+                clip = AudioFileClip(self.path)
+                self._duration = clip.duration
+                return clip.duration
+        except:
+            logger.error('The duration of the media item could not be determined.', exc_info=True)
+            return None
 
     def get_metadata(self):
         """
@@ -104,6 +117,26 @@ class MediaItem:
             video_present = False
 
         return video_present
+
+    def get_media_type(self):
+        """
+        Returns the media type of the file depending on the file path.
+        """
+
+        if self.path is None:
+            logger.error('The file path is not specified.')
+            return
+
+        if (self.path.endswith('.mp4') or self.path.endswith('.mov') or self.path.endswith('.avi')
+                or self.path.endswith('.mkv') or self.path.endswith('.webm') or self.path.endswith('.wmv')
+                or self.path.endswith('.flv') or self.path.endswith('.vob') or self.path.endswith('.ogv')):
+            self._type = 'video'
+            return 'video'
+
+        elif (self.path.endswith('.mp3') or self.path.endswith('.wav') or self.path.endswith('.ogg')
+                or self.path.endswith('.wma') or self.path.endswith('.aac') or self.path.endswith('.flac')):
+            self._type = 'audio'
+            return 'audio'
 
 class AudioItem(MediaItem):
     """

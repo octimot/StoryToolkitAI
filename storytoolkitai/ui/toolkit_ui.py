@@ -90,6 +90,7 @@ class toolkit_UI():
     ctk_popup_frame_paddings = {'padx': 5, 'pady': 5}
     ctk_popup_input_paddings = {'padx': 5}
     ctk_askdialog_input_size = {'width': 200}
+    ctk_askdialog_input_int_size = {'width': 50}
     ctk_askdialog_frame_paddings = {'padx': 10, 'pady': 10}
     ctk_askdialog_input_paddings = {'padx': 10, 'pady': 10}
     ctk_list_paddings = {'padx': 3, 'pady': 3}
@@ -3562,35 +3563,50 @@ class toolkit_UI():
                 input_widget = None
                 input_value = None
 
+                input_widget_parent = input_frame
+                input_unit = None
+
+                # if we have a unit, add it to the input widget
+                # and create a frame that holds them both
+                if 'unit' in widget:
+                    input_unit = widget['unit']
+
+                    value_unit_frame = ctk.CTkFrame(input_frame, **toolkit_UI.ctk_frame_transparent)
+                    input_widget_parent = value_unit_frame
+
                 row = row + 1
 
                 # add the input widget, depending on the type
                 # entry widget
                 if widget['type'] == 'entry':
                     input_value = tk.StringVar(input_frame, widget_default_value)
-                    input_widget = ctk.CTkEntry(input_frame, textvariable=input_value,
+                    input_widget = ctk.CTkEntry(input_widget_parent, textvariable=input_value,
                                                 **toolkit_UI.ctk_askdialog_input_size)
+                elif widget['type'] == 'entry_int':
+                    input_value = tk.IntVar(input_frame, widget_default_value)
+                    input_widget = ctk.CTkEntry(input_widget_parent, textvariable=input_value,
+                                                **toolkit_UI.ctk_askdialog_input_int_size)
 
                 # selection widget
                 elif widget['type'] == 'option_menu' and 'options' in widget:
                     input_value = tk.StringVar(input_frame, widget_default_value)
-                    input_widget = ctk.CTkOptionMenu(input_frame, variable=input_value, values=widget['options'],
+                    input_widget = ctk.CTkOptionMenu(input_widget_parent, variable=input_value, values=widget['options'],
                                                      **toolkit_UI.ctk_askdialog_input_size)
                     # input_widget.configure(takefocus=True)
 
                 # checkbox widget
                 elif widget['type'] == 'checkbutton':
                     input_value = tk.BooleanVar(input_frame, widget_default_value)
-                    input_widget = ctk.CTkCheckBox(input_frame, variable=input_value)
+                    input_widget = ctk.CTkCheckBox(input_widget_parent, variable=input_value)
 
                 elif widget['type'] == 'switch':
                     input_value = tk.BooleanVar(input_frame, widget_default_value)
-                    input_widget = ctk.CTkSwitch(input_frame, variable=input_value, text='')
+                    input_widget = ctk.CTkSwitch(input_widget_parent, variable=input_value, text='')
 
                 # text widget
                 elif widget['type'] == 'text':
                     input_value = tk.StringVar(input_frame, widget_default_value)
-                    input_widget = tk.Text(input_frame, height=5, width=30)
+                    input_widget = tk.Text(input_widget_parent, height=5, width=30)
                     input_widget.insert(1.0, widget_default_value)
 
                 elif widget['type'] == 'label':
@@ -3601,7 +3617,19 @@ class toolkit_UI():
                 if input_widget:
 
                     label.grid(row=row, column=0, sticky='e', **toolkit_UI.ctk_askdialog_input_paddings)
-                    input_widget.grid(row=row, column=1, sticky='w', **toolkit_UI.ctk_askdialog_input_paddings)
+
+                    # if we don't have a unit label, add the widget to the input frame
+                    if not input_unit:
+                        input_widget.grid(row=row, column=1, sticky='w', **toolkit_UI.ctk_askdialog_input_paddings)
+
+                    # otherwise, add the widget to the value_unit_frame
+                    else:
+                        # add the unit label
+                        unit_label = ctk.CTkLabel(input_widget_parent, text=input_unit)
+                        input_widget.grid(row=0, column=1, sticky='w', **toolkit_UI.ctk_askdialog_input_paddings)
+                        unit_label.grid(row=0, column=2, sticky='w', **toolkit_UI.ctk_askdialog_input_paddings)
+
+                        input_widget_parent.grid(row=row, column=1, sticky='w')
 
                     # add the widget to the user_input dictionary
                     self.return_value[widget_name] = input_value
@@ -11908,7 +11936,7 @@ class toolkit_UI():
             return
 
         @classmethod
-        def check_timecode_data(cls, window_id, toolkit_UI_obj, add_timecode_data=False):
+        def check_timecode_data(cls, window_id, toolkit_UI_obj, add_timecode_data=False, lookup_source_media=False):
             """
             This takes each line that has a transcription as a source and updates the timecode data in the story lines.
             If the transcription doesn't have timecode data, the user will be asked to add it
@@ -11924,6 +11952,8 @@ class toolkit_UI():
             logger.debug('Checking timecode data for story lines of {}.'.format(window.story.name))
 
             story_timecodes_changed = False
+
+            not_found_source_media = []
 
             # loop through the story lines
             for line in window.story_lines:
@@ -12004,15 +12034,50 @@ class toolkit_UI():
                         story_timecodes_changed = True
                         line['source_start_tc'] = timecode_data[1]
 
+                if lookup_source_media and source_transcription.audio_file_path not in not_found_source_media:
+
+                    if not source_transcription.audio_file_path:
+
+                        # notify user
+                        toolkit_UI_obj.notify_via_messagebox(
+                            title='Source media unknown',
+                            message="Source media not known for transcription {}.\n\n"
+                                    "Some export features might not work correctly without "
+                                    "knowing the source media file."
+                            .format(source_transcription.transcription_file_path),
+                            message_log="Source media not found for transcription: {} ",
+                            parent=window,
+                            type='warning'
+                        )
+
+                        not_found_source_media.append(source_transcription_file_path)
+
+                    elif not os.path.isfile(source_transcription.audio_file_path):
+
+                        # notify user
+                        toolkit_UI_obj.notify_via_messagebox(
+                            title='Source media not found',
+                            message="Source media {} not found.\n\n"
+                                    "Some export features might not work correctly without "
+                                    "knowing the source media file.".format(source_transcription.audio_file_path),
+                            message_log="Source media {} not found for transcription {}"
+                                .format(source_transcription.transcription_file_path,
+                                        source_transcription.audio_file_path),
+                            parent=window,
+                            type='warning'
+                        )
+
+                        not_found_source_media.append(source_transcription_file_path)
+
+
             if story_timecodes_changed:
                 # save the story function (this will also copy window.story_lines to window.story.lines)
                 cls.save_story(window_id=window_id, toolkit_UI_obj=toolkit_UI_obj, sec=0)
 
-
         @classmethod
-        def button_export_as_txt(cls, window_id, export_file_path=None, toolkit_UI_obj=None):
+        def button_export_as_text(cls, window_id, export_file_path=None, toolkit_UI_obj=None):
             """
-            Exports the story as a TXT file
+            Exports the story as a text file (.txt or .fountain)
             """
 
             # get the window story
@@ -12083,9 +12148,9 @@ class toolkit_UI():
                 return False
 
         @classmethod
-        def button_export_as_edl(cls, window_id, export_file_path=None, toolkit_UI_obj=None):
+        def prepare_export_as_timeline(cls, window_id, toolkit_UI_obj=None, export_file_path=None):
             """
-            Exports the story as a EDL file
+            Prepares the story for export as timeline (EDL, FCP7XML etc.)
             """
 
             # get the window story
@@ -12107,34 +12172,43 @@ class toolkit_UI():
                 return False
 
             # LINES TIMECODE DATA
-            cls.check_timecode_data(window_id, toolkit_UI_obj=toolkit_UI_obj, add_timecode_data=True)
+            cls.check_timecode_data(
+                window_id,
+                toolkit_UI_obj=toolkit_UI_obj,
+                add_timecode_data=True,
+                lookup_source_media=True
+            )
 
             # EDL EXPORT SETTINGS
             # create a list of widgets for the input dialogue
             input_widgets = [
-                {'name': 'edl_name', 'label': 'Name:', 'type': 'entry',
+                {'name': 'timeline_name', 'label': 'Name:', 'type': 'entry',
                  'default_value': window.story.name},
-                {'name': 'edl_start_tc', 'label': 'Start Timecode:', 'type': 'entry',
+                {'name': 'timeline_start_tc', 'label': 'Start Timecode:', 'type': 'entry',
                  'default_value': '01:00:00:00'},
-                {'name': 'edl_fps', 'label': 'Frame Rate:', 'type': 'entry',
+                {'name': 'timeline_fps', 'label': 'Frame Rate:', 'type': 'entry',
                  'default_value': 24},
                 {'name': 'use_timelines', 'label': 'Use Timelines:', 'type': 'switch',
                  'default_value': False},
                 {'name': 'export_notes', 'label': 'Export Notes:', 'type': 'switch',
-                 'default_value': True}
+                 'default_value': True},
+                {'name': 'join_gaps', 'label': 'Join Gaps Shorter Than:', 'type': 'entry_int',
+                 'default_value': 0, 'unit': 'frames'}
             ]
 
-            edl_name = None
-            edl_fps = None
-            edl_start_tc = None
+            timeline_name = None
+            timeline_fps = None
+            timeline_start_tc = None
             use_timelines = None
+            export_notes = None
+            join_gaps = None
 
             # loop this until we get something useful
-            while edl_start_tc is None or edl_fps is None:
+            while timeline_start_tc is None or timeline_fps is None:
 
                 try:
                     # then we call the ask_dialogue function
-                    user_input = toolkit_UI_obj.AskDialog(title='EDL Export Settings',
+                    user_input = toolkit_UI_obj.AskDialog(title='Timeline Export Settings',
                                                           input_widgets=input_widgets,
                                                           parent=window,
                                                           cancel_return=None,
@@ -12153,15 +12227,16 @@ class toolkit_UI():
 
                     # try to see if the timecode is valid
                     start_tc = Timecode(
-                        user_input['edl_fps'],
-                        user_input['edl_start_tc'] if user_input['edl_start_tc'] != '00:00:00:00' else None)
+                        user_input['timeline_fps'],
+                        user_input['timeline_start_tc'] if user_input['timeline_start_tc'] != '00:00:00:00' else None)
 
                     # if we reached this point, take the values
-                    edl_name = user_input['edl_name']
-                    edl_fps = user_input['edl_fps']
-                    edl_start_tc = user_input['edl_start_tc']
+                    timeline_name = user_input['timeline_name']
+                    timeline_fps = user_input['timeline_fps']
+                    timeline_start_tc = user_input['timeline_start_tc']
                     use_timelines = user_input['use_timelines']
                     export_notes = user_input['export_notes']
+                    join_gaps = user_input['join_gaps']
 
                     # and break from the loop
                     break
@@ -12169,7 +12244,7 @@ class toolkit_UI():
                 except:
 
                     logger.warning('Invalid Timecode or Frame Rate: {} @ {}'
-                                   .format(user_input['edl_start_tc'], user_input['edl_fps']),
+                                   .format(user_input['timeline_start_tc'], user_input['timeline_fps']),
                                    exc_info=True
                                    )
 
@@ -12189,34 +12264,66 @@ class toolkit_UI():
                     title='Save as Text',
                     initialdir=os.path.dirname(story_file_path),
                     initialfile= \
-                        edl_name if edl_name else (os.path.basename(story_file_path).replace('.story.json', '.edl')),
-                    filetypes=[('EDL files', '*.edl')],
-                    defaultextension='.edl')
+                        timeline_name if timeline_name else (
+                            os.path.basename(story_file_path).replace('.story.json', '.edl')),
+                    filetypes=[('EDL files', '*.edl'), ('FCP7 XML files', '*.xml')],
+                    defaultextension='.xml')
 
                 # if the user pressed cancel, return
-                if export_file_path is None or export_file_path == '':
+                if not export_file_path:
                     logger.debug('User canceled save as EDL.')
                     return False
 
+            return timeline_name, timeline_fps, timeline_start_tc, use_timelines, export_notes, export_file_path, join_gaps
+
+        @classmethod
+        def button_export_as_timeline(cls, window_id, export_file_path=None, toolkit_UI_obj=None):
+            """
+            This is a wrapper for the EDL and FCP7XML export functions which decides which one to call
+            depending on the file extension that the user selected
+            """
+
+            timeline_name, timeline_fps, timeline_start_tc, use_timelines, export_notes, export_file_path, join_gaps \
+                = cls.prepare_export_as_timeline(
+                    window_id, toolkit_UI_obj=toolkit_UI_obj, export_file_path=export_file_path)
+
+            # get the extension of the export file path
+            export_file_path_extension = os.path.splitext(export_file_path)[1]
+
+            # get the window story
+            window = toolkit_UI_obj.get_window_by_id(window_id)
+
             # EXPORTING
-            # write the EDL file
+            # write the file
             if window.story.lines is not None \
                     or window.story.lines != [] \
                     or len(window.story) > 0:
 
-                # write the EDL file
-                StoryUtils.write_edl(
-                    story_name=window.story.name if not edl_name else edl_name,
-                    story_lines=window.story.lines,
-                    edl_file_path=export_file_path,
-                    edit_timeline_fps=edl_fps, edit_timeline_start_tc=edl_start_tc,
-                    use_timelines=use_timelines, export_notes=export_notes)
+                # if the extension is .xml, call the FCP7XML export function
+                if export_file_path_extension == '.xml':
+                    export_result = StoryUtils.write_fcp7xml(
+                        story_name=window.story.name if not timeline_name else timeline_name,
+                        story_lines=window.story.lines,
+                        xml_file_path=export_file_path,
+                        edit_timeline_fps=timeline_fps, edit_timeline_start_tc=timeline_start_tc,
+                        use_timelines=use_timelines, export_notes=export_notes, join_gaps=join_gaps)
 
-                # notify the user
-                toolkit_UI_obj.notify_via_messagebox(title='EDL file export',
-                                                          message='The EDL file was exported successfully.',
-                                                          type='info'
-                                                          )
+                # otherwise, call the EDL export function
+                else:
+                    export_result = StoryUtils.write_edl(
+                        story_name=window.story.name if not timeline_name else timeline_name,
+                        story_lines=window.story.lines,
+                        edl_file_path=export_file_path,
+                        edit_timeline_fps=timeline_fps, edit_timeline_start_tc=timeline_start_tc,
+                        use_timelines=use_timelines, export_notes=export_notes, join_gaps=join_gaps)
+
+                if export_result:
+                    # notify the user
+                    toolkit_UI_obj.notify_via_messagebox(title='File export',
+                                                         message="The file {} was exported successfully."
+                                                         .format(os.path.basename(export_file_path)),
+                                                         type='info'
+                                                         )
 
                 # focus back on the window
                 toolkit_UI_obj.focus_window(window_id)
@@ -12226,14 +12333,15 @@ class toolkit_UI():
             else:
                 # notify the user
                 toolkit_UI_obj.notify_via_messagebox(title='No story data',
-                                                          message='No story data was found.',
-                                                          type='warning'
-                                                          )
+                                                     message='No story data was found.',
+                                                     type='warning'
+                                                     )
 
                 # focus back on the window
                 toolkit_UI_obj.focus_window(window_id)
 
                 return False
+
 
     def open_new_story_editor_window(self):
         """

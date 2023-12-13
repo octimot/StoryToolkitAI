@@ -1982,7 +1982,7 @@ class TranscriptionUtils:
     @staticmethod
     def write_txt(transcript_segments: list, txt_file_path: str):
         """
-        Write the transcript segments to a file in SRT format.
+        Write the transcript segments to a file in TXT format.
         Each segment is written on a new line.
         """
 
