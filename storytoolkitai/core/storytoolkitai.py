@@ -106,6 +106,84 @@ class StoryToolkitAI:
         self.story_backup_interval = \
             self.get_app_setting(setting_name='backup_story_saves_every_n_hours', default_if_none=1)
 
+    def update_via_git(self):
+        """
+        This pulls the latest version from GitHub and restarts the app.
+        """
+
+        # pull the latest version from GitHub via git pull
+        try:
+
+            # get the current working directory
+            cwd = os.getcwd()
+
+            # make sure that we're executing the git command in the right directory (../../ from this file)
+            os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
+
+            cwd = os.getcwd()
+            logger.debug('Running git pull in {}'.format(cwd))
+
+            # get the current commit hash
+            current_commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('ascii').strip()
+            logger.debug('Current commit: {}'.format(current_commit_hash))
+
+            # is the tool installed in a valid git repository?
+            try:
+                git_status = subprocess.check_output(['git', 'status']).decode('ascii').strip()
+            except subprocess.CalledProcessError:
+                logger.error('The installation folder does not contain a valid git repository. '
+                             'Unable to update StoryToolkitAI automatically. Please update manually.')
+                return False
+
+            # do we have a remote called origin?
+            added_remote = False
+            try:
+                subprocess.check_output(['git', 'remote', 'get-url', 'origin']).decode('ascii').strip()
+
+            # if we get a non-zero exit code, it most likely means that the remote doesn't exist
+            except subprocess.CalledProcessError:
+
+                origin_remote = 'https://github.com/octimot/StoryToolkitAI.git'
+                added_remote = True
+
+                # let's add the remote
+                logger.debug('Origin remote not found. Adding it.')
+
+                subprocess.check_output(
+                    ['git', 'remote', 'add', 'origin', origin_remote]
+                ).decode('ascii').strip()
+
+                logger.debug('Origin remote {} added.'.format(origin_remote))
+
+            # if the remote exists, make sure it's the right one
+            if not added_remote:
+                subprocess.check_output(
+                    ['git', 'remote', 'set-url', 'origin', 'https://github.com/octimot/StoryToolkitAI.git']
+                ).decode('ascii').strip()
+
+            # pull the latest version from GitHub
+            subprocess.check_output(['git', 'pull', 'origin', 'main']).decode('ascii').strip()
+
+            # get the commit hash after the pull
+            latest_commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('ascii').strip()
+
+            # if the latest commit hash is the same as the current commit hash
+            if latest_commit_hash == current_commit_hash:
+                logger.debug('Post-pull commit {}'.format(latest_commit_hash))
+                logger.debug('No new updates found on {}.'.format('https://github.com/octimot/StoryToolkitAI.git'))
+                return False
+
+            # otherwise, restart the app
+            logger.debug('Updates pulled. Restarting the app.')
+
+            # restart the app
+            self.restart()
+
+        except:
+            logger.error('Could not update StoryToolkitAI. Please update the app manually.')
+            return False
+
+
     def restart(self):
         """
         This attempts to restart the app.
@@ -536,6 +614,7 @@ class StoryToolkitAI:
                     return False
 
             except:
+                logger.debug('Unable to check user token.', exc_info=True)
                 pass
 
         self.api_token_valid = False

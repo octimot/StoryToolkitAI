@@ -8,6 +8,7 @@ import platform
 import subprocess
 import webbrowser
 import sys
+import random
 
 from requests import get
 import time
@@ -1185,7 +1186,12 @@ class toolkit_UI():
         # handling of api token validity
         if not self.stAI.api_token_valid:
 
-            def before_exit(event=None):
+            def show_support_popup(popup_title="One more thing!"):
+
+                # recheck this before we show the popup
+                # - maybe the connection took longer on the previous attempt
+                if self.stAI.api_token_valid:
+                    return
 
                 support_page_url = 'https://storytoolkit.ai/support'
 
@@ -1200,7 +1206,7 @@ class toolkit_UI():
                 except Exception as e:
                     return
 
-                support = messagebox.askyesno("One more thing!",
+                support = messagebox.askyesno(popup_title,
                                               "StoryToolkitAI is completely free and open source.\n\n "
                                               "If you find it useful, "
                                               "we need your help to speed up development. \n\n"
@@ -1208,8 +1214,15 @@ class toolkit_UI():
                 if support:
                     webbrowser.open(support_page_url)
 
+            def before_exit(event=None):
+
+                show_support_popup(popup_title="One more thing!")
+
             # redefine the on exit function
             self.before_exit = before_exit
+
+            if random.randint(0, 50) < 20:
+                self.root.after(random.randint(4000, 7000), show_support_popup, ["Thanks for using StoryToolkitAI!"])
 
         # show the update available message if any
         if self.stAI.update_available and self.stAI.update_available is not None:
@@ -1241,10 +1254,32 @@ class toolkit_UI():
                                'Use git pull to update.\n '
 
                 changelog_instructions = 'Maybe update now before getting back to work?\n' + \
-                                         'Quit the tool and use `git pull` to update.\n\n' \
+                                         'Click Update or quit the tool and use `git pull` to update.\n\n' \
 
-                    # prepare some action buttons for the text window
-                action_buttons = [{'text': 'Quit to update', 'command': lambda: sys.exit()}]
+                # prepare some action buttons for the text window
+                def update_via_git():
+                    """
+                    This calls the update via git function from the stAI object
+                    And triggers an error message if it fails
+                    """
+
+                    # try to update via git
+                    if not self.stAI.update_via_git():
+
+                        # if the update failed, show an error message
+                        self.notify_via_messagebox(
+                            type='error',
+                            title='Unable to update',
+                            message='Something went wrong with the automatic update process.\n\n'
+                                    'Please check logs and try to update manually by running `git pull` '
+                                    'in the installation folder.',
+                            message_log='Unable to update via git',
+                        )
+
+
+
+
+                action_buttons = [{'text': 'Update', 'command': lambda: update_via_git()}]
 
             # read the CHANGELOG.md file from github
             changelog_file = get('https://raw.githubusercontent.com/octimot/StoryToolkitAI/master/CHANGELOG.md')
