@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.20.0] - 2023-12-19
+
+The Story Editor: a new feature that allows you to select text from transcripts and search results within a 
+screenplay-like interface, while retaining the original timecode data and source for reference. 
+
+The Story Editor also supports exporting your selections as timelines in EDL or XML format, which can be used for 
+editing in software like Resolve, Premiere Pro, and Avid Media Composer, or as Fountain screenplays for further
+editing in screenplay applications or for printing.
+
+### Added
+- Story Editor - write screenplays and add text from your transcripts and search results
+- Export Story Editor content as EDL, XML or Fountain for editing in Resolve, Premiere, Final Cut Pro, Avid, etc.
+
+### Changed
+- Removed legacy app.py - the tool can now be started exclusively using storytoolkitai package
+
+### Fixes
+- Fixed a bug that was messing results in the Advanced Search window when one of the results was at frame 0
+
 ## [0.19.6] - 2023-11-29
 
 ### Changed

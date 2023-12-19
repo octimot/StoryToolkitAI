@@ -11,12 +11,13 @@ Resolve Studio 18 and above.
 <img alt="StoryToolkitAI Interface" src="help/storytoolkitai_v0.19.0.png" width="750">
 
 ## Key Features
-- [x] **Full video indexing and search** (v. 0.19.2+ - [How-To](https://www.youtube.com/watch?v=UDwOvBqS1X8))
+- [x] **Full video indexing and search** ([How-To](https://www.youtube.com/watch?v=UDwOvBqS1X8))
 - [x] **Free Automatic Transcriptions** on your local machine
 - [x] **Free Automatic Translation** to English on your local machine
 - [x] **ChatGPT integration** - talk to AI about your content, or generate new ideas
 - [x] **Search Content** intuitively without having to type in exact words
 - [X] **Transcript Groups** - group transcript lines into whatever you need to find them easier
+- [X] **Story Editor** - write screenplays containing your transcripts and export them for editing (EDL/XML/Fountain) (v. 0.20.1+)
 - [X] Automatic Question detection in transcripts
 - [x] Multi-format export of transcripts, including SRT, TXT, AVID DS and as Fusion Text node
 - [X] Import of **existing SRT files** 
@@ -31,7 +32,7 @@ Resolve Studio 18 and above.
 ### Planned Features
 - [ ] **Automatic Topic Classification** to help you discover ideas in your transcripts
 - [ ] **Speaker Diarization** 
-- [ ] **Paper Edit** and **Automatic Selects**
+- [ ] **Automatic Stories and Selections** based on your footage
 - [ ] **Translation** to other languages
 - [ ] Optimized Assistant feature for cost-effective use of ChatGPT
 - [ ] **Integration with other AI tools**

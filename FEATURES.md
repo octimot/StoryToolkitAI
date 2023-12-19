@@ -122,14 +122,14 @@ but since there's no AI involved in this process (yet), the tool might split sen
 When both options are set, the Max. Words per Line is ignored. 
 Only works if Increased Time Precision is enabled.
 
-**Split on Punctuation** (version 0.17.19) splits the transcript lines at the punctuation marks set in the Preferences 
+**Split on Punctuation** splits the transcript lines at the punctuation marks set in the Preferences 
 window - the default punctuation marks are: `. ! ? …`
 This might not always be the best option, for eg. if your text contains many abbreviations (Dr., Mr. etc.),
 but you could still activate it and then manually fix the transcript afterwards. We're looking for ways to improve this 
 using AI. 
 Only works if Increased Time Precision is enabled.
 
-**Prevent Gaps Shorter Than** (version 0.17.19) allows you to specify a minimum duration for the gaps between transcript 
+**Prevent Gaps Shorter Than** allows you to specify a minimum duration for the gaps between transcript 
 segments. If the gap between two segments is shorter than the specified duration, the end time of the previous segment 
 will be extended to the start time of the next segment. This is useful especially if you want to avoid having too many 
 small gaps when using the transcript for subtitles.
@@ -162,7 +162,7 @@ Another important thing to note is that your **audio channels are best left as M
 since the algorithm may ignore one channel or the other, and therefore only give you a partial transcription.
 
 ### Group Questions
-Starting with version 0.18.3, you can click and wait for AI to detect and create a group with all the transcription
+You can click and wait for AI to detect and create a group with all the transcription
 segments that look like questions. This is useful if you want to see all the questions in your transcript, for
 instance if you're transcribing interviews. 
 
@@ -234,7 +234,6 @@ it will not generate any original language transcription together with the trans
 transcribe and translate in two different processes.
 
 ### Opening SRT Files as Transcripts
-(only available in non-standalone version until next release)
 If you click on "Open Transcript" and select an SRT file, the tool will automatically convert it to a transcription
 file and open it in the transcription window. This is useful if you want to use transcripts made by other apps in the
 tool, for eg. to search through them, navigate and mark timelines in Resolve etc.
@@ -375,6 +374,84 @@ You can use the Assistant to:
 
 Also remember to use `[reset]` as often as you can, so that you don't send the whole conversation to the Assistant 
 over and over again, unless you're trying to follow something relevant from the previous messages.
+
+## Story Editor
+
+The Story Editor is essentially a screenplay editor that also allows you to select or collect segments from different 
+transcripts and then export them as EDL or XML so that you can import them into your NLE and start editing.
+
+To select transcript segments:
+- add transcript segments by selecting them in the Transcription Window -> right clicking -> clicking "Add to Story"
+- or, you can add them by right clicking any of the search results in the Advanced Search window and clicking "Add to Story"
+
+We're currently working to implement adding the indexed video segments (and results) to the Story Editor too.
+
+### Using Fountain syntax in the Story Editor
+We recommend using the Fountain syntax for writing your screenplay in the Story Editor. 
+This way, you'll be able to export as a .fountain file and convert it easily into PDF, or even import it into whatever
+screenplay software you're using.
+More details on [fountain.io](https://fountain.io/syntax).
+
+
+### Exporting to EDL or XML
+
+The story editor can export to EDL or Final Cut Pro XML files if you click File -> Export story as EDL or FCP7XML...
+
+#### Export Settings
+**Name** - the name of the EDL/XML timeline/sequence.
+
+**Start Timecode** - the timecode that will be used as the starting point for the EDL/XML.
+
+**Frame Rate** - the frame rate that will be used for the EDL/XML.
+
+**Use Timelines** - if checked, the tool will use the timeline name of the media instead of the source media name 
+in the CLIP NAME field of the EDL. For eg. for Resolve EDL imports, this will make Resolve use Timelines (Compound Clips)
+instead of the source media, if the Timelines have the same name as the timeline used in the original transcription in 
+StoryToolkitAI. _This is not yet implemented for XML exports._
+
+**Export Notes** - if checked, the tool will export the fountain-style notes from the story (for eg. `[[some note]]` ) 
+in the EDL.  For now, these notes are recognized by Davinci Resolve when you import Timeline Markers form EDL into the 
+Timeline that you chose from the bin. _This is not yet implemented for XML exports._
+
+**Join Gaps Shorten Than** - you can have the tool join gaps between segments that are shorter than a certain duration 
+in frames. By default, the tool will join all clips that end and start on the same frame.
+
+_Note: The Start Timecode and Frame Rate values are not stored in the EDL file itself. You'll most likely need to 
+re-enter them when doing the import in your NLE (at least the Frame Rate)._
+
+#### To import the EDL or XML into Resolve:
+1. Go into the Media Bin you want the new EDL timeline to be, right click and select
+Timelines -> Import -> AAF / EDL / XML / DRT / OTIO...
+2. Select the EDL or XML file you just exported from the tool
+3. In the next window, simply click OK (or select the options you want)
+4. Select the bins where you want Resolve to look for the media and click OK
+5. Now you should have an EDL or XML Timeline in your Media Bin
+
+Important: every now and then Resolve refuses to find the media in the bins or the clips look all red in the timeline.
+If that is the case, try to import the EDL / XML file one more time and it should work.
+
+If you see that the clips in the sequence / timeline are offset, make sure that the start timecode for the media
+clip in Resolve is the same as the start timecode of the transcription in StoryToolkitAI.
+
+When importing an EDL file into Davinci Resolve, make sure you have the "Assist using reel names from the: Source clip filename"
+option selected in Project Settings -> General Options -> Conform Options. This will make Resolve use the clip names
+stored in the EDL file more efficiently. Also, we recommend only checking the bins most likely to contain the clips
+you need for each EDL file.
+
+_Known Issue: Combining media with different frame rates than the import timeline seems to be problematic when 
+importing EDLs and XMLs into Resolve and might require additional manual work to make clips match the EDL/XML timecodes._
+
+_Known Issue 2: Audio-only clips do not work at all with EDL imports in Resolve. In other words, audio clips will
+not be imported into the timeline. So for those cases, we recommend using XML instead._
+
+#### To import Markers via EDL into Resolve:
+1. Go to the Media Bin where your timeline is
+2. Right-click on timeline
+3. Select Timelines -> Import -> Timeline Markers from EDL...
+4. Choose the EDL file you exported from the tool
+5. The lines from your story editor encapsulated in double-brackets (eg. `[[your note]])
+should now be imported into the timeline at the right timecode(depending what segment it follows or precedes in the story)
+
 
 ## Davinci Resolve Studio integrations
 
