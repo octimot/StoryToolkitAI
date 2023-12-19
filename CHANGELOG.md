@@ -17,6 +17,7 @@ editing in screenplay applications or for printing.
 
 ### Changed
 - Removed legacy app.py - the tool can now be started exclusively using storytoolkitai package
+- Automated Git Update (for git installations only)
 
 ### Fixes
 - Fixed a bug that was messing results in the Advanced Search window when one of the results was at frame 0
