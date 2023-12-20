@@ -13,7 +13,7 @@ packaging==21.3
 pyparsing==3.0.9
 PyYAML==6.0
 regex==2022.9.13
-requests==2.28.1
+requests>2.28.2
 setuptools
 sentence_transformers
 timecode==1.3.1
@@ -22,13 +22,13 @@ torch
 torchaudio
 onnxruntime
 tqdm
-transformers>=4.19.0
-typing_extensions==4.3.0
+transformers>=4.29.3
+typing_extensions==4.7
 urllib3==1.26.12
 openai-whisper @ git+https://github.com/openai/whisper.git@e58f28804528831904c3b6f2c0e473f346223433
 dtw-python
 resampy
-openai==0.28.1
+openai>=1.6.0
 spacy>=3.0.0
 spacy-langdetect
 clip @ git+https://github.com/openai/CLIP.git@a9b1bf5920416aaeaec965c25dd9e8f98c864f16

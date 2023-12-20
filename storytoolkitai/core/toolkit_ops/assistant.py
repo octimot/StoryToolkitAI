@@ -2,6 +2,7 @@ import openai
 import tiktoken
 import hashlib
 import time
+from openai import OpenAI
 
 from storytoolkitai.core.logger import logger
 
@@ -55,16 +56,22 @@ class AssistantGPT(ToolkitAssistant):
     and results between UI and whatever assistant model / API we're using
     """
 
+    DEFAULT_SYSTEM_MESSAGE = ('You are an assistant film editor.\n'
+                              'You are to provide succinct answers based strictly on the data presented in the current '
+                              'conversation.\n'
+                              'Important: if the answer is not found in the provided data '
+                              'or current conversation, explicitly mention within your reply '
+                              'that the answer is based on your own knowledge '
+                              'and "not on the information provided".'
+                              )
+
     def __init__(self, **kwargs):
 
         super().__init__(toolkit_ops_obj=kwargs.get('toolkit_ops_obj', None))
 
-        # get the stAI object (needed for statistics)
-        self.stAI = self.toolkit_ops_obj.stAI
-
         # save the model provider for internal use
         self.model_provider = kwargs.get(
-            'openai',
+            'model_provider',
             self.stAI.get_app_setting('assistant_provider', default_if_none='OpenAI')
         )
 
@@ -86,13 +93,15 @@ class AssistantGPT(ToolkitAssistant):
         # for eg: [0.01, 0.03, 'USD']
         self._model_price = self.model_price
 
-        self.initial_system = kwargs.get('initial_system',
-                                         "You are an assistant editor that gives succinct answers.")
+        # start the chat history, if none was passed, then start with an empty list
+        self.chat_history = list() if kwargs.get('chat_history', None) is None else kwargs.get('chat_history', None)
 
-        # keep a chat history, which can be also altered if needed
-        # if no chat history is passed, we'll use a default one which defines the system
-        self.chat_history = kwargs.get('chat_history',
-                                       [{"role": "system", "content": self.initial_system}])
+        # the system initial system message will be set either from the kwargs or from the config
+        # this will be used even when the user resets the assistant
+        self.initial_system_message = kwargs.get('system_message', self.DEFAULT_SYSTEM_MESSAGE)
+
+        # set the system message (will be added to the chat history too)
+        self.set_system(self.initial_system_message)
 
         # to keep track of the context
         self.context = kwargs.get('context', None)
@@ -105,7 +114,7 @@ class AssistantGPT(ToolkitAssistant):
             self.add_context(self.context)
 
         # get the API key from the config
-        openai.api_key = self.api_key \
+        self.api_key \
             = self.stAI.get_app_setting(setting_name='openai_api_key', default_if_none=None)
 
     def reset(self):
@@ -114,7 +123,7 @@ class AssistantGPT(ToolkitAssistant):
         """
 
         # just reset the chat history to the initial system message
-        self.chat_history = [{"role": "system", "content": self.initial_system}]
+        self.chat_history = [{"role": "system", "content": self.initial_system_message}]
 
         # also re-add the context if it exists
         if self.context is not None:
@@ -123,39 +132,36 @@ class AssistantGPT(ToolkitAssistant):
             # add the context to the chat history
             self.chat_history.append({"role": "user", "content": self.context})
 
-    def set_initial_system(self, initial_system):
+    def set_system(self, system_message):
 
         # check so that the initial system message is not empty
-        if not initial_system:
+        if not system_message:
 
-            # set the initial system message
-            self.initial_system = initial_system
+            # just return false if the initial system message is empty
+            logger.error('Could not change system message - no message was passed.')
+            return False
 
-            # first, make sure this is the first message in the chat history
-            # by removing any other system messages
-            system_message_idx = []
-            for i, message in enumerate(self.chat_history):
+        # first, make sure this is the first message in the chat history
+        # by removing any other system messages
+        system_message_idx = []
+        for i, message in enumerate(self.chat_history):
 
-                # if the role is system, then we've found the system message
-                if message['role'] == 'system':
+            # if the role is system, then we've found the system message
+            if message['role'] == 'system':
 
-                    # remember the index of the system message
-                    # we can't do it here since we're iterating over the list
-                    system_message_idx.append(i)
+                # remember the index of the system message
+                # we can't do it here since we're iterating over the list
+                system_message_idx.append(i)
 
-            # if we found any system messages, remove them
-            if system_message_idx:
-                for i in system_message_idx:
-                    self.chat_history.pop(i)
+        # if we found any system messages, remove them
+        if system_message_idx:
+            for i in system_message_idx:
+                self.chat_history.pop(i)
 
-            # and now re-add the new system message on top
-            self.chat_history.insert(0, {"role": "system", "content": self.initial_system})
+        # and now re-add the new system message on top
+        self.chat_history.insert(0, {"role": "system", "content": system_message})
 
-            return True
-
-        # just return false if the initial system message is empty
-        logger.error('Could not change system message - no message was passed.')
-        return False
+        return True
 
     def add_context(self, context):
         """
@@ -290,25 +296,38 @@ class AssistantGPT(ToolkitAssistant):
 
         # now send the query to the assistant
         try:
-            response = openai.ChatCompletion.create(
+
+            client = OpenAI(api_key=self.api_key)
+
+            chat_history = list() if self.chat_history is None else self.chat_history.copy()
+
+            response = client.chat.completions.create(
                 model=self.model_name,
-                messages=self.chat_history
+                messages=chat_history,
+                temperature=1,
+                max_tokens=256,
+                top_p=1,
+                frequency_penalty=0,
+                presence_penalty=0,
+                timeout=30
             )
 
-        except openai.error.AuthenticationError as e:
+        except openai.AuthenticationError as e:
 
-            error_message = 'Please check your OpenAI Key in the preferences window.\n' + \
-                            str(e)
+            error_message = 'OpenAI API key might invalid. Please check your OpenAI Key in the preferences window.'
 
             logger.debug('OpenAI API key is invalid. Please check your key in the preferences window.')
             return error_message
 
         except Exception as e:
-            logger.debug('Error sending query to AssistantGPT: ')
-            logger.debug(e)
-            return str(e) + "\nI'm sorry, I'm having trouble connecting to the assistant. Please try again later."
+            logger.debug('Error sending query to AssistantGPT: ', exc_info=True)
+            return str(e) + "\nI'm sorry, I'm having trouble connecting to OpenAI right now. " \
+                            "Please check the logs or try again later."
 
         result = ''
+        if self.chat_history is None:
+            self.chat_history = list()
+
         for choice in response.choices:
             result += choice.message.content
 
@@ -371,4 +390,3 @@ class AssistantGPT(ToolkitAssistant):
         except KeyError:
             logger.warning('Info for model {} unavailable or incomplete.'.format(self.model_name))
             return None
-
