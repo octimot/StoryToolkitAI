@@ -1158,7 +1158,8 @@ class toolkit_UI():
         self.transcript_font = ctk.CTkFont(family=courier_font_family, size=self.transcript_font_size)
 
         # set the platform independent fixed font (for console)
-        self.console_font = ctk.CTkFont(family='TkFixedFont', size=self.console_font_size)
+        # self.console_font = ctk.CTkFont(family='TkFixedFont', size=self.console_font_size)
+        self.console_font = self.transcript_font
 
         # set the default font size
         self.default_font_size = self.UI_scale(self.default_font_size * font_scale)
@@ -3077,6 +3078,39 @@ class toolkit_UI():
 
         text_widget.tag_bind('url-color', '<Enter>', lambda event: text_widget.configure(cursor='hand2'))
         text_widget.tag_bind('url-color', '<Leave>', lambda event: text_widget.configure(cursor=''))
+
+    @staticmethod
+    def text_table(data, header):
+        if not data:
+            return ''
+
+        # Determine the maximum width for each column and check if they are numbers
+        col_widths = []
+        is_number = []
+        for i in range(len(data[0])):
+            max_width = max(len(str(row[i])) for row in data)
+            col_widths.append(max_width)
+
+            # Check if the column contains only integers or floats
+            all_numbers = all(isinstance(row[i], (int, float)) for row in data)
+            is_number.append(all_numbers)
+
+        # Create the header
+        table = header + "\n"
+        # table += " " * (sum(col_widths) + len(col_widths) * 3 + 3) + "\n"  # Adjust spacing between columns
+
+        # Add the rows
+        for row in data:
+            row_str = ''
+            for i, item in enumerate(row):
+                fmt = f' {{:>{col_widths[i]}}}' if is_number[i] else f'{{:<{col_widths[i]}}} '
+                row_str += fmt.format(item) + ''
+            table += row_str + "\n"
+
+        # table += " " * (sum(col_widths) + len(col_widths) * 3 + 3) + "\n"  # Adjust spacing between columns
+        table += ""
+
+        return table
 
     def inject_prompt(self, window_id: str, prompt: str, execute=True, clear_line=True):
         """
@@ -14412,7 +14446,8 @@ class toolkit_UI():
 
         # show the initial message if the window didn't exist before
         if not window_existed:
-            initial_info = 'Your requests might be billed by OpenAI.\n' + \
+            initial_info = 'Using {} {}\n'.format(assistant_item.model_provider, assistant_item.model_description) + \
+                           'Your requests might be billed by your AI model provider.\n' + \
                            'Type [help] to see available commands or just ask a question.'
 
             self._text_window_update(assistant_window_id, initial_info)
@@ -14439,18 +14474,27 @@ class toolkit_UI():
             # is the user asking for help?
             if prompt.lower() == '[help]':
 
-                help_reply = "You are using OpenAI {}.\n".format(assistant_item.model_name)
-                help_reply += "See openai https://openai.com/pricing for more info and the actual model pricing. \n\n" \
-                              "Every time you ask something, the OpenAI will receive the entire conversation. " \
-                              "The longer the conversation, the more tokens you are using on each request.\n" \
+                help_reply = ("You are using {} {}.\n"
+                              .format(assistant_item.model_provider, assistant_item.model_description))
+
+                if assistant_item.info is not None and 'pricing_info' in assistant_item.info:
+                    help_reply += "See {} for more reliable pricing. \n" \
+                                   .format(assistant_item.info.get('pricing_info'))
+
+                help_reply += "\n"
+
+                help_reply += "Every time you ask something, the model will receive the entire conversation. " \
+                              "The longer the conversation, the more tokens you are using on each request.\n\n" \
                               "Use [usage] to keep track of your usage in this Assistant window.\n\n" \
                               "Use [calc] to get the minimum number of tokens you're sending with each request.\n\n" \
-                              "Use [reset] to reset the conversation, while preserving any contexts. " \
+                              "Use [price] to see how much the model costs.\n\n" \
+                              "Use [reset] to reset the conversation, while preserving any contexts.\n" \
                               "This will make the Assistant forget the entire conversation," \
-                              "but also reduce the tokens you're sending to OpenAI.\n" \
-                              "Use [resetall] to reset the conversation and any context. " \
-                              "But also reduce the amount of information you're sending on each request.\n\n" \
-                              "Use [context] to see the context text.\n\n" \
+                              "but also reduce the tokens you're sending to OpenAI.\n\n" \
+                              "Use [resetall] to reset the conversation and the context.\n\n" \
+                              "Use [context] to see the context text.\n" \
+                              "The context contains gets sent with each prompt " \
+                              "(together with the entire conversation).\n\n" \
                               "Use [exit] to exit the Assistant.\n\n" \
                               "Now, just ask something..."
 
@@ -14458,29 +14502,74 @@ class toolkit_UI():
                 self._text_window_update(assistant_window_id, help_reply)
                 return
 
+            elif prompt.lower() == '[price]':
+
+                price_reply = ("You are using {} {}.\n"
+                               .format(assistant_item.model_provider, assistant_item.model_description))
+
+                if isinstance(assistant_item.model_price, tuple) and len(assistant_item.model_price) == 3:
+                    price_reply += "According to our info, the model costs:\n"
+                    price_reply += ("{} {} per 1000 tokens sent.\n"
+                                    .format(assistant_item.model_price[0], assistant_item.model_price[2]))
+                    price_reply += ("{} {} per 1000 tokens received.\n\n"
+                                    .format(assistant_item.model_price[1], assistant_item.model_price[2]))
+
+                    price_reply += "This information might not be up to date!\n"
+
+                else:
+                    price_reply += "We don't have enough pricing information for this model.\n"
+
+                if assistant_item.info is not None and 'pricing_info' in assistant_item.info:
+                    price_reply += "See {} for more reliable model pricing info. \n" \
+                                   .format(assistant_item.info.get('pricing_info'))
+
+                # use this to make sure we have a new prompt prefix for the next search
+                self._text_window_update(assistant_window_id, price_reply)
+
+                return
+
             # if the user is asking for usage
             elif prompt.lower() == '[usage]' or prompt.lower() == '[calc]':
 
                 if prompt.lower() == '[calc]':
-                    num_tokens = assistant_item.calculate_history()
-                    calc_reply = "The stored conversation, including context totals cca. {} tokens.\n".format(
-                        num_tokens)
-
-                    if assistant_item.model_name == 'gpt-3.5-turbo':
-                        calc_reply += "That's probably ${:.6f}\n" \
-                                      "(might not be accurate, check OpenAI pricing)\n" \
-                            .format(num_tokens * assistant_item.price / 1000)
+                    num_tokens = assistant_item.calculate_history_tokens()
+                    calc_reply = "The context plus conversation uses {} tokens/request\n\n".format(num_tokens)
 
                     calc_reply += "This is the minimum amount of tokens you send on each request, " \
-                                  "plus your message, unless you reset."
+                                  "plus your message, unless you [reset] or [resetall]."
+
                     self._text_window_update(assistant_window_id, calc_reply)
 
-                usage_reply = "You have used {} tokens in this Assistant window.\n".format(assistant_item.usage)
+                used_tokens_in = int(assistant_item.tokens_used[0])
+                used_tokens_out = int(assistant_item.tokens_used[1])
+                used_tokens_total = used_tokens_in + used_tokens_out
 
-                if assistant_item.model_name == 'gpt-3.5-turbo':
-                    usage_reply += "That's probably ${:.6f}\n" \
-                                   "(might not be accurate, check OpenAI pricing)" \
-                        .format(assistant_item.usage * assistant_item.price / 1000)
+                total_price = None
+                if isinstance(assistant_item.model_price, tuple) and len(assistant_item.model_price) == 3:
+                    price_in = assistant_item.model_price[0] * used_tokens_in / 1000
+                    price_out = assistant_item.model_price[1] * used_tokens_out / 1000
+                    total_price = price_in + price_out
+
+                header = "Approximate token usage in this Assistant window:"
+                tokens_data = [
+                    ("Sent:", used_tokens_out, ' tokens'),
+                    ("Received:", used_tokens_in, ' tokens'),
+                    ("Total:", used_tokens_total, ' tokens')
+                ]
+
+                usage_reply = self.text_table(tokens_data, header)
+
+                if total_price is not None:
+                    usage_reply += "\n"
+                    usage_reply += "Total price: cca. {:.6f} {}.\n" \
+                                   .format(total_price, assistant_item.model_price[2])
+
+                    if assistant_item.info is not None and 'pricing_info' in assistant_item.info:
+                        usage_reply += "\nSee {} for more accurate model pricing info. \n" \
+                            .format(assistant_item.info.get('pricing_info'))
+
+                usage_reply += "\nImportant: this calculation might not be accurate!"
+
                 self._text_window_update(assistant_window_id, usage_reply)
                 return
 
