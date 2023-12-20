@@ -24,7 +24,7 @@ from .transcription import Transcription, TranscriptionSegment, TranscriptionUti
 from .story import Story, StoryLine, StoryUtils
 from .processing_queue import ProcessingQueue
 from .search import ToolkitSearch, SearchItem, TextSearch, VideoSearch, cv2
-from .assistant import ToolkitAssistant, AssistantGPT
+from .assistant import ToolkitAssistant, assistant_handler
 
 from timecode import Timecode
 

@@ -2601,6 +2601,17 @@ class toolkit_UI():
         :return:
         """
 
+        # update some stuff if they were passed
+        if kwargs.get('prompt_prefix', None):
+            self.text_windows[window_id]['text_widget'].prompt_prefix = kwargs.get('prompt_prefix')
+            self.text_windows[window_id]['prompt_prefix'] = kwargs.get('prompt_prefix')
+
+        if kwargs.get('prompt_callback', None):
+            self.text_windows[window_id]['text_widget'].prompt_callback = kwargs.get('prompt_callback')
+
+        if kwargs.get('prompt_callback_kwargs', None):
+            self.text_windows[window_id]['text_widget'].prompt_callback_kwargs = kwargs.get('prompt_callback_kwargs')
+
         prompt_prefix = self.text_windows[window_id]['prompt_prefix'] \
             if 'prompt_prefix' in self.text_windows[window_id] else None
 
@@ -2861,13 +2872,18 @@ class toolkit_UI():
                 if prompt_prefix:
                     text.insert(ctk.END, prompt_prefix)
 
+                # attach these to the text element so that we can update them later if needed
+                text.prompt_prefix = prompt_prefix
+                text.prompt_callback = prompt_callback
+                text.prompt_callback_kwargs = prompt_callback_kwargs
+
                 # any keypress in the text element will call the _text_window_entry function
                 text.bind('<KeyPress>',
                           lambda event:
                           self._text_window_entry(window_id=window_id, event=event,
-                                                  prompt_prefix=prompt_prefix,
-                                                  prompt_callback=prompt_callback,
-                                                  prompt_callback_kwargs=prompt_callback_kwargs,
+                                                  prompt_prefix=text.prompt_prefix,
+                                                  prompt_callback=text.prompt_callback,
+                                                  prompt_callback_kwargs=text.prompt_callback_kwargs,
                                                   **kwargs))
 
                 # bind CMD/CTRL + key presses to text window actions
@@ -14401,10 +14417,15 @@ class toolkit_UI():
         if assistant_window_id not in self.assistant_windows:
             self.assistant_windows[assistant_window_id] = {}
 
+        default_model_provider = self.stAI.get_app_setting('assistant_provider', default_if_none='OpenAI')
+        default_model_name = self.stAI.get_app_setting('assistant_model', default_if_none='gpt-3.5-turbo')
+
         # initialize an assistant item
         if 'assistant_item' not in self.assistant_windows[assistant_window_id]:
             self.assistant_windows[assistant_window_id]['assistant_item'] = \
-                AssistantGPT(toolkit_ops_obj=self.toolkit_ops_obj)
+                assistant_handler(toolkit_ops_obj=self.toolkit_ops_obj,
+                                  model_provider=default_model_provider,
+                                  model_name=default_model_name)
 
         # but use a simpler reference here
         assistant_item = self.assistant_windows[assistant_window_id]['assistant_item']
@@ -14469,6 +14490,9 @@ class toolkit_UI():
                 logger.error('Cannot run assistant query. No assistant item found.')
                 return False
 
+        # strip the prompt
+        prompt = prompt.strip()
+
         # try to run the assistant query
         try:
             # is the user asking for help?
@@ -14495,11 +14519,111 @@ class toolkit_UI():
                               "Use [context] to see the context text.\n" \
                               "The context contains gets sent with each prompt " \
                               "(together with the entire conversation).\n\n" \
+                              "Use [model] to see the model used in this window.\n" \
+                              "Use [model:MODEL_PROVIDER:MODEL_NAME] to change the model used in this window.\n" \
+                              "Use [models] to see the available models.\n\n" \
                               "Use [exit] to exit the Assistant.\n\n" \
                               "Now, just ask something..."
 
                 # use this to make sure we have a new prompt prefix for the next search
                 self._text_window_update(assistant_window_id, help_reply)
+                return
+
+            elif prompt.lower().startswith('[model:') and prompt.lower().endswith(']'):
+
+                # make sure that the correct syntax is used - [model:MODEL_PROVIDER:MODEL_NAME]
+                model_and_provider_name = prompt[7:-1]
+
+                if ':' not in model_and_provider_name:
+                    self._text_window_update(assistant_window_id, 'Invalid model and provider name.\n'
+                                                                  'Use [model:MODEL_PROVIDER:MODEL_NAME]. '
+                                                                  'For eg.: [model:OpenAI:gpt-4]')
+                    return
+
+                model_and_provider_name = model_and_provider_name.split(':')
+                model_provider = model_and_provider_name[0]
+                model_name = model_and_provider_name[1]
+
+                # if the model provider and names are the same as the current ones, do nothing
+                if model_provider == assistant_item.model_provider and model_name == assistant_item.model_name:
+                    self._text_window_update(
+                        assistant_window_id,
+                        'You are already using {} {}.\n'.format(model_provider, model_name)
+                    )
+                    return
+
+                # assistant_item = assistant_handler(toolkit_ops_obj=self.toolkit_ops_obj,
+                # reset the assistant_item = self.assistant_windows[assistant_window_id]['assistant_item']
+                new_assistant_item = assistant_handler(
+                    toolkit_ops_obj=self.toolkit_ops_obj, model_provider=model_provider, model_name=model_name)
+
+                if new_assistant_item is None:
+
+                    model_reply = "Invalid model or provider name.\n"
+                    model_reply += ("You are still using {} {}.\n" \
+                                    .format(assistant_item.model_provider, assistant_item.model_description))
+
+                    self._text_window_update(assistant_window_id, model_reply)
+                    return
+
+                # if the model is valid, replace the assistant item
+                self.assistant_windows[assistant_window_id]['assistant_item'] = new_assistant_item
+                assistant_item = new_assistant_item
+
+                # update the assistant window
+                model_reply = "Model changed to {} {}.\n" \
+                              .format(assistant_item.model_provider, assistant_item.model_description)
+
+                if assistant_item.info is not None and 'pricing_info' in assistant_item.info:
+                    model_reply += "See {} for more reliable pricing. \n" \
+                        .format(assistant_item.info.get('pricing_info'))
+
+                model_reply += "\nUsage for this window has been reset to 0 due to model change.\n"
+
+                # get the window text widget
+                text_widget = self.text_windows[assistant_window_id]['text_widget']
+
+                # get the current text_widget prompt kwargs
+                prompt_callback_kwargs = text_widget.prompt_callback_kwargs
+
+                # update the assistant_item in the prompt kwargs
+                prompt_callback_kwargs['assistant_item'] = new_assistant_item
+
+                # when updating the text window, we also update the prompt callback kwargs with the new assistant item
+                self._text_window_update(
+                    assistant_window_id,
+                    model_reply,
+                    prompt_callback_kwargs=prompt_callback_kwargs
+                )
+
+                return
+
+            elif prompt.lower() == '[models]':
+
+                # list all the available models in assistant_item.LLM_AVAILABLE_MODELS
+                models_reply = "Available models:\n"
+
+                for available_model_provider in assistant_item.available_models:
+
+                    for available_model_name in assistant_item.available_models[available_model_provider]:
+
+                        models_reply += "{} {}\n" \
+                                         .format(available_model_provider, available_model_name)
+
+                self._text_window_update(assistant_window_id, models_reply)
+                return
+
+            elif prompt.lower() == '[model]':
+
+                model_reply = "You are using {} {}.\n" \
+                              .format(assistant_item.model_provider, assistant_item.model_description)
+
+                if assistant_item.info is not None and 'pricing_info' in assistant_item.info:
+                    model_reply += "See {} for more reliable pricing. \n" \
+                                   .format(assistant_item.info.get('pricing_info'))
+
+                model_reply += '\nUse [model:MODEL_PROVIDER:MODEL_NAME] to change the model used in this window.\n'
+                self._text_window_update(assistant_window_id, model_reply)
                 return
 
             elif prompt.lower() == '[price]':

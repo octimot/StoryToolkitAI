@@ -6,32 +6,6 @@ from openai import OpenAI
 
 from storytoolkitai.core.logger import logger
 
-LLM_AVAILABLE_MODELS = {
-    'OpenAI': {
-        'gpt-4-1106-preview': {
-            'description': 'GPT-4 Turbo (1106 preview)',
-            'price': {'input': 0.01, 'output': 0.03, 'currency': 'USD'},
-            'token_limit': 4096,
-            'training_cutoff': '2023-04',
-            'pricing_info': 'https://openai.com/pricing/'
-        },
-        'gpt-4': {
-            'description': 'GPT-4',
-            'price': {'input': 0.03, 'output': 0.06, 'currency': 'USD'},
-            'token_limit': 8192,
-            'training_cutoff': '2021-09',
-            'pricing_info': 'https://openai.com/pricing/'
-        },
-        'gpt-3.5-turbo-1106': {
-            'description': 'GPT-3.5 Turbo 1106',
-            'price': {'input': 0.001, 'output': 0.002, 'currency': 'USD'},
-            'token_limit': 16385,
-            'training_cutoff': '2021-09',
-            'pricing_info': 'https://openai.com/pricing/'
-        }
-    }
-}
-
 
 class ToolkitAssistant:
     """
@@ -49,7 +23,7 @@ class ToolkitAssistant:
         self.toolkit_UI_obj = self.toolkit_ops_obj.toolkit_UI_obj
 
 
-class AssistantGPT(ToolkitAssistant):
+class ChatGPT(ToolkitAssistant):
     """
     This is a class that is used to create an OpenAI GPT-based assistant
     It should be instantiated for each assistant and then used to pass queries
@@ -65,21 +39,15 @@ class AssistantGPT(ToolkitAssistant):
                               'and "not on the information provided".'
                               )
 
-    def __init__(self, **kwargs):
+    def __init__(self, model_provider, model_name, **kwargs):
 
         super().__init__(toolkit_ops_obj=kwargs.get('toolkit_ops_obj', None))
 
         # save the model provider for internal use
-        self.model_provider = kwargs.get(
-            'model_provider',
-            self.stAI.get_app_setting('assistant_provider', default_if_none='OpenAI')
-        )
+        self.model_provider = model_provider
 
         # get the model from the kwargs or from the config file if not passed
-        self.model_name = kwargs.get(
-            'model_name',
-            self.stAI.get_app_setting('assistant_model', default_if_none='gpt-3.5-turbo')
-        )
+        self.model_name = model_name
 
         # generate a unique ID for the assistant
         self._assistant_id = hashlib.md5((str(self.model_name) + str(time.time)).encode('utf-8')).hexdigest()
@@ -320,7 +288,7 @@ class AssistantGPT(ToolkitAssistant):
             return error_message
 
         except Exception as e:
-            logger.debug('Error sending query to AssistantGPT: ', exc_info=True)
+            logger.debug('Error sending query to ChatGPT: ', exc_info=True)
             return str(e) + "\nI'm sorry, I'm having trouble connecting to OpenAI right now. " \
                             "Please check the logs or try again later."
 
@@ -390,3 +358,59 @@ class AssistantGPT(ToolkitAssistant):
         except KeyError:
             logger.warning('Info for model {} unavailable or incomplete.'.format(self.model_name))
             return None
+
+    @property
+    def available_models(self):
+        return LLM_AVAILABLE_MODELS
+
+
+def assistant_handler(toolkit_ops_obj, model_provider, model_name, **kwargs):
+    """
+    This is the handler function for the assistant class and is used to instantiate the correct assistant class
+    depending on the model provider and model name
+    """
+
+    try:
+
+        # load the assistant class
+        toolkit_assistant = LLM_AVAILABLE_MODELS[model_provider][model_name]['handler']
+
+        # instantiate the assistant class and return it
+        return toolkit_assistant(toolkit_ops_obj=toolkit_ops_obj,
+                                 model_provider=model_provider,
+                                 model_name=model_name,
+                                 **kwargs)
+
+    except KeyError:
+        logger.error('Could not find assistant handler for model {} from provider {}.'
+                     .format(model_name, model_provider))
+        return None
+
+LLM_AVAILABLE_MODELS = {
+    'OpenAI': {
+        'gpt-4-1106-preview': {
+            'description': 'GPT-4 Turbo (1106 preview)',
+            'price': {'input': 0.01, 'output': 0.03, 'currency': 'USD'},
+            'token_limit': 4096,
+            'training_cutoff': '2023-04',
+            'pricing_info': 'https://openai.com/pricing/',
+            'handler': ChatGPT
+        },
+        'gpt-4': {
+            'description': 'GPT-4',
+            'price': {'input': 0.03, 'output': 0.06, 'currency': 'USD'},
+            'token_limit': 8192,
+            'training_cutoff': '2021-09',
+            'pricing_info': 'https://openai.com/pricing/',
+            'handler': ChatGPT
+        },
+        'gpt-3.5-turbo-1106': {
+            'description': 'GPT-3.5 Turbo 1106',
+            'price': {'input': 0.001, 'output': 0.002, 'currency': 'USD'},
+            'token_limit': 16385,
+            'training_cutoff': '2021-09',
+            'pricing_info': 'https://openai.com/pricing/',
+            'handler': ChatGPT
+        }
+    }
+}
