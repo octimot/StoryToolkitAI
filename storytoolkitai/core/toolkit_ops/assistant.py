@@ -30,15 +30,6 @@ class ChatGPT(ToolkitAssistant):
     and results between UI and whatever assistant model / API we're using
     """
 
-    DEFAULT_SYSTEM_MESSAGE = ('You are an assistant film editor.\n'
-                              'You are to provide succinct answers based strictly on the data presented in the current '
-                              'conversation.\n'
-                              'Important: if the answer is not found in the provided data '
-                              'or current conversation, explicitly mention within your reply '
-                              'that the answer is based on your own knowledge '
-                              'and "not on the information provided".'
-                              )
-
     def __init__(self, model_provider, model_name, **kwargs):
 
         super().__init__(toolkit_ops_obj=kwargs.get('toolkit_ops_obj', None))
@@ -66,7 +57,7 @@ class ChatGPT(ToolkitAssistant):
 
         # the system initial system message will be set either from the kwargs or from the config
         # this will be used even when the user resets the assistant
-        self.initial_system_message = kwargs.get('system_message', self.DEFAULT_SYSTEM_MESSAGE)
+        self.initial_system_message = kwargs.get('system_message', DEFAULT_SYSTEM_MESSAGE)
 
         # set the system message (will be added to the chat history too)
         self.set_system(self.initial_system_message)
@@ -246,7 +237,7 @@ class ChatGPT(ToolkitAssistant):
 
         # print(self.stAI.statistics)
 
-    def send_query(self, content):
+    def send_query(self, content, settings=None):
         """
         This function is used to send a query to the assistant
         """
@@ -254,6 +245,10 @@ class ChatGPT(ToolkitAssistant):
         # the query should always contain the role and the content
         # the role should be either user, system or assistant
         # in this case, since we're sending a query, the role should be user
+
+        # make sure that the settings are a dict
+        if settings is None:
+            settings = dict()
 
         query = {"role": "user", "content": content}
 
@@ -272,12 +267,12 @@ class ChatGPT(ToolkitAssistant):
             response = client.chat.completions.create(
                 model=self.model_name,
                 messages=chat_history,
-                temperature=1,
-                max_tokens=256,
-                top_p=1,
-                frequency_penalty=0,
-                presence_penalty=0,
-                timeout=30
+                temperature=settings.get('temperature', 1),
+                max_tokens=settings.get('max_length', 256),
+                top_p=settings.get('top_p', 1),
+                frequency_penalty=settings.get('frequency_penalty', 0),
+                presence_penalty=settings.get('presence_penalty', 0),
+                timeout=settings.get('timeout', 30),
             )
 
         except openai.AuthenticationError as e:
@@ -385,6 +380,35 @@ def assistant_handler(toolkit_ops_obj, model_provider, model_name, **kwargs):
         logger.error('Could not find assistant handler for model {} from provider {}.'
                      .format(model_name, model_provider))
         return None
+
+
+def assistant_available_models(provider=None):
+    """
+    This function returns the available assistant models for a given provider
+    """
+
+    if provider is not None:
+        return list(LLM_AVAILABLE_MODELS[provider].keys())
+    else:
+        return []
+
+
+def assistant_available_providers():
+    """
+    This function returns the available assistant providers
+    """
+
+    return list(LLM_AVAILABLE_MODELS.keys())
+
+
+DEFAULT_SYSTEM_MESSAGE = ('You are an assistant film editor.\n'
+                          'You are to provide succinct answers based strictly on the data presented in the current '
+                          'conversation.\n'
+                          'Important: if the answer is not found in the provided data '
+                          'or current conversation, explicitly mention within your reply '
+                          'that the answer is based on your own knowledge '
+                          'and "not on the information provided".'
+                          )
 
 LLM_AVAILABLE_MODELS = {
     'OpenAI': {

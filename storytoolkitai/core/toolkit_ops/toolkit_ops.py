@@ -24,7 +24,8 @@ from .transcription import Transcription, TranscriptionSegment, TranscriptionUti
 from .story import Story, StoryLine, StoryUtils
 from .processing_queue import ProcessingQueue
 from .search import ToolkitSearch, SearchItem, TextSearch, VideoSearch, cv2
-from .assistant import ToolkitAssistant, assistant_handler
+from .assistant import ToolkitAssistant, assistant_handler, assistant_available_models, assistant_available_providers
+from .assistant import DEFAULT_SYSTEM_MESSAGE as ASSISTANT_DEFAULT_SYSTEM_MESSAGE
 
 from timecode import Timecode
 

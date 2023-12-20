@@ -62,10 +62,11 @@ class toolkit_UI():
     ctk_form_entry_paddings = {'padx': 10, 'pady': 10}
     ctk_frame_transparent = {'fg_color': 'transparent'}
     ctk_form_entry_settings = {'width': 120}
+    ctk_form_slider_settings = {'width': 60}
     ctk_form_entry_settings_double = {'width': 240}
     ctk_form_entry_settings_half = {'width': ctk_form_entry_settings['width'] / 2}
     ctk_form_entry_settings_quarter = {'width': ctk_form_entry_settings['width'] / 4}
-    ctk_form_textbox = {'width': 300, 'height': 100}
+    ctk_form_textbox = {'width': 240, 'height': 100}
     ctk_form_paddings = {'padx': 10, 'pady': 5}
     ctk_form_label_settings = {'width': 170, 'anchor': 'w'}
     ctk_frame_label_settings = {
@@ -638,9 +639,13 @@ class toolkit_UI():
 
             # create the frames
             assistant_prefs_frame = ctk.CTkFrame(parent, **toolkit_UI.ctk_frame_transparent)
+            openai_prefs_frame = ctk.CTkFrame(parent, **toolkit_UI.ctk_frame_transparent)
+            advanced_prefs_frame = ctk.CTkFrame(parent, **toolkit_UI.ctk_frame_transparent)
 
             # create labels for the frames (and style them according to the theme)
-            assistant_prefs_label = ctk.CTkLabel(parent, text='OpenAI Settings', **toolkit_UI.ctk_frame_label_settings)
+            assistant_prefs_label = ctk.CTkLabel(parent, text='Assistant Settings', **toolkit_UI.ctk_frame_label_settings)
+            openai_prefs_label = ctk.CTkLabel(parent, text='OpenAI Settings', **toolkit_UI.ctk_frame_label_settings)
+            advanced_prefs_label = ctk.CTkLabel(parent, text='Advanced', **toolkit_UI.ctk_frame_label_settings)
 
             # we're going to create the form_vars dict to store all the variables
             # we will use this dict at the end of the function to gather all the created tk variables
@@ -652,10 +657,236 @@ class toolkit_UI():
             # add the labels and frames to the parent
             assistant_prefs_label.grid(row=l_row + 1, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
             assistant_prefs_frame.grid(row=l_row + 2, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+            openai_prefs_label.grid(row=l_row + 3, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+            openai_prefs_frame.grid(row=l_row + 4, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+            advanced_prefs_label.grid(row=l_row + 5, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+            advanced_prefs_frame.grid(row=l_row + 6, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
 
             # make the column expandable
             parent.columnconfigure(0, weight=1)
-            assistant_prefs_frame.columnconfigure(1, weight=1)
+            openai_prefs_frame.columnconfigure(1, weight=1)
+
+            # ASSISTANT PROVIDER
+            assistant_provider = \
+                kwargs.get('assistant_provider', None) \
+                    if kwargs.get('assistant_provider', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('assistant_provider', default_if_none='OpenAI')
+
+            assistant_provider_list = assistant_available_providers()
+
+            form_vars['assistant_provider_var'] = \
+                assistant_provider_var = tk.StringVar(assistant_prefs_frame, value=assistant_provider)
+            assistant_provider_label = ctk.CTkLabel(assistant_prefs_frame, text='Assistant Provider',
+                                                    **toolkit_UI.ctk_form_label_settings)
+            assistant_provider_input = ctk.CTkOptionMenu(assistant_prefs_frame,
+                                                         variable=assistant_provider_var,
+                                                         values=assistant_provider_list,
+                                                         **toolkit_UI.ctk_form_entry_settings)
+
+            # ASSISTANT MODEL
+            assistant_model = \
+                kwargs.get('assistant_model', None) \
+                    if kwargs.get('assistant_model', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('assistant_model', default_if_none='gpt-3.5-turbo')
+
+            assistant_model_list = assistant_available_models(assistant_provider)
+
+            form_vars['assistant_model_var'] = \
+                assistant_model_var = tk.StringVar(assistant_prefs_frame, value=assistant_model)
+            assistant_model_label = ctk.CTkLabel(assistant_prefs_frame, text='Assistant Model',
+                                                 **toolkit_UI.ctk_form_label_settings)
+            assistant_model_input = ctk.CTkOptionMenu(assistant_prefs_frame,
+                                                      variable=assistant_model_var,
+                                                      values=assistant_model_list,
+                                                      **toolkit_UI.ctk_form_entry_settings)
+
+            # store the initial provider value
+            # so we can update the model list when the provider changes
+            assistant_provider_var.previous_provider = assistant_provider_var.get()
+
+            def update_assistant_model_options(*args):
+
+                # Get the current provider
+                current_provider = assistant_provider_var.get()
+
+                # Check if the provider has actually changed
+                if current_provider != assistant_provider_var.previous_provider:
+                    # Update the model list based on the current provider
+                    new_model_list = assistant_available_models(current_provider)
+
+                    # Update the OptionMenu with new models
+                    assistant_model_input.configure(values=new_model_list)
+
+                    # Optionally, set the assistant_model_var to a default value
+                    assistant_model_var.set(new_model_list[0])
+
+                    # Update the previous provider for the next change
+                    assistant_provider_var.previous_provider = current_provider
+
+            # Trace the 'assistant_provider_var' to call the update function whenever it changes
+            assistant_provider_var.trace('w', update_assistant_model_options)
+
+            # System Prompt (Text)
+            system_prompt = \
+                kwargs.get('assistant_system_prompt', None) \
+                    if kwargs.get('assistant_system_prompt', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('assistant_system_prompt',
+                                                                  default_if_none=ASSISTANT_DEFAULT_SYSTEM_MESSAGE)
+
+            # create the system prompt variable, label and input
+            form_vars['assistant_system_prompt_var'] = \
+                system_prompt_var = tk.StringVar(advanced_prefs_frame, value=system_prompt)
+            system_prompt_label = ctk.CTkLabel(advanced_prefs_frame, text='System Prompt', **toolkit_UI.ctk_form_label_settings)
+            system_prompt_input = ctk.CTkTextbox(advanced_prefs_frame, wrap=tk.WORD, **toolkit_UI.ctk_form_textbox)
+            system_prompt_input.insert(tk.END, system_prompt)
+
+            # if the initial prompt input changes, update the initial prompt variable
+            def update_system_prompt(*args):
+                system_prompt_var.set(system_prompt_input.get('1.0', tk.END))
+
+            system_prompt_input.bind('<KeyRelease>', update_system_prompt)
+
+            # TEMPERATURE
+            temperature = \
+                kwargs.get('assistant_temperature', None) \
+                    if kwargs.get('assistant_temperature', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('assistant_temperature', default_if_none=1)
+
+            form_vars['assistant_temperature_var'] = \
+                temperature_var = tk.DoubleVar(advanced_prefs_frame, value=temperature)
+            temperature_label = ctk.CTkLabel(advanced_prefs_frame, text='Temperature',
+                                             **toolkit_UI.ctk_form_label_settings)
+
+            temperature_slider_frame = ctk.CTkFrame(advanced_prefs_frame, **toolkit_UI.ctk_frame_transparent)
+            temperature_slider = ctk.CTkSlider(temperature_slider_frame, from_=0, to=2, variable=temperature_var,
+                                               **toolkit_UI.ctk_form_slider_settings)
+
+            temperature_entry = ctk.CTkEntry(temperature_slider_frame, width=50)
+            temperature_entry.insert(0, str(temperature))
+            toolkit_UI.bind_sync_functions(temperature_entry, temperature_slider, 0, 2)
+            temperature_slider.pack(side=ctk.LEFT)
+            temperature_entry.pack(side=ctk.LEFT, **toolkit_UI.ctk_form_paddings)
+
+
+
+            # MAXIMUM LENGTH
+            max_length = \
+                kwargs.get('assistant_max_length', None) \
+                    if kwargs.get('assistant_max_length', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('assistant_max_length', default_if_none=512)
+
+            form_vars['assistant_max_length_var'] = \
+                max_length_var = tk.IntVar(advanced_prefs_frame, value=max_length)
+            max_length_label = ctk.CTkLabel(advanced_prefs_frame, text='Maximum Length',
+                                            **toolkit_UI.ctk_form_label_settings)
+            max_length_slider_frame = ctk.CTkFrame(advanced_prefs_frame, **toolkit_UI.ctk_frame_transparent)
+            max_length_slider = ctk.CTkSlider(max_length_slider_frame, from_=1, to=4095, variable=max_length_var,
+                                              **toolkit_UI.ctk_form_entry_settings)
+            max_length_entry = ctk.CTkEntry(max_length_slider_frame, width=50)
+            max_length_entry.insert(0, str(max_length))
+            toolkit_UI.bind_sync_functions(max_length_entry, max_length_slider, 1, 4095, round_val=0)
+            max_length_slider.pack(side=ctk.LEFT)
+            max_length_entry.pack(side=ctk.LEFT, **toolkit_UI.ctk_form_paddings)
+
+            # STOP SEQUENCES
+            # - this is a bit more difficult to implement since it would need a separator
+            # stop_sequences = \
+            #     kwargs.get('assistant_stop_sequences', None) \
+            #         if kwargs.get('assistant_stop_sequences', None) is not None \
+            #         else self.toolkit_UI_obj.stAI.get_app_setting('assistant_stop_sequences', default_if_none='')
+            # form_vars['stop_sequences_var'] = \
+            #     stop_sequences_var = tk.StringVar(advanced_prefs_frame, value=system_prompt)
+            # stop_sequences_label = ctk.CTkLabel(advanced_prefs_frame, text='Stop sequences (one per line)',
+            #                                    **toolkit_UI.ctk_form_label_settings)
+            # stop_sequences_input = ctk.CTkTextbox(advanced_prefs_frame, wrap=tk.WORD, **toolkit_UI.ctk_form_textbox)
+            # stop_sequences_input.insert(tk.END, stop_sequences)
+
+            # if the stop sequences input changes, update the variable
+            # def update_stop_sequences(*args):
+            #     stop_sequences_var.set(system_prompt_input.get('1.0', tk.END))
+
+            # stop_sequences_input.bind('<KeyRelease>', update_stop_sequences)
+
+            # TOP P
+            top_p = \
+                kwargs.get('assistant_top_p', None) \
+                    if kwargs.get('assistant_top_p', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('assistant_top_p', default_if_none=1)
+
+            form_vars['assistant_top_p_var'] = \
+                top_p_var = tk.DoubleVar(advanced_prefs_frame, value=top_p)
+            top_p_label = ctk.CTkLabel(advanced_prefs_frame, text='Top P', **toolkit_UI.ctk_form_label_settings)
+            top_p_slider_frame = ctk.CTkFrame(advanced_prefs_frame, **toolkit_UI.ctk_frame_transparent)
+            top_p_slider = ctk.CTkSlider(top_p_slider_frame, from_=0, to=1, variable=top_p_var,
+                                         **toolkit_UI.ctk_form_entry_settings)
+            top_p_entry = ctk.CTkEntry(top_p_slider_frame, width=50)
+            top_p_entry.insert(0, str(top_p))
+            toolkit_UI.bind_sync_functions(top_p_entry, top_p_slider, 0, 1)
+            top_p_slider.pack(side=ctk.LEFT)
+            top_p_entry.pack(side=ctk.LEFT, **toolkit_UI.ctk_form_paddings)
+
+            # FREQUENCY PENALTY
+            frequency_penalty = \
+                kwargs.get('assistant_frequency_penalty', None) \
+                    if kwargs.get('assistant_frequency_penalty', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('assistant_frequency_penalty', default_if_none=0.0)
+
+            form_vars['assistant_frequency_penalty_var'] = \
+                frequency_penalty_var = tk.DoubleVar(advanced_prefs_frame, value=frequency_penalty)
+            frequency_penalty_label = ctk.CTkLabel(advanced_prefs_frame, text='Frequency Penalty',
+                                                   **toolkit_UI.ctk_form_label_settings)
+            frequency_penalty_slider_frame = ctk.CTkFrame(advanced_prefs_frame, **toolkit_UI.ctk_frame_transparent)
+            frequency_penalty_slider = ctk.CTkSlider(frequency_penalty_slider_frame, from_=0, to=2,
+                                                     variable=frequency_penalty_var,
+                                                     **toolkit_UI.ctk_form_entry_settings)
+            frequency_penalty_entry = ctk.CTkEntry(frequency_penalty_slider_frame, width=50)
+            frequency_penalty_entry.insert(0, str(frequency_penalty))
+            toolkit_UI.bind_sync_functions(frequency_penalty_entry, frequency_penalty_slider, 0, 2)
+            frequency_penalty_slider.pack(side=ctk.LEFT)
+            frequency_penalty_entry.pack(side=ctk.LEFT, **toolkit_UI.ctk_form_paddings)
+
+            # PRESENCE PENALTY
+            presence_penalty = \
+                kwargs.get('assistant_presence_penalty', None) \
+                    if kwargs.get('assistant_presence_penalty', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('assistant_presence_penalty', default_if_none=0.0)
+
+            form_vars['assistant_presence_penalty_var'] = \
+                presence_penalty_var = tk.DoubleVar(advanced_prefs_frame, value=presence_penalty)
+            presence_penalty_label = ctk.CTkLabel(advanced_prefs_frame, text='Presence Penalty',
+                                                  **toolkit_UI.ctk_form_label_settings)
+            presence_penalty_slider_frame = ctk.CTkFrame(advanced_prefs_frame, **toolkit_UI.ctk_frame_transparent)
+            presence_penalty_slider = ctk.CTkSlider(presence_penalty_slider_frame, from_=0, to=2, variable=presence_penalty_var,
+                                                    **toolkit_UI.ctk_form_entry_settings)
+            presence_penalty_entry = ctk.CTkEntry(presence_penalty_slider_frame, width=50)
+            presence_penalty_entry.insert(0, str(presence_penalty))
+            toolkit_UI.bind_sync_functions(presence_penalty_entry, presence_penalty_slider, 0, 2)
+            presence_penalty_slider.pack(side=ctk.LEFT)
+            presence_penalty_entry.pack(side=ctk.LEFT, **toolkit_UI.ctk_form_paddings)
+
+
+
+            # ADD ELEMENTS TO ASSISTANT GRID
+            assistant_provider_label.grid(row=0, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            assistant_provider_input.grid(row=0, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            assistant_model_label.grid(row=1, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            assistant_model_input.grid(row=1, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+
+            # ADD ELEMENTS TO THE ADVANCED GRID
+            system_prompt_label.grid(row=2, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            system_prompt_input.grid(row=2, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            temperature_label.grid(row=3, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            temperature_slider_frame.grid(row=3, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            max_length_label.grid(row=4, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            max_length_slider_frame.grid(row=4, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            # stop_sequences_label.grid(row=5, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            # stop_sequences_input.grid(row=5, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            top_p_label.grid(row=6, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            top_p_slider_frame.grid(row=6, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            frequency_penalty_label.grid(row=7, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            frequency_penalty_slider_frame.grid(row=7, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            presence_penalty_label.grid(row=8, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            presence_penalty_slider_frame.grid(row=8, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
 
             # OPENAI openai_openai_api_key_key KEY
             # get the api token from the app settings
@@ -666,35 +897,17 @@ class toolkit_UI():
 
             # create the api token variable, label and input
             form_vars['openai_api_key_var'] = \
-                openai_api_key_var = tk.StringVar(assistant_prefs_frame, value=openai_api_key if openai_api_key else '')
-            openai_api_key_label = ctk.CTkLabel(assistant_prefs_frame, text='OpenAI API Key',
+                openai_api_key_var = tk.StringVar(openai_prefs_frame, value=openai_api_key if openai_api_key else '')
+            openai_api_key_label = ctk.CTkLabel(openai_prefs_frame, text='OpenAI API Key',
                                                 **toolkit_UI.ctk_form_label_settings)
-            openai_api_key_input = ctk.CTkEntry(assistant_prefs_frame, show="*",
+            openai_api_key_input = ctk.CTkEntry(openai_prefs_frame, show="*",
                                                 textvariable=openai_api_key_var,
                                                 **toolkit_UI.ctk_form_entry_settings_double)
 
-            # OPENAI MODEL
-            # assistant_model = \
-            #     kwargs.get('assistant_model', None) \
-            #         if kwargs.get('assistant_model', None) is not None \
-            #         else self.toolkit_UI_obj.stAI.get_app_setting('assistant_model', default_if_none='gpt-3.5-turbo')
-
-            # assistant_model_list = ['gpt-3.5-turbo', 'gpt-4']
-
-            # form_vars['assistant_model_var'] = \
-            #     assistant_model_var = tk.StringVar(assistant_prefs_frame, value=assistant_model)
-            # assistant_model_label = ctk.CTkLabel(assistant_prefs_frame, text='Default Assistant Model',
-            #                                      **toolkit_UI.ctk_form_label_settings)
-            # assistant_model_input = ctk.CTkOptionMenu(assistant_prefs_frame,
-            #                                           variable=assistant_model_var,
-            #                                          values=assistant_model_list,
-            #                                           **toolkit_UI.ctk_form_entry_settings)
-
-            # ADD ELEMENTS TO GRID
+            # ADD ELEMENTS TO OPENAI GRID
             openai_api_key_label.grid(row=1, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
             openai_api_key_input.grid(row=1, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-            # assistant_model_label.grid(row=2, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            # assistant_model_input.grid(row=2, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+
 
             return form_vars
 
@@ -14420,6 +14633,16 @@ class toolkit_UI():
         default_model_provider = self.stAI.get_app_setting('assistant_provider', default_if_none='OpenAI')
         default_model_name = self.stAI.get_app_setting('assistant_model', default_if_none='gpt-3.5-turbo')
 
+        assistant_settings = {
+            'system_prompt': self.stAI.get_app_setting(
+                'assistant_system_prompt', default_if_none=ASSISTANT_DEFAULT_SYSTEM_MESSAGE),
+            "temperature": self.stAI.get_app_setting('assistant_temperature', default_if_none=1),
+            "max_length": self.stAI.get_app_setting('assistant_max_length', default_if_none=512),
+            "top_p": self.stAI.get_app_setting('assistant_top_p', default_if_none=1),
+            "frequency_penalty": self.stAI.get_app_setting('assistant_frequency_penalty', default_if_none=0.0),
+            "presence_penalty": self.stAI.get_app_setting('assistant_presence_penalty', default_if_none=0.0)
+        }
+
         # initialize an assistant item
         if 'assistant_item' not in self.assistant_windows[assistant_window_id]:
             self.assistant_windows[assistant_window_id]['assistant_item'] = \
@@ -14471,6 +14694,9 @@ class toolkit_UI():
                            'Your requests might be billed by your AI model provider.\n' + \
                            'Type [help] to see available commands or just ask a question.'
 
+            # also add the assistant settings to the window for future reference
+            assistant_window.assistant_settings = assistant_settings
+
             self._text_window_update(assistant_window_id, initial_info)
 
         if received_context:
@@ -14480,6 +14706,9 @@ class toolkit_UI():
         assistant_window.after(110, lambda: self.text_windows[assistant_window_id]['text_widget'].focus_set())
 
     def assistant_query(self, prompt, assistant_window_id: str, assistant_item=None):
+
+        # get this window object
+        assistant_window = self.get_window_by_id(assistant_window_id)
 
         if assistant_item is None:
             # use the assistant item from the assistant window
@@ -14727,8 +14956,11 @@ class toolkit_UI():
                 self.destroy_assistant_window(assistant_window_id)
                 return
 
+            # get the settings from the window again
+            assistant_settings = assistant_window.assistant_settings
+
             # get the assistant response
-            assistant_response = assistant_item.send_query(prompt)
+            assistant_response = assistant_item.send_query(prompt, assistant_settings)
 
             # update the assistant window
             self._text_window_update(assistant_window_id, "A > " + assistant_response)
@@ -15054,6 +15286,58 @@ class toolkit_UI():
         # if no type was passed, just log the message
         else:
             logger.debug(message_log)
+
+    @staticmethod
+    def sync_entry_with_slider(entry, slider, slider_from, slider_to, round_val=None):
+        """ Synchronize the entry with the slider value. """
+        try:
+            value = float(entry.get())
+
+            # first round the value to however decimals were required
+            if round_val is not None and round_val > 0:
+                value = round(value, round_val)
+            elif round_val is not None and round_val == 0:
+                value = round(value)
+
+            if value < slider_from:
+                value = slider_from
+
+            elif value > slider_to:
+                value = slider_to
+
+            slider.set(value)
+
+            entry.delete(0, tk.END)
+            entry.insert(0, str(slider.get()))
+
+        except ValueError:
+            entry.delete(0, tk.END)
+            entry.insert(0, str(slider.get()))
+
+    @staticmethod
+    def sync_slider_with_entry(slider, entry, round_val=None):
+        """ Synchronize the slider with the entry value. """
+
+        value = float(slider.get())
+
+        # first round the value to however decimals were required
+        if round_val is not None and round_val > 0:
+            value = round(value, round_val)
+        elif round_val is not None and round_val == 0:
+            value = round(value)
+
+        entry.delete(0, tk.END)
+        entry.insert(0, str(value))
+
+    @staticmethod
+    def bind_sync_functions(entry, slider, slider_from, slider_to, round_val=None):
+        entry.bind(
+            "<Return>", lambda event: toolkit_UI.sync_entry_with_slider(entry, slider, slider_from, slider_to, round_val))
+        entry.bind(
+            "<FocusOut>", lambda event: toolkit_UI.sync_entry_with_slider(entry, slider, slider_from, slider_to, round_val))
+        slider.configure(
+            command=lambda value, l_round_val=round_val: toolkit_UI.sync_slider_with_entry(slider, entry, l_round_val))
+
 
 
 def run_gui(toolkit_ops_obj, stAI):
