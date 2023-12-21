@@ -1964,7 +1964,7 @@ class toolkit_UI():
             self.windows[window_id].bind("<FocusIn>", lambda event: self._focused_window(window_id))
 
             # focus on the window after 100ms
-            self.windows[window_id].after(100, lambda window_id=window_id: self.focus_window(window_id=window_id))
+            self.windows[window_id].after(100, lambda l_window_id=window_id: self.focus_window(window_id=l_window_id))
 
             # add window_id to the window object
             self.windows[window_id].window_id = window_id
@@ -2970,7 +2970,7 @@ class toolkit_UI():
         if not window_id:
             window_id = title.replace(' ', '_').replace('.', '') + str(time.time()).replace('.', '')
 
-        close_action = kwargs.get('close_action', lambda window_id=window_id: self.destroy_text_window(window_id))
+        close_action = kwargs.get('close_action', lambda l_window_id=window_id: self.destroy_text_window(l_window_id))
 
         # open the text window
         if window_id := self.create_or_open_window(
@@ -3264,7 +3264,7 @@ class toolkit_UI():
 
                     # on click, open the url in the default browser
                     text_widget.tag_bind('url-' + str(start_index), '<Button-1>',
-                                         lambda event, url=url: webbrowser.open(url))
+                                         lambda event, l_url=url: webbrowser.open(l_url))
 
                 # finally, insert the rest of the line
                 text_widget.insert(ctk.INSERT, line)
@@ -3452,8 +3452,8 @@ class toolkit_UI():
 
         # open the find and replace window
         if self.create_or_open_window(parent_element=self.root, window_id=window_id, title=title, type='find',
-                                      close_action=lambda window_id=window_id:
-                                      self.destroy_find_replace_window(window_id, parent_window_id=parent_window_id)):
+                                      close_action=lambda l_window_id=window_id:
+                                      self.destroy_find_replace_window(l_window_id, parent_window_id=parent_window_id)):
 
             # add the window to the find_windows dict, and also include the parent window id
             self.find_windows[window_id] = {'parent_window_id': parent_window_id}
@@ -3484,17 +3484,17 @@ class toolkit_UI():
 
             # if the user presses a key in the find input,
             # call the _find_text_in_widget function
-            find_str.trace("w", lambda name, index, mode, find_str=find_str, parent_window_id=parent_window_id:
-            self._find_text_in_widget(find_str, parent_window_id, text_widget=parent_text_widget, **kwargs))
+            find_str.trace("w", lambda name, index, mode, l_find_str=find_str, l_parent_window_id=parent_window_id:
+            self._find_text_in_widget(l_find_str, l_parent_window_id, text_widget=parent_text_widget, **kwargs))
 
             # return key cycles through the results
             find_input.bind('<Return>',
-                            lambda e, parent_text_widget=parent_text_widget, parent_window_id=parent_window_id:
-                            self._cycle_through_find_results(text_widget=parent_text_widget,
-                                                             window_id=parent_window_id))
+                            lambda e, l_parent_text_widget=parent_text_widget, l_parent_window_id=parent_window_id:
+                            self._cycle_through_find_results(text_widget=l_parent_text_widget,
+                                                             window_id=l_parent_window_id))
 
             # escape key closes the window
-            find_input.bind('<Escape>', lambda e, window_id=window_id: self.destroy_find_replace_window(window_id))
+            find_input.bind('<Escape>', lambda e, l_window_id=window_id: self.destroy_find_replace_window(l_window_id))
 
             # if a find text is given, add it to the find input
             if find_text:
@@ -3548,6 +3548,7 @@ class toolkit_UI():
         """
         This function destroys a find text window
         :param window_id:
+        :param parent_window_id:
         :return:
         """
 
@@ -3648,12 +3649,12 @@ class toolkit_UI():
                         # add the select_all_action to the select_all_button
                         # but also send the transcription window id, the text widget and the result indexes
                         kwargs.get('select_all_button') \
-                            .configure(command=lambda window_id=window_id, text_widget=text_widget:
-                        select_all_action(
-                            window_id=window_id,
-                            text_element=text_widget,
-                            text_indices=self.find_result_indexes[window_id])
-                                       )
+                            .configure(command=lambda l_window_id=window_id, l_text_widget=text_widget:
+                            select_all_action(
+                                window_id=l_window_id,
+                                text_element=l_text_widget,
+                                text_indices=self.find_result_indexes[window_id])
+                                           )
 
                         kwargs.get('select_all_button').pack(side=ctk.LEFT, **self.ctk_popup_input_paddings)
 
@@ -4781,7 +4782,7 @@ class toolkit_UI():
                 self.style_input_as_valid(input=kwargs.get('input'), label=kwargs.get('label'))
 
             # if the time intervals input changes, update the time intervals variable
-            def update_time_intervals(*args):
+            def update_time_intervals():
                 time_intervals_var.set(time_intervals_input.get('1.0', tk.END))
 
             time_intervals_input.bind('<KeyRelease>', update_time_intervals)
@@ -4789,13 +4790,12 @@ class toolkit_UI():
             # validate when we're leaving the exclude time intervals input
             time_intervals_input.bind(
                 '<FocusOut>',
-                lambda e, time_intervals_var=time_intervals_var,
-                       kwargs=kwargs:
+                lambda e, l_time_intervals_var=time_intervals_var, l_kwargs=kwargs:
                 self.validate_time_interval_var(name='time_intervals',
-                                                var=time_intervals_var,
+                                                var=l_time_intervals_var,
                                                 input=time_intervals_input, label=time_intervals_label,
                                                 valid_callback=time_intervals_are_valid,
-                                                invalid_callback=time_intervals_are_invalid, **kwargs)
+                                                invalid_callback=time_intervals_are_invalid, **l_kwargs)
             )
 
             # EXCLUDE TIME INTERVALS
@@ -4815,7 +4815,7 @@ class toolkit_UI():
             excluded_time_intervals_input.insert(tk.END, excluded_time_intervals)
 
             # if the time intervals input changes, update the time intervals variable
-            def update_time_intervals(*kwargs):
+            def update_time_intervals():
                 excluded_time_intervals_var.set(excluded_time_intervals_input.get('1.0', tk.END))
 
             excluded_time_intervals_input.bind('<KeyRelease>', update_time_intervals)
@@ -4823,14 +4823,13 @@ class toolkit_UI():
             # validate when we're leaving the exclude time intervals input
             excluded_time_intervals_input.bind(
                 '<FocusOut>',
-                lambda e, exclude_time_intervals_var=excluded_time_intervals_var,
-                       kwargs=kwargs:
+                lambda e, exclude_time_intervals_var=excluded_time_intervals_var, l_kwargs=kwargs:
                 self.validate_time_interval_var(name='excluded_time_intervals',
                                                 var=exclude_time_intervals_var,
                                                 input=excluded_time_intervals_input,
                                                 label=excluded_time_intervals_label,
                                                 valid_callback=time_intervals_are_valid,
-                                                invalid_callback=time_intervals_are_invalid, **kwargs)
+                                                invalid_callback=time_intervals_are_invalid, **l_kwargs)
             )
 
         # POST-PROCESSING OPTIONS
@@ -5859,8 +5858,8 @@ class toolkit_UI():
             # add the done function to the render monitor
             # - when the monitor reaches the done state, it will call the function button_transcribe
             render_monitor.add_done_callback(
-                lambda render_file_paths=render_file_paths:
-                self.button_ingest(target_files=render_file_paths, transcription_task=transcription_task, **kwargs)
+                lambda l_render_file_paths=render_file_paths:
+                self.button_ingest(target_files=l_render_file_paths, transcription_task=transcription_task, **kwargs)
             )
 
             # resume polling
@@ -9347,8 +9346,8 @@ class toolkit_UI():
         # create a window for the transcript if one doesn't already exist
         if self.create_or_open_window(parent_element=self.root, window_id=t_window_id, title=title, resizable=True,
                                       type='transcription',
-                                      close_action=lambda t_window_id=t_window_id: \
-                                              self.destroy_transcription_window(t_window_id),
+                                      close_action=lambda l_t_window_id=t_window_id: \
+                                              self.destroy_transcription_window(l_t_window_id),
                                       has_menubar=True
                                       ):
 
@@ -9564,8 +9563,8 @@ class toolkit_UI():
                 # bind CMD/CTRL + mouse Clicks to text
                 text.bind(
                     "<" + self.ctrl_cmd_bind + "-Button-1>",
-                    lambda e, select_options=select_options:
-                    self.t_edit_obj.transcription_window_mouse(e, special_key='cmd', **select_options)
+                    lambda e, l_select_options=select_options:
+                    self.t_edit_obj.transcription_window_mouse(e, special_key='cmd', **l_select_options)
                 )
 
                 # bind ALT/OPT + mouse Click to edit transcript
@@ -9653,9 +9652,8 @@ class toolkit_UI():
                         left_r_buttons_frame,
                         name='import_srt_button',
                         text="Import SRT into Bin",
-                        # takefocus=False,
-                        command=lambda t_window_id=t_window_id:
-                        self.t_edit_obj.button_import_srt_to_bin(window_id=t_window_id),
+                        command=lambda l_t_window_id=t_window_id:
+                        self.t_edit_obj.button_import_srt_to_bin(window_id=l_t_window_id),
                         **self.ctk_side_frame_button_size
                     )
                 import_srt_button.pack(side=ctk.TOP, fill='x', **self.ctk_side_frame_button_paddings, anchor='sw')
@@ -9672,10 +9670,10 @@ class toolkit_UI():
                         **self.ctk_side_frame_button_size)
 
                 sync_button.configure(
-                    command=lambda sync_button=sync_button, window_id=t_window_id:
+                    command=lambda l_sync_button=sync_button, l_t_window_id=t_window_id:
                     self.t_edit_obj.sync_with_playhead_button(
-                        button=sync_button,
-                        window_id=t_window_id)
+                        button=l_sync_button,
+                        window_id=l_t_window_id)
                 )
 
                 # LINK TO TIMELINE BUTTON
@@ -9684,9 +9682,9 @@ class toolkit_UI():
 
                 # prepare an empty link button for now, and only show it when/if resolve starts
                 link_button = ctk.CTkButton(left_r_buttons_frame, name='link_button', **self.ctk_side_frame_button_size)
-                link_button.configure(command=lambda link_button=link_button,
-                                                     transcription_file_path=transcription.transcription_file_path:
-                self.t_edit_obj.link_to_timeline_button(window_id=t_window_id))
+                link_button.configure(
+                    command=lambda: self.t_edit_obj.link_to_timeline_button(window_id=t_window_id)
+                )
 
                 # RESOLVE SEGMENTS + MARKERS BUTTONS
 
@@ -9718,13 +9716,13 @@ class toolkit_UI():
                 # here we send the update transcription window function a few items that need to be updated
                 self.windows[t_window_id].after(
                     100,
-                    lambda link_button=link_button, t_window_id=t_window_id,
-                           transcription_file_path=transcription.transcription_file_path:
-                    self.update_transcription_window(window_id=t_window_id,
-                                                     link_button=link_button,
+                    lambda l_link_button=link_button, l_t_window_id=t_window_id,
+                    l_transcription_file_path=transcription.transcription_file_path:
+                    self.update_transcription_window(window_id=l_t_window_id,
+                                                     link_button=l_link_button,
                                                      sync_button=sync_button,
                                                      import_srt_button=import_srt_button,
-                                                     transcription_file_path=transcription_file_path,
+                                                     transcription_file_path=l_transcription_file_path,
                                                      text=text)
                 )
 
@@ -10446,7 +10444,7 @@ class toolkit_UI():
 
                     # bind a click event to the group label
                     group_label.bind('<Button-1>',
-                                     lambda event, group_id=group_id: self._on_group_press(event, group_id))
+                                     lambda event, l_group_id=group_id: self._on_group_press(event, l_group_id))
 
                 # make sure the column is expanded
                 self._groups_list_frame.columnconfigure(0, weight=1)
@@ -12717,7 +12715,7 @@ class toolkit_UI():
 
         if self.create_or_open_window(
                 parent_element=self.root, window_id=window_id, title=title, resizable=True,
-                close_action=lambda window_id=window_id: self.destroy_story_editor_window(window_id),
+                close_action=lambda l_window_id=window_id: self.destroy_story_editor_window(l_window_id),
                 type="story_editor", has_menubar=True):
 
             # get the window
@@ -12857,7 +12855,7 @@ class toolkit_UI():
                 '<Button-2>', lambda e: self.StoryEdit.story_editor_context_menu(
                     e, window_id=window_id, toolkit_UI_obj=self))
 
-        return window
+            return window
 
     def destroy_story_editor_window(self, window_id):
         """
@@ -13095,23 +13093,23 @@ class toolkit_UI():
                     button_cancel = ctk.CTkButton(queue_item_frame, text='x', width=1)
 
                 # bind the button to the cancel_transcription function
-                button_cancel.bind("<Button-1>", lambda e, queue_id=queue_id, button_cancel=button_cancel:
-                self.on_button_cancel_queue_item(queue_id, button_cancel))
+                button_cancel.bind("<Button-1>", lambda e, l_queue_id=queue_id, l_button_cancel=button_cancel:
+                self.on_button_cancel_queue_item(l_queue_id, l_button_cancel))
 
                 # add the name and status labels to the queue item frame (but don't add the progress bar yet)
                 name_label.grid(row=0, column=0, sticky='w', **self.ctk_form_paddings)
                 status_label.grid(row=0, column=1, sticky='e', **self.ctk_form_paddings)
 
                 # add an action to click on the frame
-                queue_item_frame.bind("<Button-1>", lambda e, queue_id=queue_id:
-                self.on_click_queue_item(queue_id, queue_item_frame))
+                queue_item_frame.bind("<Button-1>", lambda e, l_queue_id=queue_id:
+                self.on_click_queue_item(l_queue_id, queue_item_frame))
 
                 # add an action to click on the label and status
-                name_label.bind("<Button-1>", lambda e, queue_id=queue_id:
-                self.on_click_queue_item(queue_id, queue_item_frame))
+                name_label.bind("<Button-1>", lambda e, l_queue_id=queue_id:
+                self.on_click_queue_item(l_queue_id, queue_item_frame))
 
-                status_label.bind("<Button-1>", lambda e, queue_id=queue_id:
-                self.on_click_queue_item(queue_id, queue_item_frame))
+                status_label.bind("<Button-1>", lambda e, l_queue_id=queue_id:
+                self.on_click_queue_item(l_queue_id, queue_item_frame))
 
                 # add the queue item to the queue items frame
                 queue_item_frame.grid(row=row_num, column=0, sticky='ew', **self.ctk_form_paddings)
@@ -13412,8 +13410,8 @@ class toolkit_UI():
                                                  title=search_window_title,
                                                  can_find=True,
                                                  user_prompt=True,
-                                                 close_action=lambda search_window_id=search_window_id:
-                                                 self.destroy_advanced_search_window(search_window_id),
+                                                 close_action=lambda l_search_window_id=search_window_id:
+                                                 self.destroy_advanced_search_window(l_search_window_id),
                                                  prompt_prefix='SEARCH > ',
                                                  prompt_callback=self.advanced_search,
                                                  prompt_callback_kwargs={
@@ -13662,8 +13660,8 @@ class toolkit_UI():
         self._add_button_to_side_frames_of_window(search_window_id, side='left',
                                                   button_text='List files',
                                                   button_command=
-                                                  lambda search_window_id=search_window_id:
-                                                  self.button_search_list_files(search_window_id),
+                                                  lambda l_search_window_id=search_window_id:
+                                                  self.button_search_list_files(l_search_window_id),
                                                   sub_frame="Search")
 
         search_window.search_text_switch_var, search_window.search_text_switch_input = \
@@ -14150,14 +14148,14 @@ class toolkit_UI():
                     # open the file in the default program (must work for Windows, Mac and Linux)
                     results_text_element.tag_bind(tag_name, '<Button-1>',
                                                   lambda event,
-                                                         file_path=result['file_path'],
-                                                         result_text=result['text'],
-                                                         file_path_hash=file_path_hash,
-                                                         file_basename=file_basename:
-                                                  self.open_text_file(file_path=file_path,
-                                                                      window_id="text_" + file_path_hash,
-                                                                      title=file_basename,
-                                                                      tag_text=result_text))
+                                                         l_file_path=result['file_path'],
+                                                         l_result_text=result['text'],
+                                                         l_file_path_hash=file_path_hash,
+                                                         l_file_basename=file_basename:
+                                                  self.open_text_file(file_path=l_file_path,
+                                                                      window_id="text_" + l_file_path_hash,
+                                                                      title=l_file_basename,
+                                                                      tag_text=l_result_text))
 
                 # if the type is a marker
                 elif result['type'] == 'marker':
@@ -14241,9 +14239,9 @@ class toolkit_UI():
                 # highlight the tag when the mouse enters the tag
                 # (the unhighlight function is called when the mouse leaves the tag)
                 results_text_element.tag_bind(tag_name, '<Enter>',
-                                              lambda event, tag_name=tag_name:
+                                              lambda event, l_tag_name=tag_name:
                                               self._highlight_result_tag(
-                                                 self.text_windows[search_window_id]['text_widget'], tag_name))
+                                                 self.text_windows[search_window_id]['text_widget'], l_tag_name))
 
                 # add a new line
                 results_text_element.insert(ctk.END, '\n')
@@ -14555,11 +14553,11 @@ class toolkit_UI():
         parent_element.tag_config(tag_name, background=self.theme_colors['superblack'])
 
         # add the leave event
-        parent_element.tag_bind(tag_name, '<Leave>', lambda event, tag_name=tag_name,
-                                                            initial_background_color=current_background_color,
-                                                            initial_cursor=current_cursor:
-        self._unhighlight_result_tag(parent_element, tag_name,
-                                     initial_background_color, initial_cursor)
+        parent_element.tag_bind(tag_name, '<Leave>', lambda event, l_tag_name=tag_name,
+                                                            l_initial_background_color=current_background_color,
+                                                            l_initial_cursor=current_cursor:
+        self._unhighlight_result_tag(parent_element, l_tag_name,
+                                     l_initial_background_color, l_initial_cursor)
                                 )
 
     def button_search_list_files(self, search_window_id: str = None):
@@ -14671,8 +14669,8 @@ class toolkit_UI():
                               title=assistant_window_title,
                               can_find=True,
                               user_prompt=True,
-                              close_action=lambda assistant_window_id=assistant_window_id:
-                              self.destroy_assistant_window(assistant_window_id),
+                              close_action=lambda l_assistant_window_id=assistant_window_id:
+                              self.destroy_assistant_window(l_assistant_window_id),
                               prompt_prefix='U > ',
                               prompt_callback=self.assistant_query,
                               prompt_callback_kwargs={
