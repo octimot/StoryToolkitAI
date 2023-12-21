@@ -42,7 +42,7 @@ def post_update(current_version, last_version, is_standalone=False):
     return True
 
 
-def post_update_0_19_6(is_standalone=False):
+def post_update_0_20_1(is_standalone=False):
 
     # not needed if we are running in standalone mode
     if is_standalone:
@@ -74,6 +74,6 @@ def post_update_0_19_6(is_standalone=False):
 # but remove update functions from the past which uninstall and install requirements.txt
 # (for eg. 0.19.4 was uninstalling openai-whisper and reinstalling requirements.txt)
 post_update_functions = {
-    '0.19.6': post_update_0_19_6,
+    '0.20.1': post_update_0_20_1,
 }
 
