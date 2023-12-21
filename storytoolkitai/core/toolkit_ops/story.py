@@ -1205,9 +1205,9 @@ class StoryUtils:
                     logger.warning('Media file path for {} unknown. Export will not contain file reference.'
                                    .format(line.text))
 
-                elif os.path.isfile(media_file_path):
-                    logger.warning('Media file path for {} inaccessible.'
-                                   .format(line.text))
+                elif not os.path.isfile(media_file_path):
+                    logger.warning('Media file {} for line "{}" inaccessible.'
+                                   .format(media_file_path, line.text))
 
             # if the file name and the start timecode of the line are the same as the last line
             # we just update the end timecode of the last line to chunk the lines together
