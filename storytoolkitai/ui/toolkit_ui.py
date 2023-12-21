@@ -137,7 +137,7 @@ class toolkit_UI():
             :return:
             """
 
-            # create a window for the transcription settings if one doesn't already exist
+            # create a window for the preferences if one doesn't already exist
             if window_id := self.toolkit_UI_obj.create_or_open_window(parent_element=self.root,
                                                                       window_id='preferences',
                                                                       title='Preferences', resizable=(False, True),
@@ -198,7 +198,7 @@ class toolkit_UI():
                                                                         **toolkit_UI.ctk_frame_transparent)
                 assistant_tab_scrollable_frame.pack(fill='both', expand=True)
 
-                # UI - set the visibility on the audio tab
+                # UI - set the visibility on the General tab
                 middle_frame.set('General')
                 middle_frame.columnconfigure(0, weight=1)
 
@@ -632,9 +632,12 @@ class toolkit_UI():
 
             return form_vars
 
-        def add_assistant_prefs(self, parent: tk.Widget, **kwargs) -> dict or None:
+        def add_assistant_prefs(self, parent: tk.Widget, skip_general=False, **kwargs) -> dict or None:
             """
             This function adds the assistant preferences
+            :param parent: the parent widget
+            :param skip_general: if True, app wide settings will be skipped (for eg. OpenAI API key)
+            :param kwargs: additional arguments
             """
 
             # create the frames
@@ -657,8 +660,9 @@ class toolkit_UI():
             # add the labels and frames to the parent
             assistant_prefs_label.grid(row=l_row + 1, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
             assistant_prefs_frame.grid(row=l_row + 2, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
-            openai_prefs_label.grid(row=l_row + 3, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
-            openai_prefs_frame.grid(row=l_row + 4, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+            if not skip_general:
+                openai_prefs_label.grid(row=l_row + 3, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+                openai_prefs_frame.grid(row=l_row + 4, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
             advanced_prefs_label.grid(row=l_row + 5, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
             advanced_prefs_frame.grid(row=l_row + 6, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
 
@@ -888,25 +892,26 @@ class toolkit_UI():
             presence_penalty_label.grid(row=8, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
             presence_penalty_slider_frame.grid(row=8, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
 
-            # OPENAI openai_openai_api_key_key KEY
-            # get the api token from the app settings
-            openai_api_key = \
-                kwargs.get('openai_api_key', None) \
-                    if kwargs.get('openai_api_key', None) is not None \
-                    else self.toolkit_UI_obj.stAI.get_app_setting('openai_api_key', default_if_none=None)
+            if not skip_general:
+                # OPENAI openai_openai_api_key_key KEY
+                # get the api token from the app settings
+                openai_api_key = \
+                    kwargs.get('openai_api_key', None) \
+                        if kwargs.get('openai_api_key', None) is not None \
+                        else self.toolkit_UI_obj.stAI.get_app_setting('openai_api_key', default_if_none=None)
 
-            # create the api token variable, label and input
-            form_vars['openai_api_key_var'] = \
-                openai_api_key_var = tk.StringVar(openai_prefs_frame, value=openai_api_key if openai_api_key else '')
-            openai_api_key_label = ctk.CTkLabel(openai_prefs_frame, text='OpenAI API Key',
-                                                **toolkit_UI.ctk_form_label_settings)
-            openai_api_key_input = ctk.CTkEntry(openai_prefs_frame, show="*",
-                                                textvariable=openai_api_key_var,
-                                                **toolkit_UI.ctk_form_entry_settings_double)
+                # create the api token variable, label and input
+                form_vars['openai_api_key_var'] = \
+                    openai_api_key_var = tk.StringVar(openai_prefs_frame, value=openai_api_key if openai_api_key else '')
+                openai_api_key_label = ctk.CTkLabel(openai_prefs_frame, text='OpenAI API Key',
+                                                    **toolkit_UI.ctk_form_label_settings)
+                openai_api_key_input = ctk.CTkEntry(openai_prefs_frame, show="*",
+                                                    textvariable=openai_api_key_var,
+                                                    **toolkit_UI.ctk_form_entry_settings_double)
 
-            # ADD ELEMENTS TO OPENAI GRID
-            openai_api_key_label.grid(row=1, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            openai_api_key_input.grid(row=1, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+                # ADD ELEMENTS TO OPENAI GRID
+                openai_api_key_label.grid(row=1, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+                openai_api_key_input.grid(row=1, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
 
 
             return form_vars
@@ -14621,6 +14626,7 @@ class toolkit_UI():
             return False
 
         # open a new console assistant window
+        # only one assistant window can be open at a time for now, so we'll use a fixed window id
         assistant_window_id = 'assistant'
         assistant_window_title = 'Assistant'
 
@@ -14688,8 +14694,9 @@ class toolkit_UI():
 
         # show the initial message if the window didn't exist before
         if not window_existed:
-            initial_info = 'Using {} {}\n'.format(assistant_item.model_provider, assistant_item.model_description) + \
-                           'Your requests might be billed by your AI model provider.\n' + \
+            initial_info = 'Using {} {}\n' \
+                            .format(assistant_item.model_provider, assistant_item.model_description) + \
+                            'Your requests might be billed by your AI model provider.\n' + \
                            'Type [help] to see available commands or just ask a question.'
 
             # also add the assistant settings to the window for future reference
@@ -14698,10 +14705,201 @@ class toolkit_UI():
             self._text_window_update(assistant_window_id, initial_info)
 
         if received_context:
-            self._text_window_update(assistant_window_id, 'Added transcript items as context.')
+            self._text_window_update(assistant_window_id, 'Added items as context.')
 
         # focus in the text widget after 110 ms
         assistant_window.after(110, lambda: self.text_windows[assistant_window_id]['text_widget'].focus_set())
+
+    def open_assistant_window_settings(self, assistant_window_id: str = None, **kwargs):
+        """
+        Open a window with the assistant settings.
+        """
+
+        # does the assistant window exist?
+        assistant_window = self.get_window_by_id(assistant_window_id)
+
+        if not assistant_window:
+            logger.error('Cannot open assistant settings. The "{}" assistant window does not exist.'
+                         .format(assistant_window_id))
+            return False
+
+        # use the assistant_window_id in the name of the settings window
+        settings_window_id = assistant_window_id + '_settings'
+
+        # get the assistant settings from the window
+        assistant_settings = assistant_window.assistant_settings
+
+        # add 'assistant_' in front of each setting name
+        assistant_settings = {**{'assistant_' + k: v for k, v in assistant_settings.items()}}
+
+        assistant_item = self.assistant_windows[assistant_window_id]['assistant_item']
+
+        assistant_settings['assistant_provider'] = assistant_item.model_provider
+        assistant_settings['assistant_model'] = assistant_item.model_name
+
+        # create a window if one doesn't already exist
+        if settings_window_id := self.create_or_open_window(
+                parent_element=assistant_window, window_id=settings_window_id,
+                title='Current Assistant Settings', resizable=(False, True),
+                type='assistant_window_settings'):
+
+            # get the window
+            settings_window = self.get_window_by_id(settings_window_id)
+
+            # UI - create the middle frame
+            middle_frame = ctk.CTkScrollableFrame(settings_window, **toolkit_UI.ctk_frame_transparent)
+
+            # UI - create the bottom frame
+            bottom_frame = ctk.CTkFrame(settings_window, **toolkit_UI.ctk_frame_transparent)
+
+            # UI - middle and bottom frames
+            middle_frame.grid(row=1, column=0, sticky="nsew", **toolkit_UI.ctk_frame_paddings)
+            bottom_frame.grid(row=2, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+
+            # UI - grid configure the middle frame so that it expands with the window
+            settings_window.grid_rowconfigure(1, weight=1)
+
+            # UI - the columns should expand with the window
+            settings_window.grid_columnconfigure(0, weight=1, minsize=500)
+
+            # UI - set the visibility on the General tab
+            middle_frame.columnconfigure(0, weight=1)
+
+            # UI - create another frame for the buttons
+            buttons_frame = ctk.CTkFrame(bottom_frame, **toolkit_UI.ctk_frame_transparent)
+
+            # UI - create the start button
+            save_button = ctk.CTkButton(buttons_frame, text='Save')
+
+            # UI - create the cancel button
+            cancel_button = ctk.CTkButton(buttons_frame, text='Cancel')
+
+            # UI - add the start button, the cancel button
+            buttons_frame.grid(row=0, column=0, sticky="w", **toolkit_UI.ctk_frame_paddings)
+
+            # UI - the buttons should be next to each other, so we'll use a pack layout
+            save_button.pack(side='left', **toolkit_UI.ctk_footer_button_paddings)
+            cancel_button.pack(side='left', **toolkit_UI.ctk_footer_button_paddings)
+
+            # add the buttons to the kwargs so we can pass them to future functions
+            kwargs['save_button'] = save_button
+            kwargs['cancel_button'] = cancel_button
+
+            # ASSISTANT SETTINGS FORM
+            # (also send the assistant settings)
+            assistant_form_vars = self.app_items_obj.add_assistant_prefs(
+                parent=middle_frame, skip_general=True, **assistant_settings)
+
+            form_vars = {**assistant_form_vars}
+
+            # UI - start button command
+            # at this point, the kwargs should also contain the ingest_window_id
+            save_button.configure(
+                command=lambda l_assistant_window_id=assistant_window_id:
+                self.save_assistant_settings(assistant_window_id=l_assistant_window_id, input_variables=form_vars)
+            )
+
+            # UI - cancel button command
+            cancel_button.configure(
+                command=lambda l_settings_window_id=settings_window_id:
+                self.destroy_window_(window_id=l_settings_window_id)
+            )
+
+            # UI - configure the bottom columns and rows so that the elements expand with the window
+            bottom_frame.columnconfigure(0, weight=1)
+            bottom_frame.columnconfigure(1, weight=1)
+            bottom_frame.rowconfigure(1, weight=1)
+            bottom_frame.rowconfigure(2, weight=1)
+
+            # UI - add a minimum height to the window
+            settings_window.minsize(500, 700
+            if settings_window.winfo_screenheight() > 700 else settings_window.winfo_screenheight())
+
+            # UI- add a maximum height to the window (to prevent it from being bigger than the screen)
+            settings_window.maxsize(600, settings_window.winfo_screenheight())
+
+    def save_assistant_settings(self, assistant_window_id, input_variables: dict = None):
+
+        # remove _var from all the input variables and get their values into a new dict
+        assistant_settings = {}
+        for key, form_var in input_variables.items():
+            if key.endswith('_var'):
+                assistant_settings[key[:-4]] = form_var.get()
+            else:
+                assistant_settings[key] = form_var.get()
+
+        # get the assistant window
+        assistant_window = self.get_window_by_id(assistant_window_id)
+
+        # get the assistant item
+        assistant_item = self.assistant_windows[assistant_window_id]['assistant_item']
+
+        # set a new model provider and model name (only if they are different from the current ones)
+        if assistant_settings.get('assistant_provider', None) and assistant_settings.get('assistant_model', None) \
+            and (assistant_settings.get('assistant_provider', None) != assistant_item.model_provider
+                or assistant_settings.get('assistant_model', None) != assistant_item.model_name):
+
+            # reset the assistant item
+            new_assistant_item = assistant_handler(
+                toolkit_ops_obj=self.toolkit_ops_obj,
+                model_provider=assistant_settings.get('assistant_provider'),
+                model_name=assistant_settings.get('assistant_model')
+            )
+
+            if new_assistant_item is None:
+                logger.error('Cannot change assistant model. The model provider or model name is invalid.')
+                return False
+
+            # if the model is valid, replace the assistant item
+            self.assistant_windows[assistant_window_id]['assistant_item'] = new_assistant_item
+
+            # update the assistant window
+            model_reply = "Model changed to {} {}.\n" \
+                            .format(new_assistant_item.model_provider, new_assistant_item.model_description)
+
+            if new_assistant_item.info is not None and 'pricing_info' in new_assistant_item.info:
+                model_reply += "See {} for more reliable pricing." \
+                                .format(new_assistant_item.info.get('pricing_info'))
+
+            model_reply += "\nUsage for this window has been reset to 0 due to model change."
+
+            # get the window text widget
+            text_widget = self.text_windows[assistant_window_id]['text_widget']
+
+            # get the current text_widget prompt kwargs
+            prompt_callback_kwargs = text_widget.prompt_callback_kwargs
+
+            # update the assistant_item in the prompt kwargs
+            prompt_callback_kwargs['assistant_item'] = new_assistant_item
+
+            # when updating the text window, we also update the prompt callback kwargs with the new assistant item
+            self._text_window_update(
+                assistant_window_id, model_reply, prompt_callback_kwargs=prompt_callback_kwargs)
+
+        # we don't need the assistant_model and assistant_provider in the settings from here on
+        # since we already used them previously
+        if 'assistant_model' in assistant_settings:
+            del assistant_settings['assistant_model']
+
+        if 'assistant_provider' in assistant_settings:
+            del assistant_settings['assistant_provider']
+
+        # update the system prompt (if not empty)
+        if assistant_settings.get('assistant_system_prompt', None) is not None:
+            assistant_item.set_system(system_message=assistant_settings.get('assistant_system_prompt'))
+            self._text_window_update(assistant_window_id, 'System prompt changed.')
+
+        # remove the 'assistant_' prefix from the settings
+        assistant_settings = {k[10:]: v for k, v in assistant_settings.items() if k.startswith('assistant_')}
+
+        # update the assistant settings
+        assistant_window.assistant_settings = assistant_settings
+
+        # let the user know that the settings were saved
+        self._text_window_update(assistant_window_id, 'New settings loaded.')
+
+        # destroy the settings window after 100ms
+        assistant_window.after(100, lambda: self.destroy_window_(window_id=assistant_window_id+'_settings'))
 
     def assistant_query(self, prompt, assistant_window_id: str, assistant_item=None):
 
@@ -14954,6 +15152,13 @@ class toolkit_UI():
                 self.destroy_assistant_window(assistant_window_id)
                 return
 
+            elif prompt.lower() == '[settings]':
+
+                # open the assistant settings window
+                self.open_assistant_window_settings(assistant_window_id=assistant_window_id)
+                self._text_window_update(assistant_window_id, '')
+                return
+
             # get the settings from the window again
             assistant_settings = assistant_window.assistant_settings
 
@@ -14977,6 +15182,11 @@ class toolkit_UI():
         # remove assistant window from the assistant windows dict
         if assistant_window_id in self.assistant_windows:
             del self.assistant_windows[assistant_window_id]
+
+        # also remove any settings window it might have
+        settings_window_id = assistant_window_id + '_settings'
+        if settings_window_id in self.windows:
+            self.destroy_window_(window_id=settings_window_id)
 
         # destroy the assistant window
         self.destroy_text_window(assistant_window_id)

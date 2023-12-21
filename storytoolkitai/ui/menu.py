@@ -497,6 +497,10 @@ class UImenus:
         self.assistantmenu.add_command(label="Send to Assistant with TC", command=self.donothing, state=DISABLED,
                                        accelerator="Shift+o")
 
+        # ASSISTANT WINDOW stuff
+        self.assistantmenu.add_separator()
+        self.assistantmenu.add_command(label="Current Assistant Settings...", command=self.donothing, state=DISABLED)
+
         self.menubar.add_cascade(label="Assistant", menu=self.assistantmenu)
 
         def toggle_assistant_menu_items():
@@ -522,6 +526,15 @@ class UImenus:
             else:
                 self.assistantmenu.entryconfig("Send to Assistant", state=DISABLED)
                 self.assistantmenu.entryconfig("Send to Assistant with TC", state=DISABLED)
+
+            if self.current_window_type == 'assistant':
+                self.assistantmenu.entryconfig("Current Assistant Settings...", state=NORMAL,
+                                               command=lambda:
+                                               self.toolkit_UI_obj.open_assistant_window_settings(
+                                                   assistant_window_id=self.current_window_id)
+                                               )
+            else:
+                self.assistantmenu.entryconfig("Current Assistant Settings...", state=DISABLED)
 
         # add a postcommand to the assistant menu to enable/disable menu items depending on the current window
         self.assistantmenu.configure(postcommand=toggle_assistant_menu_items)
