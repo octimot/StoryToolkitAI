@@ -1332,9 +1332,6 @@ class toolkit_UI():
         # this holds the index of the current prompt in the prompt history
         self.window_prompts_index = {}
 
-        # this holds all the assistent windows
-        self.assistant_windows = {}
-
         # currently focused window (id only)
         self.current_focused_window = None
 
@@ -14630,10 +14627,6 @@ class toolkit_UI():
         assistant_window_id = 'assistant'
         assistant_window_title = 'Assistant'
 
-        # create an entry for the assistant window (if one does not exist)
-        if assistant_window_id not in self.assistant_windows:
-            self.assistant_windows[assistant_window_id] = {}
-
         default_model_provider = self.stAI.get_app_setting('assistant_provider', default_if_none='OpenAI')
         default_model_name = self.stAI.get_app_setting('assistant_model', default_if_none='gpt-3.5-turbo')
 
@@ -14646,24 +14639,6 @@ class toolkit_UI():
             "frequency_penalty": self.stAI.get_app_setting('assistant_frequency_penalty', default_if_none=0.0),
             "presence_penalty": self.stAI.get_app_setting('assistant_presence_penalty', default_if_none=0.0)
         }
-
-        # initialize an assistant item
-        if 'assistant_item' not in self.assistant_windows[assistant_window_id]:
-            self.assistant_windows[assistant_window_id]['assistant_item'] = \
-                assistant_handler(toolkit_ops_obj=self.toolkit_ops_obj,
-                                  model_provider=default_model_provider,
-                                  model_name=default_model_name)
-
-        # but use a simpler reference here
-        assistant_item = self.assistant_windows[assistant_window_id]['assistant_item']
-
-        # set the transcript text
-        received_context = False
-        if transcript_text is not None:
-            transcript_text = "TRANSCRIPT\n\n{}\n\nEND".format(transcript_text)
-            assistant_item.add_context(context=transcript_text)
-
-            received_context = True
 
         # does this window already exist?
         window_existed = False
@@ -14680,7 +14655,6 @@ class toolkit_UI():
                               prompt_prefix='U > ',
                               prompt_callback=self.assistant_query,
                               prompt_callback_kwargs={
-                                  'assistant_item': assistant_item,
                                   'assistant_window_id': assistant_window_id
                               },
                               window_width=60,
@@ -14692,19 +14666,33 @@ class toolkit_UI():
         # get this window object
         assistant_window = self.get_window_by_id(assistant_window_id)
 
-        # show the initial message if the window didn't exist before
+        # do this if the window didn't exist before
         if not window_existed:
-            initial_info = 'Using {} {}\n' \
-                            .format(assistant_item.model_provider, assistant_item.model_description) + \
-                            'Your requests might be billed by your AI model provider.\n' + \
-                           'Type [help] to see available commands or just ask a question.'
+
+            # initialize an assistant item if one doesn't already exist
+            if not hasattr(assistant_window, 'assistant_item'):
+                assistant_window.assistant_item = assistant_handler(
+                    toolkit_ops_obj=self.toolkit_ops_obj,
+                    model_provider=default_model_provider,
+                    model_name=default_model_name
+                )
+
+            initial_info = 'Using {} {}\n'.format(
+                assistant_window.assistant_item.model_provider, assistant_window.assistant_item.model_description)
+
+            initial_info += 'Your requests might be billed by your AI model provider.\n' + \
+                            'Type [help] to see available commands or just ask a question.'
 
             # also add the assistant settings to the window for future reference
             assistant_window.assistant_settings = assistant_settings
 
             self._text_window_update(assistant_window_id, initial_info)
 
-        if received_context:
+        # add the transcript text as context to the assistant
+        if transcript_text is not None:
+            transcript_text = "TRANSCRIPT\n\n{}\n\nEND".format(transcript_text)
+            assistant_window.assistant_item.add_context(context=transcript_text)
+
             self._text_window_update(assistant_window_id, 'Added items as context.')
 
         # focus in the text widget after 110 ms
@@ -14732,7 +14720,7 @@ class toolkit_UI():
         # add 'assistant_' in front of each setting name
         assistant_settings = {**{'assistant_' + k: v for k, v in assistant_settings.items()}}
 
-        assistant_item = self.assistant_windows[assistant_window_id]['assistant_item']
+        assistant_item = assistant_window.assistant_item
 
         assistant_settings['assistant_provider'] = assistant_item.model_provider
         assistant_settings['assistant_model'] = assistant_item.model_name
@@ -14831,8 +14819,8 @@ class toolkit_UI():
         # get the assistant window
         assistant_window = self.get_window_by_id(assistant_window_id)
 
-        # get the assistant item
-        assistant_item = self.assistant_windows[assistant_window_id]['assistant_item']
+        # use a shorter name for the assistant item
+        assistant_item = assistant_window.assistant_item
 
         # set a new model provider and model name (only if they are different from the current ones)
         if assistant_settings.get('assistant_provider', None) and assistant_settings.get('assistant_model', None) \
@@ -14851,30 +14839,21 @@ class toolkit_UI():
                 return False
 
             # if the model is valid, replace the assistant item
-            self.assistant_windows[assistant_window_id]['assistant_item'] = new_assistant_item
+            assistant_window.assistant_item = new_assistant_item
+            assistant_item = new_assistant_item
 
             # update the assistant window
             model_reply = "Model changed to {} {}.\n" \
-                            .format(new_assistant_item.model_provider, new_assistant_item.model_description)
+                            .format(assistant_item.model_provider, assistant_item.model_description)
 
             if new_assistant_item.info is not None and 'pricing_info' in new_assistant_item.info:
                 model_reply += "See {} for more reliable pricing." \
-                                .format(new_assistant_item.info.get('pricing_info'))
+                                .format(assistant_item.info.get('pricing_info'))
 
             model_reply += "\nUsage for this window has been reset to 0 due to model change."
 
-            # get the window text widget
-            text_widget = self.text_windows[assistant_window_id]['text_widget']
-
-            # get the current text_widget prompt kwargs
-            prompt_callback_kwargs = text_widget.prompt_callback_kwargs
-
-            # update the assistant_item in the prompt kwargs
-            prompt_callback_kwargs['assistant_item'] = new_assistant_item
-
-            # when updating the text window, we also update the prompt callback kwargs with the new assistant item
-            self._text_window_update(
-                assistant_window_id, model_reply, prompt_callback_kwargs=prompt_callback_kwargs)
+            # when updating the text window
+            self._text_window_update(assistant_window_id, model_reply)
 
         # we don't need the assistant_model and assistant_provider in the settings from here on
         # since we already used them previously
@@ -14907,9 +14886,9 @@ class toolkit_UI():
         assistant_window = self.get_window_by_id(assistant_window_id)
 
         if assistant_item is None:
+
             # use the assistant item from the assistant window
-            if assistant_window_id in self.assistant_windows:
-                assistant_item = self.assistant_windows[assistant_window_id]['assistant_item']
+            assistant_item = assistant_window.assistant_item if hasattr(assistant_window, 'assistant_item') else None
 
             if assistant_item is None:
                 logger.error('Cannot run assistant query. No assistant item found.')
@@ -14977,22 +14956,20 @@ class toolkit_UI():
                     )
                     return
 
-                # assistant_item = assistant_handler(toolkit_ops_obj=self.toolkit_ops_obj,
-                # reset the assistant_item = self.assistant_windows[assistant_window_id]['assistant_item']
                 new_assistant_item = assistant_handler(
                     toolkit_ops_obj=self.toolkit_ops_obj, model_provider=model_provider, model_name=model_name)
 
                 if new_assistant_item is None:
 
                     model_reply = "Invalid model or provider name.\n"
-                    model_reply += ("You are still using {} {}.\n" \
+                    model_reply += ("You are still using {} {}.\n"
                                     .format(assistant_item.model_provider, assistant_item.model_description))
 
                     self._text_window_update(assistant_window_id, model_reply)
                     return
 
                 # if the model is valid, replace the assistant item
-                self.assistant_windows[assistant_window_id]['assistant_item'] = new_assistant_item
+                assistant_window.assistant_item = new_assistant_item
                 assistant_item = new_assistant_item
 
                 # update the assistant window
@@ -15014,12 +14991,8 @@ class toolkit_UI():
                 # update the assistant_item in the prompt kwargs
                 prompt_callback_kwargs['assistant_item'] = new_assistant_item
 
-                # when updating the text window, we also update the prompt callback kwargs with the new assistant item
-                self._text_window_update(
-                    assistant_window_id,
-                    model_reply,
-                    prompt_callback_kwargs=prompt_callback_kwargs
-                )
+                # when updating the text window
+                self._text_window_update(assistant_window_id, model_reply)
 
                 return
 
@@ -15178,10 +15151,6 @@ class toolkit_UI():
         """
         Destroys the assistant window
         """
-
-        # remove assistant window from the assistant windows dict
-        if assistant_window_id in self.assistant_windows:
-            del self.assistant_windows[assistant_window_id]
 
         # also remove any settings window it might have
         settings_window_id = assistant_window_id + '_settings'
