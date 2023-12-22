@@ -22,6 +22,18 @@ class ToolkitAssistant:
         # load the toolkit UI object
         self.toolkit_UI_obj = self.toolkit_ops_obj.toolkit_UI_obj
 
+    @staticmethod
+    def copy_context_and_chat(assistant_from, assistant_to):
+        """
+        This function is used to copy the context and chat history from one assistant to another
+        """
+
+        # first, copy the context
+        assistant_to.add_context(assistant_from.context)
+
+        # then copy the chat history
+        assistant_to.chat_history = assistant_from.chat_history.copy()
+
 
 class ChatGPT(ToolkitAssistant):
     """
@@ -144,7 +156,7 @@ class ChatGPT(ToolkitAssistant):
                 return True
 
             # otherwise we'll just add it
-            # find the system message in the chat history
+            # find the system message in the chat history so that we can add the context right after it
             for i, message in enumerate(self.chat_history):
 
                 # if the role is system, then we've found the system message

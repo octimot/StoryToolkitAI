@@ -14838,6 +14838,9 @@ class toolkit_UI():
                 logger.error('Cannot change assistant model. The model provider or model name is invalid.')
                 return False
 
+            # copy the context and chat history from the old to the new assistant item
+            ToolkitAssistant.copy_context_and_chat(assistant_item, new_assistant_item)
+
             # if the model is valid, replace the assistant item
             assistant_window.assistant_item = new_assistant_item
             assistant_item = new_assistant_item
@@ -14967,6 +14970,9 @@ class toolkit_UI():
 
                     self._text_window_update(assistant_window_id, model_reply)
                     return
+
+                # copy the context and chat history from the old to the new assistant item
+                ToolkitAssistant.copy_context_and_chat(assistant_item, new_assistant_item)
 
                 # if the model is valid, replace the assistant item
                 assistant_window.assistant_item = new_assistant_item
