@@ -371,46 +371,49 @@ class ChatGPT(ToolkitAssistant):
         return LLM_AVAILABLE_MODELS
 
 
-def assistant_handler(toolkit_ops_obj, model_provider, model_name, **kwargs):
-    """
-    This is the handler function for the assistant class and is used to instantiate the correct assistant class
-    depending on the model provider and model name
-    """
+class AssistantUtils:
 
-    try:
+    @staticmethod
+    def assistant_handler(toolkit_ops_obj, model_provider, model_name, **kwargs):
+        """
+        This is the handler function for the assistant class and is used to instantiate the correct assistant class
+        depending on the model provider and model name
+        """
 
-        # load the assistant class
-        toolkit_assistant = LLM_AVAILABLE_MODELS[model_provider][model_name]['handler']
+        try:
 
-        # instantiate the assistant class and return it
-        return toolkit_assistant(toolkit_ops_obj=toolkit_ops_obj,
-                                 model_provider=model_provider,
-                                 model_name=model_name,
-                                 **kwargs)
+            # load the assistant class
+            toolkit_assistant = LLM_AVAILABLE_MODELS[model_provider][model_name]['handler']
 
-    except KeyError:
-        logger.error('Could not find assistant handler for model {} from provider {}.'
-                     .format(model_name, model_provider))
-        return None
+            # instantiate the assistant class and return it
+            return toolkit_assistant(toolkit_ops_obj=toolkit_ops_obj,
+                                     model_provider=model_provider,
+                                     model_name=model_name,
+                                     **kwargs)
 
+        except KeyError:
+            logger.error('Could not find assistant handler for model {} from provider {}.'
+                         .format(model_name, model_provider))
+            return None
 
-def assistant_available_models(provider=None):
-    """
-    This function returns the available assistant models for a given provider
-    """
+    @staticmethod
+    def assistant_available_models(provider=None):
+        """
+        This function returns the available assistant models for a given provider
+        """
 
-    if provider is not None:
-        return list(LLM_AVAILABLE_MODELS[provider].keys())
-    else:
-        return []
+        if provider is not None:
+            return list(LLM_AVAILABLE_MODELS[provider].keys())
+        else:
+            return []
 
+    @staticmethod
+    def assistant_available_providers():
+        """
+        This function returns the available assistant providers
+        """
 
-def assistant_available_providers():
-    """
-    This function returns the available assistant providers
-    """
-
-    return list(LLM_AVAILABLE_MODELS.keys())
+        return list(LLM_AVAILABLE_MODELS.keys())
 
 
 DEFAULT_SYSTEM_MESSAGE = ('You are an assistant film editor.\n'

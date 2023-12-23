@@ -676,7 +676,7 @@ class toolkit_UI():
                     if kwargs.get('assistant_provider', None) is not None \
                     else self.toolkit_UI_obj.stAI.get_app_setting('assistant_provider', default_if_none='OpenAI')
 
-            assistant_provider_list = assistant_available_providers()
+            assistant_provider_list = AssistantUtils.assistant_available_providers()
 
             form_vars['assistant_provider_var'] = \
                 assistant_provider_var = tk.StringVar(assistant_prefs_frame, value=assistant_provider)
@@ -693,7 +693,7 @@ class toolkit_UI():
                     if kwargs.get('assistant_model', None) is not None \
                     else self.toolkit_UI_obj.stAI.get_app_setting('assistant_model', default_if_none='gpt-3.5-turbo')
 
-            assistant_model_list = assistant_available_models(assistant_provider)
+            assistant_model_list = AssistantUtils.assistant_available_models(assistant_provider)
 
             form_vars['assistant_model_var'] = \
                 assistant_model_var = tk.StringVar(assistant_prefs_frame, value=assistant_model)
@@ -716,7 +716,7 @@ class toolkit_UI():
                 # Check if the provider has actually changed
                 if current_provider != assistant_provider_var.previous_provider:
                     # Update the model list based on the current provider
-                    new_model_list = assistant_available_models(current_provider)
+                    new_model_list = AssistantUtils.assistant_available_models(current_provider)
 
                     # Update the OptionMenu with new models
                     assistant_model_input.configure(values=new_model_list)
@@ -14671,7 +14671,7 @@ class toolkit_UI():
 
             # initialize an assistant item if one doesn't already exist
             if not hasattr(assistant_window, 'assistant_item'):
-                assistant_window.assistant_item = assistant_handler(
+                assistant_window.assistant_item = AssistantUtils.assistant_handler(
                     toolkit_ops_obj=self.toolkit_ops_obj,
                     model_provider=default_model_provider,
                     model_name=default_model_name
@@ -14828,7 +14828,7 @@ class toolkit_UI():
                 or assistant_settings.get('assistant_model', None) != assistant_item.model_name):
 
             # reset the assistant item
-            new_assistant_item = assistant_handler(
+            new_assistant_item = AssistantUtils.assistant_handler(
                 toolkit_ops_obj=self.toolkit_ops_obj,
                 model_provider=assistant_settings.get('assistant_provider'),
                 model_name=assistant_settings.get('assistant_model')
@@ -14959,7 +14959,7 @@ class toolkit_UI():
                     )
                     return
 
-                new_assistant_item = assistant_handler(
+                new_assistant_item = AssistantUtils.assistant_handler(
                     toolkit_ops_obj=self.toolkit_ops_obj, model_provider=model_provider, model_name=model_name)
 
                 if new_assistant_item is None:
