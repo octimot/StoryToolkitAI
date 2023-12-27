@@ -1869,7 +1869,7 @@ class ToolkitOps:
         # set a few things in the transcription object
         transcription.set('audio_file_path', os.path.basename(audio_file_path))
         transcription.set('name', name)
-        transcription.set('transcription_id', queue_id)
+        transcription.set('transcription_id', transcription.generate_id())
 
         # this marks the transcription as incomplete so that it can be resumed later
         transcription.set('incomplete', True)

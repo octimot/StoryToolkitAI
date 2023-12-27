@@ -3,6 +3,8 @@ import os
 import codecs
 import json
 import hashlib
+import random
+import string
 import shutil
 import time
 from datetime import datetime
@@ -352,6 +354,24 @@ class Transcription:
     @staticmethod
     def get_transcription_path_id(transcription_file_path):
         return hashlib.md5(transcription_file_path.encode('utf-8')).hexdigest()
+
+    def generate_id(self):
+        """
+        This uses a scrambled version of the transcription_file_path and the current time to generate a unique id
+        """
+
+        # use the transcription_file_path and the current time to generate a more unique id
+        if self.__transcription_file_path is None:
+            scrambled_path = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
+
+        # otherwise scramble the transcription_file_path
+        else:
+            transcription_file_path = self.__transcription_file_path
+            char_list = list(transcription_file_path)
+            random.shuffle(char_list)
+            scrambled_path = ''.join(char_list)
+
+        return hashlib.md5((scrambled_path + str(time.time())).encode('utf-8')).hexdigest()
 
     def _load_json_into_attributes(self):
 
