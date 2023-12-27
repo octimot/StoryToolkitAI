@@ -43,6 +43,7 @@ class toolkit_UI():
     theme_colors['black'] = '#1F1F1F'
     theme_colors['supernormal'] = '#C2C2C2',
     theme_colors['white'] = '#ffffff'
+    theme_colors['highlight'] = theme_colors['white']
     theme_colors['normal'] = '#929292'
     theme_colors['superblack'] = '#000000'
     theme_colors['dark'] = '#282828'
@@ -3759,7 +3760,7 @@ class toolkit_UI():
         When the user closes the dialogue window, it will return the user input to the main window
         """
 
-        def __init__(self, parent: str or tk.Tk, title, input_widgets, toolkit_UI_obj=None, **kwargs):
+        def __init__(self, parent: str or tk.Tk, title, input_widgets, toolkit_UI_obj=None, buttons=None, **kwargs):
 
             self.toolkit_UI_obj = toolkit_UI_obj
 
@@ -3775,6 +3776,8 @@ class toolkit_UI():
 
             self.parent = parent
             self.title(title)
+
+            self.custom_buttons = buttons
 
             # the transient function is used to make the window transient to the parent window
             # which means that the window will appear on top of the parent window
@@ -3945,11 +3948,31 @@ class toolkit_UI():
                 # if we don't have an input_widget it must mean that we're only adding a label which spans 2 columns
                 # and has the text aligned to the left
                 else:
-                    label.configure(anchor='w', justify='left')
-                    label.grid(row=row, column=0, columnspan=2, sticky='w', **toolkit_UI.ctk_askdialog_input_paddings)
 
-            # if we have no input widgets, return
-            if not have_input_widgets:
+                    if 'style' in widget and widget['style'] == 'main':
+                        # get the current font of the label
+                        current_font = label.cget("font")
+                        current_font_family = current_font.cget('family')
+                        current_font_size = current_font.cget('size')
+
+                        # make the font bold
+                        input_style = ctk.CTkFont(family=current_font_family, size=current_font_size, weight='bold')
+
+                        # set the new font
+                        label.configure(font=input_style)
+
+                        # expand the input frame so that the labe will be centered
+                        input_frame.columnconfigure(1, weight=1)
+
+                        # make the label text white
+                        label.configure(text_color=self.toolkit_UI_obj.theme_colors['highlight'])
+
+                    label.configure(anchor='n', justify='center')
+                    label.grid(
+                        row=row, column=0, columnspan=2, sticky='ew', **toolkit_UI.ctk_askdialog_input_paddings)
+
+            # if we have no input widgets or custom buttons, return
+            if not have_input_widgets and not self.custom_buttons:
                 logger.error('No input widgets were added to the Ask Dialogue window. Aborting.')
                 return None
 
@@ -3958,10 +3981,30 @@ class toolkit_UI():
 
             buttons_frame = ctk.CTkFrame(self, **toolkit_UI.ctk_frame_transparent)
 
-            # add the OK button
-            ok_button = ctk.CTkButton(buttons_frame, text="OK", command=self.ok)
-            ok_button.pack(side=ctk.LEFT, **toolkit_UI.ctk_askdialog_input_paddings)
-            self.bind("<Return>", self.ok)
+            # if we have custom buttons, add them
+            if self.custom_buttons:
+                for button_info in self.custom_buttons:
+
+                    additional_return = {button_info['name']: button_info['value']}
+
+                    # add the button
+                    # for the command, we basically call the ok function with the additional return value
+                    button = ctk.CTkButton(
+                        buttons_frame,
+                        text=button_info['label'],
+                        command=lambda l_additional_return=additional_return:
+                        self.ok(additional_return=l_additional_return)
+                    )
+
+                    # add each button on its own row:
+                    button.pack(side=ctk.LEFT, **toolkit_UI.ctk_askdialog_input_paddings)
+
+            # otherwise add an ok button
+            else:
+                # add the OK button
+                ok_button = ctk.CTkButton(buttons_frame, text="OK", command=self.ok)
+                ok_button.pack(side=ctk.LEFT, **toolkit_UI.ctk_askdialog_input_paddings)
+                self.bind("<Return>", self.ok)
 
             # if we have a cancel_action, add the Cancel button
             if 'cancel_return' in kwargs:
@@ -4012,7 +4055,7 @@ class toolkit_UI():
                 self.geometry(
                     '+%d+%d' % (x + parent_width / 2 - window_width / 2, y + parent_height / 2 - window_height / 2))
 
-        def ok(self, event=None):
+        def ok(self, event=None, additional_return=None):
             """
             This is the action that happens when the user clicks the OK button
             :return:
@@ -4020,6 +4063,10 @@ class toolkit_UI():
 
             # take the user input and return it
             self.return_value = {k: v.get() for k, v in self.return_value.items()}
+
+            # add any additional return values that were passed
+            if additional_return is not None:
+                self.return_value = {**self.return_value, **additional_return}
 
             # destroy the window
             self.destroy()
