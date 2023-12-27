@@ -3,6 +3,8 @@ import tiktoken
 import hashlib
 import time
 from openai import OpenAI
+import json
+import copy
 
 from storytoolkitai.core.logger import logger
 
@@ -32,7 +34,7 @@ class ToolkitAssistant:
         assistant_to.add_context(assistant_from.context)
 
         # then copy the chat history
-        assistant_to.chat_history = assistant_from.chat_history.copy()
+        assistant_to.chat_history = copy.deepcopy(assistant_from.chat_history)
 
 
 class ChatGPT(ToolkitAssistant):
@@ -201,6 +203,19 @@ class ChatGPT(ToolkitAssistant):
             logger.debug('Context is empty. Ignoring add context request.')
             return False
 
+    def delete_context(self):
+
+        # just remove any context that might exist
+        if self.context is not None and self.context_idx is not None:
+            # remove the context from the chat history
+            self.chat_history.pop(self.context_idx)
+
+            # remember that we've removed the context
+            self.context = None
+            self.context_idx = None
+
+            logger.debug('Removed context from the chat history.')
+
     def calculate_history_tokens(self):
         """
         This calculates the amount of tokens used by the assistant
@@ -249,7 +264,7 @@ class ChatGPT(ToolkitAssistant):
 
         # print(self.stAI.statistics)
 
-    def send_query(self, content, settings=None):
+    def send_query(self, content, settings=None, temp_context=None, save_to_history=True):
         """
         This function is used to send a query to the assistant
         """
@@ -262,19 +277,46 @@ class ChatGPT(ToolkitAssistant):
         if settings is None:
             settings = dict()
 
+        # set an empty function for the context reset
+        def context_reset():
+            return
+
+        # if the temp_context was set, we're going to use it to replace the existing context, but only for this query
+        if temp_context is not None:
+
+            # save the current context
+            current_context = self.context
+
+            # set the context reset function
+            def context_reset():
+                # reset the context
+                self.delete_context()
+                if current_context:
+                    self.add_context(current_context)
+
+            # add the temp context
+            self.add_context(temp_context)
+
         query = {"role": "user", "content": content}
 
-        # add the query to the chat history
-        self.chat_history.append(query)
+        # create the chat history if it doesn't exist
+        if self.chat_history is None:
+            self.chat_history = list()
 
-        # print(json.dumps(self.chat_history, indent=4))
+        # create a copy of the chat history so that we can send it to the assistant without affecting the original
+        chat_history = copy.deepcopy(self.chat_history)
+
+        # add the query to the function chat history
+        chat_history.append(query)
+
+        # add the query to the assistant chat history (but only if it's not empty)
+        if save_to_history:
+            self.chat_history.append(query)
 
         # now send the query to the assistant
         try:
 
             client = OpenAI(api_key=self.api_key)
-
-            chat_history = list() if self.chat_history is None else self.chat_history.copy()
 
             response = client.chat.completions.create(
                 model=self.model_name,
@@ -287,27 +329,36 @@ class ChatGPT(ToolkitAssistant):
                 timeout=settings.get('timeout', 30),
             )
 
+            # reset the context
+            context_reset()
+
         except openai.AuthenticationError as e:
 
             error_message = 'OpenAI API key might invalid. Please check your OpenAI Key in the preferences window.'
 
             logger.debug('OpenAI API key is invalid. Please check your key in the preferences window.')
+
+            # reset the context
+            context_reset()
+
             return error_message
 
         except Exception as e:
             logger.debug('Error sending query to ChatGPT: ', exc_info=True)
+
+            context_reset()
+
             return str(e) + "\nI'm sorry, I'm having trouble connecting to OpenAI right now. " \
                             "Please check the logs or try again later."
 
         result = ''
-        if self.chat_history is None:
-            self.chat_history = list()
 
         for choice in response.choices:
             result += choice.message.content
 
-            # add the result to the chat history
-            self.chat_history.append({"role": "assistant", "content": result})
+            # add the result to the chat history (but only if it's not empty)
+            if save_to_history:
+                self.chat_history.append({"role": "assistant", "content": result})
 
         # add the usage
         self.add_usage(tokens_in=response.usage.completion_tokens, tokens_out=response.usage.prompt_tokens)
@@ -414,6 +465,40 @@ class AssistantUtils:
         """
 
         return list(LLM_AVAILABLE_MODELS.keys())
+
+    @staticmethod
+    def parse_response_to_dict(assistant_response):
+        """
+        This trims the response and tries to parse it as a json
+        """
+
+        # do an initial blank space strip
+        assistant_response = assistant_response.strip()
+
+        # if the response starts with ``` or ```json and ends with ```
+        if assistant_response.startswith('```json') and assistant_response.endswith('```'):
+            # Remove the first occurrence of ```json and the last occurrence of ```
+            assistant_response = assistant_response.replace('```json', '', 1)
+            assistant_response = assistant_response[::-1].replace('```'[::-1], '', 1)[::-1]
+
+        elif assistant_response.startswith('```') and assistant_response.endswith('```'):
+            # Remove the first and last occurrence of ```
+            assistant_response = assistant_response.replace('```', '', 1)
+            assistant_response = assistant_response[::-1].replace('```'[::-1], '', 1)[::-1]
+
+        # now try to parse it as a proper json
+        try:
+            assistant_response_dict = json.loads(assistant_response)
+            return assistant_response_dict
+
+        # if it's not a valid json, just continue
+        except json.JSONDecodeError:
+            logger.warning('The assistant response is not a valid json string.')
+            return None
+
+        except Exception as e:
+            logger.error('Error while parsing the assistant response as json.', exc_info=True)
+            return None
 
 
 DEFAULT_SYSTEM_MESSAGE = ('You are an assistant film editor.\n'

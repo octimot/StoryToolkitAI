@@ -6903,20 +6903,21 @@ class toolkit_UI():
             """
 
             if with_timecodes:
-                text, full_text, _, _ \
+                text, full_text, _, _, transcription_segments \
                     = self.get_segments_or_selection(window_id, split_by='line', add_time_column=True)
 
             else:
-                text, full_text, _, _ \
+                text, full_text, _, _, transcription_segments \
                     = self.get_segments_or_selection(window_id, split_by='line',
                                                      add_time_column=False, timecodes=False)
 
-            self.toolkit_UI_obj.open_assistant_window(assistant_window_id='assistant',
-                                                      transcript_text=full_text.strip())
+            self.toolkit_UI_obj.open_assistant_window(
+                assistant_window_id='assistant', transcript_text=full_text.strip(),
+                transcription_segments=transcription_segments)
 
         def button_add_to_story(self, window_id, story_editor_window_id):
 
-            text, full_text, start_sec, end_sec \
+            text, full_text, start_sec, end_sec, _ \
                 = self.get_segments_or_selection(window_id, split_by='line',
                                                  add_time_column=False, timecodes=False)
 
@@ -6993,7 +6994,7 @@ class toolkit_UI():
 
                 # if per_line is true, then add timecodes to each line
                 if per_line:
-                    text, _, _, _ \
+                    text, _, _, _, _ \
                         = self.get_segments_or_selection(window_id, split_by='line',
                                                          add_to_clipboard=True, add_time_column=True)
 
@@ -7010,7 +7011,7 @@ class toolkit_UI():
             Re-transcribes the selected segments
             """
             # first get the selected (or active) text from the transcript
-            text, full_text, start_sec, end_sec = \
+            text, full_text, start_sec, end_sec, _ = \
                 self.get_segments_or_selection(window_id, add_to_clipboard=False,
                                                split_by='index', timecodes=False, allow_active_segment=False)
 
@@ -7172,7 +7173,7 @@ class toolkit_UI():
             # first get the selected (or active) text from the transcript
             # this should return a list of all the text chunks, the full text
             #   and the start and end times of the entire text
-            text, full_text, start_sec, end_sec = \
+            text, full_text, start_sec, end_sec, _ = \
                 self.get_segments_or_selection(window_id, add_to_clipboard=False,
                                                split_by='index', timecodes=True)
 
@@ -8202,6 +8203,9 @@ class toolkit_UI():
             :param window_id:
             :param add_to_clipboard:
             :param split_by: None, 'index' or 'time'
+            :param timecodes: if True, will return the timecodes of the text blocks
+            :param allow_active_segment: if True, will return the active segment if no selection is found
+            :param add_time_column: if True, will add a time column to the text
             :param timecodes
             :return:
             """
@@ -8214,6 +8218,9 @@ class toolkit_UI():
 
             # the return text list
             text = [{}]
+
+            # the transcription segments to return
+            transcription_segments = []
 
             # the start and end times of the entire selection
             start_sec = None
@@ -8352,12 +8359,14 @@ class toolkit_UI():
                         current_chunk_num = current_chunk_num + 1
                         text.append({})
 
+                        transcription_segments.append(selected_segment)
+
             # if there are no selected segments on this window
             # get the text of the active segment
             else:
                 # if active segments are not allowed
                 if not allow_active_segment:
-                    return None, None, None, None
+                    return None, None, None, None, None
 
                 # if there is no active_segment for the window
                 if window_id not in self.active_segment:
@@ -8374,6 +8383,9 @@ class toolkit_UI():
 
                 # get the text from the active segment
                 full_text = transcript_segment.text.strip()
+
+                # return the segment as a list
+                transcription_segments = [transcript_segment]
 
                 # get the start and end times from the active segment
                 start_sec = transcript_segment.start
@@ -8417,7 +8429,7 @@ class toolkit_UI():
             start_sec = text[0]['start']
             end_sec = text[-1]['end']
 
-            return text, full_text, start_sec, end_sec
+            return text, full_text, start_sec, end_sec, transcription_segments
 
         def go_to_selected_time(self, window_id=None, position=None, ignore_selection=False):
 
@@ -9343,6 +9355,52 @@ class toolkit_UI():
 
         # why not open the transcript in a transcription window?
         self.open_transcription_window(transcription_file_path=transcription_json_file_path, **options)
+
+    def open_new_transcription_window(self, transcription_segments=None, transcription_file_path=None,
+                                      source_transcription=None):
+        """
+        This makes the user choose a file path for the new transcription and then opens a new transcription window
+        """
+
+        # ask the user where to save the transcription
+        transcription_file_path = self.ask_for_save_file(
+            title='New Transcription',
+            filetypes=[('Transcription files', '.json')]
+        )
+
+        # if the user didn't choose a file path, stop
+        if not transcription_file_path:
+            return False
+
+        # replace the end .json with .transcription.json
+        transcription_file_path = transcription_file_path.replace('.json', '.transcription.json')
+
+        # remove the file if it already exists
+        if os.path.exists(transcription_file_path):
+            # just remove it (the OS should have asked for confirmation already)
+            os.remove(transcription_file_path)
+
+        transcription = Transcription(transcription_file_path=transcription_file_path)
+
+        # if another transcription was passed, copy its data to the new transcription
+        if source_transcription is not None:
+            transcription.copy_transcription(source_transcription=source_transcription, include_groups=True)
+
+        # if we have a list of segments, add them to the transcription
+        if transcription_segments is not None:
+
+            # add the segments to the transcription
+            transcription.add_segments(transcription_segments)
+
+        # use the name of the transcription file as the name of the transcription
+        transcription.set('name', os.path.basename(transcription_file_path).split('.transcription.json')[0])
+
+        transcription.save_soon(backup=False, force=True, sec=0)
+
+        time.sleep(0.2)
+
+        # open the story editor window and return it
+        return self.open_transcription_window(transcription_file_path=transcription_file_path)
 
     def open_transcription_window(self, title=None, transcription_file_path=None,
                                   select_line_no=None, add_to_selection=None, select_group=None, goto_time=None):
@@ -14662,7 +14720,8 @@ class toolkit_UI():
         self.inject_prompt(search_window_id, '[model:{}]'.format(user_input['model_name']))
 
     def open_assistant_window(self, assistant_window_id: str = None,
-                              transcript_text: str = None
+                              transcript_text: str = None,
+                              transcription_segments: list = None,
                               ):
 
         if self.toolkit_ops_obj is None:
@@ -14741,6 +14800,9 @@ class toolkit_UI():
             assistant_window.assistant_item.add_context(context=transcript_text)
 
             self._text_window_update(assistant_window_id, 'Added items as context.')
+
+        if transcription_segments is not None:
+            assistant_window.transcription_segments = transcription_segments
 
         # focus in the text widget after 110 ms
         assistant_window.after(110, lambda: self.text_windows[assistant_window_id]['text_widget'].focus_set())
@@ -14947,6 +15009,12 @@ class toolkit_UI():
         # strip the prompt
         prompt = prompt.strip()
 
+        # we use this whenever we're changing the context only for the current prompt
+        temp_context = None
+
+        # we use this to add or remove things from the actual prompt when sending it to the model
+        enhanced_prompt = prompt
+
         # try to run the assistant query
         try:
             # is the user asking for help?
@@ -14963,8 +15031,8 @@ class toolkit_UI():
 
                 help_reply += "Every time you ask something, the model will receive the entire conversation. " \
                               "The longer the conversation, the more tokens you are using on each request.\n\n" \
-                              "Use [usage] to keep track of your usage in this Assistant window.\n\n" \
-                              "Use [calc] to get the minimum number of tokens you're sending with each request.\n\n" \
+                              "Use [usage] to keep track of your usage in this Assistant window.\n" \
+                              "Use [calc] to get the minimum number of tokens you're sending with each request.\n" \
                               "Use [price] to see how much the model costs.\n\n" \
                               "Use [reset] to reset the conversation, while preserving any contexts.\n" \
                               "This will make the Assistant forget the entire conversation," \
@@ -14977,6 +15045,10 @@ class toolkit_UI():
                               "Use [model:MODEL_PROVIDER:MODEL_NAME] to change the model used in this window.\n" \
                               "Use [models] to see the available models.\n\n" \
                               "Use [exit] to exit the Assistant.\n\n" \
+                              "Use [t] to send a transcription type prompt.\n" \
+                              "This will make the assistant aware of the transcription segments " \
+                              "and try force a transcription response. " \
+                              "Note: in this case, the prompt and response will not be saved to the chat history.\n\n" \
                               "Now, just ask something..."
 
                 # use this to make sure we have a new prompt prefix for the next search
@@ -15160,17 +15232,23 @@ class toolkit_UI():
             elif prompt.lower() == '[resetall]':
                 assistant_item.reset()
                 assistant_item.add_context(context='')
+                assistant_window.transcription_segments = None
                 self._text_window_update(assistant_window_id, 'Conversation reset. Context removed.')
                 return
 
             elif prompt.lower() == '[context]':
+
                 if assistant_item.context is None:
                     self._text_window_update(assistant_window_id, 'No context used for this conversation.')
 
                 else:
+                    if assistant_window.transcription_segments is not None:
+                        self._text_window_update(assistant_window_id, "Context contains transcription segments.")
+
                     self._text_window_update(assistant_window_id,
                                              "The context used for this conversation is:\n\n{}\n"
                                              .format(assistant_item.context))
+
                 return
 
             # is the user trying to quit?
@@ -15185,11 +15263,135 @@ class toolkit_UI():
                 self._text_window_update(assistant_window_id, '')
                 return
 
+            elif prompt.lower().startswith('[t]') or prompt.lower().startswith('[transcription]'):
+
+                if not hasattr(assistant_window, 'transcription_segments') \
+                or not assistant_window.transcription_segments:
+
+                    self._text_window_update(assistant_window_id, 'No transcription segments found in context.')
+                    return
+
+                # todo: move this as an assistant function
+                #  in toolkit_ops.assistant_transcription_prompt for app-wide use
+                # instead of sending the text context, we're going to use a json formatted context
+                temp_context = {'type': 'transcription_json', 'lines': []}
+
+                if assistant_window.transcription_segments is not None:
+
+                    segment = None
+                    for segment in assistant_window.transcription_segments:
+
+                        # temp_context['lines'].append(segment.to_dict(simplify=True))
+                        temp_context['lines'].append(segment.to_list())
+
+                # use replace to remove [t] or [transcription] when sending the prompt to the model
+                enhanced_prompt = enhanced_prompt.replace('[t]', '', 1)
+                enhanced_prompt = enhanced_prompt.replace('[transcription]', '', 1)
+
+                # add the formatting details to the enhanced prompt
+                enhanced_prompt = enhanced_prompt + "\nuse exact same json format or you'll break my code. "
+
             # get the settings from the window again
             assistant_settings = assistant_window.assistant_settings
 
+            # parse json to string
+            if temp_context is not None:
+                temp_context = json.dumps(temp_context)
+
+            # todo: move this is a different thread
             # get the assistant response
-            assistant_response = assistant_item.send_query(prompt, assistant_settings)
+            assistant_response = assistant_item.send_query(
+                enhanced_prompt, assistant_settings, temp_context=temp_context, save_to_history=False)
+
+            # POST PROCESS THE RESPONSE (for some cases)
+            # did we sent a transcription?
+            if prompt.lower().startswith('[t]') or prompt.lower().startswith('[transcription]'):
+
+                assistant_response_dict = AssistantUtils.parse_response_to_dict(assistant_response=assistant_response)
+
+                if assistant_response_dict is None:
+                    self._text_window_update(
+                        assistant_window_id, "The Assistant didn't reply in the correct format."
+                    )
+
+                try:
+                    if 'type' in assistant_response_dict and assistant_response_dict['type'] == 'transcription_json':
+
+                        # print(json.dumps(assistant_response_json, indent=4))
+
+                        if 'lines' in assistant_response_dict and isinstance(assistant_response_dict['lines'], list):
+
+                            # print(source_transcription)
+                            # print(source_transcription.transcription_file_path)
+
+                            # ask the user what to do with the response:
+                            # save into a new transcription (and open a new transcription window)
+                            # merge into existing transcription (and open it in a new window?)
+                            # or simply return the text?
+
+                            # ask user using AskDialog
+                            buttons = [
+                                {'name': 'choice', 'label': 'Create new transcription', 'value': 'new'},
+                                # {'name': 'choice', 'label': 'Merge into existing transcription', 'value': 'merge'},
+                                {'name': 'choice', 'label': 'Just show the text', 'value': 'show_text'}
+                            ]
+
+                            dialog_transcription_message = "The Assistant replied with a transcription.\n\n" \
+                                                           "What should we do with it?"
+
+                            input_widgets = [
+                                {'name': 'transcription_name', 'label': dialog_transcription_message,
+                                 'type': 'label', 'style': 'main'}
+                            ]
+
+                            user_input = self.AskDialog(
+                                title='Assistant Response', input_widgets=input_widgets, buttons=buttons,
+                                parent=assistant_window, toolkit_UI_obj=self
+                            ).value()
+
+                            if user_input is None or 'choice' not in user_input or user_input['choice'] == 'show_text':
+
+                                # the reply should be something like [start, end, text],
+                                # so parse it into the response for the text window
+                                assistant_response = ''
+                                for segment in assistant_response_dict['lines']:
+                                    assistant_response += '{} - {}:\n{}\n\n'.format(
+                                        round(float(segment[0]), 3), round(float(segment[1]), 3), segment[2])
+
+                                self._text_window_update(assistant_window_id, assistant_response)
+
+                            elif user_input['choice'] == 'new':
+
+                                source_transcription = None
+
+                                # hope to get the transcription from the last processed segment
+                                # so that we can use its data to create a new transcription
+                                # this will not work if we're sending segments from multiple transcriptions!
+                                if assistant_window.transcription_segments is not None \
+                                and segment is not None:
+
+                                    # get the transcription from the last segment
+                                    source_transcription = segment.parent_transcription
+
+                                # make a new transcription with the response segments
+                                self.open_new_transcription_window(
+                                    source_transcription=source_transcription,
+                                    transcription_segments=assistant_response_dict['lines']
+                                )
+
+                            # todo: create the merge transcription function
+                            # elif user_input['choice'] == 'merge':
+                                # self._text_window_update(assistant_window_id, 'Not implemented yet.')
+
+                            return
+
+                        else:
+                            logger.warning(
+                                "The response json does not contain any valid transcription segments ('lines')."
+                            )
+                except:
+                    logger.error('Error while parsing the response as json.', exc_info=True)
+                    self._text_window_update(assistant_window_id, "The Assistant didn't reply in the correct format: ")
 
             # update the assistant window
             self._text_window_update(assistant_window_id, "A > " + assistant_response)

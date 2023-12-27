@@ -351,6 +351,48 @@ class Transcription:
         'video_index_path'
     ]
 
+    def copy_transcription(self, source_transcription, include_groups=False, include_segments=False):
+        """
+        This copies the known attributes from the source transcription into this transcription,
+        Some attributes are not copied, like srt_file_path, txt_file_path, incomplete, transcription_id etc.
+        While others are modified to keep them unique, like transcription_id, etc.
+        It does not copy segments.
+        """
+
+        # first, the known attributes
+        # read all the attributes from the source transcription
+        for attribute in self.__known_attributes:
+
+            # if the attribute is srt_file_path or txt_file_path
+            # skip it
+            if attribute in ['srt_file_path', 'txt_file_path', 'incomplete']:
+                continue
+
+            # if this is the transcription id, generate a new one
+            if attribute == 'transcription_id':
+                setattr(self, '_'+attribute, self.generate_id())
+                continue
+
+            # get the attribute value from the source transcription
+            attribute_value = getattr(source_transcription, '_' + attribute)
+
+            # set the attribute value for this transcription
+            setattr(self, '_' + attribute, attribute_value)
+
+        # if we're supposed to copy the transcript groups
+        if include_groups:
+            # get the transcript groups from the source transcription
+            self._transcript_groups = getattr(source_transcription, '_transcript_groups')
+
+        # if we're supposed to copy the segments
+        if include_segments:
+            # copy both the segments and the has_segments attribute
+            self._segments = getattr(source_transcription, '_segments')
+            self._has_segments = getattr(source_transcription, '_has_segments')
+
+        # set the dirty flag
+        self.set_dirty()
+
     @staticmethod
     def get_transcription_path_id(transcription_file_path):
         return hashlib.md5(transcription_file_path.encode('utf-8')).hexdigest()
@@ -713,16 +755,17 @@ class Transcription:
         if not self._has_segments:
             self._segments = []
 
-        # if the segment_data is a dict, turn it into a TranscriptionSegment object
+        # if the segment_data is a dict or list, turn it into a TranscriptionSegment object
         segment = \
             TranscriptionSegment(segment, parent_transcription=self) \
-                if isinstance(segment, dict) else segment
+            if isinstance(segment, dict) or isinstance(segment, list) else segment
 
         # we need to add the transcription as a parent of the segment
         segment.parent_transcription = self
 
-        # if the segment's id or if it collides with another segment's id
+        # if the segment's id is none or if it collides with another segment's id
         if segment.id is None or segment.id in self._segment_ids.values():
+
             # get a new id for the segment
             segment.id = self.generate_new_segment_id()
 
@@ -738,6 +781,10 @@ class Transcription:
         else:
             self._segments.append(segment)
             self._has_segments = True
+            segment_index = len(self._segments) - 1
+
+        # make sure that we have the segment id in the segment_ids dict
+        self._segment_ids[segment_index] = segment.id
 
         # reset the segments
         if not skip_reset:
@@ -818,6 +865,7 @@ class Transcription:
                              it will be used to determine the time in hours between backups
         :param auxiliaries: bool, whether to save the auxiliaries
         :param sec: int, how soon in seconds to save the transcription, if 0, save immediately
+                    (0 seconds also means waiting for the execution to finish before returning from the function)
         """
 
         # if the transcription is not dirty
@@ -972,7 +1020,6 @@ class Transcription:
             full_txt_file_path = os.path.join(os.path.dirname(self.__transcription_file_path), self._txt_file_path)
 
             TranscriptionUtils.write_txt(self._segments, full_txt_file_path)
-
 
     def _get_transcription_hash(self):
         """
@@ -1467,6 +1514,10 @@ class TranscriptionSegment:
         # use this in case we need to communicate with the parent
         self._parent_transcription = parent_transcription
 
+        # if the segment data is a list, turn it into a dict first
+        if isinstance(segment_data, list):
+            segment_data = self.dict_from_list(segment_data)
+
         self._load_dict_into_attributes(segment_data)
 
     @property
@@ -1544,6 +1595,8 @@ class TranscriptionSegment:
     # set the known attributes
     __known_attributes = ['id', 'start', 'end', 'words', 'text', 'tokens', 'merged',
                         'seek', 'temperature', 'avg_logprob', 'compression_ratio', 'no_speech_prob']
+
+    __simplified_attributes = ['start', 'end', 'text']
 
     def _load_dict_into_attributes(self, segment_dict):
 
@@ -1649,22 +1702,75 @@ class TranscriptionSegment:
 
         return self
 
-    def to_dict(self):
+    def to_dict(self, simplify=False):
         """
         This returns the segment data as a dict, but it only converts the attributes that are __known_attributes
+        (or __simplified_attributes if simplify is True)
         """
 
         # create a copy of the data
         segment_dict = dict()
 
+        attributes_to_use = self.__known_attributes if not simplify else self.__simplified_attributes
+
         # add the known attributes to the data
-        for attribute in self.__known_attributes:
+        for attribute in attributes_to_use:
 
             if hasattr(self, '_'+attribute) and getattr(self, '_'+attribute) is not None:
                 segment_dict[attribute] = getattr(self, '_'+attribute)
 
         # merge the other data with the transcription data
         segment_dict.update(self._other_data)
+
+        return segment_dict
+
+    def to_list(self):
+        """
+        This returns the segment data as a dict, but it only converts the attributes that are __known_attributes
+        (or __simplified_attributes if simplify is True)
+        """
+
+        # create a copy of the data
+        segment_list = []
+
+        # add the known attributes to the data
+        # important: the order of the __simple_attributes list is important (start, end, text for eg.)
+        for attribute in self.__simplified_attributes:
+
+            if hasattr(self, '_'+attribute) and getattr(self, '_'+attribute) is not None:
+                segment_list.append(getattr(self, '_'+attribute))
+
+        # merge the other data with the transcription data
+        segment_list.extend(self._other_data)
+
+        return segment_list
+
+    @staticmethod
+    def dict_from_list(segment_list):
+        """
+        This returns the segment data as a dict, but it only converts the attributes
+        that are __known_attributes or __simplified_attributes, depending on the list length
+        """
+
+        # create a copy of the data
+        segment_dict = dict()
+
+        # add the known attributes to the data
+        # important: the order of the __simple_attributes list is important (start, end, text for eg.)
+        if len(segment_list) == len(TranscriptionSegment.__simplified_attributes):
+            for i, attribute in enumerate(TranscriptionSegment.__simplified_attributes):
+                segment_dict[attribute] = segment_list[i]
+
+        elif len(segment_list) == len(TranscriptionSegment.__known_attributes):
+            for i, attribute in enumerate(TranscriptionSegment.__known_attributes):
+                segment_dict[attribute] = segment_list[i]
+
+        else:
+            raise Exception('The segment list length does not fit either '
+                            '__simplified_attributes nor __known_atttributs lengths.')
+
+        # merge the other data with the transcription data
+        segment_dict.update(segment_list[i+1:])
 
         return segment_dict
 
