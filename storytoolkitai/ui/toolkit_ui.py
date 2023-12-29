@@ -3981,6 +3981,24 @@ class toolkit_UI():
 
             buttons_frame = ctk.CTkFrame(self, **toolkit_UI.ctk_frame_transparent)
 
+            # when using custom buttons, AskDialog will also return the value of the button that was clicked
+            # in the example below, we have the 2 buttons that will return a value for the key 'choice':
+            # - value 'new' for the first button
+            # - value 'show_text' for the second button
+            # ask user using AskDialog
+            # buttons = [
+            #     {'name': 'choice', 'label': 'Save as new transcription', 'value': 'new'},
+            #     {'name': 'choice', 'label': 'Just show the text', 'value': 'show_text'}
+            # ]
+
+            # dialog_transcription_message = "The Assistant replied with a transcription.\n\n" \
+            #                                "What should we do with it?"
+
+            # input_widgets = [
+            #    {'name': 'transcription_name', 'label': dialog_transcription_message,
+            #     'type': 'label', 'style': 'main'}
+            #]
+
             # if we have custom buttons, add them
             if self.custom_buttons:
                 for button_info in self.custom_buttons:
@@ -14719,6 +14737,8 @@ class toolkit_UI():
         # inject the prompt that changes the model
         self.inject_prompt(search_window_id, '[model:{}]'.format(user_input['model_name']))
 
+    # THE ASSISTANT WINDOW
+
     def open_assistant_window(self, assistant_window_id: str = None,
                               transcript_text: str = None,
                               transcription_segments: list = None,
@@ -15015,6 +15035,9 @@ class toolkit_UI():
         # we use this to add or remove things from the actual prompt when sending it to the model
         enhanced_prompt = prompt
 
+        # use this to know if there's any specific format the user requested
+        requested_format = None
+
         # try to run the assistant query
         try:
             # is the user asking for help?
@@ -15263,18 +15286,22 @@ class toolkit_UI():
                 self._text_window_update(assistant_window_id, '')
                 return
 
-            elif prompt.lower().startswith('[t]') or prompt.lower().startswith('[transcription]'):
+            elif prompt.lower().startswith(('[t]')):
+
+                # Extracting the content inside the first square brackets
+                match = re.match(r'\[([^\]]+)\]', prompt)
+                requested_format = match.group(1) if match else None
+
+                temp_context_type = 'transcription_json'
 
                 if not hasattr(assistant_window, 'transcription_segments') \
-                or not assistant_window.transcription_segments:
+                   or not assistant_window.transcription_segments:
 
                     self._text_window_update(assistant_window_id, 'No transcription segments found in context.')
                     return
 
-                # todo: move this as an assistant function
-                #  in toolkit_ops.assistant_transcription_prompt for app-wide use
                 # instead of sending the text context, we're going to use a json formatted context
-                temp_context = {'type': 'transcription_json', 'lines': []}
+                temp_context = {'type': temp_context_type, 'lines': []}
 
                 if assistant_window.transcription_segments is not None:
 
@@ -15284,9 +15311,8 @@ class toolkit_UI():
                         # temp_context['lines'].append(segment.to_dict(simplify=True))
                         temp_context['lines'].append(segment.to_list())
 
-                # use replace to remove [t] or [transcription] when sending the prompt to the model
-                enhanced_prompt = enhanced_prompt.replace('[t]', '', 1)
-                enhanced_prompt = enhanced_prompt.replace('[transcription]', '', 1)
+                # use replace to remove the requested_format keyword when sending the prompt to the model
+                enhanced_prompt = enhanced_prompt.replace('[{}]'.format(requested_format), '', 1)
 
                 # add the formatting details to the enhanced prompt
                 enhanced_prompt = enhanced_prompt + "\nuse exact same json format or you'll break my code. "
@@ -15304,94 +15330,24 @@ class toolkit_UI():
                 enhanced_prompt, assistant_settings, temp_context=temp_context, save_to_history=False)
 
             # POST PROCESS THE RESPONSE (for some cases)
-            # did we sent a transcription?
-            if prompt.lower().startswith('[t]') or prompt.lower().startswith('[transcription]'):
+            # did we request a specific format?
+            if requested_format is not None:
 
-                assistant_response_dict = AssistantUtils.parse_response_to_dict(assistant_response=assistant_response)
+                # take the response through the response parser
+                response_was_parsed = self.assistant_parse_response(
+                    assistant_window_id=assistant_window_id, assistant_response=assistant_response)
 
-                if assistant_response_dict is None:
+                # stop here if the response_was_parsed is True or False (but not None)
+                # - meaning something was already displayed on the text window from assistant_parse_response
+                if response_was_parsed is not None:
+                    return
+
+                # otherwise mention that we didn't receive what we were expecting
+                # (and also show the raw response below)
+                else:
                     self._text_window_update(
-                        assistant_window_id, "The Assistant didn't reply in the correct format."
+                        assistant_window_id, "The Assistant didn't reply in the requested format."
                     )
-
-                try:
-                    if 'type' in assistant_response_dict and assistant_response_dict['type'] == 'transcription_json':
-
-                        # print(json.dumps(assistant_response_json, indent=4))
-
-                        if 'lines' in assistant_response_dict and isinstance(assistant_response_dict['lines'], list):
-
-                            # print(source_transcription)
-                            # print(source_transcription.transcription_file_path)
-
-                            # ask the user what to do with the response:
-                            # save into a new transcription (and open a new transcription window)
-                            # merge into existing transcription (and open it in a new window?)
-                            # or simply return the text?
-
-                            # ask user using AskDialog
-                            buttons = [
-                                {'name': 'choice', 'label': 'Create new transcription', 'value': 'new'},
-                                # {'name': 'choice', 'label': 'Merge into existing transcription', 'value': 'merge'},
-                                {'name': 'choice', 'label': 'Just show the text', 'value': 'show_text'}
-                            ]
-
-                            dialog_transcription_message = "The Assistant replied with a transcription.\n\n" \
-                                                           "What should we do with it?"
-
-                            input_widgets = [
-                                {'name': 'transcription_name', 'label': dialog_transcription_message,
-                                 'type': 'label', 'style': 'main'}
-                            ]
-
-                            user_input = self.AskDialog(
-                                title='Assistant Response', input_widgets=input_widgets, buttons=buttons,
-                                parent=assistant_window, toolkit_UI_obj=self
-                            ).value()
-
-                            if user_input is None or 'choice' not in user_input or user_input['choice'] == 'show_text':
-
-                                # the reply should be something like [start, end, text],
-                                # so parse it into the response for the text window
-                                assistant_response = ''
-                                for segment in assistant_response_dict['lines']:
-                                    assistant_response += '{} - {}:\n{}\n\n'.format(
-                                        round(float(segment[0]), 3), round(float(segment[1]), 3), segment[2])
-
-                                self._text_window_update(assistant_window_id, assistant_response)
-
-                            elif user_input['choice'] == 'new':
-
-                                source_transcription = None
-
-                                # hope to get the transcription from the last processed segment
-                                # so that we can use its data to create a new transcription
-                                # this will not work if we're sending segments from multiple transcriptions!
-                                if assistant_window.transcription_segments is not None \
-                                and segment is not None:
-
-                                    # get the transcription from the last segment
-                                    source_transcription = segment.parent_transcription
-
-                                # make a new transcription with the response segments
-                                self.open_new_transcription_window(
-                                    source_transcription=source_transcription,
-                                    transcription_segments=assistant_response_dict['lines']
-                                )
-
-                            # todo: create the merge transcription function
-                            # elif user_input['choice'] == 'merge':
-                                # self._text_window_update(assistant_window_id, 'Not implemented yet.')
-
-                            return
-
-                        else:
-                            logger.warning(
-                                "The response json does not contain any valid transcription segments ('lines')."
-                            )
-                except:
-                    logger.error('Error while parsing the response as json.', exc_info=True)
-                    self._text_window_update(assistant_window_id, "The Assistant didn't reply in the correct format: ")
 
             # update the assistant window
             self._text_window_update(assistant_window_id, "A > " + assistant_response)
@@ -15401,6 +15357,225 @@ class toolkit_UI():
 
             # update the assistant window
             self._text_window_update(assistant_window_id, 'An error occurred :-(')
+
+    def assistant_parse_response(self, assistant_response, assistant_window_id):
+        """
+        This tries to recognize what kind of response the assistant gave, for eg. transcription, story, etc.
+        and populates the assistant window's text widget.
+        """
+
+        # first, clean the response and try to parse it to json
+        assistant_response_dict = AssistantUtils.parse_response_to_dict(assistant_response=assistant_response)
+
+        # if no parsing was possible, just return None
+        if assistant_response_dict is None:
+            return None
+
+        # get the text widget from the assistant window
+        assistant_window = self.get_window_by_id(assistant_window_id)
+
+        if assistant_window is None:
+            logger.error('Cannot parse assistant response. Assistant window not found.')
+            return None
+
+        text_widget = assistant_window.text_widget
+
+        # now let's try to figure out what kind of response this is
+        # is there a type in the response?
+        response_type = None
+        parsed = False
+        try:
+            response_type = assistant_response_dict['type']
+
+        except KeyError:
+            logger.error('Cannot parse assistant response. No type found in response dict.')
+
+        except TypeError:
+            logger.error('Cannot parse assistant response. Response dict is not a dict.')
+
+        except:
+            logger.error('Cannot parse assistant response.', exc_info=True)
+
+        # print(json.dumps(assistant_response_dict, indent=4))
+
+        # get the text widget prompt prefix
+        def minify_and_add_response(response_string, context_menu=None, **context_menu_kwargs):
+            """
+            We're using this function to add the response to the text widget.
+            """
+
+            # add the prompt prefix first
+            text_widget.insert(ctk.END, 'A > ')
+
+            # get the current insert position
+            insert_pos = text_widget.index(ctk.INSERT)
+
+            text_widget.insert(ctk.END, response_string)
+
+            # use the timestamp to make the tag unique
+            # plus the current line number
+            tag_id = 'assistant_response_{}'.format(str(time.time()) + str(text_widget.index(ctk.INSERT)))
+
+            # change the color of the above text so the users know it's different
+            text_widget.tag_add(tag_id, insert_pos, text_widget.index(ctk.INSERT))
+            text_widget.tag_config(tag_id, foreground=toolkit_UI.theme_colors['blue'])
+
+            # make sure to add the has_context_menu tag so that we don't show the text window context menu
+            text_widget.tag_add('has_context_menu', insert_pos, text_widget.index(ctk.INSERT))
+
+            # add the context menu
+            if context_menu is not None:
+
+                # add right click for context menu
+                text_widget.tag_bind(
+                    tag_id,
+                    '<Button-3>',
+                    lambda event: context_menu(event, tag_id, **context_menu_kwargs)
+                )
+
+                # make this work on macos trackpad too
+                text_widget.tag_bind(
+                    tag_id,
+                    '<Button-2>',
+                    lambda event: context_menu(event, tag_id, **context_menu_kwargs)
+                )
+
+        def show_response_details(base_tag, details_tag, text):
+            """
+            We use this function to show the details of a response right after the response itself.
+            If we already showed some details for said response, they will be replaced with the new ones.
+            """
+            tag_range = text_widget.tag_ranges(base_tag)
+
+            if not tag_range:
+                print(f"Base tag '{base_tag}' not found.")
+                return
+
+            _, base_tag_end = tag_range
+            details_range = text_widget.tag_ranges(details_tag)
+
+            if details_range:
+                start, end = details_range
+                text_widget.delete(start, end)
+                text_widget.insert(start, text)
+                text_widget.tag_add(details_tag, start, f"{start} + {len(text)}c")
+            else:
+                next_line_index = text_widget.index(f"{base_tag_end} + 1 line linestart")
+                text_widget.insert(next_line_index, text)
+                text_widget.tag_add(details_tag, next_line_index, f"{next_line_index} + {len(text)}c")
+
+        def show_transcription_text(base_tag, details_tag):
+            text_response = ''
+            for segment in assistant_response_dict['lines']:
+                text_response += '{} - {}:\n{}\n\n'.format(
+                    round(float(segment[0]), 3),
+                    round(float(segment[1]), 3),
+                    str(segment[2]).strip()
+                )
+            show_response_details(base_tag, details_tag=details_tag, text=text_response)
+
+        def show_raw_text(base_tag, details_tag):
+            show_response_details(base_tag, details_tag=details_tag, text=assistant_response)
+
+        def hide_text(base_tag, details_tag):
+            show_response_details(base_tag, details_tag=details_tag, text='')
+
+        # if the response is a transcription
+        if response_type == 'transcription_json' \
+            and 'lines' in assistant_response_dict and isinstance(assistant_response_dict['lines'], list):
+
+            logger.debug('Parsing assistant response as transcription.')
+
+            def transcription_context_menu(event, clicked_tag_id, **kwargs):
+                """
+                This is triggered on right-click on the transcription response
+                and it basically shows the context menu for the Transcription type response
+                """
+
+                details_tag = clicked_tag_id + '_details'
+
+                # create the context menu
+                context_menu = tk.Menu(text_widget, tearoff=0)
+
+                # the add to transcription sub-menu
+                add_to_transcription_menu = tk.Menu(context_menu, tearoff=0)
+                
+                # use the parent transcription of the first segment as the source transcription
+                try:
+                    source_transcription = kwargs.get('transcription_segments')[0].parent_transcription
+                except TypeError or IndexError:
+                    source_transcription = None
+
+                # the "New Transcription" button
+                add_to_transcription_menu.add_command(
+                    label="New Transcription...",
+                    command=lambda: self.open_new_transcription_window(
+                                    source_transcription=source_transcription,
+                                    transcription_segments=assistant_response_dict['lines']
+                                )
+                )
+                add_to_transcription_menu.add_separator()
+
+                # add the add to transcription sub-menu
+                context_menu.add_cascade(label="Add to Transcription", menu=add_to_transcription_menu)
+
+                # add separator
+                context_menu.add_separator()
+
+                # add the text menu items
+                context_menu.add_command(
+                    label="Show text response",
+                    command=lambda l_base_tag=clicked_tag_id, l_details_tag=details_tag:
+                    show_transcription_text(l_base_tag, l_details_tag)
+                )
+                context_menu.add_command(
+                    label="Show raw response",
+                    command=lambda l_base_tag=clicked_tag_id, l_details_tag=details_tag:
+                    show_raw_text(l_base_tag, l_details_tag)
+                )
+
+                # is there a details tag?
+                if text_widget.tag_ranges(details_tag):
+                    # then show the hide details option
+                    context_menu.add_command(
+                        label="Hide response",
+                        command=lambda l_base_tag=clicked_tag_id, l_details_tag=details_tag:
+                        hide_text(l_base_tag, l_details_tag)
+                    )
+
+                # display the context menu
+                context_menu.tk_popup(event.x_root, event.y_root)
+
+            # if we received this kind of response,
+            # we must assume that we had transcription_segments when making the assistant query
+            # we will use these to add the context menu to the response
+            # so add them to the transcription segments to the context_menu_kwargs
+            # this doesn't work if we have multiple transcriptions as sources
+            context_transcription_segments = assistant_window.transcription_segments
+
+            minify_and_add_response(
+                response_string='Transcription',
+                context_menu=transcription_context_menu,
+                transcription_segments=context_transcription_segments
+            )
+
+            parsed = True
+
+        elif response_type in ['transcription_json'] and 'lines' not in assistant_response_dict:
+            logger.warning(
+                'Cannot parse assistant response as "{}". Lines not found in response dict.'.format(response_type))
+
+        else:
+            logger.warning('Cannot parse assistant response. Unknown response type "{}".'.format(response_type))
+
+        # add the text widget line stuff
+        if parsed:
+            text_widget.insert('insert', '\n')
+
+            # wait for a second
+            self._text_window_update(assistant_window_id, text=' ')
+
+        return parsed
 
     def destroy_assistant_window(self, assistant_window_id: str):
         """
