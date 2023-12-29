@@ -15052,27 +15052,25 @@ class toolkit_UI():
 
                 help_reply += "\n"
 
-                help_reply += "Every time you ask something, the model will receive the entire conversation. " \
+                help_reply += "Every time you ask something, you may send out the entire conversation " \
+                              "and the initial context.\n" \
                               "The longer the conversation, the more tokens you are using on each request.\n\n" \
                               "Use [usage] to keep track of your usage in this Assistant window.\n" \
                               "Use [calc] to get the minimum number of tokens you're sending with each request.\n" \
                               "Use [price] to see how much the model costs.\n\n" \
                               "Use [reset] to reset the conversation, while preserving any contexts.\n" \
-                              "This will make the Assistant forget the entire conversation," \
-                              "but also reduce the tokens you're sending to OpenAI.\n\n" \
-                              "Use [resetall] to reset the conversation and the context.\n\n" \
-                              "Use [context] to see the context text.\n" \
-                              "The context contains gets sent with each prompt " \
-                              "(together with the entire conversation).\n\n" \
+                              "Use [resetall] to reset the conversation and the initial context.\n" \
+                              "Resetting will reduce the tokens you're sending out.\n\n" \
+                              "Use [context] to see the initial context text that is sent out with each prompt.\n\n" \
                               "Use [model] to see the model used in this window.\n" \
                               "Use [model:MODEL_PROVIDER:MODEL_NAME] to change the model used in this window.\n" \
                               "Use [models] to see the available models.\n\n" \
                               "Use [exit] to exit the Assistant.\n\n" \
-                              "Use [t] to send a transcription type prompt.\n" \
-                              "This will make the assistant aware of the transcription segments " \
-                              "and try force a transcription response. " \
-                              "Note: in this case, the prompt and response will not be saved to the chat history.\n\n" \
-                              "Now, just ask something..."
+                              "Use [t] or [st] before the prompt, to send a transcription or story focused prompt.\n" \
+                              "These will make the assistant aware of the transcription and story content " \
+                              "and try to influence a relevant response." \
+                              "Note: when using [t] or [st], " \
+                              "the prompt and response will not be saved to the chat history."
 
                 # use this to make sure we have a new prompt prefix for the next search
                 self._text_window_update(assistant_window_id, help_reply)
@@ -15286,13 +15284,16 @@ class toolkit_UI():
                 self._text_window_update(assistant_window_id, '')
                 return
 
-            elif prompt.lower().startswith(('[t]')):
+            elif prompt.lower().startswith(('[t]', '[st]')):
 
                 # Extracting the content inside the first square brackets
                 match = re.match(r'\[([^\]]+)\]', prompt)
                 requested_format = match.group(1) if match else None
 
                 temp_context_type = 'transcription_json'
+
+                if requested_format == 'st':
+                    temp_context_type = 'story_json'
 
                 if not hasattr(assistant_window, 'transcription_segments') \
                    or not assistant_window.transcription_segments:
@@ -15305,17 +15306,16 @@ class toolkit_UI():
 
                 if assistant_window.transcription_segments is not None:
 
-                    segment = None
                     for segment in assistant_window.transcription_segments:
 
-                        # temp_context['lines'].append(segment.to_dict(simplify=True))
                         temp_context['lines'].append(segment.to_list())
 
                 # use replace to remove the requested_format keyword when sending the prompt to the model
                 enhanced_prompt = enhanced_prompt.replace('[{}]'.format(requested_format), '', 1)
 
                 # add the formatting details to the enhanced prompt
-                enhanced_prompt = enhanced_prompt + "\nuse exact same json format or you'll break my code. "
+                enhanced_prompt += "\nuse exact same json format or you'll break my code: "
+                enhanced_prompt += '{{"type": "{}", "lines": [[start, end, text], ...]}}'.format(temp_context_type)
 
             # get the settings from the window again
             assistant_settings = assistant_window.assistant_settings
@@ -15327,7 +15327,7 @@ class toolkit_UI():
             # todo: move this is a different thread
             # get the assistant response
             assistant_response = assistant_item.send_query(
-                enhanced_prompt, assistant_settings, temp_context=temp_context, save_to_history=False)
+               enhanced_prompt, assistant_settings, temp_context=temp_context, save_to_history=False)
 
             # POST PROCESS THE RESPONSE (for some cases)
             # did we request a specific format?
@@ -15561,12 +15561,135 @@ class toolkit_UI():
 
             parsed = True
 
-        elif response_type in ['transcription_json'] and 'lines' not in assistant_response_dict:
+        # if the response is a story
+        elif response_type == 'story_json' \
+            and 'lines' in assistant_response_dict and isinstance(assistant_response_dict['lines'], list):
+
+            logger.debug('Parsing assistant response as story.')
+
+            def story_context_menu(event, clicked_tag_id, **kwargs):
+                """
+                This is triggered on right-click on the transcription response
+                and it basically shows the context menu for the Transcription type response
+                """
+
+                details_tag = clicked_tag_id + '_details'
+
+                # create the context menu
+                context_menu = tk.Menu(text_widget, tearoff=0)
+
+                # the add to transcription sub-menu
+                add_to_story_menu = tk.Menu(context_menu, tearoff=0)
+
+                # use the parent transcription of the first segment as the source transcription
+                try:
+                    source_transcription = kwargs.get('transcription_segments')[0].parent_transcription
+                except TypeError or IndexError:
+                    source_transcription = None
+
+                def add_to_story(story_editor_window_id):
+                    new_lines = []
+
+                    for segment in assistant_response_dict['lines']:
+                        new_lines.append({
+                            'text': segment[2].strip(),
+                            'type': 'transcription_segment',
+                            'source_start': segment[0],
+                            'source_end': segment[1],
+                            'transcription_file_path': source_transcription.transcription_file_path,
+                            'source_file_path': source_transcription.audio_file_path,
+                            'source_fps': source_transcription.timeline_fps,
+                            'source_start_tc': source_transcription.timeline_start_tc,
+                        })
+
+                    if new_lines:
+                        story_editor_window = self.get_window_by_id(story_editor_window_id)
+
+                        toolkit_UI.StoryEdit.paste_to_story_editor(
+                            window=story_editor_window, lines_to_paste=new_lines,
+                            toolkit_UI_obj=self)
+
+                        # save the story
+                        toolkit_UI.StoryEdit.save_story(window_id=story_editor_window,
+                                                        toolkit_UI_obj=self)
+
+                def add_to_new_story():
+                    if new_story_editor_window := self.open_new_story_editor_window():
+                        add_to_story(story_editor_window_id=new_story_editor_window.window_id)
+
+                # the "New Story" button
+                add_to_story_menu.add_command(
+                    label="New Story...",
+                    command=add_to_new_story
+                )
+                add_to_story_menu.add_separator()
+
+                story_editor_windows = self.get_all_windows_of_type('story_editor')
+
+                for story_window_id in story_editor_windows:
+                    story_editor_window = self.get_window_by_id(window_id=story_window_id)
+
+                    add_to_story_menu.add_command(
+                        label="{}".format(story_editor_window.title()),
+                        command=lambda l_story_editor_window_id=story_window_id:
+                        add_to_story(story_editor_window_id=l_story_editor_window_id)
+                    )
+
+                # add the add to transcription sub-menu
+                context_menu.add_cascade(label="Add to Story", menu=add_to_story_menu)
+
+                # add separator
+                context_menu.add_separator()
+
+                # add the text menu items
+                context_menu.add_command(
+                    label="Show text response",
+                    command=lambda l_base_tag=clicked_tag_id, l_details_tag=details_tag:
+                    show_transcription_text(l_base_tag, l_details_tag)
+                )
+                context_menu.add_command(
+                    label="Show raw response",
+                    command=lambda l_base_tag=clicked_tag_id, l_details_tag=details_tag:
+                    show_raw_text(l_base_tag, l_details_tag)
+                )
+
+                # is there a details tag?
+                if text_widget.tag_ranges(details_tag):
+                    # then show the hide details option
+                    context_menu.add_command(
+                        label="Hide response",
+                        command=lambda l_base_tag=clicked_tag_id, l_details_tag=details_tag:
+                        hide_text(l_base_tag, l_details_tag)
+                    )
+
+                # display the context menu
+                context_menu.tk_popup(event.x_root, event.y_root)
+
+            # if we received this kind of response,
+            # we must assume that we had transcription_segments when making the assistant query
+            # we will use these to add the context menu to the response
+            # so add them to the transcription segments to the context_menu_kwargs
+            # this doesn't work if we have multiple transcriptions as sources
+            context_transcription_segments = assistant_window.transcription_segments
+
+            minify_and_add_response(
+                response_string='Story',
+                context_menu=story_context_menu,
+                transcription_segments=context_transcription_segments
+            )
+
+            parsed = True
+
+        elif response_type in ['transcription_json', 'story_json'] and 'lines' not in assistant_response_dict:
             logger.warning(
                 'Cannot parse assistant response as "{}". Lines not found in response dict.'.format(response_type))
 
+            # print(json.dumps(assistant_response_dict, indent=4))
+            parsed = None
+
         else:
             logger.warning('Cannot parse assistant response. Unknown response type "{}".'.format(response_type))
+            parsed = None
 
         # add the text widget line stuff
         if parsed:
