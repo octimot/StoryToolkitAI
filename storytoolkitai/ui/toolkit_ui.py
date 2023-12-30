@@ -15590,6 +15590,23 @@ class toolkit_UI():
                 )
                 add_to_transcription_menu.add_separator()
 
+                transcription_windows = self.get_all_windows_of_type('transcription')
+
+                for transcription_window_id in transcription_windows:
+                    transcription_window = self.get_window_by_id(window_id=transcription_window_id)
+                    transcription_file_path = \
+                        self.t_edit_obj.get_window_transcription(transcription_window_id).transcription_file_path
+
+                    add_to_transcription_menu.add_command(
+                        label="{}".format(transcription_window.title()),
+                        command=lambda l_transcription_window_id=transcription_window_id,
+                        l_transcription_file_path=transcription_file_path:
+                        self.open_transcription_window(
+                            transcription_file_path=l_transcription_file_path,
+                            new_transcription_segments=assistant_response_dict['lines'],
+                        )
+                    )
+
                 # add the add to transcription sub-menu
                 context_menu.add_cascade(label="Add to Transcription", menu=add_to_transcription_menu)
 
