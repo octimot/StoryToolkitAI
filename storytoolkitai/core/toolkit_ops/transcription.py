@@ -27,7 +27,9 @@ class Transcription:
         """
 
         # we use the transcription file path as the id for the instance
-        transcription_path_id = cls.get_transcription_path_id(*args, **kwargs)
+        transcription_path_id = cls.get_transcription_path_id(
+            transcription_file_path=kwargs.get('transcription_file_path', None) or args[0]
+        )
 
         # if the transcription file path is already loaded in an instance, we return that instance
         if transcription_path_id in cls._instances:
@@ -43,10 +45,11 @@ class Transcription:
         # then we return the instance
         return instance
 
-    def __init__(self, transcription_file_path):
+    def __init__(self, transcription_file_path, force_reload=False):
 
         # prevent initializing the instance more than once if it was found in the instances dict
-        if hasattr(self, '_initialized') and self._initialized:
+        # but only if we're not supposed to force a reload
+        if hasattr(self, '_initialized') and self._initialized and not force_reload:
             return
 
         self._transcription_path_id = None
@@ -255,6 +258,14 @@ class Transcription:
     @property
     def incomplete(self):
         return self._incomplete
+
+    @property
+    def last_save_time(self):
+        return self._last_save_time
+
+    @property
+    def last_hash(self):
+        return self._last_hash
 
     @property
     def dirty(self):
@@ -733,15 +744,34 @@ class Transcription:
 
         return True
 
-    def add_segments(self, segments: list):
+    def add_segments(self, segments: list, overwrite=False):
         """
         This adds a list of segments to the transcription and then re-sets the segments
+        :param segments: a list of segments
+        :param overwrite: if True, in case a segment we add overlaps with the time range of an existing segment,
+                          we remove the existing segment and add the new one.
         """
+
+        # if we have to overwrite existing segments:
+        if overwrite:
+            # go through all the segments and check if they overlap with any of the existing segments
+            for segment in segments:
+
+                # if the segment_data is a dict or list, turn it into a TranscriptionSegment object
+                segment = \
+                    TranscriptionSegment(segment, parent_transcription=self) \
+                        if isinstance(segment, dict) or isinstance(segment, list) else segment
+
+                # remove overlapping segments
+                self.delete_segments_between(segment.start, segment.end, reset_segments=False)
+
+            # set the segments here after we removed all the overlapping segments
+            self._set_segments()
 
         for segment in segments:
             self.add_segment(segment, skip_reset=True)
 
-        # reset the segments if not mentioned otherwise
+        # reset the segments here after we added all the segments
         self._set_segments()
 
     def add_segment(self, segment: dict or object, segment_index: int = None, skip_reset=False):
@@ -749,6 +779,9 @@ class Transcription:
         This adds a segment to the transcription and then re-sets the segments.
         If a segment_index is passed, the segment will be added at that index, and the rest of the segments will be
         shifted to the right. If no segment_index is passed, the segment will be added to the end of the segments list.
+        :param segment: a segment object or a dict that can be turned into a segment object
+        :param segment_index: the index at which to add the segment.
+        :param skip_reset: if True, the segments will not be re-set (only use if you're doing _set_segments manually!)
         """
 
         # make sure we have a segments list

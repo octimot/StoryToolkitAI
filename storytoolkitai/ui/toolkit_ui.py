@@ -9011,6 +9011,64 @@ class toolkit_UI():
             text.config(state=ctk.NORMAL)
 
         @staticmethod
+        def add_segments_to_text_widget(transcription: Transcription, text_widget, clear_text_widget=True):
+            """
+            This function adds the segments from the transcription object to the text widget
+            :param transcription: the transcription object
+            :param text_widget: the text widget
+            :param clear_text_widget: whether to clear the text widget before adding the segments
+            """
+
+            # get the text_widget state
+            text_widget_state = text_widget.cget('state')
+
+            # make the text widget not read-only
+            text_widget.config(state=ctk.NORMAL)
+
+            # clear first, if needed
+            if clear_text_widget:
+                text_widget.delete('1.0', ctk.END)
+
+            # we'll need to count segments soon
+            segment_count = 0
+
+            # initialize line numbers
+            text_widget_line = 0
+
+            # take each transcript segment
+            segments = transcription.get_segments()
+
+            # if there are segments
+            if segments:
+
+                for t_segment in segments:
+
+                    # start counting the lines
+                    text_widget_line = text_widget_line + 1
+
+                    # if there is a text element, simply insert it in the window
+                    if t_segment.text:
+
+                        # count the segments
+                        segment_count = segment_count + 1
+
+                        # insert the text
+                        text_widget.insert(ctk.END, t_segment.text.strip() + ' ')
+
+                        # if this is the longest segment, keep that in mind
+                        if len(t_segment.text) > text_widget.longest_segment_num_char:
+                            text_widget.longest_segment_num_char = len(t_segment.text)
+
+                        # for now, just add 2 new lines after each segment:
+                        text_widget.insert(ctk.END, '\n')
+
+            # return the text_widget to its original state
+            text_widget.config(state=text_widget_state)
+
+            # update the text_widget last_sync according to the transcription last_save_time
+            text_widget.last_hash = transcription.last_hash
+
+        @staticmethod
         def unbind_editing_keys(text):
             """
             This function unbinds all the keys used for editing the transcription
@@ -9247,7 +9305,7 @@ class toolkit_UI():
         def save_transcript(self, window_id=None, text=None, force=False):
             """
             This function lets the Transcript object know that the transcription should be saved.
-            The transcript object times the saving so that it doesn't happen too often
+            The transcription object times the saving so that it doesn't happen too often
             and also does a check on its _dirty flag to see the transcription needs to be saved
 
             :param window_id:
@@ -9256,6 +9314,8 @@ class toolkit_UI():
                             will ignore the transcript object's _dirty flag and save the transcript
             :return:
             """
+
+            # todo: remove the text parameter and use the window_id to get the text widget if needed...
 
             if window_id is None and text is None:
                 logger.debug('No window id or text provided.')
@@ -9380,17 +9440,21 @@ class toolkit_UI():
         This makes the user choose a file path for the new transcription and then opens a new transcription window
         """
 
-        # ask the user where to save the transcription
-        transcription_file_path = self.ask_for_save_file(
-            title='New Transcription',
-            filetypes=[('Transcription files', '.json')]
-        )
+        # ask the user where to save the transcription if no file path was passed
+        if transcription_file_path is None:
+            transcription_file_path = self.ask_for_save_file(
+                title='New Transcription',
+                filetypes=[('Transcription files', '.json')]
+            )
 
         # if the user didn't choose a file path, stop
         if not transcription_file_path:
             return False
 
-        # replace the end .json with .transcription.json
+        # replace .transcription.json with .json to avoid doubling .transcription on the next step
+        transcription_file_path = transcription_file_path.replace('.transcription.json', '.json')
+
+        # now re-add .transcription.json
         transcription_file_path = transcription_file_path.replace('.json', '.transcription.json')
 
         # remove the file if it already exists
@@ -9398,7 +9462,8 @@ class toolkit_UI():
             # just remove it (the OS should have asked for confirmation already)
             os.remove(transcription_file_path)
 
-        transcription = Transcription(transcription_file_path=transcription_file_path)
+        # load the transcription, or force reload it if the object already exists
+        transcription = Transcription(transcription_file_path=transcription_file_path, force_reload=True)
 
         # if another transcription was passed, copy its data to the new transcription
         if source_transcription is not None:
@@ -9421,7 +9486,19 @@ class toolkit_UI():
         return self.open_transcription_window(transcription_file_path=transcription_file_path)
 
     def open_transcription_window(self, title=None, transcription_file_path=None,
-                                  select_line_no=None, add_to_selection=None, select_group=None, goto_time=None):
+                                  select_line_no=None, add_to_selection=None, select_group=None, goto_time=None,
+                                  new_transcription_segments=None):
+        """
+        This opens a transcription window
+        :param title: the title of the window
+        :param transcription_file_path: the path to the transcription file
+        :param select_line_no: the line number to select
+        :param add_to_selection: a list of line numbers to add to the selection
+        :param select_group: the group id to select
+        :param goto_time: the time to go to
+        :param new_transcription_segments: a list of new segments to add to the transcription
+                                           (only works if transcription is already open)
+        """
 
         # Note: most of the transcription window functions are stored in the TranscriptEdit class
         transcription = Transcription(transcription_file_path=transcription_file_path)
@@ -9608,47 +9685,18 @@ class toolkit_UI():
                 # configure the text element to use the scrollbar
                 text.config(yscrollcommand=text_scrollbar.set)
 
-                # we'll need to count segments soon
-                segment_count = 0
-
                 # use this to calculate the longest segment (but don't accept anything under 30)
-                longest_segment_num_char = 40
+                text.longest_segment_num_char = 40
 
-                # initialize line numbers
-                text_widget_line = 0
-
-                # take each transcript segment
-                segments = transcription.get_segments()
-
-                # if there are segments
-                if segments:
-
-                    for t_segment in segments:
-
-                        # start counting the lines
-                        text_widget_line = text_widget_line + 1
-
-                        # if there is a text element, simply insert it in the window
-                        if t_segment.text:
-
-                            # count the segments
-                            segment_count = segment_count + 1
-
-                            # insert the text
-                            text.insert(ctk.END, t_segment.text.strip() + ' ')
-
-                            # if this is the longest segment, keep that in mind
-                            if len(t_segment.text) > longest_segment_num_char:
-                                longest_segment_num_char = len(t_segment.text)
-
-                            # for now, just add 2 new lines after each segment:
-                            text.insert(ctk.END, '\n')
+                # add the segments to the text widget
+                toolkit_UI.TranscriptEdit.add_segments_to_text_widget(
+                    transcription=transcription, text_widget=text, clear_text_widget=False)
 
                 # make the text read only
                 # and take into consideration the longest segment to adjust the width of the window
-                if longest_segment_num_char > 60:
-                    longest_segment_num_char = 60
-                text.config(state=ctk.DISABLED, width=longest_segment_num_char)
+                if text.longest_segment_num_char > 60:
+                    text.longest_segment_num_char = 60
+                text.config(state=ctk.DISABLED, width=text.longest_segment_num_char)
 
                 # set the top, in-between and bottom text spacing
                 text.config(spacing1=0, spacing2=0.2, spacing3=5)
@@ -9895,6 +9943,33 @@ class toolkit_UI():
             # get the current window and the transcript groups module
             t_window = current_tk_window = self.get_window_by_id(t_window_id)
             transcript_groups_module = current_tk_window.transcript_groups_module
+
+            # if new_transcription_segments were passed, add them to the transcription
+            if new_transcription_segments is not None:
+
+                # add the segments to the transcription
+                transcription.add_segments(new_transcription_segments, overwrite=True)
+                # transcription.save_soon(force=True, sec=0)
+
+                # reload the groups in the transcript groups module
+                # transcript_groups_module.update_groups()
+
+                self.t_edit_obj.clear_selection(t_window_id, text_element=t_window.text_widget)
+
+                # add the segments to the text widget
+                toolkit_UI.TranscriptEdit.add_segments_to_text_widget(transcription, t_window.text_widget)
+
+                # refresh the transcription window to make sure everything updated (except groups)
+                self.update_transcription_window(t_window_id)
+
+                self.t_edit_obj.save_transcript(window_id=t_window_id)
+
+            # check if we have to refresh the text widget
+            # and if the transcription was changed since the last refresh
+            if t_window.text_widget.last_hash != transcription.last_hash:
+
+                # add the segments to the text widget
+                toolkit_UI.TranscriptEdit.add_segments_to_text_widget(transcription, t_window.text_widget)
 
             # so update all the windows just to make sure that all the elements are in the right state
             self.update_all_transcription_windows()
@@ -12762,7 +12837,6 @@ class toolkit_UI():
                 toolkit_UI_obj.focus_window(window_id)
 
                 return False
-
 
     def open_new_story_editor_window(self):
         """

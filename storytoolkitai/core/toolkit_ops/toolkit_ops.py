@@ -1848,12 +1848,12 @@ class ToolkitOps:
         transcription_file_path = other_options.get('transcription_file_path', None) \
             or os.path.join(target_dir, '{}.transcription.json'.format(os.path.basename(audio_file_path)))
 
-        # if we're currently not retranscribing or supposed to overwrite an existing transcription file
+        # if we're currently not retranscribing or not supposed to overwrite an existing transcription file
         if os.path.exists(transcription_file_path) \
                 and other_options.get('overwrite', False) is False \
                 and other_options.get('retranscribe', False) is False:
 
-            # get the next available transcription file path
+            # use the the next available transcription file path
             transcription_file_path = TranscriptionUtils.add_count_to_transcription_path(transcription_file_path)
 
         # let's instantiate the transcription object
@@ -1871,7 +1871,7 @@ class ToolkitOps:
         transcription.set('name', name)
         transcription.set('transcription_id', transcription.generate_id())
 
-        # this marks the transcription as incomplete so that it can be resumed later
+        # this marks the transcription as incomplete so that it could be resumed later
         transcription.set('incomplete', True)
 
         # set some more things in the transcription object
@@ -1964,7 +1964,7 @@ class ToolkitOps:
         # save the transcription file once here
         transcription.save_soon(sec=0)
 
-        # if we're not retranscribing or supposed to overwrite an existing transcription file
+        # if we're not retranscribing or not supposed to overwrite an existing transcription file
         if not other_options.get('retranscribe', False):
 
             # if a timeline_name was sent, remember it for later
