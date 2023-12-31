@@ -2604,11 +2604,19 @@ class toolkit_UI():
         :return:
         """
 
+        # get the window object and the text widget
+        window = self.get_window_by_id(window_id=window_id)
+        text_widget = window.text_widget
+
         # get the current number of lines in the text widget
-        lines = self.text_windows[window_id]['text_widget'].index('end-1c')
+        lines = text_widget.index('end-1c')
 
         # on which line is the cursor?
-        cursor_pos = self.text_windows[window_id]['text_widget'].index('insert')
+        cursor_pos = text_widget.index('insert')
+        
+        # do not allow key entries if the text widget is locked
+        if hasattr(text_widget, 'locked') and text_widget.locked:
+            return 'break'
 
         # up/down for prompt history
         # the prompt history is saved in self.window_prompts[window_id]
@@ -2617,10 +2625,10 @@ class toolkit_UI():
         if event.keysym in ['Up', 'Down']:
 
             # first move the cursor to the end of the last line
-            self.text_windows[window_id]['text_widget'].mark_set('insert', 'end-1c')
+            text_widget.mark_set('insert', 'end-1c')
 
             # also scroll to the end of the last line
-            self.text_windows[window_id]['text_widget'].see('end-1c')
+            text_widget.see('end-1c')
 
             # if the prompt history is empty, do nothing
             if window_id not in self.window_prompts or len(self.window_prompts[window_id]) == 0:
@@ -2665,12 +2673,11 @@ class toolkit_UI():
                     prompt = self.window_prompts[window_id][self.window_prompts_index[window_id]]
 
                 # first, clear the last line
-                self.text_windows[window_id]['text_widget'].delete('end-1c linestart', 'end-1c lineend')
+                text_widget.delete('end-1c linestart', 'end-1c lineend')
 
                 # set the prompt in the text widget
                 # but also add the prompt prefix if there is one
-                self.text_windows[window_id]['text_widget'] \
-                    .insert('end-1c', self.text_windows[window_id]['prompt_prefix'] + prompt)
+                text_widget.insert('end-1c', self.text_windows[window_id]['prompt_prefix'] + prompt)
 
             return 'break'
 
@@ -2681,10 +2688,10 @@ class toolkit_UI():
             # but move the cursor to the end of the last line
             if event.keysym == 'BackSpace':
                 # first move the cursor to the end of the last line
-                self.text_windows[window_id]['text_widget'].mark_set('insert', 'end-1c')
+                text_widget.mark_set('insert', 'end-1c')
 
                 # also scroll to the end of the last line
-                self.text_windows[window_id]['text_widget'].see('end-1c')
+                text_widget.see('end-1c')
 
                 return 'break'
 
@@ -2695,23 +2702,25 @@ class toolkit_UI():
             # if the key is not an arrow key, move the cursor to the end of the last line
             else:
                 # first move the cursor to the end of the last line
-                self.text_windows[window_id]['text_widget'].mark_set('insert', 'end-1c')
+                text_widget.mark_set('insert', 'end-1c')
 
                 # also scroll to the end of the last line
-                self.text_windows[window_id]['text_widget'].see('end-1c')
+                text_widget.see('end-1c')
 
                 # then return normal so that the key is processed as it should be
                 return 'normal'
 
+        # if the cursor is on the last line, allow typing (on conditions)
+        # this is where the user is supposed to enter prompts
         else:
 
             # if the cursor is not past the prefix, move it to the end of the prefix
             if int(cursor_pos.split('.')[1]) < len(self.text_windows[window_id]['prompt_prefix']):
                 # first move the cursor to the end of the last line
-                self.text_windows[window_id]['text_widget'].mark_set('insert', 'end-1c')
+                text_widget.mark_set('insert', 'end-1c')
 
                 # also scroll to the end of the last line
-                self.text_windows[window_id]['text_widget'].see('end-1c')
+                text_widget.see('end-1c')
 
                 return 'break'
 
@@ -2719,14 +2728,14 @@ class toolkit_UI():
             if event.keysym == 'Return':
 
                 # get the command entered by the user
-                prompt = self.text_windows[window_id]['text_widget'].get('end-1c linestart', 'end-1c lineend')
+                prompt = text_widget.get('end-1c linestart', 'end-1c lineend')
 
                 # remove the command prefix from the beginning of the command if it was given
                 if kwargs.get('prompt_prefix', ''):
                     prompt = prompt.replace(kwargs.get('prompt_prefix', ''), '', 1)
 
                 # add two new lines
-                self.text_windows[window_id]['text_widget'].insert('end', '\n\n')
+                text_widget.insert('end', '\n\n')
 
                 # also pass the prompt prefix if it was given
                 self._text_window_prompts(prompt=prompt, window_id=window_id, **kwargs)
@@ -2735,38 +2744,38 @@ class toolkit_UI():
                 # but only if the window still exists
                 # - this is disabled since it should be handled within _text_window_prompts() (i.e. by each command)
                 # if window_id in self.text_windows:
-                #    self.text_windows[window_id]['text_widget'].see('end-1c')
+                #    text_widget.see('end-1c')
 
                 return 'break'
 
             # do not allow backspace past the first character + length of the prompt prefix of the last line
             elif event.keysym == 'BackSpace':
 
-                last_line = (self.text_windows[window_id]['text_widget'].index('end-1c linestart')).split('.')[0]
+                last_line = (text_widget.index('end-1c linestart')).split('.')[0]
 
                 # get the length of prompt_prefix
                 prompt_prefix_length = len(kwargs.get('prompt_prefix', ''))
 
-                if self.text_windows[window_id]['text_widget'].index('insert') \
+                if text_widget.index('insert') \
                         == str(last_line) + '.' + str(prompt_prefix_length):
 
                     return 'break'
 
             # if there is a selection
-            if self.text_windows[window_id]['text_widget'].tag_ranges('sel'):
+            if text_widget.tag_ranges('sel'):
 
                 # get the last line of the text widget
-                last_line = (self.text_windows[window_id]['text_widget'].index('end-1c linestart')).split('.')[0]
+                last_line = (text_widget.index('end-1c linestart')).split('.')[0]
 
                 # get the length of prompt_prefix
                 prompt_prefix_length = len(kwargs.get('prompt_prefix', ''))
 
                 # get the end of the selection
-                selection_end = self.text_windows[window_id]['text_widget'].index('sel.last')
+                selection_end = text_widget.index('sel.last')
 
                 # reset the selection to the beginning of the prompt prefix - last line, prompt prefix length
-                self.text_windows[window_id]['text_widget'].tag_remove('sel', 'sel.first', 'sel.last')
-                self.text_windows[window_id]['text_widget'].tag_add(
+                text_widget.tag_remove('sel', 'sel.first', 'sel.last')
+                text_widget.tag_add(
                    'sel', str(last_line) + '.' + str(prompt_prefix_length), selection_end)
 
                 # only then return
@@ -15118,6 +15127,8 @@ class toolkit_UI():
                 logger.error('Cannot run assistant query. No assistant item found.')
                 return False
 
+        text_widget = assistant_window.text_widget
+
         # strip the prompt
         prompt = prompt.strip()
 
@@ -15219,9 +15230,6 @@ class toolkit_UI():
                         .format(assistant_item.info.get('pricing_info'))
 
                 model_reply += "\nUsage for this window has been reset to 0 due to model change.\n"
-
-                # get the window text widget
-                text_widget = self.text_windows[assistant_window_id]['text_widget']
 
                 # get the current text_widget prompt kwargs
                 prompt_callback_kwargs = text_widget.prompt_callback_kwargs
@@ -15416,33 +15424,50 @@ class toolkit_UI():
             if temp_context is not None:
                 temp_context = json.dumps(temp_context)
 
-            # todo: move this is a different thread
-            # get the assistant response
-            assistant_response = assistant_item.send_query(
-               enhanced_prompt, assistant_settings, temp_context=temp_context, save_to_history=False)
+            def query():
 
-            # POST PROCESS THE RESPONSE (for some cases)
-            # did we request a specific format?
-            if requested_format is not None:
+                # first lock the text_widget to prevent the user from typing until a reply is received
+                text_widget.locked = True
 
-                # take the response through the response parser
-                response_was_parsed = self.assistant_parse_response(
-                    assistant_window_id=assistant_window_id, assistant_response=assistant_response)
+                # get the assistant response
+                # we're wrapping this in a try/except block
+                # to make sure we unlock the text_widget no matter what
+                try:
+                    assistant_response = assistant_item.send_query(
+                       enhanced_prompt, assistant_settings, temp_context=temp_context, save_to_history=False)
 
-                # stop here if the response_was_parsed is True or False (but not None)
-                # - meaning something was already displayed on the text window from assistant_parse_response
-                if response_was_parsed is not None:
-                    return
+                    # POST PROCESS THE RESPONSE (for some cases)
+                    # did we request a specific format?
+                    if requested_format is not None:
 
-                # otherwise mention that we didn't receive what we were expecting
-                # (and also show the raw response below)
-                else:
-                    self._text_window_update(
-                        assistant_window_id, "The Assistant didn't reply in the requested format."
-                    )
+                        # take the response through the response parser
+                        response_was_parsed = self.assistant_parse_response(
+                            assistant_window_id=assistant_window_id, assistant_response=assistant_response)
 
-            # update the assistant window
-            self._text_window_update(assistant_window_id, "A > " + assistant_response)
+                        # stop here if the response_was_parsed is True or False (but not None)
+                        # - meaning something was already displayed on the text window from assistant_parse_response
+                        if response_was_parsed is not None:
+                            text_widget.locked = False
+                            return
+
+                        # otherwise mention that we didn't receive what we were expecting
+                        # (and also show the raw response below)
+                        else:
+                            self._text_window_update(
+                                assistant_window_id, "The Assistant didn't reply in the requested format."
+                            )
+
+                    # update the assistant window
+                    self._text_window_update(assistant_window_id, "A > " + assistant_response)
+
+                except:
+                    logger.error('Error while running assistant query.', exc_info=True)
+
+                # unlock the text_widget
+                text_widget.locked = False
+
+            # execute query in a separate thread
+            Thread(target=query).start()
 
         except:
             logger.error('Error while running assistant query.', exc_info=True)
@@ -15495,6 +15520,9 @@ class toolkit_UI():
             """
             We're using this function to add the response to the text widget.
             """
+
+            # move the cursor past the \n at the end of the line
+            text_widget.mark_set(ctk.INSERT, ctk.END + '-1c')
 
             # add the prompt prefix first
             text_widget.insert(ctk.END, 'A > ')
