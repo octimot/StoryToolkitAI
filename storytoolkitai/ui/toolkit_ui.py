@@ -13639,12 +13639,30 @@ class toolkit_UI():
             """
             This updates the window with the "ready for search" prefix and message
             """
+
+            text_widget = self.get_window_by_id(search_window_id).text_widget
+
+            # get the current prefix
+            current_prefix = self.text_windows[search_window_id].get('prompt_prefix', '')
+
+            # calculate the starting index of the last line
+            start_of_last_line = text_widget.index('end-1c linestart')
+
+            # get the text on the last line excluding the prefix
+            typed_text = text_widget.get(start_of_last_line, 'end-1c')
+
+            # optionally remove the prefix from the typed text (but only the first instance)
+            typed_text = typed_text.replace(current_prefix, '', 1)
+
             # change the prefix back to SEARCH
             self._text_window_set_prefix(window_id=search_window_id, prefix='SEARCH > ')
 
             # update the text window
             self._text_window_update(
                 search_window_id, help_console_info + 'Ready for search.', clear=True)
+
+            # insert the typed text back into the text window
+            text_widget.insert('end', typed_text)
 
         # get this window object
         search_window = self.get_window_by_id(search_window_id)
