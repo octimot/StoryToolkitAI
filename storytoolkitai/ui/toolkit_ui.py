@@ -9444,7 +9444,7 @@ class toolkit_UI():
         self.open_transcription_window(transcription_file_path=transcription_json_file_path, **options)
 
     def open_new_transcription_window(self, transcription_segments=None, transcription_file_path=None,
-                                      source_transcription=None):
+                                      source_transcription=None, transcript_groups=None):
         """
         This makes the user choose a file path for the new transcription and then opens a new transcription window
         """
@@ -9478,11 +9478,48 @@ class toolkit_UI():
         if source_transcription is not None:
             transcription.copy_transcription(source_transcription=source_transcription, include_groups=True)
 
-        # if we have a list of segments, add them to the transcription
+        # if we have a list of segments, use them in the new transcription
         if transcription_segments is not None:
 
             # add the segments to the transcription
             transcription.add_segments(transcription_segments)
+
+        # otherwise use the list of segments from the source transcription
+        elif source_transcription is not None:
+            transcription.add_segments(source_transcription.get_segments())
+
+        # if we have a list of transcript groups, use them in the new transcription
+        # (this will add them next to any copied groups from the source transcription)
+        if transcript_groups is not None:
+
+            # get the existing transcript groups
+            existing_transcript_groups = copy.deepcopy(transcription.get_all_transcript_groups())
+
+            # take each group and prepare it for the transcription
+            # this will eventually return a dict looking like this {group_id: group_data, group_id2: group_data2 ....}
+            for current_group in transcript_groups:
+
+                # all groups must have a non-empty name
+                if 'group_name' not in current_group or not current_group['group_name']:
+                    logger.debug('Cannot add group "{}" - no group name provided.'.format(current_group))
+                    continue
+
+                # all groups must have a non-empty time intervals dict
+                if 'time_intervals' not in current_group or not current_group['time_intervals']:
+                    logger.debug('Cannot add group "{}" - no time intervals provided.'
+                                 .format(current_group['group_name']))
+                    continue
+
+                new_group = transcription.prepare_transcript_group(
+                    group_name=current_group['group_name'],
+                    group_notes=current_group.get('group_notes', ''),
+                    time_intervals=current_group['time_intervals']
+                )
+
+                # add the new group to the groups data dict
+                existing_transcript_groups = {**existing_transcript_groups, **new_group}
+
+            transcription.set_transcript_groups(transcript_groups=existing_transcript_groups)
 
         # use the name of the transcription file as the name of the transcription
         transcription.set('name', os.path.basename(transcription_file_path).split('.transcription.json')[0])
@@ -9496,7 +9533,7 @@ class toolkit_UI():
 
     def open_transcription_window(self, title=None, transcription_file_path=None,
                                   select_line_no=None, add_to_selection=None, select_group=None, goto_time=None,
-                                  new_transcription_segments=None):
+                                  new_transcription_segments=None, new_transcript_groups=None):
         """
         This opens a transcription window
         :param title: the title of the window
@@ -9507,6 +9544,8 @@ class toolkit_UI():
         :param goto_time: the time to go to
         :param new_transcription_segments: a list of new segments to add to the transcription
                                            (only works if transcription is already open)
+        :param new_transcript_groups: a list of new groups to add to the transcription
+                                        (only works if transcription is already open)
         """
 
         # Note: most of the transcription window functions are stored in the TranscriptEdit class
@@ -9972,6 +10011,12 @@ class toolkit_UI():
                 self.update_transcription_window(t_window_id)
 
                 self.t_edit_obj.save_transcript(window_id=t_window_id)
+
+            # if new_transcript_groups were passed, add them to the transcription
+            if new_transcript_groups is not None:
+
+                # add the groups to the transcription
+                transcript_groups_module.add_new_groups(groups_data=new_transcript_groups)
 
             # check if we have to refresh the text widget
             # and if the transcription was changed since the last refresh
@@ -11124,6 +11169,54 @@ class toolkit_UI():
             self.select_group(group_id=new_group_id)
 
             return
+
+        def add_new_groups(self, groups_data):
+            """
+            This adds new groups to the transcription
+            """
+
+            # if we don't have any groups data, return
+            if not groups_data:
+                return
+
+            # deselect all groups
+            self.deselect_group()
+
+            # make a copy of the groups data
+            new_groups_data = copy.deepcopy(self._groups_data) if self._groups_data else {}
+
+            # take each group and prepare it for the transcription
+            # this will eventually return a dict looking like this {group_id: group_data, group_id2: group_data2 ....}
+            for current_group in groups_data:
+
+                # all groups must have a non-empty name
+                if 'group_name' not in current_group or not current_group['group_name']:
+                    logger.debug('Cannot add group "{}" - no group name provided.'.format(current_group))
+                    continue
+
+                # all groups must have a non-empty time intervals dict
+                if 'time_intervals' not in current_group or not current_group['time_intervals']:
+                    logger.debug('Cannot add group "{}" - no time intervals provided.'
+                                 .format(current_group['group_name']))
+                    continue
+
+                new_group = self._window_transcription.prepare_transcript_group(
+                    group_name=current_group['group_name'],
+                    group_notes=current_group.get('group_notes', ''),
+                    time_intervals=current_group['time_intervals']
+                )
+
+                # add the new group to the groups data dict
+                new_groups_data = {**new_groups_data, **new_group}
+
+            # update window status label
+            self.toolkit_UI_obj.update_window_status_label(self.window_id, 'New groups added.')
+
+            # update transcription
+            self._push_group_change_to_transcription(new_groups_data)
+
+            # update the group list
+            self.update_list()
 
         def _is_group_label_in_view(self, label_widget=None):
             """
@@ -15415,9 +15508,11 @@ class toolkit_UI():
 
                 # add the formatting details to the enhanced prompt
                 enhanced_prompt += "\nuse exact same json format or you'll break my code: "
-                enhanced_prompt += '{{"type": "{}", "lines": [[start, end, text], ...]}}'.format(temp_context_type)
+                enhanced_prompt += '{{"type": "{}", "lines": [[start, end, text], ...]'.format(temp_context_type)
+                enhanced_prompt += ', "groups": [[start, end, title, optional_text], ...]'
+                enhanced_prompt += '}}'
 
-            # get the settings from the window again
+                # get the settings from the window again
             assistant_settings = assistant_window.assistant_settings
 
             # parse json to string
@@ -15606,6 +15701,25 @@ class toolkit_UI():
 
             logger.debug('Parsing assistant response as transcription.')
 
+            # parse any transcript groups
+            parsed_groups = None
+            if 'groups' in assistant_response_dict:
+
+                parsed_groups = []
+                try:
+                    for group in assistant_response_dict['groups']:
+
+                        new_group = {
+                            'group_name': group[2],
+                            'group_notes': group[3] if len(group) > 3 else '',
+                            'time_intervals': [{'start': group[0], 'end': group[1]}],
+                        }
+                        parsed_groups.append(new_group)
+
+                except:
+                    logger.error('Cannot parse transcript groups.', exc_info=True)
+
+
             def transcription_context_menu(event, clicked_tag_id, **kwargs):
                 """
                 This is triggered on right-click on the transcription response
@@ -15631,7 +15745,8 @@ class toolkit_UI():
                     label="New Transcription...",
                     command=lambda: self.open_new_transcription_window(
                                     source_transcription=source_transcription,
-                                    transcription_segments=assistant_response_dict['lines']
+                                    transcription_segments=assistant_response_dict['lines'],
+                                    transcript_groups=parsed_groups
                                 )
                 )
                 add_to_transcription_menu.add_separator()
@@ -15649,7 +15764,8 @@ class toolkit_UI():
                         l_transcription_file_path=transcription_file_path:
                         self.open_transcription_window(
                             transcription_file_path=l_transcription_file_path,
-                            new_transcription_segments=assistant_response_dict['lines'],
+                            new_transcription_segments=assistant_response_dict.get('lines', None),
+                            new_transcript_groups=parsed_groups,
                         )
                     )
 

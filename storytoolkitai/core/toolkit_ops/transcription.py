@@ -1410,7 +1410,7 @@ class Transcription:
                                  group_id: str = None, group_notes: str = '',
                                  existing_transcript_groups: list = None,
                                  overwrite_existing: bool = False) -> dict:
-        '''
+        """
         This function prepares a transcript group dict.
 
         Each group is a dict with the following keys: name, notes, time_intervals
@@ -1425,11 +1425,11 @@ class Transcription:
         :param existing_transcript_groups: if a transcript group is being updated, pass its contents here
         :param overwrite_existing: if the same group_id is found in the existing transcript groups, overwrite it
         :return: the transcript group dict or None if something went wrong
-        '''
+        """
 
         # trim the group name and group notes
         group_name = group_name.strip()
-        group_notes = group_notes.strip()
+        group_notes = group_notes.strip() if group_notes else ''
 
         # if the group id is not provided, use the group name to generate one
         if group_id is None:
