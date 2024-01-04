@@ -15941,6 +15941,16 @@ class toolkit_UI():
                         command=lambda: remove_from_conversation(tag_id=widget_tag, item=chat_history_item)
                     )
 
+            # prompt specific options
+            if any([tag.startswith('p_') for tag in tags_at_click]):
+                context_menu.add_command(
+                    label="Reuse prompt",
+                    command=lambda: self.inject_prompt(
+                        window_id=window_id, prompt=chat_history_item['text_widget_text'], execute=False,
+                        clear_line=False
+                    )
+                )
+
         # display the context menu
         context_menu.tk_popup(event.x_root, event.y_root)
 
