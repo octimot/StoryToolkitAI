@@ -47,6 +47,7 @@ class toolkit_UI():
     theme_colors['normal'] = '#929292'
     theme_colors['superblack'] = '#000000'
     theme_colors['dark'] = '#282828'
+    theme_colors['darker'] = '#242424'    # lighter than black, but darker than dark
     theme_colors['blue'] = '#1E90FF'
     theme_colors['red'] = '#800020'
     theme_colors['bright_red'] = '#FF160C'
@@ -2729,6 +2730,10 @@ class toolkit_UI():
 
                 # get the command entered by the user
                 prompt = text_widget.get('end-1c linestart', 'end-1c lineend')
+
+                # keep track of the last line of the text_widget where the user entered the prompt
+                # use the text_widget functions
+                text_widget.last_prompt_line = text_widget.index('end-1c linestart').split('.')[0]
 
                 # remove the command prefix from the beginning of the command if it was given
                 if kwargs.get('prompt_prefix', ''):
@@ -14989,6 +14994,17 @@ class toolkit_UI():
         # do this if the window didn't exist before
         if not window_existed:
 
+            # add the context menu
+            # add right click for context menu
+            assistant_window.text_widget.bind(
+                '<Button-3>', lambda e: self._assistant_window_context_menu(
+                    e, window_id=assistant_window_id))
+
+            # make context menu work on mac trackpad too
+            assistant_window.text_widget.bind(
+                '<Button-2>', lambda e: self._assistant_window_context_menu(
+                    e, window_id=assistant_window_id))
+
             # initialize an assistant item if one doesn't already exist
             if not hasattr(assistant_window, 'assistant_item'):
                 assistant_window.assistant_item = AssistantUtils.assistant_handler(
@@ -15228,6 +15244,10 @@ class toolkit_UI():
         # we use this whenever we're changing the context only for the current prompt
         temp_context = None
 
+        # this decides whether we should save the prompt and response to the chat history
+        # depending on what type of prompt this is
+        save_to_history = True
+
         # we use this to add or remove things from the actual prompt when sending it to the model
         enhanced_prompt = prompt
 
@@ -15264,9 +15284,10 @@ class toolkit_UI():
                               "Use [exit] to exit the Assistant.\n\n" \
                               "Use [t] or [st] before the prompt, to send a transcription or story focused prompt.\n" \
                               "These will make the assistant aware of the transcription and story content " \
-                              "and try to influence a relevant response." \
+                              "and try to influence a relevant response. " \
                               "Note: when using [t] or [st], " \
-                              "the prompt and response will not be saved to the chat history."
+                              "the prompt and response will not be saved to the chat history " \
+                              "unless you add it afterwards."
 
                 # use this to make sure we have a new prompt prefix for the next search
                 self._text_window_update(assistant_window_id, help_reply)
@@ -15434,20 +15455,26 @@ class toolkit_UI():
                 self._text_window_update(assistant_window_id, usage_reply)
                 return
 
-            elif prompt.lower() == '[reset]':
+            elif prompt.lower() == '[reset]' or prompt.lower() == '[resetall]':
                 assistant_item.reset()
-                self._text_window_update(assistant_window_id, 'Conversation reset. Context preserved.')
+
+                # remove all references to the assistant item from the chat history
+                if hasattr(assistant_window, 'chat_history') and 'items' in assistant_window.chat_history:
+                    for key, current_chat_history_item in assistant_window.chat_history['items'].items():
+                        assistant_window.chat_history['items'][key]['assistant_chat_history_index'] = None
+
+                        self.assistant_toggle_history_item_color(tag_id=key, text_widget=text_widget, active=False)
+
+                if prompt.lower() == '[resetall]':
+                    assistant_item.add_context(context='')
+                    assistant_window.transcription_segments = None
+                    self._text_window_update(assistant_window_id, 'Conversation reset and context removed.')
+                else:
+                    self._text_window_update(assistant_window_id, 'Conversation reset, but context preserved.')
                 return
 
             elif prompt.lower() == '[clear]':
                 self._text_window_update(assistant_window_id, '', clear=True)
-                return
-
-            elif prompt.lower() == '[resetall]':
-                assistant_item.reset()
-                assistant_item.add_context(context='')
-                assistant_window.transcription_segments = None
-                self._text_window_update(assistant_window_id, 'Conversation reset. Context removed.')
                 return
 
             elif prompt.lower() == '[context]':
@@ -15512,6 +15539,9 @@ class toolkit_UI():
                 enhanced_prompt += ', "groups": [[start, end, title, optional_text], ...]'
                 enhanced_prompt += '}}'
 
+                # don't this query to the chat history since it might be large
+                save_to_history = False
+
                 # get the settings from the window again
             assistant_settings = assistant_window.assistant_settings
 
@@ -15519,20 +15549,59 @@ class toolkit_UI():
             if temp_context is not None:
                 temp_context = json.dumps(temp_context)
 
-            def query():
+            def query_assistant():
 
                 # first lock the text_widget to prevent the user from typing until a reply is received
                 text_widget.locked = True
+
+                # assuming that the user pressed enter to send the prompt,
+                # we need to get the correct index of the prompt line so that we add it to the window chat history
+                prompt_line_index_start = text_widget.index(text_widget.last_prompt_line + '.0')
+                prompt_line_index_end = text_widget.index(text_widget.last_prompt_line + '.0 lineend +1c')
+
+                # construct a unique prompt tag using the current time and a random number
+                unique_prompt_tag = 'p_'+str(time.time())+str(random.randint(0, 100000))
+
+                # add a unique tag to the prompt line
+                text_widget.tag_add(unique_prompt_tag, prompt_line_index_start, prompt_line_index_end)
 
                 # get the assistant response
                 # we're wrapping this in a try/except block
                 # to make sure we unlock the text_widget no matter what
                 try:
-                    assistant_response = assistant_item.send_query(
-                       enhanced_prompt, assistant_settings, temp_context=temp_context, save_to_history=False)
+
+                    # send the prompt to the assistant
+                    # it should return both the response and the used history
+                    assistant_response, used_history = assistant_item.send_query(
+                       enhanced_prompt, assistant_settings, temp_context=temp_context, save_to_history=save_to_history)
+
+                    # prompt goes to chat history
+                    # - we're using the used_history[:-1] because the last item in the used_history is the response
+                    # - we use the last_assistant_message_idx-1 as a reference to the last prompt in the chat history
+                    #   but only if we're saving the prompt to the history
+                    self._add_to_assistant_window_chat_history(
+                        content_type='prompt',
+                        content=enhanced_prompt,
+                        widget_text=prompt,
+                        widget_tag=unique_prompt_tag,
+                        assistant_window=assistant_window,
+                        assistant_chat_history=used_history[:-1] if len(used_history) > 0 else [],
+                        assistant_chat_history_index=
+                        assistant_item.last_assistant_message_idx-1 if save_to_history else None
+                    )
+
+                    self.assistant_toggle_history_item_color(
+                        tag_id=unique_prompt_tag, text_widget=text_widget, active=save_to_history)
+
+                    # we need this to wrap the response in a tag later
+                    response_line_index_start = text_widget.index(ctk.INSERT)
+
+                    # construct a unique response tag using the current time and a random number
+                    unique_response_tag = 'r_' + str(time.time()) + str(random.randint(0, 100000))
 
                     # POST PROCESS THE RESPONSE (for some cases)
                     # did we request a specific format?
+                    response_was_parsed = None
                     if requested_format is not None:
 
                         # take the response through the response parser
@@ -15543,7 +15612,6 @@ class toolkit_UI():
                         # - meaning something was already displayed on the text window from assistant_parse_response
                         if response_was_parsed is not None:
                             text_widget.locked = False
-                            return
 
                         # otherwise mention that we didn't receive what we were expecting
                         # (and also show the raw response below)
@@ -15552,8 +15620,37 @@ class toolkit_UI():
                                 assistant_window_id, "The Assistant didn't reply in the requested format."
                             )
 
-                    # update the assistant window
-                    self._text_window_update(assistant_window_id, "A > " + assistant_response)
+                            # move the start of the response tag here
+                            response_line_index_start = text_widget.index(ctk.INSERT)
+
+                    # update the assistant window (only if it wasn't already updated by assistant_parse_response)
+                    if response_was_parsed is None:
+                        self._text_window_update(assistant_window_id, "A > " + assistant_response)
+
+                    # response goes to the window chat history
+                    self._add_to_assistant_window_chat_history(
+                        content_type='response',
+                        content=assistant_response,
+                        widget_tag=unique_response_tag,
+                        assistant_window=assistant_window,
+                        requested_format=requested_format,
+                        assistant_chat_history=used_history,
+                        assistant_chat_history_index=
+                        assistant_item.last_assistant_message_idx if save_to_history else None
+                    )
+
+                    # add a unique tag to the response lines
+                    # for the end index, we use the index of the last line of the response minus 1 line since
+                    # we're assuming that the _text_window_update function will add a new line and the prompt prefix
+                    # after the actual response
+                    text_widget.tag_add(
+                        unique_response_tag,
+                        text_widget.index(response_line_index_start),
+                        text_widget.index(text_widget.index(ctk.INSERT + '-1l') + ' lineend')
+                    )
+
+                    self.assistant_toggle_history_item_color(
+                        tag_id=unique_response_tag, text_widget=text_widget, active=save_to_history)
 
                 except:
                     logger.error('Error while running assistant query.', exc_info=True)
@@ -15561,14 +15658,291 @@ class toolkit_UI():
                 # unlock the text_widget
                 text_widget.locked = False
 
-            # execute query in a separate thread
-            Thread(target=query).start()
+            # execute assistant query in a separate thread
+            Thread(target=query_assistant).start()
 
         except:
             logger.error('Error while running assistant query.', exc_info=True)
 
             # update the assistant window
             self._text_window_update(assistant_window_id, 'An error occurred :-(')
+
+    def assistant_toggle_history_item_color(self, tag_id, text_widget, window_id=None, active=None):
+
+        # if no active state is provided, we'll figure it out based on the tag_id
+        if active is None:
+
+            if window_id is None:
+                logger.error('Cannot toggle history item color. No window_id provided.')
+                return
+
+            # is the item in the chat history?
+            chat_history_item = self._get_chat_history_item_at_tag(window_id, tag_id)
+
+            if chat_history_item is None:
+                return
+
+            if not chat_history_item.get('assistant_chat_history_index', None):
+                active = False
+            else:
+                active = True
+
+        # make the background a bit lighter if it's in the chat history
+        if active:
+            # make this look more washed out
+            text_widget.tag_config(tag_id, background=toolkit_UI.theme_colors['darker'])
+
+        # otherwise, adopt the text widget theme
+        else:
+            # get the background color of the text widget
+            text_widget_background = text_widget.cget('background')
+            text_widget.tag_config(tag_id, background=text_widget_background)
+
+    @staticmethod
+    def _add_to_assistant_window_chat_history(
+            assistant_window, content_type, content, assistant_chat_history,
+            widget_tag, widget_text=None,
+            assistant_chat_history_index=None, requested_format=None
+    ):
+        """
+        This adds prompts and responses to the assistant window chat history.
+        :param assistant_window: the assistant window object
+        :param content_type: the type of content we're adding to the chat history (prompt or response)
+        :param content: the content we're adding to the chat history
+        :param assistant_chat_history: the assistant chat history
+        :param widget_tag: the tag that wraps the content in the text widget
+                           (this also serves as a the unique id of the content in the widget)
+        :param widget_text: the text widget text for this content -
+                            if None, we will have to re-parse it from the content if we need to refresh the text widget
+        :param assistant_chat_history_index: the index of the assistant chat history where the content is
+        :param requested_format: the format requested for the response
+        """
+
+        # make sure we have a chat_history attribute on the window,
+        # so we can keep track of what messages we see on the window,
+        # and which are referenced in the assistant_item.chat_history
+        # below, the chat_history is a dict with two keys:
+        # - order (stores the order of the messages in the text widget) and
+        # - items (stores the actual messages)
+        if not hasattr(assistant_window, 'chat_history'):
+            assistant_window.chat_history = {'order': [], 'items': {}}
+
+        history_item = {
+            'type': content_type,
+            'content': content,
+            'assistant_chat_history': assistant_chat_history,
+            'text_widget_text': widget_text,
+            'assistant_chat_history_index': assistant_chat_history_index,
+            'requested_format': requested_format
+        }
+
+        # add the history item to the window chat history
+        assistant_window.chat_history['items'][widget_tag] = history_item
+
+        # append the widget_tag to the order list
+        assistant_window.chat_history['order'].append(widget_tag)
+
+    def _get_chat_history_item_at_tag(self, assistant_window_id, widget_tag):
+        """
+        This looks into the chat history of the window and returns the item that has the given widget_tag.
+        """
+
+        # get the window object
+        assistant_window = self.get_window_by_id(assistant_window_id)
+
+        if assistant_window is None:
+            logger.error('Cannot get chat history item. Assistant window not found.')
+            return None
+
+        # if the window doesn't have a chat history, create one
+        if not hasattr(assistant_window, 'chat_history'):
+            assistant_window.chat_history = {'order': [], 'items': {}}
+
+        # go through all the items in the chat history
+        if widget_tag in assistant_window.chat_history['items']:
+            return assistant_window.chat_history['items'][widget_tag]
+
+        return None
+
+    def _assistant_window_context_menu(self, event=None, window_id: str = None, context_menu=None, **attributes):
+        """
+        This is the context menu for the assistant window.
+        """
+
+        # get the window object
+        window = self.get_window_by_id(window_id=window_id)
+
+        # get the text widget from the event
+        text_widget = event.widget
+
+        index = text_widget.index(f"@{event.x},{event.y}")
+        tags = text_widget.tag_names(index)
+
+        # if the item at the click position has the tag 'has_context_menu', do nothing
+        # assuming that the context menu for it is defined some place else
+        if 'has_context_menu' in tags and context_menu is None:
+            return
+
+        # get the line and char from the click
+        line, char = self.get_line_char_from_click(event, text_widget=text_widget)
+        line = int(line)
+        char = int(char)
+
+        # create the context menu
+        if not context_menu:
+            context_menu = tk.Menu(text_widget, tearoff=0)
+
+        # otherwise, add separator to keep the existing menu items separate from the one's we're adding
+        else:
+            context_menu.add_separator()
+
+        # add the menu items
+        # if there is a selection
+        if text_widget.tag_ranges("sel"):
+            context_menu.add_command(label="Copy", command=lambda: text_widget.event_generate("<<Copy>>"))
+
+            # add the de-select all option
+            context_menu.add_command(label="Deselect", command=lambda: text_widget.tag_remove("sel", "1.0", "end"))
+
+        else:
+            # add the select all option
+            context_menu.add_command(label="Select All", command=lambda: text_widget.tag_add("sel", "1.0", "end"))
+
+            # add a separator
+            # context_menu.add_separator()
+
+        # get the tags at the click position
+        tags_at_click = text_widget.tag_names(index)
+
+        # HANDLING OF PROMPT AND RESPONSE CONTEXT MENU OPTIONS
+
+        # are there any tags that starts with p_ or r_ ?
+        # p_ is for prompt, r_ is for response
+        if any([tag.startswith('p_') or tag.startswith('r_') for tag in tags_at_click]):
+
+            def get_insert_conversation_index(tag_id):
+                """
+                This goes through the window chat history and returns the index closest to the given tag_id,
+                according to item['assistant_chat_history_index'].
+                """
+
+                closest_index = None
+                passed_tag_id = False
+
+                for key, current_chat_history_item in window.chat_history['items'].items():
+                    # Update closest_index if a valid assistant_chat_history_index is found
+                    if current_chat_history_item['assistant_chat_history_index'] is not None:
+                        closest_index = current_chat_history_item['assistant_chat_history_index']
+                        if passed_tag_id:
+                            # if we have already passed the tag_id,
+                            # it means that we have found the closest index after it
+                            # so we need to return the closest_index so that we shift everything after it by 1
+                            return closest_index
+
+                    # check if we've reached our tag_id
+                    if key == tag_id:
+                        passed_tag_id = True
+                        if closest_index is not None:
+                            # if closest_index is set, return the index after it
+                            return closest_index + 1
+
+                # if we didn't find anything,
+                # we return the length of the assistant chat history so that we insert at the end
+                return len(window.assistant_item.chat_history)
+
+            def add_to_conversation(tag_id, item):
+
+                # make sure that the window assistant chat item is not in the conversation already
+                if item['assistant_chat_history_index'] is not None:
+                    logger.debug('Cannot add to conversation. Item {} is already in the conversation.'.format(tag_id))
+                    return
+
+                # get the index where we should insert the item in the assistant chat history
+                insert_index = get_insert_conversation_index(tag_id)
+
+                # prepare the item to be added to the assistant chat history
+                assistant_chat_history_item = {
+                    'role': 'user' if item['type'] == 'prompt' else 'assistant',
+                    'content': item['content']
+                }
+
+                # first, shift all the assistant chat history indexes after the insert_index by 1
+                # this will ensure that all the references are correct
+                # we need to first shift and then add the item to the assistant chat history
+                # otherwise we'll shift the item's index too
+                for key, current_chat_history_item in window.chat_history['items'].items():
+                    if current_chat_history_item['assistant_chat_history_index'] is not None \
+                            and current_chat_history_item['assistant_chat_history_index'] >= insert_index:
+                        window.chat_history['items'][key]['assistant_chat_history_index'] += 1
+
+                # then, add the item to the assistant chat history
+                window.assistant_item.chat_history.insert(insert_index, assistant_chat_history_item)
+
+                # add the reference to the assistant chat history index to the item
+                item['assistant_chat_history_index'] = insert_index
+
+                # toggle the color of the item in the text widget
+                self.assistant_toggle_history_item_color(tag_id=tag_id, text_widget=text_widget, active=True)
+
+                return
+
+            def remove_from_conversation(tag_id, item):
+
+                # make sure that the window assistant chat item is in the conversation
+                if item['assistant_chat_history_index'] is None:
+                    logger.debug('Cannot remove from conversation. '
+                                 'Item {} is already not in the conversation.'.format(tag_id))
+
+                # use the index to remove it from the assistant chat history
+                window.assistant_item.chat_history.pop(item['assistant_chat_history_index'])
+
+                past_item_index = item['assistant_chat_history_index']
+
+                # mark this item as not being in the conversation
+                item['assistant_chat_history_index'] = None
+
+                # toggle the color of the item in the text widget
+                self.assistant_toggle_history_item_color(tag_id=tag_id, text_widget=text_widget, active=False)
+
+                # now shift down all the assistant chat history indexes after the removed item by 1
+                for key, current_chat_history_item in window.chat_history['items'].items():
+                    if current_chat_history_item['assistant_chat_history_index'] is not None \
+                    and current_chat_history_item['assistant_chat_history_index'] > past_item_index:
+                        current_chat_history_item['assistant_chat_history_index'] -= 1
+
+                return
+
+            widget_tag = None
+            # get the first tag that starts with p_ or r_
+            for tag in tags_at_click:
+                if tag.startswith('p_') or tag.startswith('r_'):
+                    widget_tag = tag
+                    break
+
+            # prompt / response specific options
+            # get the chat history item of the line we clicked on
+            chat_history_item = self._get_chat_history_item_at_tag(assistant_window_id=window_id, widget_tag=widget_tag)
+
+            # is this used in the assistant item history as context?
+            if isinstance(chat_history_item, dict) and 'assistant_chat_history_index' in chat_history_item:
+
+                context_menu.add_separator()
+
+                if chat_history_item['assistant_chat_history_index'] is None:
+
+                    context_menu.add_command(
+                        label='Add to conversation',
+                        command=lambda: add_to_conversation(tag_id=widget_tag, item=chat_history_item)
+                    )
+
+                else:
+                    context_menu.add_command(
+                        label='Remove from conversation',
+                        command=lambda: remove_from_conversation(tag_id=widget_tag, item=chat_history_item)
+                    )
+
+        # display the context menu
+        context_menu.tk_popup(event.x_root, event.y_root)
 
     def assistant_parse_response(self, assistant_response, assistant_window_id):
         """
@@ -15619,6 +15993,8 @@ class toolkit_UI():
             # move the cursor past the \n at the end of the line
             text_widget.mark_set(ctk.INSERT, ctk.END + '-1c')
 
+            full_insert_pos = text_widget.index(ctk.INSERT)
+
             # add the prompt prefix first
             text_widget.insert(ctk.END, 'A > ')
 
@@ -15627,11 +16003,15 @@ class toolkit_UI():
 
             text_widget.insert(ctk.END, response_string)
 
+            # now change the color of the full A > response to supernormal (similar to  _text_window_update())
+            text_widget.tag_add('reply', full_insert_pos, text_widget.index(ctk.INSERT))
+            text_widget.tag_config('reply', foreground=self.theme_colors['supernormal'])
+
             # use the timestamp to make the tag unique
             # plus the current line number
             tag_id = 'assistant_response_{}'.format(str(time.time()) + str(text_widget.index(ctk.INSERT)))
 
-            # change the color of the above text so the users know it's different
+            # change the color of the above text (without A > prefix) so the users know it's of a different kind
             text_widget.tag_add(tag_id, insert_pos, text_widget.index(ctk.INSERT))
             text_widget.tag_config(tag_id, foreground=toolkit_UI.theme_colors['blue'])
 
@@ -15719,7 +16099,6 @@ class toolkit_UI():
                 except:
                     logger.error('Cannot parse transcript groups.', exc_info=True)
 
-
             def transcription_context_menu(event, clicked_tag_id, **kwargs):
                 """
                 This is triggered on right-click on the transcription response
@@ -15796,8 +16175,10 @@ class toolkit_UI():
                         hide_text(l_base_tag, l_details_tag)
                     )
 
-                # display the context menu
-                context_menu.tk_popup(event.x_root, event.y_root)
+                # now call the assistant window context menu (also with the previously added)
+                self._assistant_window_context_menu(
+                    event=event, window_id=assistant_window_id, context_menu=context_menu,
+                )
 
             # if we received this kind of response,
             # we must assume that we had transcription_segments when making the assistant query
@@ -15807,7 +16188,7 @@ class toolkit_UI():
             context_transcription_segments = assistant_window.transcription_segments
 
             minify_and_add_response(
-                response_string='Transcription',
+                response_string='Received Transcription',
                 context_menu=transcription_context_menu,
                 transcription_segments=context_transcription_segments
             )
@@ -15926,7 +16307,7 @@ class toolkit_UI():
             context_transcription_segments = assistant_window.transcription_segments
 
             minify_and_add_response(
-                response_string='Story',
+                response_string='Received Story',
                 context_menu=story_context_menu,
                 transcription_segments=context_transcription_segments
             )

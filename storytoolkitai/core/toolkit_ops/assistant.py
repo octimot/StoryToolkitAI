@@ -82,6 +82,9 @@ class ChatGPT(ToolkitAssistant):
         # and the index of the context in the chat history
         self.context_idx = None
 
+        # keep track of the index of the last assistant message in the chat history
+        self._last_assistant_message_idx = None
+
         if self.context is not None:
             # add the context to the chat history
             self.add_context(self.context)
@@ -92,7 +95,8 @@ class ChatGPT(ToolkitAssistant):
 
     def reset(self):
         """
-        This function is used to reset the assistant, by clearing the chat history
+        This function is used to reset the assistant, by clearing the chat history,
+        then adding the initial system and the context (if it exists)
         """
 
         # just reset the chat history to the initial system message
@@ -267,6 +271,10 @@ class ChatGPT(ToolkitAssistant):
     def send_query(self, content, settings=None, temp_context=None, save_to_history=True):
         """
         This function is used to send a query to the assistant
+        :param content: the content of the query
+        :param settings: the settings for the query
+        :param temp_context: a temporary context that will be used for this query only (and then discarded)
+        :param save_to_history: if True, the query will be saved to the assistant chat history
         """
 
         # the query should always contain the role and the content
@@ -341,7 +349,7 @@ class ChatGPT(ToolkitAssistant):
             # reset the context
             context_reset()
 
-            return error_message
+            return error_message, chat_history
 
         except Exception as e:
             logger.debug('Error sending query to ChatGPT: ', exc_info=True)
@@ -349,21 +357,28 @@ class ChatGPT(ToolkitAssistant):
             context_reset()
 
             return str(e) + "\nI'm sorry, I'm having trouble connecting to OpenAI right now. " \
-                            "Please check the logs or try again later."
+                            "Please check the logs or try again later.", chat_history
 
         result = ''
 
         for choice in response.choices:
             result += choice.message.content
 
-            # add the result to the chat history (but only if it's not empty)
+            # add the result to the chat history
             if save_to_history:
                 self.chat_history.append({"role": "assistant", "content": result})
+
+                # keep track of the index of the last assistant message
+                self._last_assistant_message_idx = len(self.chat_history) - 1
 
         # add the usage
         self.add_usage(tokens_in=response.usage.completion_tokens, tokens_out=response.usage.prompt_tokens)
 
-        return result
+        return result, chat_history
+
+    @property
+    def last_assistant_message_idx(self):
+        return self._last_assistant_message_idx
 
     @property
     def model_description(self):
