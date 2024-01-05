@@ -220,23 +220,58 @@ class ChatGPT(ToolkitAssistant):
 
             logger.debug('Removed context from the chat history.')
 
-    def calculate_history_tokens(self):
+    def calculate_history_tokens(self, messages=None, model=None):
         """
-        This calculates the amount of tokens used by the assistant
-        on each query taken into consideration the current chat_history (but without the query itself)
+        This calculates the amount of tokens used by the assistant on each query
+        taking into consideration the current chat_history (but without the new query itself)
+        based on https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
         """
 
-        # use tiktoken to calculate the number of tokens used by the assistant
-        # encoding = tiktoken.get_encoding("cl100k_base")
-        encoding = tiktoken.encoding_for_model(self.model_name)
+        if model is None:
+            model = self.model_name
 
-        # turn the chat history into a string take the 'content' field from each message
-        chat_history_str = ' '.join([message['content'] for message in self.chat_history])
+        if messages is None:
+            messages = self.chat_history
 
-        # the number of tokens used for the chat history
-        tokens = len(encoding.encode(chat_history_str))
+        """Return the number of tokens used by a list of messages."""
+        try:
+            encoding = tiktoken.encoding_for_model(model)
+        except KeyError:
+            logger.warning("Model name not found when calculating tokens. Using cl100k_base encoding.")
+            encoding = tiktoken.get_encoding("cl100k_base")
+        if model in {
+            "gpt-3.5-turbo-0613",
+            "gpt-3.5-turbo-16k-0613",
+            "gpt-4-0314",
+            "gpt-4-32k-0314",
+            "gpt-4-0613",
+            "gpt-4-32k-0613",
+        }:
+            tokens_per_message = 3
+            tokens_per_name = 1
+        elif model == "gpt-3.5-turbo-0301":
+            tokens_per_message = 4  # every message follows <|start|>{role/name}\n{content}<|end|>\n
+            tokens_per_name = -1  # if there's a name, the role is omitted
+        elif "gpt-3.5-turbo" in model:
+            logger.warning("Calculating tokens assuming gpt-3.5-turbo-0613, but gpt-3.5-turbo may update over time. ")
+            return self.calculate_history_tokens(messages, model="gpt-3.5-turbo-0613")
+        elif "gpt-4" in model:
+            logger.warning("Calculating tokens assuming gpt-4-0613, but gpt-4 may update over time. ")
+            return self.calculate_history_tokens(messages, model="gpt-4-0613")
+        else:
+            logger.error("Cannot accurately calculate tokens for model {}. Returning None.".format(model))
+            return None
 
-        return tokens
+        num_tokens = 0
+        for message in messages:
+            num_tokens += tokens_per_message
+            for key, value in message.items():
+                num_tokens += len(encoding.encode(value))
+                if key == "name":
+                    num_tokens += tokens_per_name
+        num_tokens += 3  # every reply is primed with <|start|>assistant<|message|>
+
+        return num_tokens
 
     def add_usage(self, *, tokens_in=0, tokens_out=0):
         """

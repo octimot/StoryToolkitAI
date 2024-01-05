@@ -15415,10 +15415,14 @@ class toolkit_UI():
 
                 if prompt.lower() == '[calc]':
                     num_tokens = assistant_item.calculate_history_tokens()
-                    calc_reply = "The context plus conversation uses {} tokens/request\n\n".format(num_tokens)
+                    if num_tokens is not None:
+                        calc_reply = "The context plus conversation uses {} tokens/request\n\n".format(num_tokens)
 
-                    calc_reply += "This is the minimum amount of tokens you send on each request, " \
-                                  "plus your message, unless you [reset] or [resetall]."
+                        calc_reply += "This is the minimum amount of tokens you send on each request, " \
+                                      "plus your message, unless you [reset] or [resetall]."
+
+                    else:
+                        calc_reply = "Cannot calculate the number of tokens used. Model not supported."
 
                     self._text_window_update(assistant_window_id, calc_reply)
 
