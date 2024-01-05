@@ -268,6 +268,58 @@ class ChatGPT(ToolkitAssistant):
 
         # print(self.stAI.statistics)
 
+    def _request(self, chat_history, settings=None, **kwargs):
+
+        # make sure that the settings are a dict
+        if settings is None:
+            settings = dict()
+
+        # now send the query to the assistant
+        try:
+
+            client = OpenAI(api_key=self.api_key)
+
+            response = client.chat.completions.create(
+                model=self.model_name,
+                messages=chat_history,
+                temperature=settings.get('temperature', 1),
+                max_tokens=settings.get('max_length', 256),
+                top_p=settings.get('top_p', 1),
+                frequency_penalty=settings.get('frequency_penalty', 0),
+                presence_penalty=settings.get('presence_penalty', 0),
+                timeout=settings.get('timeout', 30),
+            )
+
+            result = ''
+            for choice in response.choices:
+                result += choice.message.content
+
+                # add the result to the chat history
+                if kwargs.get('save_to_history', True):
+                    self.chat_history.append({"role": "assistant", "content": result})
+
+                    # keep track of the index of the last assistant message
+                    self._last_assistant_message_idx = len(self.chat_history) - 1
+
+            # add the usage
+            self.add_usage(tokens_in=response.usage.completion_tokens, tokens_out=response.usage.prompt_tokens)
+
+            return result, chat_history
+
+        except openai.AuthenticationError as e:
+
+            error_message = 'OpenAI API key might invalid. Please check your OpenAI Key in the preferences window.'
+
+            logger.debug('OpenAI API key is invalid. Please check your key in the preferences window.')
+
+            return error_message, chat_history
+
+        except Exception as e:
+            logger.debug('Error sending query to ChatGPT: ', exc_info=True)
+
+            return str(e) + "\nI'm sorry, I'm having trouble connecting to OpenAI right now. " \
+                            "Please check the logs or try again later.", chat_history
+
     def send_query(self, content, settings=None, temp_context=None, save_to_history=True):
         """
         This function is used to send a query to the assistant
@@ -280,10 +332,6 @@ class ChatGPT(ToolkitAssistant):
         # the query should always contain the role and the content
         # the role should be either user, system or assistant
         # in this case, since we're sending a query, the role should be user
-
-        # make sure that the settings are a dict
-        if settings is None:
-            settings = dict()
 
         # set an empty function for the context reset
         def context_reset():
@@ -321,58 +369,11 @@ class ChatGPT(ToolkitAssistant):
         if save_to_history:
             self.chat_history.append(query)
 
-        # now send the query to the assistant
-        try:
+        # make the actual request
+        result, chat_history = self._request(chat_history=chat_history, settings=settings, save_to_history=save_to_history)
 
-            client = OpenAI(api_key=self.api_key)
-
-            response = client.chat.completions.create(
-                model=self.model_name,
-                messages=chat_history,
-                temperature=settings.get('temperature', 1),
-                max_tokens=settings.get('max_length', 256),
-                top_p=settings.get('top_p', 1),
-                frequency_penalty=settings.get('frequency_penalty', 0),
-                presence_penalty=settings.get('presence_penalty', 0),
-                timeout=settings.get('timeout', 30),
-            )
-
-            # reset the context
-            context_reset()
-
-        except openai.AuthenticationError as e:
-
-            error_message = 'OpenAI API key might invalid. Please check your OpenAI Key in the preferences window.'
-
-            logger.debug('OpenAI API key is invalid. Please check your key in the preferences window.')
-
-            # reset the context
-            context_reset()
-
-            return error_message, chat_history
-
-        except Exception as e:
-            logger.debug('Error sending query to ChatGPT: ', exc_info=True)
-
-            context_reset()
-
-            return str(e) + "\nI'm sorry, I'm having trouble connecting to OpenAI right now. " \
-                            "Please check the logs or try again later.", chat_history
-
-        result = ''
-
-        for choice in response.choices:
-            result += choice.message.content
-
-            # add the result to the chat history
-            if save_to_history:
-                self.chat_history.append({"role": "assistant", "content": result})
-
-                # keep track of the index of the last assistant message
-                self._last_assistant_message_idx = len(self.chat_history) - 1
-
-        # add the usage
-        self.add_usage(tokens_in=response.usage.completion_tokens, tokens_out=response.usage.prompt_tokens)
+        # reset the context
+        context_reset()
 
         return result, chat_history
 
