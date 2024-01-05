@@ -5,6 +5,9 @@ import time
 from openai import OpenAI
 import json
 import copy
+import requests
+from pydantic import BaseModel, root_validator
+from typing import Optional
 
 from storytoolkitai.core.logger import logger
 
@@ -35,6 +38,28 @@ class ToolkitAssistant:
 
         # then copy the chat history
         assistant_to.chat_history = copy.deepcopy(assistant_from.chat_history)
+
+
+class UsageInfo(BaseModel):
+    prompt_tokens: int
+    completion_tokens: int
+
+
+class AssistantResponse(BaseModel):
+    completion: Optional[str] = None
+    usage: Optional[UsageInfo] = None
+    error: Optional[str] = None
+    error_code: Optional[int] = None
+
+    @root_validator
+    def check_completion_or_error(cls, values):
+        """
+        This makes sure that we either have a completion or an error
+        """
+        completion, error = values.get('completion'), values.get('error')
+        if not completion and not error:
+            raise ValueError('Either completion or error must be provided')
+        return values
 
 
 class ChatGPT(ToolkitAssistant):
@@ -233,12 +258,12 @@ class ChatGPT(ToolkitAssistant):
         if messages is None:
             messages = self.chat_history
 
-        """Return the number of tokens used by a list of messages."""
         try:
             encoding = tiktoken.encoding_for_model(model)
         except KeyError:
             logger.warning("Model name not found when calculating tokens. Using cl100k_base encoding.")
             encoding = tiktoken.get_encoding("cl100k_base")
+
         if model in {
             "gpt-3.5-turbo-0613",
             "gpt-3.5-turbo-16k-0613",
@@ -249,15 +274,19 @@ class ChatGPT(ToolkitAssistant):
         }:
             tokens_per_message = 3
             tokens_per_name = 1
+
         elif model == "gpt-3.5-turbo-0301":
             tokens_per_message = 4  # every message follows <|start|>{role/name}\n{content}<|end|>\n
             tokens_per_name = -1  # if there's a name, the role is omitted
+
         elif "gpt-3.5-turbo" in model:
             logger.warning("Calculating tokens assuming gpt-3.5-turbo-0613, but gpt-3.5-turbo may update over time. ")
             return self.calculate_history_tokens(messages, model="gpt-3.5-turbo-0613")
+
         elif "gpt-4" in model:
             logger.warning("Calculating tokens assuming gpt-4-0613, but gpt-4 may update over time. ")
             return self.calculate_history_tokens(messages, model="gpt-4-0613")
+
         else:
             logger.error("Cannot accurately calculate tokens for model {}. Returning None.".format(model))
             return None
@@ -339,21 +368,35 @@ class ChatGPT(ToolkitAssistant):
             # add the usage
             self.add_usage(tokens_in=response.usage.completion_tokens, tokens_out=response.usage.prompt_tokens)
 
-            return result, chat_history
+            # wrap the response in an AssistantResponse object
+            # so we can process it correctly
+            return AssistantResponse(
+                completion=result,
+                usage=response.usage,
+                error=None,
+                error_code=None
+            ), chat_history
 
         except openai.AuthenticationError as e:
 
-            error_message = 'OpenAI API key might invalid. Please check your OpenAI Key in the preferences window.'
+            error = 'OpenAI API key is invalid. Please check your key in the preferences window.'
 
-            logger.debug('OpenAI API key is invalid. Please check your key in the preferences window.')
+            logger.error(error)
 
-            return error_message, chat_history
+            return AssistantResponse(
+                error=error,
+                error_code=401
+            ), chat_history
 
         except Exception as e:
             logger.debug('Error sending query to ChatGPT: ', exc_info=True)
 
-            return str(e) + "\nI'm sorry, I'm having trouble connecting to OpenAI right now. " \
-                            "Please check the logs or try again later.", chat_history
+            error = str(e) + "\nI'm sorry, I'm having trouble connecting to OpenAI right now. " \
+                             "Please check the logs or try again later."
+
+            return AssistantResponse(
+                error=error
+            ), chat_history
 
     def send_query(self, content, settings=None, temp_context=None, save_to_history=True):
         """
@@ -405,7 +448,8 @@ class ChatGPT(ToolkitAssistant):
             self.chat_history.append(query)
 
         # make the actual request
-        result, chat_history = self._request(chat_history=chat_history, settings=settings, save_to_history=save_to_history)
+        result, chat_history = self._request(
+            chat_history=chat_history, settings=settings, save_to_history=save_to_history)
 
         # reset the context
         context_reset()

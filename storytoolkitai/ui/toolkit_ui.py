@@ -15013,8 +15013,8 @@ class toolkit_UI():
                     model_name=default_model_name
                 )
 
-            initial_info = 'Using {} {}\n'.format(
-                assistant_window.assistant_item.model_provider, assistant_window.assistant_item.model_description)
+            initial_info = 'Using {} ({})\n'.format(
+                assistant_window.assistant_item.model_description, assistant_window.assistant_item.model_provider)
 
             initial_info += 'Your requests might be billed by your AI model provider.\n' + \
                             'Type [help] to see available commands or just ask a question.'
@@ -15259,8 +15259,8 @@ class toolkit_UI():
             # is the user asking for help?
             if prompt.lower() == '[help]':
 
-                help_reply = ("You are using {} {}.\n"
-                              .format(assistant_item.model_provider, assistant_item.model_description))
+                help_reply = ("You are using {} ({}).\n"
+                              .format(assistant_item.model_description, assistant_item.model_provider))
 
                 if assistant_item.info is not None and 'pricing_info' in assistant_item.info:
                     help_reply += "See {} for more reliable pricing. \n" \
@@ -15373,8 +15373,8 @@ class toolkit_UI():
 
             elif prompt.lower() == '[model]':
 
-                model_reply = "You are using {} {}.\n" \
-                              .format(assistant_item.model_provider, assistant_item.model_description)
+                model_reply = "You are using {} ({}).\n" \
+                              .format(assistant_item.model_description, assistant_item.model_provider)
 
                 if assistant_item.info is not None and 'pricing_info' in assistant_item.info:
                     model_reply += "See {} for more reliable pricing. \n" \
@@ -15386,8 +15386,8 @@ class toolkit_UI():
 
             elif prompt.lower() == '[price]':
 
-                price_reply = ("You are using {} {}.\n"
-                               .format(assistant_item.model_provider, assistant_item.model_description))
+                price_reply = ("You are using {} ({}).\n"
+                               .format(assistant_item.model_description, assistant_item.model_provider))
 
                 if isinstance(assistant_item.model_price, tuple) and len(assistant_item.model_price) == 3:
                     price_reply += "According to our info, the model costs:\n"
@@ -15431,10 +15431,15 @@ class toolkit_UI():
                 used_tokens_total = used_tokens_in + used_tokens_out
 
                 total_price = None
-                if isinstance(assistant_item.model_price, tuple) and len(assistant_item.model_price) == 3:
+                if isinstance(assistant_item.model_price, tuple) and len(assistant_item.model_price) == 3\
+                        and assistant_item.model_price[0] is not None and assistant_item.model_price[1] is not None:
                     price_in = assistant_item.model_price[0] * used_tokens_in / 1000
                     price_out = assistant_item.model_price[1] * used_tokens_out / 1000
                     total_price = price_in + price_out
+                else:
+                    logger.warning('Cannot calculate price for model {} {}. Pricing schema not valid.'.format(
+                        assistant_item.model_provider, assistant_item.model_name
+                    ))
 
                 header = "Approximate token usage in this Assistant window:"
                 tokens_data = [
@@ -15582,24 +15587,27 @@ class toolkit_UI():
                     assistant_response, used_history = assistant_item.send_query(
                        enhanced_prompt, assistant_settings, temp_context=temp_context, save_to_history=save_to_history)
 
-                    # prompt goes to chat history
-                    # - we're using the used_history[:-1] because the last item in the used_history is the response
-                    # - we use the last_assistant_message_idx-1 as a reference to the last prompt in the chat history
-                    #   but only if we're saving the prompt to the history
-                    self._add_to_assistant_window_chat_history(
-                        content_type='prompt',
-                        content=enhanced_prompt,
-                        widget_text=prompt,
-                        widget_tag=unique_prompt_tag,
-                        assistant_window=assistant_window,
-                        assistant_chat_history=used_history[:-1] if len(used_history) > 0 else [],
-                        assistant_chat_history_index=
-                        assistant_item.last_assistant_message_idx-1
-                        if (save_to_history and assistant_item.last_assistant_message_idx) else None
-                    )
+                    # only add to history if we have a completion
+                    if assistant_response.completion is not None:
 
-                    self.assistant_toggle_history_item_color(
-                        tag_id=unique_prompt_tag, text_widget=text_widget, active=save_to_history)
+                        # prompt goes to chat history
+                        # - we're using the used_history[:-1] because the last item in the used_history is the response
+                        # - we use the last_assistant_message_idx-1 as reference to the last prompt in the chat history
+                        #   but only if we're saving the prompt to the history
+                        self._add_to_assistant_window_chat_history(
+                            content_type='prompt',
+                            content=enhanced_prompt,
+                            widget_text=prompt,
+                            widget_tag=unique_prompt_tag,
+                            assistant_window=assistant_window,
+                            assistant_chat_history=used_history[:-1] if len(used_history) > 0 else [],
+                            assistant_chat_history_index=
+                            assistant_item.last_assistant_message_idx-1
+                            if (save_to_history and assistant_item.last_assistant_message_idx) else None
+                        )
+
+                        self.assistant_toggle_history_item_color(
+                            tag_id=unique_prompt_tag, text_widget=text_widget, active=save_to_history)
 
                     # we need this to wrap the response in a tag later
                     response_line_index_start = text_widget.index(ctk.INSERT)
@@ -15610,11 +15618,11 @@ class toolkit_UI():
                     # POST PROCESS THE RESPONSE (for some cases)
                     # did we request a specific format?
                     response_was_parsed = None
-                    if requested_format is not None:
+                    if requested_format is not None and not assistant_response.error:
 
                         # take the response through the response parser
                         response_was_parsed = self.assistant_parse_response(
-                            assistant_window_id=assistant_window_id, assistant_response=assistant_response)
+                            assistant_window_id=assistant_window_id, assistant_response=assistant_response.completion)
 
                         # stop here if the response_was_parsed is True or False (but not None)
                         # - meaning something was already displayed on the text window from assistant_parse_response
@@ -15633,32 +15641,38 @@ class toolkit_UI():
 
                     # update the assistant window (only if it wasn't already updated by assistant_parse_response)
                     if response_was_parsed is None:
-                        self._text_window_update(assistant_window_id, "A > " + assistant_response)
+                        if not assistant_response.error:
+                            self._text_window_update(assistant_window_id, "A > " + assistant_response.completion)
 
-                    # response goes to the window chat history
-                    self._add_to_assistant_window_chat_history(
-                        content_type='response',
-                        content=assistant_response,
-                        widget_tag=unique_response_tag,
-                        assistant_window=assistant_window,
-                        requested_format=requested_format,
-                        assistant_chat_history=used_history,
-                        assistant_chat_history_index=
-                        assistant_item.last_assistant_message_idx if save_to_history else None
-                    )
+                        else:
+                            self._text_window_update(assistant_window_id, assistant_response.error)
 
-                    # add a unique tag to the response lines
-                    # for the end index, we use the index of the last line of the response minus 1 line since
-                    # we're assuming that the _text_window_update function will add a new line and the prompt prefix
-                    # after the actual response
-                    text_widget.tag_add(
-                        unique_response_tag,
-                        text_widget.index(response_line_index_start),
-                        text_widget.index(text_widget.index(ctk.INSERT + '-1l') + ' lineend')
-                    )
+                    # response goes to the window chat history but only if it's not an error
+                    if not assistant_response.error:
 
-                    self.assistant_toggle_history_item_color(
-                        tag_id=unique_response_tag, text_widget=text_widget, active=save_to_history)
+                        self._add_to_assistant_window_chat_history(
+                            content_type='response',
+                            content=assistant_response,
+                            widget_tag=unique_response_tag,
+                            assistant_window=assistant_window,
+                            requested_format=requested_format,
+                            assistant_chat_history=used_history,
+                            assistant_chat_history_index=
+                            assistant_item.last_assistant_message_idx if save_to_history else None
+                        )
+
+                        # add a unique tag to the response lines
+                        # for the end index, we use the index of the last line of the response minus 1 line since
+                        # we're assuming that the _text_window_update function will add a new line and the prompt prefix
+                        # after the actual response
+                        text_widget.tag_add(
+                            unique_response_tag,
+                            text_widget.index(response_line_index_start),
+                            text_widget.index(text_widget.index(ctk.INSERT + '-1l') + ' lineend')
+                        )
+
+                        self.assistant_toggle_history_item_color(
+                            tag_id=unique_response_tag, text_widget=text_widget, active=save_to_history)
 
                 except:
                     logger.error('Error while running assistant query.', exc_info=True)
