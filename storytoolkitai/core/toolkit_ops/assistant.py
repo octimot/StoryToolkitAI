@@ -517,6 +517,137 @@ class ChatGPT(ToolkitAssistant):
         return LLM_AVAILABLE_MODELS
 
 
+class StModelSettings(BaseModel):
+    temperature: int = 1
+    max_length: int = 256
+    top_p: int = 1
+    frequency_penalty: int = 0
+    presence_penalty: int = 0
+    timeout: int = 30
+
+
+class StAssistantRequest(BaseModel):
+    messages: list
+    model: str
+    settings: StModelSettings
+
+
+class StAssistant(ChatGPT):
+
+    def __init__(self, model_provider, model_name, **kwargs):
+
+        super().__init__(model_provider=model_provider, model_name=model_name, **kwargs)
+
+        # get the API key from the config
+        self.api_key \
+            = self.stAI.get_app_setting(setting_name='api_token', default_if_none=None)
+
+        self.api_host = 'https://api.storytoolkit.ai'
+
+    def calculate_history_tokens(self, messages=None, model=None):
+
+        if model is None:
+            model = self.model_name
+
+        # map the storytoolkit.ai models to their OpenAI counterparts for the token calculation
+        model_map = {
+            'roy-4t': 'gpt-4-1106-preview',
+            'george-4': 'gpt-4',
+            'sergei-3.5': 'gpt-3.5-turbo-1106'
+        }
+
+        # get the mapped model or just use the model name if there is no mapping
+        mapped_model = model_map.get(model, None) or model
+
+        return super().calculate_history_tokens(messages=messages, model=mapped_model)
+
+    def _request(self, chat_history, settings=None, **kwargs):
+
+        # now send the query to the assistant
+        try:
+
+            headers = {'auth-token': self.api_key}
+
+            data = StAssistantRequest(
+                model=self.model_name,
+                messages=chat_history,
+                settings=StModelSettings(
+                    temperature=settings.get('temperature', 1),
+                    max_length=settings.get('max_length', 256),
+                    top_p=settings.get('top_p', 1),
+                    frequency_penalty=settings.get('frequency_penalty', 0),
+                    presence_penalty=settings.get('presence_penalty', 0),
+                    timeout=settings.get('timeout', 30),
+                )
+            ).dict()
+
+            api_response = requests.post(
+                self.api_host + '/assistant', json=data, headers=headers, timeout=settings.get('timeout', 30))
+
+            if api_response.status_code == 403:
+                raise Exception('Invalid authentication token.')
+
+            elif api_response.status_code == 422:
+                raise Exception('Invalid request data.')
+
+            elif api_response.status_code == 500:
+                raise Exception('Internal server error.')
+
+            elif api_response.status_code == 404:
+                raise Exception('{}'.format(json.loads(api_response.text).get('detail', 'Not found')))
+
+            elif api_response.status_code != 200:
+                raise Exception('Unknown error.')
+
+            # parse the response
+            response = AssistantResponse.parse_obj((api_response.json()))
+
+            if kwargs.get('save_to_history', True):
+
+                self.chat_history.append({"role": "assistant", "content": response.completion})
+
+                # keep track of the index of the last assistant message
+                self._last_assistant_message_idx = len(self.chat_history) - 1
+
+            # add the result to the chat history
+            self.add_usage(tokens_in=response.usage.completion_tokens, tokens_out=response.usage.prompt_tokens)
+
+            # wrap the response in an AssistantResponse object
+            # so we can process it correctly
+            return AssistantResponse(
+                completion=response.completion,
+                usage=response.usage
+            ), chat_history
+
+        except requests.exceptions.Timeout:
+            error = 'Request to storytoolkit.ai timed out.'
+            logger.error(error)
+            return AssistantResponse(
+                completion=None,
+                usage=None,
+                error=error,
+                error_code=500
+            ), chat_history
+
+        except requests.exceptions.ConnectionError:
+            error = 'Connection error. Could not connect to storytoolkit.ai.'
+            logger.error(error, exc_info=True)
+            return AssistantResponse(
+                completion=None,
+                usage=None,
+                error=error
+            ), chat_history
+
+        except Exception as e:
+            logger.error('Error sending query to storytoolkit.ai: ', exc_info=True)
+            error = str(e) + "\nI'm sorry, I'm having trouble connecting to storytoolkit.ai right now. " \
+                             "Please check the logs or try again later."
+
+            return AssistantResponse(
+                error=error
+            ), chat_history
+
+
 class AssistantUtils:
 
     @staticmethod
@@ -631,5 +762,31 @@ LLM_AVAILABLE_MODELS = {
             'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT
         }
+    },
+    'storytoolkit.ai': {
+        'roy-4t': {
+            'description': 'Roy-4t',
+            'price': {'input': None, 'output': None, 'currency': 'credits'},
+            'token_limit': 16385,
+            'training_cutoff': '2021-09',
+            'pricing_info': 'https://storytoolkit.ai/',
+            'handler': StAssistant
+        },
+        'george-4': {
+            'description': 'George-4',
+            'price': {'input': None, 'output': None, 'currency': 'credits'},
+            'token_limit': 16385,
+            'training_cutoff': '2023-04',
+            'pricing_info': 'https://storytoolkit.ai/',
+            'handler': StAssistant
+        },
+        'sergei-3.5': {
+            'description': 'Sergei-3.5',
+            'price': {'input': None, 'output': None, 'currency': 'credits'},
+            'token_limit': 16385,
+            'training_cutoff': '2023-04',
+            'pricing_info': 'https://storytoolkit.ai/',
+            'handler': StAssistant
+        },
     }
 }
