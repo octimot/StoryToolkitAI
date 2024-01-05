@@ -15537,6 +15537,9 @@ class toolkit_UI():
                 # use replace to remove the requested_format keyword when sending the prompt to the model
                 enhanced_prompt = enhanced_prompt.replace('[{}]'.format(requested_format), '', 1)
 
+                # strip the prompt again
+                enhanced_prompt = enhanced_prompt.strip()
+
                 # add the formatting details to the enhanced prompt
                 enhanced_prompt += "\nuse exact same json format or you'll break my code: "
                 enhanced_prompt += '{{"type": "{}", "lines": [[start, end, text], ...]'.format(temp_context_type)
@@ -15591,7 +15594,8 @@ class toolkit_UI():
                         assistant_window=assistant_window,
                         assistant_chat_history=used_history[:-1] if len(used_history) > 0 else [],
                         assistant_chat_history_index=
-                        assistant_item.last_assistant_message_idx-1 if save_to_history else None
+                        assistant_item.last_assistant_message_idx-1
+                        if (save_to_history and assistant_item.last_assistant_message_idx) else None
                     )
 
                     self.assistant_toggle_history_item_color(
@@ -15955,8 +15959,40 @@ class toolkit_UI():
                     )
                 )
 
+                context_menu.add_command(
+                    label="Copy prompt and conversation",
+                    command=lambda:
+                    self.copy_to_clipboard(
+                        self._assistant_parse_chat_history_item_history(chat_history_item, include_prompt=True))
+                )
+
         # display the context menu
         context_menu.tk_popup(event.x_root, event.y_root)
+
+    @staticmethod
+    def _assistant_parse_chat_history_item_history(chat_history_item, output='text', include_prompt=False):
+
+        # first get the chat_history of the item
+        chat_history = chat_history_item.get('assistant_chat_history', '')
+
+        if include_prompt:
+            chat_history.append({'role': 'user', 'content': chat_history_item.get('content', '')})
+
+        if output == 'text':
+            result = ''
+            # parse the json to string
+            for message in chat_history:
+
+                result += message.get('role', '')+':\n'+message.get('content', '')+'\n\n'
+
+            # remove the last \n\n
+            result = result[:-2]
+
+            return result
+
+        else:
+            return chat_history
+
 
     def assistant_parse_response(self, assistant_response, assistant_window_id):
         """
@@ -16715,6 +16751,13 @@ class toolkit_UI():
             "<FocusOut>", lambda event: toolkit_UI.sync_entry_with_slider(entry, slider, slider_from, slider_to, round_val))
         slider.configure(
             command=lambda value, l_round_val=round_val: toolkit_UI.sync_slider_with_entry(slider, entry, l_round_val))
+
+    def copy_to_clipboard(self, full_text: str):
+
+        self.root.clipboard_clear()
+        self.root.clipboard_append(full_text.strip())
+
+        logger.debug('Copied text to clipboard')
 
 
 
