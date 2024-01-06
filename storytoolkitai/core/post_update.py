@@ -69,11 +69,52 @@ def post_update_0_20_1(is_standalone=False):
 
     return True
 
+
+def post_update_0_22_0(is_standalone=False):
+    """
+    This converts the "API Token" reference in the config file to "API Key".
+    Needed both for the standalone and non-standalone versions.
+    """
+
+    import os
+    import json
+
+    # we're doing this on the raw file (not through the storytoolkitai class)
+    # so let's get the APP_CONFIG_FILE_NAME from the storytoolkitai package first
+    from storytoolkitai import APP_CONFIG_FILE_NAME, USER_DATA_PATH
+    config_file_path = os.path.join(USER_DATA_PATH, APP_CONFIG_FILE_NAME)
+
+    if os.path.isfile(config_file_path):
+
+        # read the config file
+        with open(config_file_path, 'r') as f:
+            config = json.load(f)
+
+        # check if the API Token is in the config file
+        if 'api_token' in config:
+
+            # change the key to API Key
+            config['stai_api_key'] = config.pop('api_token')
+
+            # write the config file
+            with open(config_file_path, 'w') as f:
+                json.dump(config, f, indent=4)
+
+            logger.info('Updated API Token to API Key in config file.')
+
+        else:
+            logger.warning('API Token not found in config file. Change not needed.')
+
+    else:
+        logger.warning('Config file not found. Skipping post-update task to update API Token to API Key.')
+
+
 # this is a dictionary of all the post_update functions
 # make sure to keep them in order
 # but remove update functions from the past which uninstall and install requirements.txt
 # (for eg. 0.19.4 was uninstalling openai-whisper and reinstalling requirements.txt)
 post_update_functions = {
     '0.20.1': post_update_0_20_1,
+    '0.22.0': post_update_0_22_0,
 }
 

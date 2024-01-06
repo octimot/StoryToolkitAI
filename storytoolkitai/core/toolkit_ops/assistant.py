@@ -540,7 +540,7 @@ class StAssistant(ChatGPT):
 
         # get the API key from the config
         self.api_key \
-            = self.stAI.get_app_setting(setting_name='api_token', default_if_none=None)
+            = self.stAI.get_app_setting(setting_name='stai_api_key', default_if_none=None)
 
         self.api_host = 'https://api.storytoolkit.ai'
 

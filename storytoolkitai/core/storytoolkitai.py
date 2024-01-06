@@ -57,10 +57,10 @@ class StoryToolkitAI:
         # define the api variables
         self.api_possible = False
         self.api_user = None
-        self.api_token = None
+        self.api_key = None
         self.api_host = None
         self.api = None
-        self.api_token_valid = False
+        self.api_key_valid = False
 
         self.debug_mode = False
 
@@ -568,56 +568,56 @@ class StoryToolkitAI:
         # if the setting key, or any of the stuff above wasn't found
         return None
 
-    def check_api_thread(self, api_token=None):
+    def check_api_thread(self, api_key=None):
         """
-        This opens a thread that checks if the user token is valid
+        This opens a thread that checks if the API key is valid
         """
 
-        check_api_thread = Thread(target=self.check_api_token, kwargs={'api_token': api_token})
+        check_api_thread = Thread(target=self.check_api_key, kwargs={'api_key': api_key})
         check_api_thread.start()
 
         return
 
-    def check_api_token(self, api_token=None):
+    def check_api_key(self, api_key=None):
         """
-        This checks if the user token is valid
-        If no token is set, it will return False without performing the check
+        This checks if the user api key is valid
+        If no key is set, it will return False without performing the check
         :return:
         """
 
-        # if the user token is empty, False or '0' ('0' needed for backwards compatibility)
-        if api_token is None or api_token == '' or not api_token or api_token == '0':
+        # if the api key is empty, False or '0' ('0' needed for backwards compatibility)
+        if api_key is None or api_key == '' or not api_key or api_key == '0':
 
-            # get the user token from the settings
-            self.api_token = self.get_app_setting(setting_name='api_token', default_if_none=None)
+            # get the api key from the settings
+            self.api_key = self.get_app_setting(setting_name='stai_api_key', default_if_none=None)
         else:
-            self.api_token = api_token
+            self.api_key = api_key
 
-        # if the user token is not empty
-        if self.api_token and self.api_token != '':
-            check_path = 'https://api.storytoolkit.ai/check_token?token={}'.format(self.api_token)
+        # if the api key is not empty
+        if self.api_key and self.api_key != '':
+            check_path = 'https://api.storytoolkit.ai/check_token?token={}'.format(self.api_key)
 
-            # check if the user token is valid on the server
+            # check if the API key is valid using the API
             try:
                 # access the check path
                 response = get(check_path, timeout=5)
 
                 # if the response is 200 and the text response is 'true'
                 if response.status_code == 200 and response.text == 'true':
-                    logger.debug('Using valid user token.')
-                    self.api_token_valid = True
+                    logger.debug('Using valid API key.')
+                    self.api_key_valid = True
                     return True
 
                 else:
-                    logger.debug('User token is not valid.')
-                    self.api_token_valid = False
+                    logger.debug('User API key is not valid.')
+                    self.api_key_valid = False
                     return False
 
             except:
-                logger.debug('Unable to check user token.', exc_info=True)
+                logger.debug('Unable to check user API key.', exc_info=True)
                 pass
 
-        self.api_token_valid = False
+        self.api_key_valid = False
         return False
 
     def check_update(self):
@@ -813,8 +813,8 @@ class StoryToolkitAI:
         :return:
         '''
 
-        # get the API token from the app settings
-        api_token = self.get_app_setting(setting_name='api_token', default_if_none=False)
+        # get the API key from the app settings
+        api_key = self.get_app_setting(setting_name='stai_api_key', default_if_none=False)
 
         # get the API username from the app settings
         api_user = self.get_app_setting(setting_name='api_user', default_if_none=False)
@@ -822,18 +822,18 @@ class StoryToolkitAI:
         # get the API host from the app settings
         api_host = self.get_app_setting(setting_name='api_host', default_if_none=False)
 
-        # if the API token and username are not False or empty
-        if api_token and api_user and api_token is not None and api_user is not None:
+        # if the API key and username are not False or empty
+        if api_key and api_user and api_key is not None and api_user is not None:
             logger.info('Found API username and token in config')
             self.api_user = api_user
-            self.api_token = api_token
+            self.api_key = api_key
             self.api_host = api_host
             self.api_possible = True
 
         else:
             logger.debug('No API username and token found in config, so API connection not possible')
             self.api_user = None
-            self.api_token = None
+            self.api_key = None
             self.api_host = None
             self.api_possible = False
             return None
@@ -867,7 +867,7 @@ class StoryToolkitAI:
             # self.api = ssl.wrap_socket(self.api, ssl_version=ssl.PROTOCOL_TLSv1_2)
 
             # send the username and token to the API
-            self.api.send(bytes('login:{}:{}'.format(self.api_user, self.api_token), 'utf-8'))
+            self.api.send(bytes('login:{}:{}'.format(self.api_user, self.api_key), 'utf-8'))
 
             # get the response from the API
             response = self.api.recv(1024).decode('utf-8')

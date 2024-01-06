@@ -389,20 +389,20 @@ class toolkit_UI():
                                                             text='',
                                                             **toolkit_UI.ctk_form_entry_settings)
 
-            # STORYTOOLKIT API TOKEN
-            # get the api token from the app settings
-            api_token = \
-                kwargs.get('api_token', None) \
-                    if kwargs.get('api_token', None) is not None \
-                    else self.toolkit_UI_obj.stAI.get_app_setting('api_token', default_if_none=None)
+            # STORYTOOLKIT API KEY
+            # get the api key from the app settings
+            stai_api_key = \
+                kwargs.get('stai_api_key', None) \
+                    if kwargs.get('stai_api_key', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('stai_api_key', default_if_none=None)
 
-            # create the api token variable, label and input
-            form_vars['api_token_var'] = \
-                api_token_var = tk.StringVar(api_frame, value=api_token if api_token else '')
-            api_token_label = ctk.CTkLabel(api_frame, text='StoryToolkit API Token',
+            # create the api key variable, label and input
+            form_vars['stai_api_key_var'] = \
+                stai_api_key_var = tk.StringVar(api_frame, value=stai_api_key if stai_api_key else '')
+            stai_api_key_label = ctk.CTkLabel(api_frame, text='StoryToolkit API Key',
                                            **toolkit_UI.ctk_form_label_settings)
-            api_token_input = ctk.CTkEntry(api_frame, show="*",
-                                           textvariable=api_token_var,
+            stai_api_key_input = ctk.CTkEntry(api_frame, show="*",
+                                           textvariable=stai_api_key_var,
                                            **toolkit_UI.ctk_form_entry_settings_double)
 
             # Adding all the elemente to the grid
@@ -418,8 +418,8 @@ class toolkit_UI():
             transcripts_always_on_top_input.grid(row=4, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
 
             # STORYTOOLKIT API FRAME GRID
-            api_token_label.grid(row=0, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            api_token_input.grid(row=0, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            stai_api_key_label.grid(row=0, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            stai_api_key_input.grid(row=0, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
 
             return form_vars
 
@@ -895,14 +895,14 @@ class toolkit_UI():
             presence_penalty_slider_frame.grid(row=8, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
 
             if not skip_general:
-                # OPENAI openai_openai_api_key_key KEY
-                # get the api token from the app settings
+                # OPENAI KEY
+                # get the api key from the app settings
                 openai_api_key = \
                     kwargs.get('openai_api_key', None) \
                         if kwargs.get('openai_api_key', None) is not None \
                         else self.toolkit_UI_obj.stAI.get_app_setting('openai_api_key', default_if_none=None)
 
-                # create the api token variable, label and input
+                # create the openai api key variable, label and input
                 form_vars['openai_api_key_var'] = \
                     openai_api_key_var = tk.StringVar(openai_prefs_frame, value=openai_api_key if openai_api_key else '')
                 openai_api_key_label = ctk.CTkLabel(openai_prefs_frame, text='OpenAI API Key',
@@ -945,13 +945,13 @@ class toolkit_UI():
             search_prefs_frame.columnconfigure(1, weight=1)
 
             # SEMANTIC SEARCH MODEL
-            # get the api token from the app settings
+            # get the model name from the app settings
             s_semantic_search_model_name = \
                 kwargs.get('s_semantic_search_model_name', None) \
                     if kwargs.get('s_semantic_search_model_name', None) is not None \
                     else self.toolkit_UI_obj.stAI.get_app_setting('s_semantic_search_model_name', default_if_none=None)
 
-            # create the api token variable, label and input
+            # create the variable, label and input
             form_vars['s_semantic_search_model_name_var'] = \
                 s_semantic_search_model_name_var = tk.StringVar(
                 search_prefs_frame, value=s_semantic_search_model_name if s_semantic_search_model_name else '')
@@ -962,13 +962,13 @@ class toolkit_UI():
                                                               **toolkit_UI.ctk_form_entry_settings_double)
 
             # TEXT CLASSIFIER MODEL
-            # get the api token from the app settings
+            # get the model from the app settings
             text_classifier_model = \
                 kwargs.get('text_classifier_model', None) \
                     if kwargs.get('text_classifier_model', None) is not None \
                     else self.toolkit_UI_obj.stAI.get_app_setting('text_classifier_model', default_if_none=None)
 
-            # create the api token variable, label and input
+            # create the model variable, label and input
             form_vars['text_classifier_model_var'] = \
                 text_classifier_model_var = tk.StringVar(search_prefs_frame,
                                                          value=text_classifier_model if text_classifier_model else '')
@@ -1025,12 +1025,12 @@ class toolkit_UI():
 
             # PROCESS THE VARIABLES HERE FIRST
 
-            # if the user has entered a new API token, check if it's valid
-            if input_variables['api_token_var'].get() != '' \
-                    and input_variables['api_token_var'].get() != self.stAI.config.get('api_token', None):
+            # if the user has entered a new API key, check if it's valid
+            if input_variables['stai_api_key_var'].get() != '' \
+                    and input_variables['stai_api_key_var'].get() != self.stAI.config.get('stai_api_key', None):
 
-                if not self.stAI.check_api_token(input_variables['api_token_var'].get()):
-                    self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Error', message='Invalid API token.')
+                if not self.stAI.check_api_key(input_variables['stai_api_key_var'].get()):
+                    self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Error', message='Invalid API key.')
                     return False
 
             # if the user has entered transcription_custom_punctuation_marks,
@@ -1401,14 +1401,14 @@ class toolkit_UI():
         # use this variable to remember if the user said it's ok that resolve is not available to continue a process
         self.no_resolve_ok = False
 
-        # handling of api token validity
-        if not self.stAI.api_token_valid:
+        # handling of api key validity
+        if not self.stAI.api_key_valid:
 
             def show_support_popup(popup_title="One more thing!"):
 
                 # recheck this before we show the popup
                 # - maybe the connection took longer on the previous attempt
-                if self.stAI.api_token_valid:
+                if self.stAI.api_key_valid:
                     return
 
                 support_page_url = 'https://storytoolkit.ai/support'
