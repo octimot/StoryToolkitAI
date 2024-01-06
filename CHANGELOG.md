@@ -6,8 +6,7 @@ All notable changes to this project will be documented in this file, starting wi
 
 Major improvements to the Assistant, including the ability to provide new Transcriptions or Stories as responses.
 
-This means that you can now use the Assistant to translate, summarize, group, or even create selects via stories
-based on your transcriptions. More info [here](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#assistant).
+This means that you can now use the Assistant to translate, summarize, group, or even create selects via stories based on your transcriptions. More info [here](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#assistant).
 
 ### Added
 - Ability to request transcription responses from the Assistant using the [t] keyword
