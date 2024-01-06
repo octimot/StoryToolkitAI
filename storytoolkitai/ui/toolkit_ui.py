@@ -15233,8 +15233,11 @@ class toolkit_UI():
             assistant_item = assistant_window.assistant_item if hasattr(assistant_window, 'assistant_item') else None
 
             if assistant_item is None:
-                logger.error('Cannot run assistant query. No assistant item found.')
-                return False
+                error_no_assistant = 'Cannot run assistant query - no assistant item found.'
+                logger.error(error_no_assistant)
+                self._text_window_update(assistant_window_id,
+                                         error_no_assistant + '\nPlease set a default model in Preferences.')
+                return
 
         text_widget = assistant_window.text_widget
 

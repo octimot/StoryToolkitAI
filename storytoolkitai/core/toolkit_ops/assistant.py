@@ -657,6 +657,12 @@ class AssistantUtils:
         depending on the model provider and model name
         """
 
+        # do not allow empty model provider or model name
+        if model_provider is None or model_name is None or model_provider.strip() == '' or model_name.strip() == '':
+            logger.error('Could not find assistant handler for model "{}" from provider "{}".'
+                         .format(model_name, model_provider))
+            return None
+
         try:
 
             # load the assistant class
@@ -680,6 +686,11 @@ class AssistantUtils:
         """
 
         if provider is not None:
+
+            # select the first provider if the provider is not in the available models
+            if provider not in LLM_AVAILABLE_MODELS:
+                provider = list(LLM_AVAILABLE_MODELS.keys())[0]
+
             return list(LLM_AVAILABLE_MODELS[provider].keys())
         else:
             return []
