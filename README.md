@@ -14,10 +14,12 @@ Resolve Studio 18 and above.
 - [x] **Full video indexing and search** ([How-To](https://www.youtube.com/watch?v=UDwOvBqS1X8))
 - [x] **Free Automatic Transcriptions** on your local machine
 - [x] **Free Automatic Translation** to English on your local machine
-- [x] **ChatGPT integration** - talk to AI about your content, or generate new ideas
+- [x] **OpenAI GPT integration** - talk to AI about your content, or generate new ideas using
 - [x] **Search Content** intuitively without having to type in exact words
 - [X] **Transcript Groups** - group transcript lines into whatever you need to find them easier
 - [X] **Story Editor** - write screenplays containing your transcripts and export them for editing (EDL/XML/Fountain) (v. 0.20.1+)
+- [X] **Translate transcripts** to other languages using the OpenAI GPT (v. 0.22.0+)
+- [X] **Automatic Stories and Selections** based on your footage using OpenAI GPT (v. 0.22.0+)
 - [X] Automatic Question detection in transcripts
 - [x] Multi-format export of transcripts, including SRT, TXT, AVID DS and as Fusion Text node
 - [X] Import of **existing SRT files** 
@@ -30,11 +32,8 @@ Resolve Studio 18 and above.
 - [x] Direct import of subtitles into Resolve bin
 
 ### Planned Features
+- [ ] **Speaker Diarization** to tag speakers in transcripts
 - [ ] **Automatic Topic Classification** to help you discover ideas in your transcripts
-- [ ] **Speaker Diarization** 
-- [ ] **Automatic Stories and Selections** based on your footage
-- [ ] **Translation** to other languages
-- [ ] Optimized Assistant feature for cost-effective use of ChatGPT
 - [ ] **Integration with other AI tools**
 - [ ] **Integration with other software / standalone players**
 - [X] Plus more flashy features as clickbait to unrealistically raise expectations and destroy competition

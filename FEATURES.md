@@ -2,7 +2,7 @@
 
 [Click here to the main project page](https://github.com/octimot/StoryToolkitAI)
 
-###  This page might contain references that are outdated, but will be updated soon!
+###  This page might contain references that might be outdated. Let us know if you notice them!
 
 ## Transcriptions
 
@@ -12,14 +12,14 @@ etc.) out there **and the models are free to use**. According to OpenAI, the mod
 different languages (cca. 65% of data in English) **and show strong Automated Speech Recognition results in ~10 
 languages**. More technical blabla on the 
 <a href="">
-[OpenAI Whisper Github](https://github.com/openai/whisper/blob/main/model-card.md) or the 
+[OpenAI Whisper GitHub](https://github.com/openai/whisper/blob/main/model-card.md) or the 
 [Scientific Paper](https://cdn.openai.com/papers/whisper.pdf), for hardcore enthusiasts. 
 
 The magic takes over even for the most difficult noisy low bitrate stuff you can feed it - like recordings of your
 assistant editor complaining about you without realizing that their back pocket is sending voice messages to random
 people from their contacts list.
 
-The results are really good for at least 10 languages, but remember, this is a machine doing transcriptions for you. 
+The results are great for at least 10 languages, but remember, this is a machine doing transcriptions for you. 
 And machines, just like unpaid interns have dreams too... For example, on longer periods of silence in your audio, you
 may expect to see words that aren't there. Also, for uncommon names, it might give you nicknames instead, just to
 mess with your feelings.
@@ -100,9 +100,9 @@ Also, keep in mind that if you're transcribing on a CUDA device, you need minimu
 minimum 10GB for the large model.
 
 **Initial Prompt**. This is useful if you want the
-transcription algorithm to adopt a certain style (for eg. separating speaker sentences, or using caps after 
-punctuation), or even prime it to use certain names (for eg. "Helena" instead of "Elena"), or avoid rookie mistakes 
-(for eg. showing "Hey, Wood!" instead of "Heywood"). The default prompt separates speaker sentences and uses caps after 
+transcription algorithm to adopt a certain style (for e.g. separating speaker sentences, or using caps after 
+punctuation), or even prime it to use certain names (for e.g. "Helena" instead of "Elena"), or avoid rookie mistakes 
+(for e.g. showing "Hey, Wood!" instead of "Heywood"). The default prompt separates speaker sentences and uses caps after 
 punctuation. 
 Remember: this is kind of like telling your assistant editor "do that", but it's up to them if they want to follow your 
 instructions or not - welcome to the wonderful world of AI. This feature is super experimental - it might even accept
@@ -124,8 +124,8 @@ Only works if Increased Time Precision is enabled.
 
 **Split on Punctuation** splits the transcript lines at the punctuation marks set in the Preferences 
 window - the default punctuation marks are: `. ! ? …`
-This might not always be the best option, for eg. if your text contains many abbreviations (Dr., Mr. etc.),
-but you could still activate it and then manually fix the transcript afterwards. We're looking for ways to improve this 
+This might not always be the best option, for e.g. if your text contains many abbreviations (Dr., Mr. etc.),
+but you could still activate it and then manually fix the transcript afterward. We're looking for ways to improve this 
 using AI. 
 Only works if Increased Time Precision is enabled.
 
@@ -136,7 +136,7 @@ small gaps when using the transcript for subtitles.
 
 **Time Intervals** allows you to selectively transcribe only a portion of the timeline and Exclude Time Intervals allows 
 you to exclude certain portions of the timelines. The recommended format for these two fields is: "0.00 - 0.00".
-For eg., if you want to transcribe the first 10 seconds of the audio and the portion between 30 and 40 seconds, 
+For e.g., if you want to transcribe the first 10 seconds of the audio and the portion between 30 and 40 seconds, 
 you would enter this in the Time Intervals field:
 ```
 0.00 - 10.00
@@ -150,7 +150,7 @@ go to the Resolve Render Page, select the Audio Only preset, make sure that the 
 disabled, then, in the "Audio" tab, select the "Wave" format and "Linear PCM" as codec. Then save this preset as
 "transcription_WAV", and the next time you transcribe, you should see Resolve rendering wav files.
 
-As a matter of fact, you can use any preset you want, as long as it renders audio too (Linear PCM preferred). For eg., 
+As a matter of fact, you can use any preset you want, as long as it renders audio too (Linear PCM preferred). For e.g., 
 if you want to render out an H264 proxy and include Data Burn-In with timecode info, 
 just create that preset in Resolve and then modify the value of the 'transcription_render_preset' setting in the 
 StoryToolkitAI config.json file in your user data folder (in the future, this will be editable from the GUI). Just keep 
@@ -208,21 +208,21 @@ phrase will move the Resolve playhead to the respective timecode (if connected t
 Starting with v0.17.5, you can group transcript segments together so that you can easily select them later if you need
 to. To add segments to groups, select them with V (or CMD/CTRL+Click, or other selection shortcuts) and then press 
 CMD/CTRL+G. To see the group list for each transcript, click CMD/CTRL+G while in the transcription window. From there,
-you can also add group notes for each group. For eg. if you group certain segments on a certain topic, you can add
+you can also add group notes for each group. For e.g. if you group certain segments on a certain topic, you can add
 your notes on that particular topic in the group notes field. You can also use the groups to select all the segments
 of a certain character and so on.
 
 Until v0.19.0, the Update Segments switch seen in the Groups window allows the user to automatically add segments to
 groups when they select the segments in the Transcription Window. _Note: This will not remove any segments from the 
 group, when they're unselected in the Transcription Window! In order to remove segments from the group, you need to 
-update the group (for eg. using CMD/CTRL+G while the group is selected)_
+update the group (for e.g. using CMD/CTRL+G while the group is selected)_
 
 Starting with v0.19.0, the Update segments switch in the Groups window allows the user to automatically update the
 group segments when they select/deselect the segments in the Transcription Window. This will both add or remove
 segments from the group.
 
 _Note: the groups are based on time intervals, so if you change the start or end times of segments, they might drift
-outside of certain groups that they're in. Simply click on the group, select the segments and press CMD/CTR+G again to
+outside certain groups that they're in. Simply click on the group, select the segments and press CMD/CTR+G again to
 re-add them to the group_
 
 While performing an advanced search on a transcription, the tool will also look in the group names and notes, and
@@ -236,7 +236,7 @@ transcribe and translate in two different processes.
 ### Opening SRT Files as Transcripts
 If you click on "Open Transcript" and select an SRT file, the tool will automatically convert it to a transcription
 file and open it in the transcription window. This is useful if you want to use transcripts made by other apps in the
-tool, for eg. to search through them, navigate and mark timelines in Resolve etc.
+tool, for e.g. to search through them, navigate and mark timelines in Resolve etc.
 
 ### Exporting transcripts as Fusion Text
 Starting from version 0.18.3, you can export the transcription lines into a Fusion Text node.
@@ -288,18 +288,18 @@ search for "about life events" or "about sports", you can enter `about life even
 The tool will then search for each term separately and return separate results for each term in the same search window.
 
 If you want to tell the tool how many results you want to see, just use `[max_results]` at the beginning of the search,
-for eg.: `[20] about life events | about sports`. This will return the top 20 results for each term.
+for e.g.: `[20] about life events | about sports`. This will return the top 20 results for each term.
 
 For now, the search relies on punctuation in the transcripts/files to separate phrases and feed them to the algorithm, 
 but this will be improved in a future update by allowing AI to look deeper into the text.
 
 **The quality of your results will depend on the terms you use for search**. Just like on a web search engine, you should
-be kind of specific, but not too specific about what you're searching. For eg., if you want to search for phrases where
+be kind of specific, but not too specific about what you're searching. For e.g., if you want to search for phrases where
 your characters are talking about "genders", you should probably use "about genders". Simply typing "genders" in the
-search box, will probably also include people names since the alghorithm will think that names are related to genders.
+search box, will probably also include people names since the algorithm will think that names are related to genders.
 
 Keep in mind that we're using a very basic algorithm for now, so the results might not be perfect, but it can **already
-give you some really good results** if you prompt it right - remember it's a neural network behind the thing!
+give you some decent results** if you prompt it right - remember it's a neural network behind the thing!
 Feel free to be as descriptive as you want in your search, and try to tweak the search terms until you get the results
 you're looking for.
 
@@ -316,13 +316,60 @@ machine understands, but after the first search is completed, all other searches
 
 ## Assistant
 
-This feature is currently only available for Patreon Frequent Users and Producers -
-more info on [patreon.com/StoryToolkitAI](https://www.patreon.com/StoryToolkitAI)
+The Assistant window is an interface that allows you to ask questions to Large Language Model such as OpenAI's GPT-3.5 
+or GPT-4. Currently, you need an `OpenAI API Key` or `storytoolkit.ai API Key` to use this feature, 
+but we're working on adding other models too.
 
-The Assistant is basically an interface to OpenAI ChatGPT (or gpt-3.5-turbo).
+A simple `[help]` prompt in the window will show you the available commands and how to use them in the Assistant window.
 
-### Obtaining an OpenAI API Key
+### Context and Conversations
+As a basic principle, each session in the Assistant window is a series of messages between you and the AI.
+Each time you send a new message, all the previous messages will be re-sent to the AI to make sure that AI keeps
+track of the conversation (with exceptions - see below). 
 
+This also means that each time you send a message, you're more than doubling the amount of tokens you used for the 
+previous message. See tokens below to understand how this works.
+
+Here are some concepts that we use in the Assistant window:
+- **Initial Context** - this is the context that you want AI to look into, for e.g. the transcript segments you selected.
+- **Conversation** - all the messages you sent and received from AI, excluding the Initial Context
+- **Chat History** - Initial Context + Conversation
+- **Prompts** - the messages you send to AI
+- **Completions** - the messages you receive from AI
+
+To recognize the messages that you'll send to AI on your next prompt, look for the ones that are slightly highlighted
+with a lighter background color. You can also choose to disable them from the conversation - right-click and choose
+"Disable from conversation". Again, you're sending all of these messages to AI each time you send a new prompt, plus
+a variation of the Initial Context.
+
+You can reset the conversation at any point by typing `[reset]` in the Assistant window. 
+This will not remove the Initial Context.
+
+You can reset the entire Chat History by typing `[resetall]` in the Assistant window. This will remove both the
+Initial Context and the Conversation.
+
+You should make use of these reset functions as often as you can, for e.g. when an answer from AI will not improve
+the next completion you want to get from it.
+
+### Tokens
+Counting tokens is a way to measure how much you sent and received from the AI model. It's a bit like counting words,
+except that tokens usually count for sub-parts of words. For e.g. "Artificial" is one word, but according to the 
+token counter used by GPT-3.5 and GPT4, it contains 2 tokens: "Art" and "ificial".
+
+It's important to understand how the token system works, since this is usually the basis of how you're charged for 
+using external AI models.
+
+Each time you send a message to AI, you're using tokens:
+- tokens sent (or 'prompt tokens') - the tokens you send to the AI model
+- tokens received (or 'completion tokens') - the tokens you receive from the AI model
+
+We're calculating sent and received tokens separately, as they're usually charged differently by the AI model provider. 
+We strongly advise to make use of the reset functions detailed above whenever possible to optimize the number of tokens 
+you use.
+
+### Getting a model for the Assistant
+
+#### Obtaining an OpenAI API Key
 First, you need to have an OpenAI API key to use this feature. 
 You can get one by signing up on [OpenAI.com](https://platform.openai.com/signup/), 
 and then creating a new secret key on the [API Keys page](https://platform.openai.com/account/api-keys).
@@ -331,33 +378,58 @@ Make sure you keep this key safe, as it will allow anyone to use your OpenAI acc
 Once you have the key, just add it in Preferences -> OpenAI API Key. 
 This will be saved locally on your machine, so only people who have access to your machine will be able to see it.
 
-### Usage and billing
-
 Depending on the account you have with OpenAI, you might be charged for using the API, most likely using the token 
 system they have in place. For more info on how OpenAI billing works, 
 please check their [pricing page](https://openai.com/pricing/).
 StoryToolkitAI is not responsible for any charges you might incur by using the Assistant, 
 and we are not affiliated with OpenAI in any way.
 
+#### Obtaining a storytoolkit.ai API Key
+We're slowly rolling out our own API for the Assistant, which is now in private beta.
+So if you want to try it out, just get in touch.
+
+### Usage and billing
+
 To find out how many tokens you've used within the Assistant window, just type `[usage]` in the Assistant window
-and you'll get a cost estimate. Again, this is just an estimate, so you should check your 
-[OpenAI Usage page](https://platform.openai.com/account/usage) to see the actual cost.
+and you'll get a cost estimate. Again, this is just an estimate, so you should check with your model provider
+to see the actual cost.
 
 ### Assistant window
 
-You can access the Assistant either by clicking on "Assistant" in the main tool window, or from a Transcription Window. 
-(available only in version 0.17.18)
+You can access the Assistant either by clicking on "Assistant" in the main tool window, or from a Transcription Window.
 
-If you want to use a certain portion of the transcript as the context for the Assistant:
+If you want to use a certain portion of the transcript as context for the Assistant:
 1. Open the transcription
 2. Select the lines that you want to send to the Assistant using the 'v' key
-3. Press Key O (not zero) to send the selected lines to the Assistant. You can also use SHIFT+O to also include the 
-times or timecodes (if Resolve is connected) together with the lines to the Assistant.
-4. The Assistant window will open and you can start typing your questions.
+3. Press Key O (letter, not zero) to send the selected lines to the Assistant. You can also use SHIFT+O to also include the 
+times or timecodes together with the lines to the Assistant.
+4. The Assistant window will open, and you can start typing your questions.
 
 More info on the Assistant can be found by typing `[help]` in the Assistant window.
 
-### Quick tips for using the Assistant
+### Transcriptions and Story responses
+
+Starting with version 0.22.0, the Assistant knows how to use transcription lines either to generate other
+Transcriptions or other Stories. 
+
+Simply use the keyword `[t]` (for transcription) or `[st]` (for story) in front of your usual prompt to tell the 
+Assistant what you're trying to receive as a response.
+
+For e.g.: if you want to ask AI to **translate a transcription to Spanish**:
+1. Open the transcription
+2. Select the lines that you want to send to the Assistant using the 'v' key
+3. Press Key O (not zero) to send the selected lines to the Assistant.
+4. In the Assistant window, type `[t] translate to Spanish` and press ENTER
+5. Instead of the full response, you should get the keyword "Transcription" in blue.
+6. Right-click on it and choose what to do with the response (for e.g. you can Add it to a new transcription)
+
+#### Useful prompts
+Here are only some prompts that we've seen working with transcript lines:
+- `[t] translate to Spanish` (replace "Spanish" with any other language of your choice, GPT supports many languages)
+- `[st] select interesting lines` (replace interesting with anything else: "funny", "emotional" etc.)
+- `[t] summarize lines based on topic and timings. merge timings if needed, but then use groups and return an empty lines list` (add these lines to an existing transcription, and you'll see groups for each topic)
+
+#### Other tips for using the Assistant
 
 The possibilities here are endless. Feel free to use natural language to ask anything.
 You can use the Assistant to:
@@ -370,7 +442,7 @@ You can use the Assistant to:
 - Get ideas about possible storylines (try typing `what is the main storyline?`)
 - Even get you a .srt subtitle file (after sending transcript lines with times (SHIFT+O) try typing `subtitle this in .srt format`)
 - Ask about the deepest black hole in the universe (try typing `what is the meaning of life?`)
-- Anything else you can think of!..
+- Anything else you can think of!...
 
 Also remember to use `[reset]` as often as you can, so that you don't send the whole conversation to the Assistant 
 over and over again, unless you're trying to follow something relevant from the previous messages.
@@ -381,8 +453,8 @@ The Story Editor is essentially a screenplay editor that also allows you to sele
 transcripts and then export them as EDL or XML so that you can import them into your NLE and start editing.
 
 To select transcript segments:
-- add transcript segments by selecting them in the Transcription Window -> right clicking -> clicking "Add to Story"
-- or, you can add them by right clicking any of the search results in the Advanced Search window and clicking "Add to Story"
+- add transcript segments by selecting them in the Transcription Window -> right-clicking -> clicking "Add to Story"
+- or, you can add them by right-clicking any of the search results in the Advanced Search window and clicking "Add to Story"
 
 We're currently working to implement adding the indexed video segments (and results) to the Story Editor too.
 
@@ -405,11 +477,11 @@ The story editor can export to EDL or Final Cut Pro XML files if you click File 
 **Frame Rate** - the frame rate that will be used for the EDL/XML.
 
 **Use Timelines** - if checked, the tool will use the timeline name of the media instead of the source media name 
-in the CLIP NAME field of the EDL. For eg. for Resolve EDL imports, this will make Resolve use Timelines (Compound Clips)
+in the CLIP NAME field of the EDL. For e.g. for Resolve EDL imports, this will make Resolve use Timelines (Compound Clips)
 instead of the source media, if the Timelines have the same name as the timeline used in the original transcription in 
 StoryToolkitAI. _This is not yet implemented for XML exports._
 
-**Export Notes** - if checked, the tool will export the fountain-style notes from the story (for eg. `[[some note]]` ) 
+**Export Notes** - if checked, the tool will export the fountain-style notes from the story (for e.g. `[[some note]]` ) 
 in the EDL.  For now, these notes are recognized by Davinci Resolve when you import Timeline Markers form EDL into the 
 Timeline that you chose from the bin. _This is not yet implemented for XML exports._
 
@@ -427,7 +499,7 @@ Timelines -> Import -> AAF / EDL / XML / DRT / OTIO...
 4. Select the bins where you want Resolve to look for the media and click OK
 5. Now you should have an EDL or XML Timeline in your Media Bin
 
-Important: every now and then Resolve refuses to find the media in the bins or the clips look all red in the timeline.
+Important: sometimes Resolve refuses to find the media in the bins or the clips look all red in the timeline.
 If that is the case, try to import the EDL / XML file one more time and it should work.
 
 If you see that the clips in the sequence / timeline are offset, make sure that the start timecode for the media
@@ -449,8 +521,8 @@ not be imported into the timeline. So for those cases, we recommend using XML in
 2. Right-click on timeline
 3. Select Timelines -> Import -> Timeline Markers from EDL...
 4. Choose the EDL file you exported from the tool
-5. The lines from your story editor encapsulated in double-brackets (eg. `[[your note]])
-should now be imported into the timeline at the right timecode(depending what segment it follows or precedes in the story)
+5. The lines from your story editor encapsulated in double-brackets (e.g. `[[your note]])
+should now be imported into the timeline at the right timecode(depending on what segment it follows or precedes in the story)
 
 
 ## Davinci Resolve Studio integrations
@@ -471,7 +543,7 @@ Make sure that, in Davinci Resolve Preferences -> General, "External Scripting u
 The tool connects to the Resolve API using Python, so you need to have that installed on your machine.
 
 Make sure that whatever Python version you're using in your virtual environment to start the tool is not older than your 
-most recent Python version installed on your machine - for eg. if you used Python 3.10 in your virtual environment, you
+most recent Python version installed on your machine - for e.g. if you used Python 3.10 in your virtual environment, you
 must make sure that 3.11 is not installed on your machine, otherwise the tool might not start or the Resolve connection
 might not work!
 
@@ -479,7 +551,7 @@ might not work!
 or Python 3.10 (tool versions newer than 0.19) installed. If you have a more recent version of Python 
 installed than what is required, the tool might not start or the Resolve connection might not work!
 
-_Fixing Python installations:_ If you have Resolve installed on your system and it looks like you have the correct
+_Fixing Python installations:_ If you have Resolve installed on your system, and it looks like you have the correct
 version of Python too, but the tool or the connection to Resolve still don't work, you should first try to fix your
 Python installation by simply re-installing it using the installer from [the official Python website]
 (https://www.python.org/downloads/)
@@ -508,8 +580,8 @@ You can now add markers that include the selected phrases in the transcript by p
 The tool highlights the transcript words at the current timecode in Resolve. To activate this function, simply press
 "sync" in the transcription window and the words will be highlighted each time the playhead stops moving in Resolve.
 
-_Note: we found some issues when synching timelines that have a frame rate of 23.976fps because of a bug in the Resolve
-API. Unfortunately, the synching of these timelines might drift until Blackmagic solves the bug._
+_Note: we found some issues when syncing timelines that have a frame rate of 23.976fps because of a bug in the Resolve
+API. Unfortunately, the syncing of these timelines might drift until Blackmagic solves the bug._
 
 ### Copy Timeline Markers to Same Clip
 This copies the current markers to its corresponding clip in the media bin. 
@@ -554,7 +626,7 @@ from your currently opened Resolve timeline.
 
     Shift+A         - create selection between the previously active and the currently active segment
                       also works to create a selection for the last played segments in Resolve (if sync is active):
-                      for eg.: 
+                      for e.g.: 
                       press 'sync', click a phrase, press play in Resolve, stop, then press Shift+A in the tool
                       
                       but,if text is selected in the transcript, the selection will be created between the first and last
@@ -663,7 +735,7 @@ If you get something similar to this error (or anything related to the .cache fo
   PermissionError: [Errno 13] Permission denied: '/Users/[your user]/.cache/torch/hub/trusted_list', 
   ```
 
-it's most likely because due to some some ssl certificate issue (issue #77) , so it's best if you delete the old hub 
+it's most likely because due to some ssl certificate issue (issue #77) , so it's best if you delete the old hub 
 cache, like this:
 
 #### On macOS
@@ -672,7 +744,7 @@ Open terminal, and execute
 rm -rf /Users/USERNAME/.cache/hub
 rm -rf /Users/USERNAME/.cache/torch
 rm -rf /Users/USERNAME/.cache/whisper
-replace USERNAME with your MacOS user
+replace USERNAME with your macOS user
 
 #### On Windows
 Open CMD, and execute

@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.22.0] - 2024-01-06
+
+Major improvements to the Assistant, including the ability to provide new Transcriptions or Stories as responses.
+
+This means that you can now use the Assistant to translate, summarize, group, or even create selects via stories
+based on your transcriptions. More info [here](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#assistant).
+
+### Added
+- Ability to request transcription responses from the Assistant using the [t] keyword
+- Ability to request story responses from the Assistant using the [st] keyword
+- Ability to create new transcriptions and stories based on Assistant responses
+- Ability to create new transcript groups based on Assistant responses
+- Ability to change the models used for the Assistant via the Preferences window or Assistant Preferences window
+- Ability to change advanced settings for the Assistant via the Preferences window or Assistant Preferences window
+- Ability to edit the Assistant chat history by enabling or disabling messages via right click context menu
+- Ability to reuse Assistant prompts via right click context menu
+- Ability to copy the Assistant prompts and conversations to clipboard via right click context menu
+- Support for storytoolkit.ai Assistant Models
+
+### Changed
+- Improved calculation of tokens and costs for the Assistant
+- Added support for new OpenAI Whisper patch
+- Added support for OpenAI version 1.6.0
+- Preferences: API Token becomes API Key to prevent confusion with the notion of tokens
+
+### Fixes
+- Fixed incorrect reporting of inaccessible media on Story Export
+- Other bug fixes and optimizations
+- Assistant queries no longer lock the UI
+
 ## [0.20.0] - 2023-12-19
 
 The Story Editor: a new feature that allows you to select text from transcripts and search results within a 
@@ -10,6 +40,8 @@ screenplay-like interface, while retaining the original timecode data and source
 The Story Editor also supports exporting your selections as timelines in EDL or XML format, which can be used for 
 editing in software like Resolve, Premiere Pro, and Avid Media Composer, or as Fountain screenplays for further
 editing in screenplay applications or for printing.
+
+More details [here](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#story-editor).
 
 ### Added
 - Story Editor - write screenplays and add text from your transcripts and search results
@@ -217,7 +249,7 @@ Please back up your StoryToolkitAI configuration folder before updating to this 
 - Added Search and Assistant menus
 
 ### Changed
-- Major restructuring of code and files, please backup StoryToolkit configuration folder before updating!
+- Major restructuring of code and files, please back up StoryToolkit configuration folder before updating!
 - New start command - see [here](https://github.com/octimot/StoryToolkitAI/blob/main/INSTALLATION.md#running-the-non-standalone-tool) 
 - CMD/CTRL+A now also deselects segments in Transcription Window
 
@@ -280,7 +312,7 @@ Early update available for Patreon Frequent Users and Producers only - more info
 
 - Automatically disable Resolve API connection if running on a Windows machine and multiple Python versions are installed
 - Tool accepts --skip-python-check argument to skip the above Python version check
-- App Icons for Windows and MacOS
+- App Icons for Windows and macOS
 
 ### Changed
 
@@ -289,7 +321,7 @@ Early update available for Patreon Frequent Users and Producers only - more info
 ### Bugfixes
 
 - Small interface improvements
-- Advanced Search search_corpus_min_length can now be set via config.json to prevent the tool from not searching single-character languages properly.
+- Advanced Search - search_corpus_min_length can now be set via config.json to prevent the tool from not searching single-character languages properly.
 
 ## [0.17.15] - 2023-03-20
 
