@@ -1520,6 +1520,14 @@ class ToolkitOps:
                 # take each segment and add the offset to the start and end time
                 for i, transcript_segment in enumerate(result['segments']):
 
+                    # remove tokens, seek, temperature, avg_logprob, compression_ratio and no_speech_prob
+                    # unless otherwise specified
+                    if not other_options.get('keep_whisper_debug_info', False):
+                        for key in ['tokens', 'seek', 'temperature', 'avg_logprob', 'compression_ratio',
+                                    'no_speech_prob']:
+                            if key in transcript_segment:
+                                del transcript_segment[key]
+
                     # add the offset to the start and end time
                     transcript_segment['start'] += audio_segment_start
                     transcript_segment['end'] += audio_segment_start

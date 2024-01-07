@@ -4915,6 +4915,21 @@ class toolkit_UI():
                                                 invalid_callback=time_intervals_are_invalid, **l_kwargs)
             )
 
+        # KEEP DEBUG INFO
+        # get the keep debug info setting from the app settings
+        keep_whisper_debug_info = \
+            kwargs.get('keep_whisper_debug_info', None) \
+                if kwargs.get('keep_whisper_debug_info', None) is not None \
+                else self.stAI.get_app_setting('keep_whisper_debug_info', default_if_none=False)
+
+        # create the increased time precision variable, label and input
+        form_vars['keep_whisper_debug_info_var'] = \
+            keep_whisper_debug_info_var = tk.BooleanVar(advanced_frame, value=keep_whisper_debug_info)
+        keep_whisper_debug_info_label = ctk.CTkLabel(
+            advanced_frame, text='Keep Debug Info', **self.ctk_form_label_settings)
+        keep_whisper_debug_info_input = ctk.CTkSwitch(
+            advanced_frame, variable=keep_whisper_debug_info_var, text='', **self.ctk_form_entry_settings)
+
         # POST-PROCESSING OPTIONS
         # max_per_line, max_per_line_unit, split_on_punctuation, prevent_gaps_shorter_than
 
@@ -5093,6 +5108,9 @@ class toolkit_UI():
             time_intervals_input.grid(row=5, column=1, sticky="w", **self.ctk_form_paddings)
             excluded_time_intervals_label.grid(row=6, column=0, sticky="w", **self.ctk_form_paddings)
             excluded_time_intervals_input.grid(row=6, column=1, sticky="w", **self.ctk_form_paddings)
+
+        keep_whisper_debug_info_label.grid(row=7, column=0, sticky="w", **self.ctk_form_paddings)
+        keep_whisper_debug_info_input.grid(row=7, column=1, sticky="w", **self.ctk_form_paddings)
 
         # POST PROCESSING FRAME GRID
         # add all elements to the grid of the post processing frame
@@ -5275,6 +5293,8 @@ class toolkit_UI():
 
         if not transcription_settings['excluded_time_intervals']:
             return False
+
+        transcription_settings['keep_whisper_debug_info'] = audio_form_vars['keep_whisper_debug_info_var'].get()
 
         # the whisper options
         transcription_settings['whisper_options'] = dict()
