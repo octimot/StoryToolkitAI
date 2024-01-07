@@ -57,6 +57,8 @@ class toolkit_UI():
     theme_colors['selected_blue_text'] = ctk.ThemeManager.theme["CTkSegmentedButton"]["text_color"][1]
     theme_colors['selected_blue_bg'] = ctk.ThemeManager.theme["CTkButton"]["hover_color"][1]
 
+    theme_colors['meta_text'] = '#5D5D5D'
+
     # UI paddings and other settings
     ctk_full_window_frame_paddings = {'padx': 20, 'pady': 20}
     ctk_frame_paddings = {'padx': 5, 'pady': 5}
@@ -1373,6 +1375,10 @@ class toolkit_UI():
 
         # set platform independent transcript font
         self.transcript_font = ctk.CTkFont(family=courier_font_family, size=self.transcript_font_size)
+
+        # meta transcript segment font
+        self.meta_transcript_font = \
+            ctk.CTkFont(family=self.ctk_default_font_family, size=int(self.transcript_font_size*0.8))
 
         # set the platform independent fixed font (for console)
         # self.console_font = ctk.CTkFont(family='TkFixedFont', size=self.console_font_size)
@@ -8878,12 +8884,83 @@ class toolkit_UI():
             text_widget_line, text_widget_char, text_widget_last_char = \
                 self.get_current_segment_chars(text=text_widget)
 
-            # calculate the segment indexes
+            # calculate the segment indexes (not the id!)
             segment_index = int(text_widget_line) - 1
             next_segment_index = segment_index + 1
 
             # get the current segment
             current_segment = window_transcription.get_segment(segment_index=segment_index)
+
+            # first, let's understand if we're splitting words,
+            # or simply pressing enter at the beginning or the end of a line:
+            # are we at the end of the line?
+            # or we at the beginning of the line?
+            # or are the characters after the cursor spaces?
+            sentence_split = True
+            if text_widget_char == text_widget_last_char\
+                or text_widget_char == '0'\
+                or text_widget.get(
+                    "{}.{}".format(text_widget_line, text_widget_char),
+                    "{}.end".format(text_widget_line)
+                ).strip() == '':
+                sentence_split = False
+
+            # was shift pressed?
+            shift_pressed = event.state & 0x1 != 0
+
+            # if shift was pressed, and we're not splitting sentences,
+            # it means that we're adding a meta line
+            if shift_pressed and not sentence_split:
+
+                # insert the new line at the end of the current segment
+                # if we're not at the beginning of the line:
+                if text_widget_char != '0':
+                    text_widget.insert("{}.end".format(text_widget_line), "\n ")
+
+                    # add the l_meta tag to the new line
+                    self._tag_meta_segment(text_widget=text_widget, line_no=int(text_widget_line)+1)
+
+                    # for this case, we need to use the start time of the next segment
+                    next_segment = window_transcription.get_segment(segment_index=segment_index+1)
+
+                    # create new meta segment object
+                    new_segment = TranscriptionSegment({
+                        'text': ' ',
+                        'start': next_segment.start if next_segment is not None else current_segment.end,
+                        'end': next_segment.start if next_segment is not None else current_segment.end,
+                        'meta': True
+                    })
+
+                # otherwise insert the new line before the current segment
+                else:
+                    text_widget.insert("{}.0-1c".format(text_widget_line), "\n")
+
+                    # then we need to insert the new segment before the current segment in the transcription
+                    next_segment_index = segment_index
+
+                    # add the l_meta tag to the new line
+                    self._tag_meta_segment(text_widget=text_widget, line_no=text_widget_line)
+
+                    # create new meta segment object
+                    new_segment = TranscriptionSegment({
+                        'text': ' ',
+                        'start': current_segment.start,
+                        'end': current_segment.start,
+                        'meta': True
+                    })
+
+                self._format_meta_tags(text_widget=text_widget)
+
+                # add the new segment to the window transcription
+                window_transcription.add_segment(segment=new_segment, segment_index=next_segment_index)
+
+                # update the transcript_modified flag
+                self.set_transcript_modified(window_id=window_id, modified=True)
+
+                # save the transcript
+                self.save_transcript(window_id=window_id)
+
+                return 'break'
 
             # use the start and end times of the current segment as min and max
             split_time_seconds_min = current_segment.start
@@ -9054,27 +9131,125 @@ class toolkit_UI():
 
             text.bind('<Return>', lambda e: self.on_press_add_segment(e, window_id=window_id, text_widget=text))
 
-            # ESCAPE key defocuses transcript (and implicitly saves the transcript, see below)
+            # ESCAPE key de-focuses transcript (and implicitly saves the transcript, see below)
             text.bind('<Escape>', lambda e: self.defocus_transcript(text=text))
 
             # text focusout saves transcript
             text.bind('<FocusOut>', lambda e: self.on_text_widget_defocus(e, window_id=window_id))
 
             # BACKSPACE key at first line character merges the current and the previous segment
-            text.bind('<BackSpace>', lambda e:
-            self.on_press_merge_segments(e, window_id=window_id, text_widget=text, merge_direction='previous'))
+            text.bind(
+                '<BackSpace>',
+                lambda e:
+                self.on_press_merge_segments(e, window_id=window_id, text_widget=text, merge_direction='previous')
+            )
 
             # DELETE key at last line character merges the current and the next segment
-            text.bind('<Delete>', lambda e:
-            self.on_press_merge_segments(e, window_id=window_id, text_widget=text, merge_direction='next'))
+            text.bind(
+                '<Delete>',
+                lambda e:
+                self.on_press_merge_segments(e, window_id=window_id, text_widget=text, merge_direction='next')
+            )
+
+            # BIND all other key presses to the _on_transcript_key_press function
+            text.bind('<KeyPress>', lambda e, l_window=window: self._on_transcript_key_press(e, window=l_window))
 
             self.toolkit_UI_obj.update_window_status_label(
                 window_id=window_id, text='Transcript not saved.', color='bright_red')
 
             text.config(state=ctk.NORMAL)
 
-        @staticmethod
-        def add_segments_to_text_widget(transcription: Transcription, text_widget, clear_text_widget=True):
+        def _on_transcript_key_press(self, event, window):
+            """
+            This handles the key presses in the transcript text widget while editing
+            with a few exceptions (Return Escape, BackSpace, Delete - see edit_transcript() for that)
+            """
+
+            # if it's left, right, up, down, delete, backspace, return pass it down to the text widget
+            if event.keysym in ['Left', 'Right', 'Up', 'Down', 'Delete', 'BackSpace', 'Return']:
+                return
+
+            # get the line_no
+            line_no, char_no = window.text_widget.index(ctk.INSERT).split('.')
+
+            # convert to transcription segment index
+            segment_index = int(line_no) - 1
+
+            # get the transcription segment
+            transcription_segment = window.transcription.get_segment(segment_index=segment_index)
+
+            # if this is a meta segment, insert the pressed key inside the already existing l_meta tag
+            # since we can't do that with a native tkinter method, we need to do it manually
+            if transcription_segment.meta:
+
+                text_widget = window.text_widget
+
+                # capture the pressed key character
+                pressed_key = event.char
+
+                # if the current line contents shorter than 2 characters
+                if len(text_widget.get('{}.0'.format(line_no), '{}.end'.format(line_no)).strip()) < 2:
+
+                    if len(text_widget.get('{}.0'.format(line_no), '{}.end'.format(line_no)).strip()) < 1:
+                        # insert pressed_key and then wrap it in the l_meta tag
+                        text_widget.insert('{}.0'.format(line_no), pressed_key)
+
+                        # move the cursor to line.1
+                        text_widget.mark_set(ctk.INSERT, '{}.1'.format(line_no))
+                    else:
+                        # insert pressed_key and then wrap it in the l_meta tag
+                        text_widget.insert('{}.1'.format(line_no), pressed_key)
+
+                    # add the l_meta tag to the new line
+                    self._tag_meta_segment(text_widget=text_widget, line_no=line_no)
+
+                    # format the meta tags
+                    self._format_meta_tags(text_widget=text_widget)
+
+                    return 'break'
+
+                # if we're on the first character of the line
+                if char_no == '0':
+
+                    # memorize the character at line.0
+                    first_char = text_widget.get('{}.0'.format(line_no))
+
+                    # insert the pressed key character on position line.1 ("inside" the tag)
+                    window.text_widget.insert('{}.1'.format(line_no), pressed_key)
+
+                    # delete the original character at line.0
+                    window.text_widget.delete('{}.0'.format(line_no))
+
+                    # insert the memorized character  (after the pressed key)
+                    window.text_widget.insert('{}.1'.format(line_no), first_char)
+
+                    # move the cursor to line.1
+                    window.text_widget.mark_set(ctk.INSERT, '{}.1'.format(line_no))
+
+                    return 'break'
+
+                # if we're on the last character of the line we must be on the \n character
+                elif char_no == text_widget.index('{}.end'.format(line_no)).split('.')[1]:
+
+                    # so we need to insert the pressed key character before the \n character
+                    # but first, get the character before the \n character
+                    last_char = text_widget.get('{}.end-1c'.format(line_no))
+
+                    # insert our pressed character
+                    window.text_widget.insert('{}.end-1c'.format(line_no), pressed_key)
+
+                    # remove the last character
+                    window.text_widget.delete('{}.end-1c'.format(line_no))
+
+                    # insert the memorized character (before the pressed key)
+                    window.text_widget.insert('{}.end-1c'.format(line_no), last_char)
+
+                    # move the cursor to line.end-1c
+                    window.text_widget.mark_set(ctk.INSERT, '{}.end'.format(line_no))
+
+                    return 'break'
+
+        def add_segments_to_text_widget(self, transcription: Transcription, text_widget, clear_text_widget=True):
             """
             This function adds the segments from the transcription object to the text widget
             :param transcription: the transcription object
@@ -9110,26 +9285,55 @@ class toolkit_UI():
                     text_widget_line = text_widget_line + 1
 
                     # if there is a text element, simply insert it in the window
-                    if t_segment.text:
+                    if hasattr(t_segment, 'text'):
+                        text = t_segment.text
 
-                        # count the segments
-                        segment_count = segment_count + 1
+                    # if not, add an empty line and log a warning
+                    else:
+                        logger.warning('No text found in segment {}. Adding empty line.'.format(t_segment.id))
+                        text = ''
 
-                        # insert the text
-                        text_widget.insert(ctk.END, t_segment.text.strip() + ' ')
+                    insert_pos = '{}.0'.format(text_widget_line)
 
-                        # if this is the longest segment, keep that in mind
-                        if len(t_segment.text) > text_widget.longest_segment_num_char:
-                            text_widget.longest_segment_num_char = len(t_segment.text)
+                    # count the segments
+                    segment_count = segment_count + 1
 
-                        # for now, just add 2 new lines after each segment:
-                        text_widget.insert(ctk.END, '\n')
+                    # insert the text
+                    text_widget.insert(ctk.END, text.strip() + ' ')
+
+                    # if this is the longest segment, keep that in mind
+                    if len(text) > text_widget.longest_segment_num_char:
+                        text_widget.longest_segment_num_char = len(text)
+
+                    if t_segment.meta:
+                        self._tag_meta_segment(text_widget, text_widget_line)
+
+                    # for now, just add 2 new lines after each segment:
+                    text_widget.insert(ctk.END, '\n')
+
+            # format the meta tags
+            self._format_meta_tags(text_widget)
 
             # return the text_widget to its original state
             text_widget.config(state=text_widget_state)
 
             # update the text_widget last_sync according to the transcription last_save_time
             text_widget.last_hash = transcription.last_hash
+
+        @staticmethod
+        def _tag_meta_segment(text_widget, line_no):
+
+            text_widget.tag_add('l_meta', "{}.0".format(line_no), "{}.end".format(line_no))
+
+        def _format_meta_tags(self, text_widget):
+
+            text_widget.tag_config('l_meta', foreground=toolkit_UI.theme_colors['meta_text'], )
+
+            # add half of line of space as a top padding
+            text_widget.tag_config('l_meta', spacing1=20)
+
+            # also make it all caps
+            text_widget.tag_config('l_meta', font=self.toolkit_UI_obj.meta_transcript_font)
 
         @staticmethod
         def unbind_editing_keys(text):
@@ -9210,12 +9414,12 @@ class toolkit_UI():
             # and the last character of the line
             text_widget_line, text_widget_char, text_widget_last_char = self.get_current_segment_chars(text=text_widget)
 
-            # ignore if we are not at the beginning nor at the end of the current line
+            # pass to _on_transcript_key_press if we are not at the beginning nor at the end of the current line
             # or if the direction of the merge doesn't match the character number
             if text_widget_char not in ['0', text_widget_last_char] \
                     or (text_widget_char == '0' and merge_direction != 'previous') \
                     or (text_widget_char == text_widget_last_char and merge_direction != 'next'):
-                return
+                return self._on_transcript_key_press(event, window=self.toolkit_UI_obj.get_window_by_id(window_id))
 
             first_segment_index = None
             second_segment_index = None
@@ -9791,7 +9995,7 @@ class toolkit_UI():
                 text.longest_segment_num_char = 40
 
                 # add the segments to the text widget
-                toolkit_UI.TranscriptEdit.add_segments_to_text_widget(
+                self.t_edit_obj.add_segments_to_text_widget(
                     transcription=transcription, text_widget=text, clear_text_widget=False)
 
                 # make the text read only
@@ -10059,7 +10263,7 @@ class toolkit_UI():
                 self.t_edit_obj.clear_selection(t_window_id, text_element=t_window.text_widget)
 
                 # add the segments to the text widget
-                toolkit_UI.TranscriptEdit.add_segments_to_text_widget(transcription, t_window.text_widget)
+                self.t_edit_obj.add_segments_to_text_widget(transcription, t_window.text_widget)
 
                 # refresh the transcription window to make sure everything updated (except groups)
                 self.update_transcription_window(t_window_id)
@@ -10077,7 +10281,7 @@ class toolkit_UI():
             if t_window.text_widget.last_hash != transcription.last_hash:
 
                 # add the segments to the text widget
-                toolkit_UI.TranscriptEdit.add_segments_to_text_widget(transcription, t_window.text_widget)
+                self.t_edit_obj.add_segments_to_text_widget(transcription, t_window.text_widget)
 
             # so update all the windows just to make sure that all the elements are in the right state
             self.update_all_transcription_windows()

@@ -826,6 +826,8 @@ class Transcription:
         # set the dirty flag
         self.set_dirty()
 
+        return segment
+
     def generate_new_segment_id(self):
         """
         This looks through all the segment ids and returns the next highest id
@@ -1530,6 +1532,9 @@ class TranscriptionSegment:
         self._words = None
         self._text = None
 
+        self._meta = None
+        self._category = None
+
         self.tokens = None
 
         # this tells us if the segment is the result of merging other segments
@@ -1589,6 +1594,14 @@ class TranscriptionSegment:
     def text(self):
         return self._text
 
+    @property
+    def meta(self):
+        return self._meta
+
+    @property
+    def category(self):
+        return self._category
+
     def __str__(self):
         return self.text
 
@@ -1602,7 +1615,7 @@ class TranscriptionSegment:
         If the segment has a parent, it flags it as dirty.
         """
 
-        allowed_attributes = ['start', 'end', 'text', 'words']
+        allowed_attributes = ['start', 'end', 'text', 'words', 'meta', 'category']
 
         if key in allowed_attributes:
             setattr(self, '_'+key, value)
@@ -1627,9 +1640,11 @@ class TranscriptionSegment:
 
     # set the known attributes
     __known_attributes = ['id', 'start', 'end', 'words', 'text', 'tokens', 'merged',
-                        'seek', 'temperature', 'avg_logprob', 'compression_ratio', 'no_speech_prob']
+                          'seek', 'temperature', 'avg_logprob', 'compression_ratio', 'no_speech_prob',
+                          'meta', 'category'
+                          ]
 
-    __simplified_attributes = ['start', 'end', 'text']
+    __simplified_attributes = ['start', 'end', 'text', 'meta']
 
     def _load_dict_into_attributes(self, segment_dict):
 
@@ -1687,6 +1702,11 @@ class TranscriptionSegment:
         # if the current segment is not valid, we cannot merge it
         if not self.is_valid:
             logger.error("Cannot merge segments - current segment is not valid")
+            return False
+
+        # both segments need to be of the same type and category
+        if self.meta != segment.meta or self.category != segment.category:
+            logger.error("Cannot merge segments - segments are not of the same type")
             return False
 
         # if the segments are not from the same transcription, we cannot merge them
@@ -1919,7 +1939,7 @@ class TranscriptionUtils:
                 logger.debug('Copied transcription file to backup: {}'.format(backup_transcription_file_path))
 
         # encode the transcription json (do this before writing to the file, to make sure it's valid)
-        transcription_json_encoded = json.dumps(transcription_data)
+        transcription_json_encoded = json.dumps(transcription_data, indent=4)
 
         # write the transcription json to the file
         with open(transcription_file_path, 'w', encoding='utf-8') as outfile:
@@ -2107,13 +2127,26 @@ class TranscriptionUtils:
         return f"{hours_marker}{minutes:02d}:{seconds:02d}{decimal_marker}{milliseconds:03d}"
 
     @staticmethod
-    def write_srt(transcript_segments: list, srt_file_path: str):
+    def filter_segments(transcript_segments: list, filter_meta=False):
+        """
+        This filters the segments based on the filter_meta flag.
+        """
+
+        if filter_meta:
+            return [segment for segment in transcript_segments if not segment.meta]
+        else:
+            return transcript_segments
+
+    @staticmethod
+    def write_srt(transcript_segments: list, srt_file_path, filter_meta=True):
         """
         Write the transcript segments to a file in SRT format.
         """
 
         if not transcript_segments:
             return
+
+        transcript_segments = TranscriptionUtils.filter_segments(transcript_segments, filter_meta)
 
         with open(srt_file_path, "w", encoding="utf-8") as srt_file:
             i = 1
@@ -2139,7 +2172,7 @@ class TranscriptionUtils:
                 i += 1
 
     @staticmethod
-    def write_txt(transcript_segments: list, txt_file_path: str):
+    def write_txt(transcript_segments: list, txt_file_path: str, filter_meta=True):
         """
         Write the transcript segments to a file in TXT format.
         Each segment is written on a new line.
@@ -2147,6 +2180,8 @@ class TranscriptionUtils:
 
         if not transcript_segments:
             return
+
+        transcript_segments = TranscriptionUtils.filter_segments(transcript_segments, filter_meta)
 
         with open(txt_file_path, "w", encoding="utf-8") as txt_file:
             for segment in transcript_segments:
@@ -2158,7 +2193,9 @@ class TranscriptionUtils:
                 )
 
     @staticmethod
-    def write_avid_ds(transcript_segments: dict, avid_ds_file_path: str, timeline_fps, timeline_start_tc):
+    def write_avid_ds(
+            transcript_segments: list, avid_ds_file_path: str, timeline_fps, timeline_start_tc, filter_meta=True
+    ):
         """
         Write the transcript segments to a file in Avid DS format.
         """
@@ -2175,6 +2212,8 @@ class TranscriptionUtils:
         # This is another test.
         #
         # <end subtitles>
+
+        transcript_segments = TranscriptionUtils.filter_segments(transcript_segments, filter_meta)
 
         # convert the timeline_start_tc to a Timecode object
         timeline_start_tc = Timecode(timeline_fps, timeline_start_tc)
@@ -2226,10 +2265,12 @@ class TranscriptionUtils:
             )
 
     @staticmethod
-    def write_fusion_text_comp(transcript_segments: dict, comp_file_path: str, timeline_fps):
-        '''
+    def write_fusion_text_comp(transcript_segments: list, comp_file_path: str, timeline_fps, filter_meta=True):
+        """
         Write the transcript segments into a Fusion Text+ comp file
-        '''
+        """
+
+        transcript_segments = TranscriptionUtils.filter_segments(transcript_segments, filter_meta)
 
         keyframes = []
 
