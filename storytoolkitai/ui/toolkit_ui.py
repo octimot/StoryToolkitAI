@@ -9432,6 +9432,14 @@ class toolkit_UI():
                 first_segment_index = int(text_widget_line) - 2
                 second_segment_index = int(text_widget_line) - 1
 
+                # get the two transcription segments
+                first_segment = window_transcription.get_segment(segment_index=first_segment_index)
+                second_segment = window_transcription.get_segment(segment_index=second_segment_index)
+
+                # if they're not both meta or non-meta, we can't merge them
+                if first_segment.meta != second_segment.meta:
+                    return 'break'
+
                 # remove the line break from the previous line
                 text_widget.delete("{}.end".format(second_segment_index), "{}.end+1c".format(second_segment_index))
 
@@ -9441,6 +9449,14 @@ class toolkit_UI():
 
                 first_segment_index = int(text_widget_line) - 1
                 second_segment_index = int(text_widget_line)
+
+                # get the two transcription segments
+                first_segment = window_transcription.get_segment(segment_index=first_segment_index)
+                second_segment = window_transcription.get_segment(segment_index=second_segment_index)
+
+                # if they're not both meta or non-meta, we can't merge them
+                if first_segment.meta != second_segment.meta:
+                    return 'break'
 
                 # remove the line break from current line
                 text_widget.delete('{}.end'.format(text_widget_line), '{}.end+1c'.format(text_widget_line))
