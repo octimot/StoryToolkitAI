@@ -43,6 +43,9 @@ def post_update(current_version, last_version, is_standalone=False):
 
 
 def post_update_0_20_1(is_standalone=False):
+    """
+    This re-installs Whisper to make sure we have the right commit
+    """
 
     # not needed if we are running in standalone mode
     if is_standalone:
@@ -63,9 +66,21 @@ def post_update_0_20_1(is_standalone=False):
 
         return False
 
-    # once this is uninstalled,
-    # the correct openai-whisper package should be
-    # re-installed when the tool restarts and the requirements.txt check is performed
+    # force a requirements.txt check and install
+    try:
+        # get the absolute path to requirements.txt,
+        # considering it should be relative to the current file
+        requirements_file_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), '..', '..', 'requirements.txt'
+        )
+
+        # don't use cache dir
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', requirements_file_path, '--no-cache-dir'])
+    except Exception as e:
+        logger.error('Failed to install requirements.txt: {}'.format(e))
+        logger.warning('Please install the requirements.txt manually.')
+
+        return False
 
     return True
 
