@@ -9043,6 +9043,15 @@ class toolkit_UI():
             # enable transcript_editing for this window
             self.set_transcript_editing(window_id=window_id, editing=True)
 
+            # deselect any groups
+            window.transcript_groups_module.deselect_group()
+
+            # deselect any segments
+            self.clear_selection(window_id=window_id, text_element=text)
+
+            # remove active segment tag
+            self.set_active_segment(window_id=window_id, text_widget=text, text_widget_line=None)
+
             text.bind('<Return>', lambda e: self.on_press_add_segment(e, window_id=window_id, text_widget=text))
 
             # ESCAPE key defocuses transcript (and implicitly saves the transcript, see below)
