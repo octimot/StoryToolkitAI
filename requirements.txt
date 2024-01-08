@@ -40,3 +40,4 @@ ftfy
 moviepy
 scikit-image
 scipy
+pydantic==1.10.8
