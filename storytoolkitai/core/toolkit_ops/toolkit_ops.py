@@ -2283,7 +2283,10 @@ class ToolkitOps:
 
             return None
 
-        segments = transcription.segments
+        # only check non-meta segments
+        # the group time intervals may contain the meta segments too depending on their start time,
+        # but at least we're not processing them
+        segments = TranscriptionUtils.filter_segments(transcription.segments, filter_meta=True)
 
         # classify the segments as questions or statements
         # but use the existing transcription data if we have it
