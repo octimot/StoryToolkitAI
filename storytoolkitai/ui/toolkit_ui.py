@@ -5727,7 +5727,6 @@ class toolkit_UI():
             input_type = type(input_widget).__name__
 
             # revert the style of the input to the theme default
-            input.configure(fg_color=ctk.ThemeManager.theme[input_type]["fg_color"])
             try:
                 input_widget.configure(fg_color=ctk.ThemeManager.theme[input_type]["fg_color"])
 
