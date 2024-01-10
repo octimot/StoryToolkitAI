@@ -1035,6 +1035,18 @@ class toolkit_UI():
                     self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Error', message='Invalid API key.')
                     return False
 
+            # only allow values between 0 and 1 for transcription_speaker_detection_threshold
+            if input_variables['transcription_speaker_detection_var'].get()\
+            and not 0 < float(input_variables['transcription_speaker_detection_threshold_var'].get()) <= 1:
+                self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Error',
+                                                          message='Speaker detection threshold '
+                                                                  'must be greater than 0, but maximum 1.')
+                return False
+
+            # if no speaker detection is selected, remove the threshold
+            elif not input_variables['transcription_speaker_detection_var'].get():
+                del input_variables['transcription_speaker_detection_threshold_var']
+
             # if the user has entered transcription_custom_punctuation_marks,
             if input_variables['transcription_custom_punctuation_marks_var'].get() != '':
 
@@ -3913,6 +3925,18 @@ class toolkit_UI():
                     input_value = tk.IntVar(input_frame, widget_default_value)
                     input_widget = ctk.CTkEntry(input_widget_parent, textvariable=input_value,
                                                 **toolkit_UI.ctk_askdialog_input_int_size)
+                elif widget['type'] == 'entry_float':
+                    input_value = tk.StringVar(input_frame, widget_default_value)
+                    input_widget = ctk.CTkEntry(input_widget_parent, textvariable=input_value,
+                                                **toolkit_UI.ctk_askdialog_input_int_size)
+
+                    # only allow floats in the input_widget
+                    input_widget.configure(
+                        validate="key",
+                        validatecommand=(
+                            input_widget.register(self.toolkit_UI_obj.only_allow_floats), '%P'
+                        )
+                    )
 
                 # selection widget
                 elif widget['type'] == 'option_menu' and 'options' in widget:
@@ -3960,6 +3984,9 @@ class toolkit_UI():
 
                     # add the widget to the user_input dictionary
                     self.return_value[widget_name] = input_value
+
+                    if widget.get('error'):
+                        self.toolkit_UI_obj.style_input_as_invalid(input_widget=input_widget, label=label)
 
                     # focus on the first input widget
                     if row == 1:
@@ -4671,11 +4698,13 @@ class toolkit_UI():
         # create the frames
         enable_disable_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
         basic_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
+        speakers_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
         post_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
         advanced_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
 
         # create labels for the frames (and style them according to the theme)
         basic_frame_label = ctk.CTkLabel(parent, text='Basic Transcription Settings', **self.ctk_frame_label_settings)
+        speakers_frame_label = ctk.CTkLabel(parent, text='Transcription Speakers', **self.ctk_frame_label_settings)
         advanced_frame_label = ctk.CTkLabel(parent, text='Advanced Transcription Settings',
                                             **self.ctk_frame_label_settings)
         post_frame_label = ctk.CTkLabel(parent, text='Transcription Post-Processing', **self.ctk_frame_label_settings)
@@ -4696,17 +4725,20 @@ class toolkit_UI():
         basic_frame_label.grid(row=l_row + 1, column=0, sticky="ew", **self.ctk_frame_paddings)
         enable_disable_frame.grid(row=l_row + 2, column=0, sticky="ew", **self.ctk_frame_paddings)
         basic_frame.grid(row=l_row + 3, column=0, sticky="ew", **self.ctk_frame_paddings)
-        advanced_frame_label.grid(row=l_row + 4, column=0, sticky="ew", **self.ctk_frame_paddings)
-        advanced_frame.grid(row=l_row + 5, column=0, sticky="ew", **self.ctk_frame_paddings)
-        post_frame_label.grid(row=l_row + 6, column=0, sticky="ew", **self.ctk_frame_paddings)
-        post_frame.grid(row=l_row + 7, column=0, sticky="ew", **self.ctk_frame_paddings)
+        speakers_frame_label.grid(row=l_row + 4, column=0, sticky="ew", **self.ctk_frame_paddings)
+        speakers_frame.grid(row=l_row + 5, column=0, sticky="ew", **self.ctk_frame_paddings)
+        advanced_frame_label.grid(row=l_row + 6, column=0, sticky="ew", **self.ctk_frame_paddings)
+        advanced_frame.grid(row=l_row + 7, column=0, sticky="ew", **self.ctk_frame_paddings)
+        post_frame_label.grid(row=l_row + 8, column=0, sticky="ew", **self.ctk_frame_paddings)
+        post_frame.grid(row=l_row + 9, column=0, sticky="ew", **self.ctk_frame_paddings)
 
         # make the column expandable
         parent.columnconfigure(0, weight=1)
         enable_disable_frame.columnconfigure(1, weight=1)
         basic_frame.columnconfigure(1, weight=1)
-        post_frame.columnconfigure(1, weight=1)
+        speakers_frame.columnconfigure(1, weight=1)
         advanced_frame.columnconfigure(1, weight=1)
+        post_frame.columnconfigure(1, weight=1)
 
         # TRANSCRIPTIONS ENABLE SWITCH
         transcription_enabled = kwargs.get('transcription_enabled', None) \
@@ -4768,6 +4800,49 @@ class toolkit_UI():
         model_name_label = ctk.CTkLabel(basic_frame, text='Model', **self.ctk_form_label_settings)
         model_name_input = ctk.CTkOptionMenu(basic_frame, variable=model_name_var, values=whisper_available_models(),
                                              **self.ctk_form_entry_settings)
+
+        # SPEAKER OPTIONS
+
+        # SPEAKER DETECTION
+        transcription_speaker_detection = \
+            kwargs.get('transcription_speaker_detection', None) \
+            if kwargs.get('transcription_speaker_detection', None) is not None \
+            else self.stAI.get_app_setting('transcription_speaker_detection', default_if_none=True)
+
+        # create the speaker detection variable, label and switch
+        form_vars['transcription_speaker_detection_var'] = \
+            transcription_speaker_detection_var = tk.BooleanVar(speakers_frame, value=transcription_speaker_detection)
+        transcription_speaker_detection_label = ctk.CTkLabel(
+            speakers_frame, text='Speaker Detection', **self.ctk_form_label_settings
+        )
+        transcription_speaker_detection_input = ctk.CTkSwitch(
+            speakers_frame, variable=transcription_speaker_detection_var, text='', **self.ctk_form_entry_settings
+        )
+
+        # SPEAKER DETECTION THRESHOLD
+        transcription_speaker_detection_threshold = \
+            kwargs.get('transcription_speaker_detection_threshold', None) \
+            if kwargs.get('transcription_speaker_detection_threshold', None) is not None \
+            else self.stAI.get_app_setting('transcription_speaker_detection_threshold', default_if_none=0.3)
+
+        # create the speaker detection threshold variable, label and input
+        form_vars['transcription_speaker_detection_threshold_var'] = \
+            transcription_speaker_detection_threshold_var = tk.StringVar(
+            speakers_frame, value=transcription_speaker_detection_threshold
+        )
+        transcription_speaker_detection_threshold_label = ctk.CTkLabel(
+            speakers_frame, text='Speaker Detection Threshold', **self.ctk_form_label_settings
+        )
+        transcription_speaker_detection_threshold_input = ctk.CTkEntry(
+            speakers_frame,
+            textvariable=transcription_speaker_detection_threshold_var, **self.ctk_form_entry_settings_half
+        )
+
+        # only allow floats in the transcription_speaker_detection_threshold_input
+        transcription_speaker_detection_threshold_input.configure(
+            validate="key",
+            validatecommand=(transcription_speaker_detection_threshold_input.register(self.only_allow_floats), '%P')
+        )
 
         # ADVANCED OPTIONS
         # device, pre-detect speech, initial prompt, increased time precision, time intervals
@@ -5058,7 +5133,19 @@ class toolkit_UI():
                 split_on_punctuation_label.grid_remove()
 
         word_timestamps_var.trace('w', update_max_per_segment_inputs_visibility)
-        update_max_per_segment_inputs_visibility()
+
+        # if transcription_speaker_detection_var is False, disable the speaker detection threshold input
+        # but check on every change of the transcription_speaker_detection_var
+        def update_speaker_detection_threshold_inputs_visibility(*f_args):
+
+            if transcription_speaker_detection_var.get():
+                transcription_speaker_detection_threshold_label.grid()
+                transcription_speaker_detection_threshold_input.grid()
+            else:
+                transcription_speaker_detection_threshold_label.grid_remove()
+                transcription_speaker_detection_threshold_input.grid_remove()
+
+        transcription_speaker_detection_var.trace('w', update_speaker_detection_threshold_inputs_visibility)
 
         # ENABLE/DISABLE function
         def update_transcription_enabled(*f_args):
@@ -5100,6 +5187,13 @@ class toolkit_UI():
         model_name_label.grid(row=4, column=0, sticky="w", **self.ctk_form_paddings)
         model_name_input.grid(row=4, column=1, sticky="w", **self.ctk_form_paddings)
 
+        # SPEAKERS FRAME GRID
+        # add all elements to the grid of the speakers frame
+        transcription_speaker_detection_label.grid(row=1, column=0, sticky="w", **self.ctk_form_paddings)
+        transcription_speaker_detection_input.grid(row=1, column=1, sticky="w", **self.ctk_form_paddings)
+        transcription_speaker_detection_threshold_label.grid(row=2, column=0, sticky="w", **self.ctk_form_paddings)
+        transcription_speaker_detection_threshold_input.grid(row=2, column=1, sticky="w", **self.ctk_form_paddings)
+
         # ADVANCED SETTINGS FRAME GRID
         # add all elements to the grid of the advanced options frame
         device_label.grid(row=1, column=0, sticky="w", **self.ctk_form_paddings)
@@ -5135,10 +5229,14 @@ class toolkit_UI():
         prevent_gaps_shorter_than_label.grid(row=4, column=0, sticky="w", **self.ctk_form_paddings)
         prevent_gaps_shorter_than_frame.grid(row=4, column=1, sticky="w", **self.ctk_form_paddings)
 
+        update_max_per_segment_inputs_visibility()
+        update_speaker_detection_threshold_inputs_visibility()
+
         # return all the gathered form variables
         return form_vars
 
-    def form_to_video_indexing_settings(self, **kwargs):
+    @staticmethod
+    def form_to_video_indexing_settings(**kwargs):
         """
         This function takes the form variables and gets them into the video indexing settings
         """
@@ -5267,6 +5365,28 @@ class toolkit_UI():
         transcription_settings['model_name'] = audio_form_vars['model_name_var'].get()
         transcription_settings['device'] = audio_form_vars['device_var'].get()
         transcription_settings['pre_detect_speech'] = audio_form_vars['pre_detect_speech_var'].get()
+
+        # speaker detection and threshold
+        transcription_settings['transcription_speaker_detection'] = \
+            audio_form_vars['transcription_speaker_detection_var'].get()
+
+        # validate the speaker detection threshold if speaker detection is enabled
+        if transcription_settings['transcription_speaker_detection']:
+
+            transcription_speaker_detection_threshold = \
+                float(audio_form_vars['transcription_speaker_detection_threshold_var'].get())
+
+            # use the default threshold if the user didn't input anything
+            # also, only allow values between 0 and 1
+            if not 0 < transcription_speaker_detection_threshold <= 1:
+                transcription_speaker_detection_threshold = \
+                    self.stAI.get_app_setting('transcription_speaker_detection_threshold', default_if_none=0.3)
+
+                logger.warning('The speaker detection threshold must be between 0 and 1. Using default value {}.'
+                               .format(transcription_speaker_detection_threshold))
+
+            transcription_settings['transcription_speaker_detection_threshold'] = \
+                transcription_speaker_detection_threshold
 
         # choose between max words or characters per line
         if audio_form_vars['max_per_line_unit_var'].get() == 'words':
@@ -6573,6 +6693,11 @@ class toolkit_UI():
                 )
 
                 context_menu.add_command(
+                    label="Detect Speakers for Selection",
+                    command=lambda: self.button_detect_speakers(window_id=window_id)
+                )
+
+                context_menu.add_command(
                     label="Edit",
                     command=lambda: self.edit_transcript(window_id=window_id),
                     accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+e"
@@ -7721,6 +7846,131 @@ class toolkit_UI():
 
                 return False
 
+        def button_detect_speakers(self, window_id, transcription_file_path=None, ignore_selection=False):
+            """
+            Detects the speakers in a given transcription
+            """
+
+            # get the window
+            window = self.toolkit_UI_obj.get_window_by_id(window_id)
+
+            # get the window transcription
+            window_transcription = self.get_window_transcription(window_id)
+
+            # we'll use this later
+            selected_time_intervals = []
+
+            if window_transcription:
+                # get the transcription file path from the window
+                transcription_file_path = window_transcription.transcription_file_path
+
+                if not ignore_selection:
+
+                    # if there is a window_transcription, also get the selected text from the transcript
+                    text, full_text, start_sec, end_sec, _ = \
+                        self.get_segments_or_selection(window_id, add_to_clipboard=False,
+                                                       split_by='index', timecodes=False, allow_active_segment=False)
+
+                    # now turn the text blocks into time intervals
+                    if text is not None and text and len(text) > 0:
+
+                        # get all the time intervals based on the text blocks
+                        for text_block in text:
+                            selected_time_intervals.append([text_block['start'], text_block['end']])
+
+            # if we still don't have a transcription file path, return
+            if transcription_file_path is None:
+                logger.debug('No transcription file path received.')
+                return False
+
+            if selected_time_intervals:
+                continue_message = "Speaker detection will overwrite existing speakers for the selected segments.\n\n"
+                continue_message += "Do you want to continue?"
+            else:
+                continue_message = "Speaker detection will overwrite all existing transcription speakers.\n\n"
+                continue_message += "Do want to continue?"
+
+            if messagebox.askyesno(
+                    title='Detect Speakers{}'.format(' for Selection' if selected_time_intervals else ''),
+                    message="Working on this transcription while speaker detection is performed "
+                            "is not recommended.\n\n" + continue_message,
+                    parent=window
+            ):
+
+                # wait for a second after the user has confirmed to allow the message box to close
+                time.sleep(1)
+            else:
+                return
+
+            # get the speaker detection settings
+            # we're not asking the user for time_intervals, but we're passing them to the function
+            user_input_valid = False
+            threshold = self.stAI.get_app_setting('transcription_speaker_detection_threshold', default_if_none=0.3)
+            threshold_error = False
+            while not user_input_valid:
+
+                user_input = toolkit_UI.AskDialog(
+                    title='Speaker Detection Settings',
+                    input_widgets=[
+                        {'name': 'device_name', 'label': 'Device', 'type': 'option_menu', 'default_value': 'auto',
+                            'options': ['auto'] + list(self.toolkit_ops_obj.queue_devices)},
+                        {'name': 'transcription_speaker_detection_threshold',
+                         'label': 'Detection Threshold', 'type': 'entry_float',
+                         'default_value': threshold,
+                         'error': threshold_error
+                         }
+                    ],
+                    cancel_return=False,
+                    parent=window_id,
+                    toolkit_UI_obj=self.toolkit_UI_obj) \
+                    .value()
+
+                if not user_input:
+                    return
+
+                # validate transcript_speaker_detection_threshold
+                if not 'transcription_speaker_detection_threshold' in user_input:
+                    logger.warning('No transcription_speaker_detection_threshold received. Aborting.')
+                    return
+
+                if user_input['transcription_speaker_detection_threshold'] is None \
+                or user_input['transcription_speaker_detection_threshold'] == '' \
+                or not 0 < float(user_input['transcription_speaker_detection_threshold']) <= 1:
+
+                    self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Invalid Threshold',
+                                                              message='Speaker detection threshold '
+                                                                      'must be greater than 0, but maximum 1.',
+                                                              parent=window)
+                    threshold = user_input['transcription_speaker_detection_threshold']
+                    threshold_error = True
+
+                    continue
+
+                else:
+                    user_input_valid = True
+
+            queue_item_name = '{} {}'.format(window_transcription.name, '(Speaker Detection)')
+
+            queue_item_id = self.toolkit_ops_obj.add_speaker_detection_to_queue(
+                queue_item_name=queue_item_name,
+                transcription_file_path=transcription_file_path,
+                device_name=user_input['device_name'],
+                time_intervals=selected_time_intervals
+            )
+
+            # attach a queue item observer that updates the window when the queue item is done
+            self.toolkit_UI_obj.add_observer_to_window(
+                window_id=window_id,
+                action='{}_queue_item_done'.format(queue_item_id),
+                callback=lambda: self.toolkit_UI_obj.update_transcription_window(window_id),
+                dettach_after_call=True
+            )
+
+            # add transcription window update observer
+
+            # open the queue window
+            self.toolkit_UI_obj.open_queue_window()
+
         def button_group_questions(self, window_id, transcription_file_path=None):
             """
             Groups the questions in the transcript
@@ -7732,12 +7982,13 @@ class toolkit_UI():
             # get the window transcription
             window_transcription = self.get_window_transcription(window_id)
 
-            # get the transcription file path from the window
-            transcription_file_path = window_transcription.transcription_file_path
+            if window_transcription:
+                # get the transcription file path from the window
+                transcription_file_path = window_transcription.transcription_file_path
 
             # if we still don't have a transcription file path, return
             if transcription_file_path is None:
-                logger.debug('No transcription file path found.')
+                logger.debug('No transcription file path received.')
                 return False
 
             # warn user that this might take a while
@@ -10330,20 +10581,34 @@ class toolkit_UI():
                 transcript_sec=goto_time, window_id=t_window_id,
                 text_widget=t_window.text_widget, transcription=transcription, toolkit_UI_obj=self)
 
-    def update_transcription_window(self, window_id, update_all: bool = True, **update_attr):
+    def update_transcription_window(self, window_id, update_all: bool = True, confirmed=True, **update_attr):
         """
         Auto-updates a transcription window GUI
 
         :param window_id:
         :param update_all: If this is True, try to update all the GUI elements of the window
                             by using their hard-coded names, even if they were not passed in the update_attr dict.
+        :param confirmed: If this is not true, the user will be asked to confirm any text widget updates
         :param update_attr:
         :return:
         """
 
+        t_window = self.get_window_by_id(window_id)
+
         # ignore if the window doesn't exist
-        if window_id not in self.windows:
+        if not t_window:
             return
+
+        # get the transcription object
+        transcription = self.t_edit_obj.get_window_transcription(window_id=window_id)
+
+        # check if we have to refresh the text widget
+        # and if the transcription was changed since the last refresh
+        # todo: find proper way to update without breaking user changes on window
+        if t_window.text_widget.last_hash != transcription.last_hash and confirmed:
+
+            # add the segments to the text widget
+            self.t_edit_obj.add_segments_to_text_widget(transcription, t_window.text_widget)
 
         # reset the status_label if it's been more than 5 seconds since the last update
         self.reset_status_label_after(window_id=window_id, seconds=5)

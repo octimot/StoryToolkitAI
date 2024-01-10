@@ -176,6 +176,10 @@ class Transcription:
         return self._segments
 
     @property
+    def segments_dict(self):
+        return [segment.to_dict() for segment in self._segments]
+
+    @property
     def segment_ids(self):
         return self._segment_ids
 
@@ -827,6 +831,25 @@ class Transcription:
         self.set_dirty()
 
         return segment
+
+    def replace_segments(self, segments: list):
+        """
+        This deletes all the segments and then adds the new segments
+        :param segments: a list of segments
+        """
+
+        # if we have segments
+        if self._has_segments:
+
+            # remove all the segments
+            self._segments = []
+
+            # add the new segments
+            self.add_segments(segments)
+
+        # if we don't have segments, just add the new segments
+        else:
+            self.add_segments(segments)
 
     def generate_new_segment_id(self):
         """
@@ -1618,6 +1641,11 @@ class TranscriptionSegment:
         allowed_attributes = ['start', 'end', 'text', 'words', 'meta', 'category']
 
         if key in allowed_attributes:
+
+            # for meta attribute, always use the bool
+            if key == 'meta':
+                value = bool(value)
+
             setattr(self, '_'+key, value)
 
             # if the segment has a parent, flag it as dirty
@@ -1665,6 +1693,10 @@ class TranscriptionSegment:
                 # convert the start and end times to floats
                 if attribute == 'start' or attribute == 'end':
                     segment_dict[attribute] = float(segment_dict[attribute])
+
+                # convert the meta to bool
+                if attribute == 'meta':
+                    segment_dict[attribute] = bool(segment_dict[attribute])
 
                 setattr(self, '_'+attribute, segment_dict[attribute])
 
@@ -1777,7 +1809,7 @@ class TranscriptionSegment:
 
         return segment_dict
 
-    def to_list(self):
+    def to_list(self, simplify=True):
         """
         This returns the segment data as a dict, but it only converts the attributes that are __known_attributes
         (or __simplified_attributes if simplify is True)
@@ -1788,7 +1820,23 @@ class TranscriptionSegment:
 
         # add the known attributes to the data
         # important: the order of the __simple_attributes list is important (start, end, text for eg.)
-        for attribute in self.__simplified_attributes:
+        for attribute in self.__simplified_attributes if simplify else self.__known_attributes:
+
+            # deal with meta separately
+            # add the negative value even if the meta is empty
+            # but also use int instead of bool when simplification is enabled so that the json is smaller
+            if attribute == 'meta':
+                if (not hasattr(self, '_' + attribute)
+                        or getattr(self, '_' + attribute) is None
+                        or not getattr(self, '_' + attribute)
+                ):
+                    segment_list.append(0 if simplify else False)
+
+                else:
+                    segment_list.append(1 if simplify else True)
+
+                # skip to the next attribute
+                continue
 
             if hasattr(self, '_'+attribute) and getattr(self, '_'+attribute) is not None:
                 segment_list.append(getattr(self, '_'+attribute))

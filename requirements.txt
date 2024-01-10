@@ -41,3 +41,4 @@ moviepy
 scikit-image
 scipy
 pydantic==1.10.8
+pyannote.audio>=2.0.1

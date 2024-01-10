@@ -26,6 +26,7 @@ from .processing_queue import ProcessingQueue
 from .search import ToolkitSearch, SearchItem, TextSearch, VideoSearch, cv2
 from .assistant import ToolkitAssistant, AssistantUtils
 from .assistant import DEFAULT_SYSTEM_MESSAGE as ASSISTANT_DEFAULT_SYSTEM_MESSAGE
+from .speaker_diarization import detect_speaker_changes
 
 from timecode import Timecode
 
@@ -164,7 +165,8 @@ class ToolkitOps:
             'translate': [self.whisper_transcribe],
             'group_questions': [self.group_questions],
             'index_text': [self.index_text],
-            'index_video': [self.index_video]
+            'index_video': [self.index_video],
+            'speaker_detection': [self.speaker_detection]
         }
 
         # use this to store all the devices that can be used for processing queue tasks
@@ -565,6 +567,24 @@ class ToolkitOps:
 
             # add the generated queue id to the list to the queued list
             all_added_queue_ids.append(added_queue_id)
+
+            # if we need to detect speaker changes, add the speaker detection tasks too
+            if kwargs.get('transcription_speaker_detection', True):
+                kwargs['tasks'] = ['speaker_detection']
+                kwargs['name'] = '{} {}'.format(kwargs['name'], '(Speaker Detection)')
+                kwargs['queue_id'] = None
+
+                kwargs['item_type'] = 'transcription'
+
+                speaker_detection_queue_id = self.processing_queue.add_to_queue(**kwargs)
+
+                # add the generated queue id to the list to the queued list
+                all_added_queue_ids.append(speaker_detection_queue_id)
+
+                # add the main transcription queue item as a dependency to the speaker detection queue item
+                # this way, when the transcription is done, the speaker detection item will start
+                # and retrieve all the data from the transcription queue item
+                self.processing_queue.add_dependency(queue_id=speaker_detection_queue_id, dependency_id=next_queue_id)
 
             # if we need to group questions, add the group questions tasks too
             if kwargs.get('transcription_group_questions', False):
@@ -1411,21 +1431,103 @@ class ToolkitOps:
 
         return result
 
-    def speaker_diarization(self, audio_path, add_speakers_to_segments):
+    def speaker_detection(self, transcription_file_path, **kwargs):
 
-        # WORK IN PROGRESS
-        # print("Detecting speakers.")
+        # get the transcription object
+        transcription = Transcription(transcription_file_path=transcription_file_path)
 
-        # from pyannote.audio import Pipeline
-        # pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization")
+        if not transcription:
+            logger.error('Unable to detect speakers - no transcription available: {}.'
+                         .format(transcription.transcription_file_path))
 
-        # apply pretrained pipeline
-        # diarization = pipeline(audio_path)
+            if kwargs.get('queue_id'):
+                self.processing_queue.update_status(kwargs['queue_id'], 'failed')
 
-        # print the result
-        # for turn, _, speaker in diarization.itertracks(yield_label=True):
-        #    print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
-        return False
+            return None
+
+        # only check non-meta segments
+        # the group time intervals may contain the meta segments too depending on their start time,
+        # but at least we're not processing them
+        # segments = TranscriptionUtils.filter_segments(transcription.segments_dict, filter_meta=True)
+
+        segments = transcription.segments_dict
+
+        # if the transcription already has speaker segments that start with 'Speaker ',
+        # take the last speaker id and increment it by 1
+        # otherwise, start from 1
+        speaker_id_offset = 0
+
+        # get the last speaker id from the transcription
+        for segment in segments:
+
+            # only look at the speaker segments
+            if 'category' in segment and segment['category'] == 'speaker'  \
+                    and 'text' in segment and segment['text'].startswith('Speaker '):
+                speaker_id_offset = max(speaker_id_offset, int(segment['text'].split(' ')[1]))
+
+        threshold = kwargs.get('transcription_speaker_detection_threshold', None)
+        resulting_segments, speaker_embeddings = detect_speaker_changes(
+            segments=segments, audio_file_path=transcription.audio_file_path, threshold=threshold,
+            device_name=kwargs.get('device', None),
+            time_intervals=kwargs.get('time_intervals', None),
+            speaker_id_offset=speaker_id_offset,
+        )
+
+        # no time intervals were passed or if the time intervals is not a list of lists
+        if not kwargs.get('time_intervals', None) or not isinstance(kwargs['time_intervals'], list):
+
+            # set the time intervals to the start and end times of the first and last segments
+            kwargs['time_intervals'] = [[segments[0]['start'], segments[-1]['end']]]
+
+        # now take all the resulting segments and turn the speaker id's into meta segments
+        last_speaker_id = None
+        final_transcription_segments = []
+        for segment in resulting_segments:
+
+            # if there's no speaker_id for the segment, skip
+            if 'speaker_id' not in segment:
+                continue
+
+            if not last_speaker_id or segment['speaker_id'] != last_speaker_id:
+                # create a new meta segment
+                meta_segment = {
+                    'start': segment['start'],
+                    'end': segment['start'],
+                    'meta': True,
+                    'category': 'speaker',
+                    'text': 'Speaker {}'.format(segment['speaker_id'])
+                }
+
+                # add the meta segment to the final transcription segments
+                final_transcription_segments.append(meta_segment)
+
+            # update the last speaker id
+            last_speaker_id = segment['speaker_id']
+
+            # remove the speaker id from the segment
+            del segment['speaker_id']
+
+            # add the segment to the final transcription segments
+            final_transcription_segments.append(segment)
+
+            # remove the segments between these time intervals
+            # from the transcription, but don't reset it just yet!
+            transcription.delete_segments_between(start=segment['start'], end=segment['end'], reset_segments=False)
+
+        # add the new segments to the transcription
+        transcription.add_segments(final_transcription_segments)
+
+        # save the transcription
+        transcription.save_soon(sec=0)
+
+        # if we have a queue_id, update the status to done
+        if kwargs.get('queue_id', None):
+            self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='done')
+
+        # update all the observers that are listening for this transcription
+        self.notify_observers('update_transcription_{}'.format(transcription.transcription_path_id))
+
+        return resulting_segments
 
     def whisper_transcribe_segments(self, audio_segments, task, other_options, queue_id=None):
         """
@@ -2364,6 +2466,23 @@ class ToolkitOps:
         queue_item['device'] = self.torch_device_type_select()
         queue_item['group_name'] = group_name
         queue_item['item_type'] = 'transcription'
+
+        logger.debug('Adding group questions to queue: {}'.format(queue_item_name))
+
+        return self.processing_queue.add_to_queue(**queue_item)
+
+    def add_speaker_detection_to_queue(self, queue_item_name, transcription_file_path, time_intervals, device_name):
+
+        # prepare the options for the processing queue
+        queue_item = dict()
+        queue_item['name'] = queue_item_name
+        queue_item['source_file_path'] = queue_item['transcription_file_path'] = transcription_file_path
+        queue_item['tasks'] = ['speaker_detection']
+        queue_item['device'] = self.torch_device_type_select(device_name)
+        queue_item['time_intervals'] = time_intervals
+        queue_item['item_type'] = 'transcription'
+
+        logger.debug('Adding speaker detection to queue: {} ({})'.format(queue_item_name, time_intervals))
 
         return self.processing_queue.add_to_queue(**queue_item)
 

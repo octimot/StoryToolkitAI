@@ -309,6 +309,7 @@ class UImenus:
         # self.editmenu.add_command(label="Delete segment", command=self.donothing, state=DISABLED,
         #                          accelerator="BackSpace")
         self.editmenu.add_separator()
+        self.editmenu.add_command(label="Detect speakers", command=self.donothing, state=DISABLED)
         self.editmenu.add_command(label="Group questions", command=self.donothing, state=DISABLED)
 
         # show the edit menu
@@ -344,6 +345,11 @@ class UImenus:
                                           command=lambda:
                                           self.toolkit_UI_obj.t_edit_obj.button_go_to_timecode(
                                               window_id=self.current_window_id)
+                                          )
+                self.editmenu.entryconfig('Detect speakers', state=NORMAL,
+                                          command=lambda:
+                                          self.toolkit_UI_obj.t_edit_obj.button_detect_speakers(self.current_window_id,
+                                                                                                ignore_selection=True)
                                           )
 
                 # enable the group questions menu item
@@ -414,6 +420,7 @@ class UImenus:
 
                 # disable transcription related menu items
                 self.editmenu.entryconfig("Go to timecode...", state=DISABLED)
+                self.editmenu.entryconfig("Detect speakers", state=DISABLED)
                 self.editmenu.entryconfig("Group questions", state=DISABLED)
                 self.editmenu.entryconfig('Copy to Clipboard with TC', state=DISABLED)
                 self.editmenu.entryconfig('Copy to Clipboard with Block TC', state=DISABLED)
