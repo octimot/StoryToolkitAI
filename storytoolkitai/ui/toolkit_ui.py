@@ -4846,24 +4846,26 @@ class toolkit_UI():
             time_intervals_input.insert(tk.END, time_intervals)
 
             # we will use this function for the exclude time intervals input validation too
-            def time_intervals_are_invalid(name, **kwargs):
+            def time_intervals_are_invalid(name, **validation_kwargs):
                 # add this to the form_invalid attribute of the window
-                self.add_form_invalid(window_id=kwargs.get('ingest_window_id'), key=name,
-                                      **kwargs)
+                self.add_form_invalid(window_id=validation_kwargs.get('ingest_window_id'), key=name,
+                                      **validation_kwargs)
 
                 # style the time interval input as invalid
-                self.style_input_as_invalid(input=kwargs.get('input'), label=kwargs.get('label'))
+                self.style_input_as_invalid(
+                    input_widget=validation_kwargs.get('input_widget'), label=validation_kwargs.get('label'))
 
-            def time_intervals_are_valid(name, **kwargs):
+            def time_intervals_are_valid(name, **validation_kwargs):
                 # remove this from the form_invalid attribute of the window
-                self.remove_form_invalid(window_id=kwargs.get('ingest_window_id'), key=name,
-                                         **kwargs)
+                self.remove_form_invalid(window_id=validation_kwargs.get('ingest_window_id'), key=name,
+                                         **validation_kwargs)
 
                 # style the time interval input as valid
-                self.style_input_as_valid(input=kwargs.get('input'), label=kwargs.get('label'))
+                self.style_input_as_valid(
+                    input_widget=validation_kwargs.get('input_widget'), label=validation_kwargs.get('label'))
 
             # if the time intervals input changes, update the time intervals variable
-            def update_time_intervals():
+            def update_time_intervals(event):
                 time_intervals_var.set(time_intervals_input.get('1.0', tk.END))
 
             time_intervals_input.bind('<KeyRelease>', update_time_intervals)
@@ -4874,7 +4876,7 @@ class toolkit_UI():
                 lambda e, l_time_intervals_var=time_intervals_var, l_kwargs=kwargs:
                 self.validate_time_interval_var(name='time_intervals',
                                                 var=l_time_intervals_var,
-                                                input=time_intervals_input, label=time_intervals_label,
+                                                input_widget=time_intervals_input, label=time_intervals_label,
                                                 valid_callback=time_intervals_are_valid,
                                                 invalid_callback=time_intervals_are_invalid, **l_kwargs)
             )
@@ -4896,7 +4898,7 @@ class toolkit_UI():
             excluded_time_intervals_input.insert(tk.END, excluded_time_intervals)
 
             # if the time intervals input changes, update the time intervals variable
-            def update_time_intervals():
+            def update_time_intervals(event):
                 excluded_time_intervals_var.set(excluded_time_intervals_input.get('1.0', tk.END))
 
             excluded_time_intervals_input.bind('<KeyRelease>', update_time_intervals)
@@ -4907,7 +4909,7 @@ class toolkit_UI():
                 lambda e, exclude_time_intervals_var=excluded_time_intervals_var, l_kwargs=kwargs:
                 self.validate_time_interval_var(name='excluded_time_intervals',
                                                 var=exclude_time_intervals_var,
-                                                input=excluded_time_intervals_input,
+                                                input_widget=excluded_time_intervals_input,
                                                 label=excluded_time_intervals_label,
                                                 valid_callback=time_intervals_are_valid,
                                                 invalid_callback=time_intervals_are_invalid, **l_kwargs)
@@ -5696,34 +5698,53 @@ class toolkit_UI():
 
         return False
 
-    def style_input_as_invalid(self, input=None, label: ctk.CTkLabel = None, **kwargs):
+    def style_input_as_invalid(self, input_widget=None, label: ctk.CTkLabel = None, **kwargs):
         """
         This function styles the entry and the label as invalid
         """
 
-        if input is not None:
+        if input_widget is not None:
             # change the input color to the error color
-            input.configure(fg_color=self.theme_colors['error'])
+            try:
+                input_widget.configure(fg_color=self.theme_colors['error'])
+            except tk.TclError:
+                pass
 
         if label is not None:
             # revert the style of the label to the theme default
-            label.configure(text_color=self.theme_colors['error_text'])
+            try:
+                label.configure(text_color=self.theme_colors['error_text'])
+            except tk.TclError:
+                pass
 
-    def style_input_as_valid(self, input=None, label: ctk.CTkLabel = None, **kwargs):
+    def style_input_as_valid(self, input_widget=None, label: ctk.CTkLabel = None, **kwargs):
         """
         This function reverts the style of the entry and the label to the theme default
         """
 
-        if input is not None:
+        if input_widget is not None and input_widget.winfo_exists():
             # get the instance type of the input
-            input_type = type(input).__name__
+            input_type = type(input_widget).__name__
 
             # revert the style of the input to the theme default
             input.configure(fg_color=ctk.ThemeManager.theme[input_type]["fg_color"])
+            try:
+                input_widget.configure(fg_color=ctk.ThemeManager.theme[input_type]["fg_color"])
 
-        if label is not None:
+            # this seems to throw an invalid command name error
+            # likely because the window and the widgets were destroyed before reaching this
+            # since it's not crucial, we'll just pass
+            except tk.TclError:
+                pass
+
+        if label is not None and label.winfo_exists():
             # revert the style of the label to the theme default
-            label.configure(text_color=ctk.ThemeManager.theme["CTkLabel"]["text_color"])
+            try:
+                label.configure(text_color=ctk.ThemeManager.theme["CTkLabel"]["text_color"])
+
+            # same as above
+            except tk.TclError:
+                pass
 
     def is_form_valid(self, window_id: str, **kwargs):
         """
@@ -6170,7 +6191,7 @@ class toolkit_UI():
 
         else:
             if kwargs.get('supress_errors', False):
-                logger.error('The time value "{}" is not recognized.'.format(time))
+                logger.error('The time value "{}" is not recognized.'.format(time_str))
             return None
 
     # TRANSCRIPTION WINDOW FUNCTIONS
