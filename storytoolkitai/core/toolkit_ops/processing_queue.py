@@ -736,12 +736,14 @@ class ProcessingQueue:
 
                 logger.debug('Finished execution of {} for queue item {}'.format(task.__name__, queue_id))
 
-                # todo 230612 - remove this once the UI works
                 # wait a moment
                 time.sleep(0.1)
 
                 # notify the observers listening to specific queue item types
                 self.toolkit_ops_obj.notify_observers('{}_queue_item_done'.format(item['item_type']))
+
+                # notify the item observers that this specific item is done
+                self.toolkit_ops_obj.notify_observers('{}_queue_item_done'.format(queue_id))
 
                 executed = True
 
