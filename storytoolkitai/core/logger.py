@@ -48,6 +48,40 @@ class LoggerConsoleFormatter(logging.Formatter):
         return formatter.format(record)
 
 
+# use this custom logger class to trace back where a logger.error was called from
+# (activate below)
+# custom Logger class with overridden error method
+class CustomTracerLogger(logging.getLoggerClass()):
+    def error(self, msg, *args, **kwargs):
+
+        # where are we executing from?
+        import inspect
+        frame = inspect.currentframe()
+        stack_trace = inspect.getouterframes(frame, 2)
+
+        # reverse the stack_trace
+        stack_trace.reverse()
+
+        print('Tracing next error:')
+        for stack_item in stack_trace:
+
+            # get the file name and line number
+            file_name = stack_item[1]
+            line_number = stack_item[2]
+
+            # if this is the previous to last item in the stack trace, add a check here message
+            check_here = ' <--- error logging called here' if stack_item == stack_trace[-2] else ''
+
+            # add the file name and line number to the log message
+            print(f'    {file_name}:{line_number}{check_here}')
+
+        super().error(msg, *args, **kwargs)
+
+
+# set CustomTracerLogger as the default logger class
+# logging.setLoggerClass(CustomTracerLogger)
+
+
 # enable logger
 logger = logging.getLogger('StAI')
 
