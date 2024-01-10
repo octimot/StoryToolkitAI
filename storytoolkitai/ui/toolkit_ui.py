@@ -1076,7 +1076,10 @@ class toolkit_UI():
                         else 'transcription_max_chars_per_segment'
 
                 # set the config variables to save them later
-                self.stAI.config['transcription_max_per_line_unit'] = max_per_line_setting_name
+                # the max_per_line unit
+                self.stAI.config['transcription_max_per_line_unit'] \
+                    = 'words' if max_per_line_setting_name == 'transcription_max_words_per_segment' else 'characters'
+                # the max_per_line value
                 self.stAI.config[max_per_line_setting_name] = input_variables['max_per_line_var'].get()
 
                 del input_variables['max_per_line_unit_var']
