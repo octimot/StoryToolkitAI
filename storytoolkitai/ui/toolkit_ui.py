@@ -6995,8 +6995,16 @@ class toolkit_UI():
 
             # BackSpace key event to delete selected segments
             if event.keysym == 'BackSpace' and transcript_focused:
-                self.delete_line(window_id=window_id, text_widget=text_element,
-                                 text_widget_line_no=line)
+
+                selected_segments = self.get_segments_or_selection_indexes(window_id=window_id)
+
+                # if we have selected segments, delete them
+                if len(selected_segments) > 0:
+                    self.delete_lines(window_id=window_id, text_widget_lines=selected_segments)
+
+                # if we don't have selected segments, delete the active segment
+                else:
+                    self.delete_line(window_id=window_id,  text_widget_line_no=selected_segments[0])
 
             # BackSpace key event to delete selected group
             elif event.keysym == 'BackSpace' and str(focused_widget).endswith('transcriptgroupsmodule'):
@@ -8032,15 +8040,15 @@ class toolkit_UI():
 
             self.go_to_timecode_dialog(window_id, timecode)
 
-        def delete_line(self, window_id, text_widget, text_widget_line_no):
+        def delete_line(self, window_id, text_widget_line_no):
             """
             Deletes a specific line of text from the transcript and saves the file
             :param window_id:
-            :param text_widget:
             :param text_widget_line_no:
             :return:
             """
 
+            window = self.toolkit_UI_obj.get_window_by_id(window_id)
             window_transcription = self.get_window_transcription(window_id=window_id)
 
             if text_widget_line_no > window_transcription.get_num_lines():
@@ -8051,6 +8059,9 @@ class toolkit_UI():
                                    message='Are you sure you want to delete this line?',
                                    parent=self.toolkit_UI_obj.windows[window_id],
                                    ):
+
+                text_widget = window.text_widget
+
                 # get the line
                 tkinter_line_index = \
                     '{}.0'.format(text_widget_line_no), '{}.0'.format(int(text_widget_line_no) + 1).split(' ')
@@ -8064,6 +8075,9 @@ class toolkit_UI():
 
                 # disable editing on the text element
                 text_widget.config(state=ctk.DISABLED)
+
+                # remove the line no from any window reference
+                self.clean_line_from_selection(window_id=window_id, text_widget_line_no=text_widget_line_no)
 
                 # calculate the segment index
                 segment_index = int(text_widget_line_no) - 1
@@ -8079,6 +8093,73 @@ class toolkit_UI():
 
                 # let the user know what happened via the status label
                 self.update_status_label_after_save(window_id=window_id, save_status=save_status)
+
+                return True
+
+            return False
+
+        def delete_lines(self, window_id, text_widget_lines: list):
+            """
+            This deletes multiple lines from the transcript.
+            :param window_id: the window id
+            :param text_widget_lines: a list of text widget line indexes to delete
+            """
+
+            window = self.toolkit_UI_obj.get_window_by_id(window_id)
+            window_transcription = self.get_window_transcription(window_id=window_id)
+
+            if not window or not window_transcription:
+                logger.error('Cannot delete multiple lines: no window or transcription found.')
+                return False
+
+            # ask the user if they are sure
+            if messagebox.askyesno(title='Delete lines',
+                                   message='Are you sure you want to delete these lines?',
+                                   parent=window,
+                                   ):
+                
+                text_widget = window.text_widget
+                
+                # what is the state of the text widget?
+                initial_text_widget_state = text_widget.cget('state')
+
+                # make text widget editable
+                text_widget.config(state=ctk.NORMAL)
+
+                for text_widget_line_no in text_widget_lines:
+
+                    # make sure the line is an integer
+                    text_widget_line_no = int(text_widget_line_no)
+
+                    # the line index in the text widget (from line start to line end)
+                    tkinter_line_index = '{}.0'.format(text_widget_line_no), '{}.0'.format(text_widget_line_no+1)
+                    
+                    # remove the line from the text widget
+                    text_widget.delete(tkinter_line_index[0], tkinter_line_index[1])
+
+                    # remove the line no from any window reference
+                    self.clean_line_from_selection(window_id=window_id, text_widget_line_no=text_widget_line_no)
+                    
+                    # calculate the segment index to pass the change to the transcription object
+                    segment_index = text_widget_line_no - 1
+
+                    # remove the line from the text list (but only reset on the last segment)
+                    window_transcription.delete_segment(
+                        segment_index=segment_index, 
+                        reset_segments=False if text_widget_line_no != text_widget_lines[-1] else True
+                    )
+
+                # mark the transcript as modified
+                self.set_transcript_modified(window_id=window_id, modified=True)
+
+                # save the transcript
+                save_status = self.save_transcript(window_id=window_id)
+
+                # let the user know what happened via the status label
+                self.update_status_label_after_save(window_id=window_id, save_status=save_status)
+
+                # set the text widget back to initial state
+                text_widget.config(state=initial_text_widget_state)
 
                 return True
 
@@ -8515,6 +8596,23 @@ class toolkit_UI():
 
             return False
 
+        def get_segments_or_selection_indexes(self, window_id, allow_active_segment=True):
+            """
+            This returns a list of text widget indexes for either the selected segments
+            or the active segment if no selection exists for the window
+            """
+
+            if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0:
+
+                # we're only interested in the keys (the widget line number) of the selected segments
+                return list(self.selected_segments[window_id].keys())
+
+            # if there are no selected segments, return the active segment
+            elif allow_active_segment:
+                return [self.get_active_segment(window_id=window_id)]
+
+            return None
+
         def get_segments_or_selection(self, window_id, add_to_clipboard=False, split_by=None, timecodes=True,
                                       allow_active_segment=True, add_time_column=False):
             """
@@ -8539,7 +8637,7 @@ class toolkit_UI():
             :param allow_active_segment: if True, will return the active segment if no selection is found
             :param add_time_column: if True, will add a time column to the text
             :param timecodes
-            :return:
+            :return: text, full_text, start_sec, end_sec, transcription_segments
             """
 
             # get the transcription object for the given window_id
@@ -8939,6 +9037,24 @@ class toolkit_UI():
 
             if text_element is not None:
                 text_element.tag_delete("l_selected")
+
+        def clean_line_from_selection(self, window_id, text_widget_line_no):
+            """
+            This removes the given line from both the active segment and the selection
+            """
+
+            if window_id is None or text_widget_line_no is None:
+                return False
+
+            # if the window has selected segments and the line is in the selection
+            if window_id in self.selected_segments and text_widget_line_no in self.selected_segments[window_id]:
+                # remove it
+                del self.selected_segments[window_id][text_widget_line_no]
+
+            # if the active segment is the same as the line we're removing
+            if window_id in self.active_segment and self.active_segment[window_id] == text_widget_line_no:
+                self.set_active_segment(window_id=window_id, text_widget_line=text_widget_line_no)
+
 
         def text_indices_to_selection(self, window_id=None, text_element=None, text_indices: int or list = None):
             """
@@ -9697,6 +9813,33 @@ class toolkit_UI():
             # get the cursor position where the event was triggered (key was pressed)
             # and the last character of the line
             text_widget_line, text_widget_char, text_widget_last_char = self.get_current_segment_chars(text=text_widget)
+
+            # if there's a 'sel' tag on the text window
+            # see if we have to perform a multi-line delete
+            if text_widget.tag_ranges('sel'):
+
+                # get the line numbers of the selection but using the index function
+                start_line = int(text_widget.index(text_widget.tag_ranges('sel')[0]).split('.')[0])
+                end_line = int(text_widget.index(text_widget.tag_ranges('sel')[-1]).split('.')[0])
+
+                # if the selection is not on the same line,
+                # pass them to delete_lines
+                if start_line != end_line:
+
+                    # remove the selection
+                    text_widget.tag_remove('sel', '1.0', 'end')
+
+                    # re make the selection so it extends from start to end of lines
+                    text_widget.tag_add('sel', '{}.0'.format(start_line), '{}.end'.format(end_line))
+
+                    # compile a list of all the lines in the selection,
+                    # we're adding 1 to have the full range
+                    selection_lines = list(range(start_line, end_line+1))
+
+                    # pass the lines to:
+                    self.delete_lines(window_id=window_id, text_widget_lines=selection_lines)
+
+                    return 'break'
 
             # pass to _on_transcript_key_press if we are not at the beginning nor at the end of the current line
             # or if the direction of the merge doesn't match the character number
