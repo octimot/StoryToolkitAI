@@ -4074,7 +4074,7 @@ class toolkit_UI():
                 ok_button.pack(side=ctk.LEFT, **toolkit_UI.ctk_askdialog_input_paddings)
                 self.bind("<Return>", self.ok)
 
-            # if we have a cancel_action, add the Cancel button
+            # if we have a cancel_return, add the Cancel button
             if 'cancel_return' in kwargs:
                 cancel_button = ctk.CTkButton(buttons_frame, text="Cancel", command=self.cancel)
                 cancel_button.pack(side=ctk.LEFT, **toolkit_UI.ctk_askdialog_input_paddings)
@@ -9131,6 +9131,7 @@ class toolkit_UI():
             if window_id is None or text_widget is None:
                 return False
 
+            window = self.toolkit_UI_obj.get_window_by_id(window_id=window_id)
             window_transcription = self.get_window_transcription(window_id=window_id)
 
             # get the cursor position where the event was triggered (key was pressed)
@@ -9238,9 +9239,9 @@ class toolkit_UI():
                 # ask the user to move the playhead in Resolve to where the split should happen via info dialog
                 move_playhead = messagebox.askokcancel(title='Move playhead',
                                                        message='Move the Resolve playhead exactly '
-                                                               'where the new segment starts, '
-                                                               'then press OK to split.',
-                                                       parent=self.toolkit_UI_obj.get_window_by_id(window_id=window_id)
+                                                               'where you want to split the segment, '
+                                                               'then press OK here to split.',
+                                                       parent=window
                                                        if window_id is not None else None
                                                        )
 
@@ -9255,43 +9256,72 @@ class toolkit_UI():
             # if resolve isn't connected, ask the user to enter the timecode manually
             else:
 
-                # ask the user to enter the timecode manually
-                split_time_seconds = simpledialog.askstring(
-                    parent=self.toolkit_UI_obj.windows[window_id],
-                    title='Where to split?',
-                    prompt='At what time should we split this segment?\n\n'
-                           'Enter a value between {} and {}:\n'
-                    .format(split_time_seconds_min,
-                            split_time_seconds_max),
-                    initialvalue=split_time_seconds_min)
+                # keep asking the user to enter the timecode until they enter a valid one
+                # or until they cancel
+                while True:
 
-            # if the user didn't specify the split time, cancel this
-            if not split_time_seconds:
-                add_back_focus_out_event()
-                return 'break'
+                    input_widgets = [
+                        {'name': 'message',
+                         'label': 'Where should we split this segment?\n\nEnter a value between {} and {}.'
+                            .format(split_time_seconds_min, split_time_seconds_max),
+                         'type': 'label', 'style': 'main'
+                         },
+                        {'name': 'split_time', 'label': 'Split Time:', 'type': 'entry',
+                         'default_value': split_time_seconds_min}
+                    ]
 
-            if float(split_time_seconds) >= float(split_time_seconds_max):
-                self.toolkit_UI_obj.notify_via_messagebox(title='Time Value Error',
-                                                          message="The {} time is larger "
-                                                                  "than the end time of "
-                                                                  "the segment you're splitting. Try again.".
-                                                          format('playhead' if NLE.is_connected() else 'entered'),
-                                                          type='warning')
-                add_back_focus_out_event()
-                return 'break'
+                    user_input = toolkit_UI.AskDialog(
+                        title='Split Transcript Line',
+                        input_widgets=input_widgets,
+                        parent=window,
+                        cancel_return=False,
+                        toolkit_UI_obj=self.toolkit_UI_obj) \
+                        .value()
 
-            if float(split_time_seconds) <= float(split_time_seconds_min):
-                self.toolkit_UI_obj.notify_via_messagebox(title='Time Value Error',
-                                                          message="The {} time is smaller "
-                                                                  "than the start time of "
-                                                                  "the segment you're splitting. Try again.".
-                                                          format('playhead' if NLE.is_connected() else 'entered'),
-                                                          type='warning')
+                    split_time_seconds = user_input['split_time'] if user_input else None
 
-                add_back_focus_out_event()
-                return 'break'
+                    # if the user didn't specify the split time, cancel this
+                    if not split_time_seconds and split_time_seconds != '':
+                        add_back_focus_out_event()
+                        return 'break'
 
-            # Re-enable the <FocusOut> event after simpledialog.askstring is done
+                    try:
+                        if float(split_time_seconds) >= float(split_time_seconds_max):
+                            self.toolkit_UI_obj.notify_via_messagebox(
+                                title='Time Value Error',
+                                message="The time you entered goes past the end time of "
+                                        "the segment you're splitting.\n\n"
+                                        "You can only split a segment between its start and end times.",
+                                parent=window,
+                                type='error')
+                            continue
+
+                        elif float(split_time_seconds) <= float(split_time_seconds_min):
+                            self.toolkit_UI_obj.notify_via_messagebox(
+                                title='Time Value Error',
+                                message="The time you entered is before the start time of "
+                                        "the segment you're splitting.\n\n"
+                                        "You can only split a segment between its start and end times.",
+                                parent=window,
+                                type='error')
+                            continue
+
+                    except ValueError:
+                        self.toolkit_UI_obj.notify_via_messagebox(
+                            title='Time Value Error',
+                            message='Invalid time value entered. Try again.'.format(split_time_seconds),
+                            type='error')
+                        continue
+
+                    except:
+                        logger.error('Unable to split segment.', exc_info=True)
+                        add_back_focus_out_event()
+
+                        # focus back on the text widget
+                        text_widget.focus()
+                        return 'break'
+
+            # Re-enable the <FocusOut> event after AskDialog is done
             add_back_focus_out_event()
 
             # focus back on the text widget
