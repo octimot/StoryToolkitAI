@@ -10989,16 +10989,45 @@ class toolkit_UI():
         # remove the current_time segment first
         text_widget.tag_delete('current_time')
 
+        # make sure we're dealing with a float
+        transcript_sec = float(transcript_sec)
+
         # find out which segment matches the passed transcript_sec
         for index, segment in enumerate(transcription.get_segments()):
 
             # if the transcript timecode in seconds is between the start and the end of this line
-            if segment.start <= transcript_sec < segment.end - 0.01:
+            if float(segment.start) <= transcript_sec < float(segment.end) - 0.001:
                 text_widget_line = index + 1
 
                 # set the line as the active segment on the timeline
                 toolkit_UI_obj.t_edit_obj.set_active_segment(
                     window_id=window_id, text_widget=text_widget, text_widget_line=text_widget_line)
+
+                # and move the NLE playhead (if any)
+                toolkit_UI_obj.toolkit_ops_obj.go_to_time(seconds=transcript_sec)
+
+                break
+
+            # if we passed all possible segments that could match the transcript_sec
+            # don't make any selection, but move the NLE playhead (if any)
+            elif float(segment.end) > transcript_sec:
+
+                # just move the NLE playhead (if any)
+                toolkit_UI_obj.toolkit_ops_obj.go_to_time(seconds=transcript_sec)
+
+                toolkit_UI_obj.notify_via_messagebox(
+                    title="Not Found",
+                    message="No segment found for the requested time. Selecting previous segment.",
+                    parent=toolkit_UI_obj.get_window_by_id(window_id),
+                )
+
+                text_widget_line = index
+
+                # set the line as the active segment on the timeline
+                toolkit_UI_obj.t_edit_obj.set_active_segment(
+                    window_id=window_id, text_widget=text_widget, text_widget_line=text_widget_line)
+
+                break
 
         text_widget.tag_config('current_time', foreground=toolkit_UI.theme_colors['white'])
 

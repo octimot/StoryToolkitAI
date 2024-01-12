@@ -580,9 +580,6 @@ You can now add markers that include the selected phrases in the transcript by p
 The tool highlights the transcript words at the current timecode in Resolve. To activate this function, simply press
 "sync" in the transcription window and the words will be highlighted each time the playhead stops moving in Resolve.
 
-_Note: we found some issues when syncing timelines that have a frame rate of 23.976fps because of a bug in the Resolve
-API. Unfortunately, the syncing of these timelines might drift until Blackmagic solves the bug._
-
 ### Copy Timeline Markers to Same Clip
 This copies the current markers to its corresponding clip in the media bin. 
 Due to Resolve API limitations, it's important that the corresponding clip

@@ -27,6 +27,7 @@ from .search import ToolkitSearch, SearchItem, TextSearch, VideoSearch, cv2
 from .assistant import ToolkitAssistant, AssistantUtils
 from .assistant import DEFAULT_SYSTEM_MESSAGE as ASSISTANT_DEFAULT_SYSTEM_MESSAGE
 from .speaker_diarization import detect_speaker_changes
+from .timecode import sec_to_tc
 
 from timecode import Timecode
 
@@ -2991,7 +2992,7 @@ class ToolkitOps:
             self.poll_resolve_thread()
 
     def calculate_sec_to_resolve_timecode(self, seconds=0):
-        # global resolve
+
         if NLE.resolve:
 
             # poll resolve for some info
@@ -3009,13 +3010,13 @@ class ToolkitOps:
             timeline_start_tc = resolve_data['currentTimeline']['startTC']
 
             # initialize the timecode object for the start tc
-            timeline_start_tc = Timecode(timeline_fps, timeline_start_tc)
+            timeline_start_tc = Timecode(timeline_fps, start_timecode=timeline_start_tc)
 
             # only do timecode math if seconds > 0
             if seconds > 0:
 
-                # init the timecode object based on the passed seconds
-                tc_from_seconds = Timecode(timeline_fps, start_seconds=float(seconds))
+                # initialize the timecode object via seconds to frames to tc
+                tc_from_seconds = sec_to_tc(seconds=seconds, fps=timeline_fps)
 
                 # calculate the new timecode
                 new_timeline_tc = timeline_start_tc + tc_from_seconds

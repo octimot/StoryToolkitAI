@@ -2159,7 +2159,13 @@ class TranscriptionUtils:
 
     @staticmethod
     def format_srt_timestamp(seconds: float, always_include_hours: bool = False, decimal_marker: str = '.'):
-        assert seconds >= 0, "non-negative timestamp expected"
+        """
+        This converts seconds to a timestamp in the format HH:MM:SS,mmm
+        """
+
+        if seconds < 0:
+            raise ValueError("non-negative timestamp expected")
+
         milliseconds = round(seconds * 1000.0)
 
         hours = milliseconds // 3_600_000
