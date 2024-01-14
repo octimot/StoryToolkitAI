@@ -516,7 +516,7 @@ class TextSearch(SearchItem):
 
                     timecode = None \
                         if not timecode_data \
-                        else transcription.seconds_to_timecode(
+                        else TranscriptionUtils.seconds_to_timecode(
                         segment['start'],
                         transcription.timeline_fps, transcription.timeline_start_tc
                     )

@@ -6754,10 +6754,10 @@ class toolkit_UI():
             timecode_data = window_transcription.get_timecode_data()
 
             if timecode_data is not False and timecode_data is not [None, None]:
-                segment_start = window_transcription.seconds_to_timecode(
+                segment_start = TranscriptionUtils.seconds_to_timecode(
                     seconds=segment.start, fps=timecode_data[0], start_tc_offset=timecode_data[1])
 
-                segment_end = window_transcription.seconds_to_timecode(
+                segment_end = TranscriptionUtils.seconds_to_timecode(
                     seconds=segment.end, fps=timecode_data[0], start_tc_offset=timecode_data[1])
 
                 segment_info = "{} to {}".format(segment_start, segment_end)
@@ -7746,7 +7746,8 @@ class toolkit_UI():
                     title='No timecode data',
                     message='No timecode data was found for this transcription.\n\nAborting AVID DS export.',
                     message_log='No timecode data was found for this transcription. Aborting AVID DS export.',
-                    type='error'
+                    type='error',
+                    parent=self.toolkit_UI_obj.get_window_by_id(window_id)
                 )
 
                 return False
@@ -7765,7 +7766,8 @@ class toolkit_UI():
                 # notify the user
                 self.toolkit_UI_obj.notify_via_messagebox(title='AVID DS file export',
                                                           message='The AVID DS file was exported successfully.',
-                                                          type='info'
+                                                          type='info',
+                                                          parent=self.toolkit_UI_obj.get_window_by_id(window_id)
                                                           )
 
                 # focus back on the window
@@ -7777,7 +7779,8 @@ class toolkit_UI():
                 # notify the user
                 self.toolkit_UI_obj.notify_via_messagebox(title='No transcription data',
                                                           message='No transcription data was found.',
-                                                          type='warning'
+                                                          type='warning',
+                                                          parent=self.toolkit_UI_obj.get_window_by_id(window_id)
                                                           )
 
                 # focus back on the window
@@ -8338,9 +8341,9 @@ class toolkit_UI():
                 # use the timecode data
                 fps = timecode_data[0]
                 start_tc = timecode_data[1]
-                default_timecode = window_transcription.seconds_to_timecode(seconds=current_sec,
-                                                                            fps=fps,
-                                                                            start_tc_offset=start_tc)
+                default_timecode = TranscriptionUtils.seconds_to_timecode(
+                    seconds=current_sec, fps=fps, start_tc_offset=start_tc
+                )
 
                 # loop this until we return something
                 while goto_time is None:
@@ -13247,10 +13250,10 @@ class toolkit_UI():
                 timecode_data = transcription.get_timecode_data()
 
                 if timecode_data is not False and timecode_data is not (None, None):
-                    segment_start = transcription.seconds_to_timecode(
+                    segment_start = TranscriptionUtils.seconds_to_timecode(
                         seconds=clicked_story_line['source_start'], fps=timecode_data[0], start_tc_offset=timecode_data[1])
 
-                    segment_end = transcription.seconds_to_timecode(
+                    segment_end = TranscriptionUtils.seconds_to_timecode(
                         seconds=clicked_story_line['source_end'], fps=timecode_data[0], start_tc_offset=timecode_data[1])
 
                     segment_info = "{} to {}".format(segment_start, segment_end)

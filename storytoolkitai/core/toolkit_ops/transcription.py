@@ -14,6 +14,7 @@ from threading import Timer
 from timecode import Timecode
 
 from storytoolkitai.core.logger import logger
+from storytoolkitai.core.toolkit_ops.timecode import sec_to_tc, tc_to_sec
 
 
 class Transcription:
@@ -1118,52 +1119,13 @@ class Transcription:
         self.save_soon(sec=0, auxiliaries=False)
 
     @staticmethod
-    def seconds_to_timecode(seconds, fps, start_tc_offset: str or Timecode = None, return_timecode_data=False):
-
-        # use try for the timecode conversion,
-        # in case the framerate or timeline_start_tc are invalid
-        try:
-
-            # since we can't have a timecode with 0 frames,
-            # if the seconds are 0, we set the timecode to 00:00:00:00 as a string
-            if float(seconds) == 0:
-                timecode = '00:00:00:00'
-
-            else:
-                # convert the seconds to timecode
-                timecode = Timecode(fps, start_seconds=float(seconds))
-
-            # if we need to offset the timecode with the transcription file's start_tc
-            if start_tc_offset and start_tc_offset != '00:00:00:00':
-
-                # get the start timecode
-                start_tc = Timecode(fps, start_tc_offset)
-
-                # add the start_tc to the final timecode, but only if the timecode is not 00:00:00:00
-                if timecode == '00:00:00:00' or timecode is None or not isinstance(timecode, Timecode):
-                    timecode = start_tc
-                else:
-                    timecode = start_tc + timecode
-
-            else:
-                start_tc = '00:00:00:00'
-
-            # if we need to return the timecode data as well
-            if return_timecode_data:
-                return timecode, fps, start_tc
-
-            return timecode
-
-        except:
-            logger.debug('Cannot convert seconds to timecode - something went wrong:', exc_info=True)
-            return None
-
-    @staticmethod
     def timecode_to_seconds(timecode: str or Timecode,
                             fps, start_tc_offset: str or Timecode, return_timecode_data=False):
         """
         Converts a timecode to seconds
         """
+
+        # todo: move timecode_to_seconds to TranscriptionUtils
 
         seconds = None
         timeline_start_tc = '00:00:00:00'
@@ -1921,6 +1883,57 @@ class TranscriptionSegment:
 class TranscriptionUtils:
 
     @staticmethod
+    def seconds_to_timecode(seconds, fps, start_tc_offset: str or Timecode = None, return_timecode_data=False):
+        """
+        Converts seconds to timecode taking into consideration the start_tc_offset
+
+        This goes through the seconds -> frames -> timecode conversion flow
+        using sec_to_tc() if timecode is not 0, otherwise it returns timecode 00:00:00:00
+
+        """
+
+        fps = float(fps)
+
+        # use try for the timecode conversion,
+        # in case the framerate or timeline_start_tc are invalid
+        try:
+
+            # since we can't have a timecode with 0 frames,
+            # if the seconds are 0, we set the timecode to 00:00:00:00 as a string
+            if float(seconds) == 0:
+                timecode = Timecode(fps, start_timecode='00:00:00:00')
+
+            else:
+                # convert the seconds to timecode
+                timecode = sec_to_tc(seconds, fps=fps, add_frame=True)
+
+            # if we need to offset the timecode with the transcription file's start_tc
+            if start_tc_offset and start_tc_offset != '00:00:00:00':
+
+                # get the start timecode
+                start_tc = Timecode(fps, start_tc_offset)
+
+                # add the start_tc to the final timecode, but only if the timecode is not 00:00:00:00
+                if timecode == '00:00:00:00' or timecode is None or not isinstance(timecode, Timecode):
+                    timecode = start_tc
+                else:
+                    timecode = start_tc + timecode
+
+            else:
+                start_tc = Timecode(fps)
+
+            # if we need to return the timecode data as well
+            if return_timecode_data:
+                return timecode, fps, start_tc
+
+            return timecode
+
+        except:
+            logger.debug('Cannot convert seconds to timecode - something went wrong:', exc_info=True)
+            return None
+
+
+    @staticmethod
     def write_to_transcription_file(transcription_data, transcription_file_path, backup=False):
 
         # if no full path was passed
@@ -2272,18 +2285,19 @@ class TranscriptionUtils:
         # convert the timeline_start_tc to a Timecode object
         timeline_start_tc = Timecode(timeline_fps, timeline_start_tc)
 
-        def format_timecode_line(start_time, end_time, timeline_fps, timeline_start_tc):
+        def format_timecode_line(start_time, end_time, edit_fps, edit_start_tc):
+
             # convert the start to a timecode
-            start_tc = Timecode(timeline_fps, start_seconds=start_time)
+            start_tc = TranscriptionUtils.seconds_to_timecode(
+                seconds=start_time, fps=edit_fps, start_tc_offset=edit_start_tc
+            )
 
-            # add the timeline_start_tc to the start_tc
-            start_tc = start_tc + timeline_start_tc
+            end_tc = TranscriptionUtils.seconds_to_timecode(
+                seconds=end_time, fps=edit_fps, start_tc_offset=edit_start_tc
+            )
 
-            # convert the end to a timecode
-            end_tc = Timecode(timeline_fps, start_seconds=end_time)
-
-            # add the timeline_start_tc to the start_tc
-            end_tc = end_tc + timeline_start_tc
+            # add one frame to the end timecode to mark the cut point correctly
+            # end_tc.frames += 1
 
             return f"{start_tc} {end_tc}"
 
