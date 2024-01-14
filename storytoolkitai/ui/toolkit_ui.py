@@ -6273,7 +6273,7 @@ class toolkit_UI():
 
                 # if we have timecode data, let's use it to convert the timecode to seconds
                 if timecode_data and len(timecode_data) == 2:
-                    time_converted = transcription.timecode_to_seconds(
+                    time_converted = TranscriptionUtils.timecode_to_seconds(
                             timecode=time_str,
                             fps=timecode_data[0],
                             start_tc_offset=timecode_data[1]
@@ -6307,7 +6307,7 @@ class toolkit_UI():
                             kwargs['timecode_data'] = timecode_data
 
                         # try the conversion again
-                        time_converted = transcription.timecode_to_seconds(
+                        time_converted = TranscriptionUtils.timecode_to_seconds(
                             timecode=time_str,
                             fps=timecode_data[0],
                             start_tc_offset=timecode_data[1]

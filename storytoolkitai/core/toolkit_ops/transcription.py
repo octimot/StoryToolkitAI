@@ -1118,63 +1118,6 @@ class Transcription:
         self._dirty = True
         self.save_soon(sec=0, auxiliaries=False)
 
-    @staticmethod
-    def timecode_to_seconds(timecode: str or Timecode,
-                            fps, start_tc_offset: str or Timecode, return_timecode_data=False):
-        """
-        Converts a timecode to seconds
-        """
-
-        # todo: move timecode_to_seconds to TranscriptionUtils
-
-        seconds = None
-        timeline_start_tc = '00:00:00:00'
-
-        # use try for the timecode conversion,
-        # in case the framerate or timeline_start_tc are invalid
-        try:
-
-            # initialize the timecode object
-            timecode = Timecode(fps, timecode)
-
-            # if we need to offset the timecode with the transcription file's start_tc
-            if start_tc_offset and start_tc_offset != '00:00:00:00':
-
-                # initialize the timecode object for the start tc
-                timeline_start_tc = Timecode(fps, start_tc_offset)
-
-                # if the timecode is the same as the start timecode, return 0.0 to avoid errors
-                if timeline_start_tc == timecode:
-                    seconds = 0
-
-                # only offset if timecode is different than 00:00:00:00
-                if timeline_start_tc != '00:00:00:00' and seconds is None:
-                    # calculate the new timecode
-                    timecode = timecode - timeline_start_tc
-
-            # convert the timecode to seconds by dividing the frames by the framerate
-            # if it hasn't been calculated yet
-            if seconds is None:
-                seconds = float(timecode.frames) / float(fps)
-
-            # if we need to return the timecode data as well
-            if return_timecode_data:
-                return seconds, fps, timeline_start_tc
-
-            return seconds
-
-        except AttributeError:
-            logger.warning('Cannot convert timecode to seconds - invalid timecode')
-            return None
-
-        except ValueError:
-            logger.warning('Cannot convert timecode to seconds - invalid timecode')
-            return None
-
-        except:
-            logger.error('Cannot convert timecode to seconds - something went wrong:', exc_info=True)
-            return None
-
     def time_intervals_to_transcript_segments(self, time_intervals: list) -> list or None:
         '''
         This function converts a list of time intervals to a list of transcript segments
@@ -1881,6 +1824,61 @@ class TranscriptionSegment:
 
 
 class TranscriptionUtils:
+
+    @staticmethod
+    def timecode_to_seconds(timecode: str or Timecode,
+                            fps, start_tc_offset: str or Timecode, return_timecode_data=False):
+        """
+        Converts a timecode to seconds
+        """
+
+        seconds = None
+        timeline_start_tc = '00:00:00:00'
+
+        # use try for the timecode conversion,
+        # in case the framerate or timeline_start_tc are invalid
+        try:
+
+            # initialize the timecode object
+            timecode = Timecode(fps, timecode)
+
+            # if we need to offset the timecode with the transcription file's start_tc
+            if start_tc_offset and start_tc_offset != '00:00:00:00':
+
+                # initialize the timecode object for the start tc
+                timeline_start_tc = Timecode(fps, start_tc_offset)
+
+                # if the timecode is the same as the start timecode, return 0.0 to avoid errors
+                if timeline_start_tc == timecode:
+                    seconds = 0
+
+                # only offset if timecode is different than 00:00:00:00
+                if timeline_start_tc != '00:00:00:00' and seconds is None:
+                    # calculate the new timecode
+                    timecode = timecode - timeline_start_tc
+
+            # convert the timecode to seconds by dividing the frames by the framerate
+            # if it hasn't been calculated yet
+            if seconds is None:
+                seconds = float(timecode.frames) / float(fps)
+
+            # if we need to return the timecode data as well
+            if return_timecode_data:
+                return seconds, fps, timeline_start_tc
+
+            return seconds
+
+        except AttributeError:
+            logger.warning('Cannot convert timecode to seconds - invalid timecode')
+            return None
+
+        except ValueError:
+            logger.warning('Cannot convert timecode to seconds - invalid timecode')
+            return None
+
+        except:
+            logger.error('Cannot convert timecode to seconds - something went wrong:', exc_info=True)
+            return None
 
     @staticmethod
     def seconds_to_timecode(seconds, fps, start_tc_offset: str or Timecode = None, return_timecode_data=False):
