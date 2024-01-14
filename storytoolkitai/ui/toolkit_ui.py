@@ -3922,9 +3922,17 @@ class toolkit_UI():
                     input_widget = ctk.CTkEntry(input_widget_parent, textvariable=input_value,
                                                 **toolkit_UI.ctk_askdialog_input_size)
                 elif widget['type'] == 'entry_int':
-                    input_value = tk.IntVar(input_frame, widget_default_value)
+                    input_value = tk.StringVar(input_frame, widget_default_value)
                     input_widget = ctk.CTkEntry(input_widget_parent, textvariable=input_value,
                                                 **toolkit_UI.ctk_askdialog_input_int_size)
+
+                    # only allow integers in the input_widget
+                    input_widget.configure(
+                        validate="key",
+                        validatecommand=(
+                            input_widget.register(self.toolkit_UI_obj.only_allow_integers), '%P'
+                        )
+                    )
                 elif widget['type'] == 'entry_float':
                     input_value = tk.StringVar(input_frame, widget_default_value)
                     input_widget = ctk.CTkEntry(input_widget_parent, textvariable=input_value,
@@ -6755,7 +6763,7 @@ class toolkit_UI():
                 segment_info = "{} to {}".format(segment_start, segment_end)
 
                 if self.stAI.debug_mode:
-                    segment_info = "\nTime: {:.4f} to {:.4f}".format(segment.start, segment.end)
+                    segment_info += "\nTime: {:.4f} to {:.4f}".format(segment.start, segment.end)
 
             else:
                 segment_start = segment.start
@@ -13468,9 +13476,10 @@ class toolkit_UI():
 
                 # notify the user
                 toolkit_UI_obj.notify_via_messagebox(title='Text file export',
-                                                          message='The text file was exported successfully.',
-                                                          type='info'
-                                                          )
+                                                     message='The text file was exported successfully.',
+                                                     type='info',
+                                                     parent=window
+                                                     )
 
                 # focus back on the window
                 toolkit_UI_obj.focus_window(window_id)
@@ -13480,9 +13489,10 @@ class toolkit_UI():
             else:
                 # notify the user
                 toolkit_UI_obj.notify_via_messagebox(title='No story data',
-                                                          message='No story data was found.',
-                                                          type='warning'
-                                                          )
+                                                     message='No story data was found.',
+                                                     type='warning',
+                                                     parent=window
+                                                     )
 
                 # focus back on the window
                 toolkit_UI_obj.focus_window(window_id)
@@ -13544,9 +13554,10 @@ class toolkit_UI():
             use_timelines = None
             export_notes = None
             join_gaps = None
+            valid = None
 
             # loop this until we get something useful
-            while timeline_start_tc is None or timeline_fps is None:
+            while timeline_start_tc is None or timeline_fps is None or not valid:
 
                 try:
                     # then we call the ask_dialogue function
@@ -13567,27 +13578,30 @@ class toolkit_UI():
                 # validate the user input
                 try:
 
-                    # try to see if the timecode is valid
-                    start_tc = Timecode(
-                        user_input['timeline_fps'],
-                        user_input['timeline_start_tc'] if user_input['timeline_start_tc'] != '00:00:00:00' else None)
+                    # try to see if the timecode is valid by creating a Timecode object
+                    Timecode(user_input['timeline_fps'], start_timecode=user_input['timeline_start_tc'])
 
                     # if we reached this point, take the values
                     timeline_name = user_input['timeline_name']
-                    timeline_fps = user_input['timeline_fps']
+                    timeline_fps = float(user_input['timeline_fps'])
                     timeline_start_tc = user_input['timeline_start_tc']
                     use_timelines = user_input['use_timelines']
                     export_notes = user_input['export_notes']
-                    join_gaps = user_input['join_gaps']
+
+                    try:
+                        join_gaps = int(user_input['join_gaps']) if user_input['join_gaps'] else 0
+                    except:
+                        logger.error('Invalid join_gaps value: {}'.format(user_input['join_gaps']), exc_info=True)
+                        valid = False
+                        continue
 
                     # and break from the loop
                     break
 
-                except:
+                except ValueError:
 
-                    logger.warning('Invalid Timecode or Frame Rate: {} @ {}'
-                                   .format(user_input['timeline_start_tc'], user_input['timeline_fps']),
-                                   exc_info=True
+                    logger.warning('Invalid Timecode or Frame Rate: {} @ {}fps'
+                                   .format(user_input['timeline_start_tc'], user_input['timeline_fps'])
                                    )
 
                     # notify user
@@ -13625,9 +13639,15 @@ class toolkit_UI():
             depending on the file extension that the user selected
             """
 
-            timeline_name, timeline_fps, timeline_start_tc, use_timelines, export_notes, export_file_path, join_gaps \
-                = cls.prepare_export_as_timeline(
+            prepare_result = cls.prepare_export_as_timeline(
                     window_id, toolkit_UI_obj=toolkit_UI_obj, export_file_path=export_file_path)
+
+            if not prepare_result:
+                return False
+
+            # otherwise unpack
+            timeline_name, timeline_fps, timeline_start_tc, use_timelines, export_notes, export_file_path, join_gaps \
+                = prepare_result
 
             # get the extension of the export file path
             export_file_path_extension = os.path.splitext(export_file_path)[1]
@@ -13664,7 +13684,8 @@ class toolkit_UI():
                     toolkit_UI_obj.notify_via_messagebox(title='File export',
                                                          message="The file {} was exported successfully."
                                                          .format(os.path.basename(export_file_path)),
-                                                         type='info'
+                                                         type='info',
+                                                         parent=window
                                                          )
 
                 # focus back on the window
@@ -13676,7 +13697,8 @@ class toolkit_UI():
                 # notify the user
                 toolkit_UI_obj.notify_via_messagebox(title='No story data',
                                                      message='No story data was found.',
-                                                     type='warning'
+                                                     type='warning',
+                                                     parent=window
                                                      )
 
                 # focus back on the window

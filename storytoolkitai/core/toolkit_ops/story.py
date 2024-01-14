@@ -14,6 +14,7 @@ from timecode import Timecode
 from storytoolkitai.core.logger import logger
 from .transcription import Transcription
 from .media import MediaItem
+from storytoolkitai.core.toolkit_ops.timecode import sec_to_tc, tc_to_sec
 
 
 class Story:
@@ -1066,63 +1067,56 @@ class StoryUtils:
 
     @staticmethod
     def prepare_export(
-            story_lines: list, edit_timeline_fps: float = 24,
-            edit_timeline_start_tc=None, use_timelines=None, export_blocks=True, export_notes=True,
+            story_lines: list, use_timelines=None, export_blocks=True, export_notes=True,
             add_media_paths=True, join_gaps=None):
 
         if not story_lines:
             return
 
-        # make sure we're not passing 0 as a timecode (it's not valid)
-        if edit_timeline_start_tc == '00:00:00:00':
-            edit_timeline_start_tc = None
-
-        edit_timeline_start_tc = Timecode(edit_timeline_fps, start_timecode=edit_timeline_start_tc)
-
-        # the first edit starts at the timeline start timecode
-        edit_start_tc = edit_end_tc = edit_timeline_start_tc
-
-        # first process each line
+        # process each story line
         lines_to_export = []
         last_file_name = None
-        last_line_end_tc = None
+        last_line_source_end_sec = None
         files = []
+        total_duration_sec = 0
         for line in story_lines:
 
-            # skip if the line is not a transcription segment or video segment
+            # processing of non transcription and video story lines
             if line.type != 'transcription_segment' and line.type != 'video_segment':
 
+                # process story lines as notes
                 if line.type == 'text':
 
                     # check if the trimmed line starts with [[ and ends with ]]
                     if export_notes and line.text.strip().startswith('[[') and line.text.strip().endswith(']]'):
 
-                        # it means that this is a note line (fountain format)
-                        # so consider it as a marker line
-                        line_start_tc = edit_start_tc
-                        line_end_tc = line_start_tc + 1
-
-                        edit_end_tc = edit_start_tc + 1
+                        # remove the [[ and ]] from the line
+                        note_text = line.text.strip()[2:-2]
 
                         # append the line to the list
+                        # we're not sending any time data and expect this to be handled by the caller later
                         lines_to_export.append({
-                            'start_tc': line_start_tc,
-                            'end_tc': line_end_tc,
-                            'edit_start_tc': edit_start_tc,
-                            'edit_end_tc': edit_end_tc,
-                            'marker': line.text+' |M: Note| D:1'
+                            'marker': note_text+' |M: Note| D:1'
                         })
 
                         continue
 
                 last_file_name = None
-                last_line_end_tc = None
+                last_line_source_end_sec = None
                 continue
 
-            source_fps = line.source_fps if line.source_fps else None
-            source_start_tc = line.source_start_tc \
-                if line.source_start_tc \
-                and line.source_start_tc != '00:00:00:00' else None
+            # keep track of the source fps and source start tc
+            source_fps = float(line.source_fps) if line.source_fps else None
+            source_media_start_tc = line.source_start_tc if line.source_start_tc else None
+
+            # we need to have a source fps and a source start tc to be able to export the line
+            if not source_fps or not source_media_start_tc:
+                line_text = line.text if line.text else ''
+                logger.warning('Skipping line "{}" because timeline_fps or timeline_start_tc are not valid ({}, {}).'
+                               .format(' '.join(line_text.split(' ')[:4]) + '...', source_fps,
+                                       source_media_start_tc)
+                               )
+                continue
 
             if use_timelines:
 
@@ -1134,8 +1128,10 @@ class StoryUtils:
                         file_name = source_transcription.timeline_name
 
                     else:
-                        logger.warning('Cannot use the timeline name for {} - timeline name not set for transcription.'
-                                    .format(line.transcription_file_path))
+                        logger.warning(
+                            'Cannot use the timeline name for {} '
+                            '- timeline name not set for transcription.'.format(line.transcription_file_path)
+                        )
                         file_name = os.path.basename(line.source_file_path)
 
                 except:
@@ -1146,52 +1142,20 @@ class StoryUtils:
             else:
                 file_name = os.path.basename(line.source_file_path)
 
-            # we need to have a source fps and a source start tc to be able to export the line
-            # but source_start_tc can be None if line.source_start_tc == '00:00:00:00'
-            if not source_fps or (not source_start_tc and line.source_start_tc != '00:00:00:00'):
-                line_text = line.text if line.text else ''
-                logger.warning('Skipping line "{}" because timeline_fps or timeline_start_tc are not set.'
-                               .format(' '.join(line_text.split(' ')[:4]) + '...')
-                               )
+            # now offset the source in/out points of the line clip
+            # by adding the timeline start tc to the clip start sec and end sec
+            source_start_sec = line.source_start
+            source_end_sec = line.source_end
+
+            # how many seconds are between the media start and end?
+            line_duration_sec = source_end_sec - source_start_sec
+
+            total_duration_sec += line_duration_sec
+
+            if line_duration_sec <= 0:
+                logger.warning('Skipping line "{}" because it\'s {} seconds in length.'
+                               .format(line.text, line_duration_sec))
                 continue
-
-            # initialize the timeline start tc as a Timecode object
-            source_start_tc = Timecode(source_fps, start_timecode=source_start_tc)
-
-            try:
-                line_start_tc = Timecode(framerate=source_fps, start_seconds=line.source_start)
-
-            # if the start timecode is not valid, we set it to 00:00:00:00 by not passing a start_seconds
-            except ValueError:
-                line_start_tc = Timecode(framerate=source_fps)
-
-            try:
-                line_end_tc = Timecode(framerate=source_fps, start_seconds=line.source_end)
-
-            # if the end timecode is not valid, we set it to 00:00:00:00
-            # this would be very weird though, because it means that the line has no duration
-            except ValueError:
-                line_end_tc = Timecode(framerate=source_fps)
-
-            # now add the timeline start tc to the media start tc and end tc
-            line_start_tc = line_start_tc + source_start_tc
-            line_end_tc = line_end_tc + source_start_tc
-
-            # how many frames are between the media start and end?
-            if line_start_tc == '00:00:00:00':
-                line_duration = line_end_tc.frames
-
-            elif line_end_tc == '00:00:00:00':
-                line_duration = 0
-
-            else:
-                line_duration = line_end_tc - line_start_tc
-
-            if line_duration == 0:
-                logger.warning('Skipping line {} because it contains 0 frames.'.format(line.text))
-                continue
-
-            edit_end_tc = edit_start_tc + line_duration
 
             # we're adding the full path to the media file here if needed
             # but we're also checking if the file exists
@@ -1209,29 +1173,33 @@ class StoryUtils:
                     logger.warning('Media file {} for line "{}" inaccessible.'
                                    .format(media_file_path, line.text))
 
-            # if the file name and the start timecode of the line are the same as the last line
+            # calculate the join_gaps_sec for the file name if join_gaps is set
+            if join_gaps > 0 and last_file_name != file_name:
+                join_gaps_sec = join_gaps / source_fps
+
+            elif not join_gaps:
+                join_gaps_sec = None
+
+            # if the file name and the start of the line are the same as the last line
             # we just update the end timecode of the last line to chunk the lines together
             # also, if join_gaps is set, we join the lines if the gap is less than join_gaps
             if export_blocks and last_file_name == file_name \
-                and (last_line_end_tc == line_start_tc or (join_gaps and line_start_tc - last_line_end_tc < join_gaps)):
+                and (last_line_source_end_sec == source_start_sec
+                     or (join_gaps_sec and source_start_sec - last_line_source_end_sec < join_gaps_sec)):
 
-                # here we need to factor in the gap and add it to the edit_end_tc
-                # this will keep an accurate out point for the clip in the timeline
-                edit_end_tc = edit_end_tc + (line_start_tc - last_line_end_tc)
-
-                lines_to_export[-1]['end_tc'] = line_end_tc
-                lines_to_export[-1]['edit_end_tc'] = edit_end_tc
+                lines_to_export[-1]['source_end_sec'] = source_end_sec
+                lines_to_export[-1]['duration_sec'] += line_duration_sec
 
             # otherwise, add the line to the list
             else:
                 lines_to_export.append({
-                    'start_tc': line_start_tc,           # this is the in point for the clip
-                    'end_tc': line_end_tc,               # this is the out point for the clip
-                    'edit_start_tc': edit_start_tc,      # this is the in point in the timeline
-                    'edit_end_tc': edit_end_tc,          # this is the out point in the timeline
+                    'source_start_sec': source_start_sec,            # the in point in seconds in the source clip
+                    'source_end_sec': source_end_sec,                # the out point in seconds in the source clip
+                    'duration_sec': line_duration_sec,                   # the duration of the line in seconds
                     'file_name': file_name,
-                    'source_start_tc': source_start_tc,  # this is the start timecode of the source (the offset),
+                    'source_media_start_tc': source_media_start_tc,  # not yet added to the source start or end sec
                     'media_file_path': media_file_path,
+                    'source_fps': float(line.source_fps),
                 })
 
                 # add the source file path to the list of files
@@ -1240,12 +1208,9 @@ class StoryUtils:
 
             # remember the filename and the start timecode of the last line
             last_file_name = file_name
-            last_line_end_tc = line_end_tc
+            last_line_source_end_sec = source_end_sec
 
-            # the next edit starts where the previous edit ended
-            edit_start_tc = edit_end_tc
-
-        return lines_to_export, files, edit_timeline_start_tc, edit_end_tc
+        return lines_to_export, files, total_duration_sec
 
     @classmethod
     def write_edl(cls, story_name: str, story_lines: list, edl_file_path: str,
@@ -1289,10 +1254,8 @@ class StoryUtils:
         # - these can also be V2, A2 etc. depending on which track they are on.
         # The "C" stands for "Cut," the type of transition between clips.
 
-        lines_to_export, _, _, _ = cls.prepare_export(
+        lines_to_export, _, _, = cls.prepare_export(
                                     story_lines=story_lines,
-                                    edit_timeline_fps=edit_timeline_fps,
-                                    edit_timeline_start_tc=edit_timeline_start_tc,
                                     use_timelines=use_timelines,
                                     export_blocks=export_blocks,
                                     export_notes=export_notes,
@@ -1302,6 +1265,13 @@ class StoryUtils:
         if not lines_to_export:
             logger.warning('Aborting. No lines to export.')
             return None
+
+        # initialize the edit_timeline_start_tc
+        if not isinstance(edit_timeline_start_tc, Timecode):
+            edit_timeline_start_tc = Timecode(edit_timeline_fps, edit_timeline_start_tc)
+
+        # we use this to keep track where we're supposed to insert the next clip in the timeline
+        edit_start_tc = edit_timeline_start_tc
 
         with open(edl_file_path, "w", encoding="utf-8") as edl_file_path:
 
@@ -1316,28 +1286,66 @@ class StoryUtils:
                 edl_file_path.write("FCM: NON-DROP FRAME\n\n")
 
             edit_count = 1
+            edit_end_tc = edit_timeline_start_tc
             for line in lines_to_export:
 
                 file_name = line.get('file_name', '')
+
+                # if no source line source fps is set, use the edit timeline fps
+                source_fps = float(line.get('source_fps', edit_timeline_fps))
+
+                # initialize the source_media_start_tc as Timecode for this line
+                # if fps or source_media_start_tc are not set,
+                # it probably means we're dealing with a metadata line (source media doesn't exist),
+                # so we can set it to whatever fps and tc is handy
+                source_media_start_tc = Timecode(
+                    source_fps,
+                    line.get('source_media_start_tc', '00:00:00:00')
+                )
+
+                # if the source start is not set, set it to 0
+                source_start_sec = float(line.get('source_start_sec', 0))
+
+                # if the source end is not set, also set it to 0
+                source_end_sec = float(line.get('source_end_sec', 0))
+
+                # the start and end timecodes for the clips need to have the source start tc added to them
+                start_tc = sec_to_tc(source_start_sec, fps=source_fps) + source_media_start_tc
+                end_tc = sec_to_tc(source_end_sec, fps=source_fps) + source_media_start_tc
+
+                clip_duration_sec = source_end_sec - source_start_sec
+
+                # if the duration is 0, skip the line
+                if clip_duration_sec <= 0 and 'marker' not in line:
+                    logger.warning('Skipping line "{}" because it\'s {} seconds in length.')
+                    continue
+
+                # the start timecode in the timeline is where we were left off last time
+                # but only if this is not a marker line
+                if 'marker' not in line:
+                    edit_start_tc = edit_end_tc
+
+                    # the end timecode should be calculated using the clip duration plus 1 frame
+                    edit_end_tc = \
+                        edit_start_tc + Timecode(edit_timeline_fps, start_seconds=clip_duration_sec + 1/edit_timeline_fps)
 
                 # if the file doesn't end with .wav, .mp3 or .aac, it's not just an audio file
                 # - so we add the video portion of the edit too
                 if file_name \
                     and not file_name.endswith('.wav') \
                     and not file_name.endswith('.mp3') \
-                    and not file_name.endswith('.aac'):
+                        and not file_name.endswith('.aac'):
 
                     # 001  AX       V     C        00:00:35:17 00:30:16:02 01:00:00:00 01:00:20:09
                     # * FROM CLIP NAME: C001_08241140_C001.braw
-                    #
 
                     # write the edit line for the video portion
                     edl_file_path.write("{:03d}  AX       V     C        {} {} {} {}\n".format(
                         edit_count,
-                        line['start_tc'],
-                        line['end_tc'],
-                        line['edit_start_tc'],
-                        line['edit_end_tc'],
+                        start_tc,
+                        end_tc,
+                        edit_start_tc,
+                        edit_end_tc,
                     ))
 
                     # write the source file name
@@ -1345,6 +1353,7 @@ class StoryUtils:
 
                     edit_count += 1
 
+                # if there is a file name, add the audio portion
                 if file_name:
 
                     # 002  AX       A     C        00:00:35:17 00:30:16:02 01:00:00:00 01:00:20:09
@@ -1353,22 +1362,23 @@ class StoryUtils:
                     # write the edit line for the audio portion
                     edl_file_path.write("{:03d}  AX       A     C        {} {} {} {}\n".format(
                         edit_count,
-                        line['start_tc'],
-                        line['end_tc'],
-                        line['edit_start_tc'],
-                        line['edit_end_tc'],
+                        start_tc,
+                        end_tc,
+                        edit_start_tc,
+                        edit_end_tc,
                     ))
 
                     # write the source file name
                     edl_file_path.write("* FROM CLIP NAME: {}\n\n".format(line['file_name']))
 
+                # or try to add a marker entry if no file name is set but there is a marker key
                 elif 'marker' in line:
                     edl_file_path.write("{:03d}  AX       V     C        {} {} {} {}\n".format(
                         edit_count,
-                        line['start_tc'],
-                        line['end_tc'],
-                        line['edit_start_tc'],
-                        line['edit_end_tc'],
+                        start_tc,
+                        end_tc,
+                        edit_start_tc,
+                        edit_end_tc,
                     ))
                     edl_file_path.write(line.get('text', '') + line.get('marker'))
                     edl_file_path.write('\n\n')
@@ -1380,23 +1390,26 @@ class StoryUtils:
 
     @classmethod
     def write_fcp7xml(cls, story_name: str, story_lines: list, xml_file_path: str,
-                  edit_timeline_fps: float = 24, edit_timeline_start_tc=None, use_timelines=None,
-                  export_blocks=True, export_notes=True, join_gaps=None):
+                      edit_timeline_fps: float = 24, edit_timeline_start_tc=None, use_timelines=None,
+                      export_blocks=True, export_notes=True, join_gaps=None):
         """
         Write the story lines to a file in FCP7XML format.
         Reference: https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/FinalCutPro_XML/Basics/Basics.html#//apple_ref/doc/uid/TP30001154-DontLinkElementID_63
         """
+        lines_to_export, files, total_duration = cls.prepare_export(
+            story_lines=story_lines,
+            use_timelines=use_timelines,
+            export_blocks=export_blocks,
+            export_notes=export_notes,
+            add_media_paths=True,
+            join_gaps=join_gaps
+        )
 
-        lines_to_export, files, edit_start_tc, edit_end_tc = cls.prepare_export(
-                                                                story_lines=story_lines,
-                                                                edit_timeline_fps=edit_timeline_fps,
-                                                                edit_timeline_start_tc=edit_timeline_start_tc,
-                                                                use_timelines=use_timelines,
-                                                                export_blocks=export_blocks,
-                                                                export_notes=export_notes,
-                                                                add_media_paths=True,
-                                                                join_gaps=join_gaps
-                                                            )
+        edit_timeline_fps = float(edit_timeline_fps)
+
+        rounded_edit_timeline_fps = round(edit_timeline_fps) \
+            if edit_timeline_fps not in [29.97, 59.94] \
+            else edit_timeline_fps
 
         if not lines_to_export:
             logger.warning('Aborting. No lines to export.')
@@ -1405,12 +1418,17 @@ class StoryUtils:
         # we use this to increment the clip id depending on how many times a file is used
         file_unique_ids = {}
 
-        # make sure that the edit_timeline_start_tc is a Timecode object for calculations
-        edit_timeline_start_tc = Timecode(
-            framerate=edit_timeline_fps,
-            start_timecode=edit_timeline_start_tc if edit_timeline_start_tc != '00:00:00:00' else None
-        )
+        # initialize the edit_timeline_start_tc
+        if not isinstance(edit_timeline_start_tc, Timecode):
+            edit_timeline_start_tc = Timecode(edit_timeline_fps, edit_timeline_start_tc)
 
+        # cache media items to avoid re-opening them too many times
+        media_items = {}
+
+        # we use 00:00:00:00 as the start timecode for the edit since we're using relative timecodes
+        # so edit_timeline_start_tc is just written as string in the XML, but not used in the calculation
+        # the edit_end_tc is where we left the cursor in the timeline after adding the last clip
+        edit_end_tc = Timecode(rounded_edit_timeline_fps, '00:00:00:00')
         # pre-process each line
         for line in lines_to_export:
 
@@ -1450,58 +1468,82 @@ class StoryUtils:
             file_unique_id += 1
 
             # get the framerate from the start timecode
-            source_fps = line['start_tc'].framerate
-
-            # subtract the start timecodes for start_tc and end_tc to respect XML formatting
+            source_fps = float(line['source_fps'])
+            # form the start_tc and end_tc - leave the timings as they are (no need for start tc offset for FCP7XMLs)
+            # these are used for the <in> and the <out> of the clip
+            # since we're using a representation timestamp, we need to add 1 frame to the start tc
+            # and deduct 1 frame from the start frame
+            # IMPORTANT: here, we have to use the edit_timeline_fps
+            #            instead of the source_fps for the framerate to be matched
             try:
-                line['start_tc'] = line['start_tc'] - line['source_start_tc']
-                line['start_frame'] = line['start_tc'].frames
+                line['start_tc'] = sec_to_tc(line['source_start_sec'], fps=edit_timeline_fps, add_frame=True)
+                line['start_frame'] = line['start_tc'].frames - 1
             except ValueError:
-                line['start_tc'] = Timecode(framerate=source_fps)
+                line['start_tc'] = Timecode(framerate=edit_timeline_fps)
                 line['start_frame'] = 0
 
+            # now we calculate the end tc at the edit timeline fps by adding the original duration to the start tc
             try:
-                line['end_tc'] = line['end_tc'] - line['source_start_tc']
-                line['end_frame'] = line['end_tc'].frames
+                line['end_tc'] = sec_to_tc(line['source_end_sec'], fps=edit_timeline_fps, add_frame=True)
+                line['end_frame'] = line['end_tc'].frames - 1
             except ValueError:
-                line['end_tc'] = Timecode(framerate=source_fps)
+                line['end_tc'] = Timecode(framerate=edit_timeline_fps)
                 line['end_frame'] = 0
 
-            # also subtract the timeline start timecode for edit_start_tc and edit_end_tc
-            try:
-                line['edit_start_tc'] = line['edit_start_tc'] - edit_timeline_start_tc
-                line['edit_start_frame'] = line['edit_start_tc'].frames
-            except ValueError:
-                line['edit_start_tc'] = Timecode(framerate=edit_timeline_fps)
-                line['edit_start_frame'] = 0
+            if line['end_frame'] <= 0:
+                logger.debug('Skipping line "{}" because it\'s calculated length is 0.')
+                continue
 
-            try:
-                line['edit_end_tc'] = line['edit_end_tc'] - edit_timeline_start_tc
-                line['edit_end_frame'] = line['edit_end_tc'].frames
-            except ValueError:
-                line['edit_end_tc'] = Timecode(framerate=edit_timeline_fps)
-                line['edit_end_frame'] = 0
+            clip_duration_sec = line['source_end_sec'] - line['source_start_sec']
 
-            # re-calculate the timebase and ntsc flags
-            #  should 23.976 also the case? float(source_fps) == 23.976
-            if float(source_fps) == 29.97 or float(source_fps) == 59.94:
+            # the start timecode in the timeline is where we were left off last time
+            line['edit_start_tc'] = edit_end_tc
+            line['edit_start_frame'] = edit_end_tc.frames - 1
+
+            # the end timecode should be calculated using the clip duration plus 1 frame
+            line['edit_end_tc'] = \
+                line['edit_start_tc'] + Timecode(
+                    edit_timeline_fps, start_seconds=clip_duration_sec + 1 / edit_timeline_fps)
+            line['edit_end_frame'] = line['edit_end_tc'].frames - 1
+
+            # update the edit end tc
+            edit_end_tc = line['edit_end_tc']
+
+            # set the clip NTSC flag
+            if source_fps == 29.97 or source_fps == 59.94 \
+               or round(source_fps, 2) == 23.97 or round(source_fps, 2) == 23.98:
 
                 # set the ntsc flag to true
                 line['ntsc'] = 'TRUE'
 
-                # we round up the source fps to the nearest integer according to the FCP7XML standard
-                # which specifies that each program should deal with the maths in its own way
-                line['timebase'] = int(round(float(source_fps)))
-
             else:
                 line['ntsc'] = 'FALSE'
-                line['timebase'] = int(round(float(source_fps)))
 
-            # open the file using Media object
-            media = MediaItem(line['media_file_path'])
+            # set the clip drop frame flag
+            if source_fps == 29.97 or source_fps == 59.94:
+                line['df'] = 'DF'
+            else:
+                line['df'] = 'NDF'
+
+            # we round up the source fps to the nearest integer according to the FCP7XML standard
+            # which specifies that each program should
+            # deal with the maths in its own way based on the timebase and ntsc/df flags
+            line['timebase'] = int(round(source_fps))
+
+            # open the file using Media object, but cache it to avoid re-opening it too many times
+            if line['media_file_path'] not in media_items:
+                media_items[line['media_file_path']] = {}
+                media_items[line['media_file_path']]['item'] = MediaItem(line['media_file_path'])
+
+            media = media_items[line['media_file_path']]['item']
 
             try:
-                duration_sec = media.get_duration()
+                # get media item duration from cache
+                if 'duration' not in media_items[line['media_file_path']]:
+                    media_items[line['media_file_path']]['duration'] = media.get_duration()
+
+                duration_sec = media_items[line['media_file_path']]['duration']
+
             except IOError:
                 logger.error('The line is not being exported correctly. Cannot get duration for {}'
                              .format(line['media_file_path']))
@@ -1514,16 +1556,24 @@ class StoryUtils:
                 line['total_duration'] = 0
 
             else:
-                # calculate the total duration of the clip depending on the timebase set above
-                line['total_duration'] = duration_sec*line['timebase']
+                # calculate the total duration of the clip
+                # depending on the original source_fps (not the rounded timecode set previously)
+                line['total_duration'] = int(round(duration_sec*line['source_fps']))
+                line['total_duration_using_edit_timeline_fps'] = int(round(duration_sec*edit_timeline_fps))
 
-        with open(xml_file_path, "w", encoding="utf-8") as xml_file_path:
+        with (open(xml_file_path, "w", encoding="utf-8") as xml_file_path):
 
-            timeline_duration = edit_end_tc - edit_start_tc
-            timeline_duration_frames = timeline_duration.frames
+            # maybe here it's time to convert to Timecode to get the correct frame count
+            timeline_duration_frames = edit_end_tc.frames
 
-            drop_frame = 'DF' \
-                if edit_timeline_fps == 29.97 or edit_timeline_fps == 59.94 else 'NDF'
+            # drop frame or non-drop frame?
+            timeline_drop_frame = 'DF' if edit_timeline_fps == 29.97 or edit_timeline_fps == 59.94 else 'NDF'
+
+            # NTSC or not?
+            timeline_ntsc = 'TRUE' \
+                if edit_timeline_fps == 29.97 or edit_timeline_fps == 59.94 \
+                or round(edit_timeline_fps, 2) == 23.97 or round(edit_timeline_fps, 2) == 23.98 \
+                else 'FALSE'
 
             # write the header
             xml_file_path.write('<?xml version="1.0" encoding="UTF-8"?>\n')
@@ -1533,20 +1583,25 @@ class StoryUtils:
             xml_file_path.write('\t\t<name>{}</name>\n'.format(story_name))
             xml_file_path.write('\t\t<duration>{}</duration>\n'.format(timeline_duration_frames))
             xml_file_path.write('\t\t<rate>\n')
-            xml_file_path.write('\t\t\t<timebase>{}</timebase>\n'.format(edit_timeline_fps))
+            xml_file_path.write('\t\t\t<timebase>{}</timebase>\n'.format(rounded_edit_timeline_fps))
             xml_file_path.write('\t\t\t<ntsc>FALSE</ntsc>\n')
             xml_file_path.write('\t\t</rate>\n')
             xml_file_path.write('\t\t<in>-1</in>\n')
             xml_file_path.write('\t\t<out>-1</out>\n')
+
+            # timecode information including start timecode and drop frame
             xml_file_path.write('\t\t<timecode>\n')
             xml_file_path.write('\t\t\t<string>{}</string>\n'.format(edit_timeline_start_tc))
-            xml_file_path.write('\t\t\t<frame>{}</frame>\n'.format(edit_start_tc.frames))
-            xml_file_path.write('\t\t\t<displayformat>{}</displayformat>\n'.format(drop_frame))
+
+            # subtract 1 frame from the end timecode to make it into a display timecode
+            xml_file_path.write('\t\t\t<frame>{}</frame>\n'.format(edit_timeline_start_tc.frames-1))
+            xml_file_path.write('\t\t\t<displayformat>{}</displayformat>\n'.format(timeline_drop_frame))
             xml_file_path.write('\t\t\t<rate>\n')
-            xml_file_path.write('\t\t\t\t<timebase>{}</timebase>\n'.format(edit_timeline_fps))
+            xml_file_path.write('\t\t\t\t<timebase>{}</timebase>\n'.format(rounded_edit_timeline_fps))
             xml_file_path.write('\t\t\t\t<ntsc>FALSE</ntsc>\n')
             xml_file_path.write('\t\t\t</rate>\n')
             xml_file_path.write('\t\t</timecode>\n')
+
             xml_file_path.write('\t\t<media>\n')
 
             # write the video track
@@ -1569,15 +1624,16 @@ class StoryUtils:
                     and not line['file_name'].endswith('.aac'):
 
                     # note:
-                    # in out refers to the in and out points of the clip
-                    # start end refers to the in and out points of the clip in the timeline
+                    # <in> and <out> refer to the in and out points of the clip
+                    # <start> and <end> refer to the in and out points of the clip in the timeline
 
                     xml_file_path.write('\t\t\t\t\t<clipitem id="{}">\n'.format(line['video_clip_unique_id']))
                     xml_file_path.write('\t\t\t\t\t\t<name>{}</name>\n'.format(line['file_name']))
-                    xml_file_path.write('\t\t\t\t\t\t<duration>{}</duration>\n'.format(line['total_duration']))
+                    xml_file_path.write('\t\t\t\t\t\t<duration>{}</duration>\n'
+                                        .format(line['total_duration_using_edit_timeline_fps']))
                     xml_file_path.write('\t\t\t\t\t\t<rate>\n')
-                    xml_file_path.write('\t\t\t\t\t\t\t<timebase>{}</timebase>\n'.format(line['timebase']))
-                    xml_file_path.write('\t\t\t\t\t\t\t<ntsc>{}</ntsc>\n'.format(line['ntsc']))
+                    xml_file_path.write('\t\t\t\t\t\t\t<timebase>{}</timebase>\n'.format(rounded_edit_timeline_fps))
+                    xml_file_path.write('\t\t\t\t\t\t\t<ntsc>{}</ntsc>\n'.format(timeline_ntsc))
                     xml_file_path.write('\t\t\t\t\t\t</rate>\n')
                     xml_file_path.write('\t\t\t\t\t\t<start>{}</start>\n'.format(line['edit_start_frame']))
                     xml_file_path.write('\t\t\t\t\t\t<end>{}</end>\n'.format(line['edit_end_frame']))
@@ -1597,9 +1653,8 @@ class StoryUtils:
                         xml_file_path.write('\t\t\t\t\t\t\t<pathurl>file://{}</pathurl>\n'
                                             .format(line['media_file_path']))
                         xml_file_path.write('\t\t\t\t\t\t\t<timecode>\n')
-                        xml_file_path.write('\t\t\t\t\t\t\t\t<string>{}</string>\n'.format(line['source_start_tc']))
-                        xml_file_path.write('\t\t\t\t\t\t\t\t<displayformat>{}</displayformat>\n'
-                                            .format('NDF' if line['ntsc'] == 'FALSE' else 'DF'))
+                        xml_file_path.write('\t\t\t\t\t\t\t\t<string>{}</string>\n'.format(line['source_media_start_tc']))
+                        xml_file_path.write('\t\t\t\t\t\t\t\t<displayformat>{}</displayformat>\n'.format(line['df']))
                         xml_file_path.write('\t\t\t\t\t\t\t\t<rate>\n')
                         xml_file_path.write('\t\t\t\t\t\t\t\t\t<timebase>{}</timebase>\n'.format(line['timebase']))
                         xml_file_path.write('\t\t\t\t\t\t\t\t\t<ntsc>{}</ntsc>\n'.format(line['ntsc']))
@@ -1634,8 +1689,8 @@ class StoryUtils:
             xml_file_path.write('\t\t\t\t\t\t<height>1080</height>\n')
             xml_file_path.write('\t\t\t\t\t\t<pixelaspectratio>square</pixelaspectratio>\n')
             xml_file_path.write('\t\t\t\t\t\t<rate>\n')
-            xml_file_path.write('\t\t\t\t\t\t\t<timebase>{}</timebase>\n'.format(round(float(edit_timeline_fps))))
-            xml_file_path.write('\t\t\t\t\t\t\t<ntsc>{}</ntsc>\n'.format('TRUE' if drop_frame == 'DF' else 'FALSE'))
+            xml_file_path.write('\t\t\t\t\t\t\t<timebase>{}</timebase>\n'.format(rounded_edit_timeline_fps))
+            xml_file_path.write('\t\t\t\t\t\t\t<ntsc>{}</ntsc>\n'.format(timeline_ntsc))
             xml_file_path.write('\t\t\t\t\t\t</rate>\n')
             xml_file_path.write('\t\t\t\t\t\t<codec>\n')
             xml_file_path.write('\t\t\t\t\t\t\t<appspecificdata>\n')
@@ -1663,10 +1718,11 @@ class StoryUtils:
 
                 xml_file_path.write('\t\t\t\t\t<clipitem id="{}">\n'.format(line['audio_clip_unique_id']))
                 xml_file_path.write('\t\t\t\t\t\t<name>{}</name>\n'.format(line['file_name']))
-                xml_file_path.write('\t\t\t\t\t\t<duration>{}</duration>\n'.format(line['total_duration']))
+                xml_file_path.write('\t\t\t\t\t\t<duration>{}</duration>\n'
+                                    .format(line['total_duration_using_edit_timeline_fps']))
                 xml_file_path.write('\t\t\t\t\t\t<rate>\n')
-                xml_file_path.write('\t\t\t\t\t\t\t<timebase>{}</timebase>\n'.format(line['timebase']))
-                xml_file_path.write('\t\t\t\t\t\t\t<ntsc>{}</ntsc>\n'.format(line['ntsc']))
+                xml_file_path.write('\t\t\t\t\t\t\t<timebase>{}</timebase>\n'.format(rounded_edit_timeline_fps))
+                xml_file_path.write('\t\t\t\t\t\t\t<ntsc>{}</ntsc>\n'.format(timeline_ntsc))
                 xml_file_path.write('\t\t\t\t\t\t</rate>\n')
                 xml_file_path.write('\t\t\t\t\t\t<start>{}</start>\n'.format(line['edit_start_frame']))
                 xml_file_path.write('\t\t\t\t\t\t<end>{}</end>\n'.format(line['edit_end_frame']))
@@ -1674,7 +1730,6 @@ class StoryUtils:
                 xml_file_path.write('\t\t\t\t\t\t<out>{}</out>\n'.format(line['end_frame']))
                 xml_file_path.write('\t\t\t\t\t\t<enabled>TRUE</enabled>\n')
 
-                # THE FILE REFERENCE
                 # THE FILE REFERENCE
                 if 'file_referenced' not in line:
                     xml_file_path.write('\t\t\t\t\t\t<file id="{}" >\n'.format(line['file_unique_id']))
@@ -1686,9 +1741,9 @@ class StoryUtils:
                     xml_file_path.write('\t\t\t\t\t\t\t<name>{}</name>\n'.format(line['file_name']))
                     xml_file_path.write('\t\t\t\t\t\t\t<pathurl>file://{}</pathurl>\n'.format(line['media_file_path']))
                     xml_file_path.write('\t\t\t\t\t\t\t<timecode>\n')
-                    xml_file_path.write('\t\t\t\t\t\t\t\t<string>{}</string>\n'.format(line['source_start_tc']))
+                    xml_file_path.write('\t\t\t\t\t\t\t\t<string>{}</string>\n'.format(line['source_media_start_tc']))
                     xml_file_path.write('\t\t\t\t\t\t\t\t<displayformat>{}</displayformat>\n'
-                                        .format('NDF' if line['ntsc'] == 'FALSE' else 'DF'))
+                                        .format(line['df']))
                     xml_file_path.write('\t\t\t\t\t\t\t\t<rate>\n')
                     xml_file_path.write('\t\t\t\t\t\t\t\t\t<timebase>{}</timebase>\n'.format(line['timebase']))
                     xml_file_path.write('\t\t\t\t\t\t\t\t\t<ntsc>{}</ntsc>\n'.format(line['ntsc']))
@@ -1729,5 +1784,8 @@ class StoryUtils:
             xml_file_path.write('\t\t</media>\n')
             xml_file_path.write('\t</sequence>\n')
             xml_file_path.write('</xmeml>\n')
+
+            # close all the media items
+            del media_items
 
             return xml_file_path

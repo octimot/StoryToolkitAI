@@ -2,7 +2,7 @@ from timecode import Timecode
 from storytoolkitai.core.logger import logger
 
 
-def sec_to_tc(seconds: float, *, fps: float, use_frames=True) -> Timecode:
+def sec_to_tc(seconds: float, *, fps: float, use_frames=True, add_frame=False) -> Timecode:
     """
     Converts seconds to timecode.
 
@@ -11,6 +11,7 @@ def sec_to_tc(seconds: float, *, fps: float, use_frames=True) -> Timecode:
     :param use_frames: if True,
                        we don't do direct conversion from seconds, but convert to frames first
                        to avoid rounding errors
+    :param add_frame: if True, we add 1 frame to the timecode to offset from timestamp to frame representation
 
     :return: timecode object (IMPORTANT: frame 1 is 00:00:00:00, frame 2 is 00:00:00:01, etc.)
     """
@@ -35,7 +36,7 @@ def sec_to_tc(seconds: float, *, fps: float, use_frames=True) -> Timecode:
         frames = int(round(frames))
 
         # init the timecode object based on the passed seconds
-        return Timecode(fps, frames=frames)
+        return Timecode(fps, frames=frames if frames > 0 else None) + (1 if add_frame else 0)
 
     # if we're not supposed to use frames,
     # we'll just pass the seconds directly to the timecode object
@@ -52,8 +53,6 @@ def tc_to_sec(timecode: str, *, fps: float) -> float:
     :param fps: frames per second
     :return: seconds
     """
-
-    logger.warning('tc_to_sec not fully tested yet!')
 
     if not isinstance(timecode, str):
         raise TypeError('Timecode must be a string, not {}'.format(type(timecode)))
