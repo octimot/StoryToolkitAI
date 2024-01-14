@@ -1467,12 +1467,34 @@ class ToolkitOps:
                 speaker_id_offset = max(speaker_id_offset, int(segment['text'].split(' ')[1]))
 
         threshold = kwargs.get('transcription_speaker_detection_threshold', None)
-        resulting_segments, speaker_embeddings = detect_speaker_changes(
+
+        processed_segments = 0
+        queue_id = kwargs.get('queue_id', None)
+        for resulting_segments, speaker_embeddings in detect_speaker_changes(
             segments=segments, audio_file_path=transcription.audio_file_path, threshold=threshold,
             device_name=kwargs.get('device', None),
             time_intervals=kwargs.get('time_intervals', None),
             speaker_id_offset=speaker_id_offset,
-        )
+            step_by_step=True
+        ):
+            processed_segments += 1
+
+            if queue_id is None:
+                continue
+
+            # calculate the progress
+            progress = min(100, int((processed_segments / len(segments)) * 100))
+
+            # update the progress in the queue
+            self.processing_queue.update_queue_item(
+                queue_id=queue_id, save_to_file=False, progress=progress
+            )
+
+            # cancel detection if user requested it
+            if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
+
+                # and only return received segments
+                return segments
 
         # no time intervals were passed or if the time intervals is not a list of lists
         if not kwargs.get('time_intervals', None) or not isinstance(kwargs['time_intervals'], list):
@@ -1831,6 +1853,11 @@ class ToolkitOps:
 
         # if the above fails, try this:
         except:
+
+            logger.warning('Falling back to 48000Hz for {} due to audio format, '
+                           'but this might provide inaccurate results. '
+                           'Please use a recommended file format to avoid falling back to this default.'
+                           .format(os.path.basename(audio_file_path)))
 
             raw_sr = 48000
             sr = 16000

@@ -3,9 +3,14 @@ from pyannote.audio import Audio
 from pyannote.core import Segment
 import torch
 import copy
+import os
+import librosa
+import numpy as np
+
 from scipy.spatial.distance import cosine
 
 from storytoolkitai.core.logger import logger
+from .media import VideoFileClip, AudioFileClip, MediaUtils
 
 
 def find_closest_speaker(embedding, speaker_embeddings, threshold=0.3):
@@ -44,7 +49,8 @@ def speaker_changed(segment1_embedding, segment2_embedding, threshold=0.3):
 
 
 def detect_speaker_changes(
-        segments, audio_file_path, threshold=0.3, device_name=None, time_intervals=None, speaker_id_offset=0):
+        segments, audio_file_path, threshold=0.3, device_name=None, time_intervals=None, speaker_id_offset=0,
+        step_by_step=False):
     """
     Detect speaker changes in a list of segments and adds the speaker_id to the segments.
 
@@ -57,6 +63,7 @@ def detect_speaker_changes(
     :param: time_intervals: a list of time intervals to use for speaker verification (format: [[start, end], ...])
             - if None, the entire audio file will be used
     :param: speaker_id_offset: the offset to use for the speaker IDs (default: 0)
+    :param: step_by_step: if True, the function will yield the segments and speaker embeddings after each iteration
     """
 
     if segments is None or not isinstance(segments, list) or len(segments) == 0:
@@ -94,6 +101,61 @@ def detect_speaker_changes(
     model = PretrainedSpeakerEmbedding("speechbrain/spkrec-ecapa-voxceleb", device=torch.device(torch_device))
     audio = Audio(sample_rate=16000, mono="downmix")
 
+    # try to see if we can handle the audio file natively
+    # for that, we just perform a test crop of a second
+    try:
+        audio.crop(audio_file_path, Segment(0, 1))
+        audio_file = audio_file_path
+    except:
+
+        logger.debug('Falling back to Librosa for {} due to audio format.'
+                     .format(os.path.basename(audio_file_path)))
+
+        # load audio file as array using librosa
+        # this should work for most audio formats
+        try:
+            audio_array, sr = librosa.load(audio_file_path, sr=16_000)
+
+        # if the above fails, try this:
+        except:
+
+            logger.debug('Librosa failed. Falling back to moviepy for {} due to audio format.'
+                         .format(os.path.basename(audio_file_path)))
+
+            # we need to determine the raw sample rate of the audio first
+            raw_sr = MediaUtils.get_audio_sample_rate(audio_file_path)
+
+            if raw_sr is None:
+                logger.warning('Falling back to 48000Hz for {} due to audio format, '
+                               'but this might provide inaccurate results. '
+                               'Please use a recommended file format to avoid falling back to this default.'
+                               .format(os.path.basename(audio_file_path)))
+
+                raw_sr = 48000
+
+            sr = 16000
+
+            # if this is a video file, extract the audio from it
+            try:
+                video = VideoFileClip(audio_file_path)
+                raw_audio_array = video.audio.to_soundarray(fps=raw_sr)
+            except:
+                # last chance, if this is audio-only, try to load it with AudioFileClip
+
+                audio = AudioFileClip(audio_file_path)
+                raw_audio_array = audio.to_soundarray(fps=raw_sr)
+
+            audio_array = librosa.core.resample(np.asfortranarray(raw_audio_array.T), orig_sr=raw_sr, target_sr=sr)
+            audio_array = librosa.core.to_mono(audio_array)
+
+            # change to float32
+            audio_array = np.asarray(audio_array, dtype=np.float32)
+
+        # Convert numpy array to a PyTorch tensor and reshape it to (channel, time)
+        audio_tensor = torch.tensor(audio_array).unsqueeze(0)  # adds a channel dimension
+
+        audio_file = {"waveform": audio_tensor, "sample_rate": sr}
+
     # we're storing the embeddings for each speaker in a dictionary
     # so that we can compare them once a speaker change is detected
     # this helps us attempt to identify the speaker
@@ -109,10 +171,10 @@ def detect_speaker_changes(
 
         # convert the start and end times to floats or None in a safe way
         start = segment.get('start', None)
-        start = float(start) if start else None
+        start = float(start) if start is not None else None
 
         end = segment.get('end', None)
-        end = float(end) if end else None
+        end = float(end) if end is not None else None
 
         if time_intervals is not None and isinstance(time_intervals, list) and len(time_intervals) > 0:
             # are we in the time interval?
@@ -120,8 +182,8 @@ def detect_speaker_changes(
                        for interval in time_intervals):
                 continue
 
-        if (start != 0 and not start) or not end:
-            logger.debug("Cannot detect speaker changes on segment - start or end time is missing: {}"
+        if not isinstance(start, float) or not isinstance(end, float):
+            logger.debug("Cannot detect speaker changes on segment - start or end time are missing or not floats: {}"
                          .format(segment))
             continue
 
@@ -133,7 +195,7 @@ def detect_speaker_changes(
 
         # crop the audio to the segment
         segment_speaker = Segment(start, end)
-        segment_audio, sample_rate = audio.crop(audio_file_path, segment_speaker)
+        segment_audio, sample_rate = audio.crop(audio_file, segment_speaker)
 
         # get the embedding for the segment
         segment_embedding = model(segment_audio[None])
@@ -172,5 +234,8 @@ def detect_speaker_changes(
         #    since we're assuming the recording conditions are sequential
         #    and the speaker might "sound" more similar between closer segments
         speaker_embeddings[current_speaker_id] = segment_embedding
+
+        if step_by_step:
+            yield resulting_segments, speaker_embeddings
 
     return resulting_segments, speaker_embeddings

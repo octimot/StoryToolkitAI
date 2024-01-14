@@ -1,6 +1,8 @@
 import os
 import cv2
 from moviepy.editor import VideoFileClip, AudioFileClip
+import subprocess
+import re
 
 from storytoolkitai.core.toolkit_ops.videoanalysis import ClipIndex
 from storytoolkitai.core.logger import logger
@@ -138,6 +140,7 @@ class MediaItem:
             self._type = 'audio'
             return 'audio'
 
+
 class AudioItem(MediaItem):
     """
     This handles all the audio items that are used in the toolkit.
@@ -147,6 +150,7 @@ class AudioItem(MediaItem):
         super().__init__(path=path)
 
         self._type = 'audio'
+
 
 class VideoItem(MediaItem, ClipIndex):
     """
@@ -192,3 +196,22 @@ class VideoItem(MediaItem, ClipIndex):
 
     ClipIndex = ClipIndex
 
+
+class MediaUtils:
+
+    @staticmethod
+    def get_audio_sample_rate(file):
+        """
+        This uses ffmpeg to extract the audio sample rate from a video file.
+        """
+
+        # Run ffmpeg to extract audio stream information
+        cmd = ["ffmpeg", "-i", file, "-hide_banner"]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        # Use regex to find the sample rate
+        match = re.search(r"(\d+) Hz", result.stderr)
+        if match:
+            return float(match.group(1))
+        else:
+            return None
