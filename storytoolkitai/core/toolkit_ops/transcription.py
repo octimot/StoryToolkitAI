@@ -2343,6 +2343,7 @@ class TranscriptionUtils:
         keyframes = []
 
         # take each transcription segment
+        segment = None
         for segment in transcript_segments:
 
             # frame = int(segment["start"] * fps)
@@ -2350,16 +2351,21 @@ class TranscriptionUtils:
             # calculate frame based on segment start and timeline fps
             # we'll ignore the timeline_start_tc considering that we're in a comp file that starts at 0
             if segment.start != 0:
-                keyframe_tc = Timecode(timeline_fps, start_seconds=segment.start)
+                # we convert the seconds to timecode,
+                # but don't send any start_tc_offset since we're exporting to a comp
+                keyframe_tc = TranscriptionUtils.seconds_to_timecode(seconds=segment.start, fps=timeline_fps)
                 frame = keyframe_tc.frames
 
             # if the segment starts at 0, we'll use frame 1 to form the timecode and frame 0 for the keyframe
             # this is because Timecode objects can't start at 0
             else:
-                keyframe_tc = Timecode(timeline_fps, 1)
-                frame = 0
+                keyframe_tc = Timecode(timeline_fps)
+                frame = keyframe_tc.frames
 
-            text = segment.text.replace('"', '\\"')
+            # fusion starts with frame 0, so we need to subtract 1 from the frame
+            frame = frame - 1 if frame > 0 else 0
+
+            text = segment.text.replace('"', '\\"').strip()
 
             # create the segment keyframe
             keyframe = '[' + str(frame) + '] = { Value = Text { Value = "' + str(text) + '" } }'
@@ -2371,22 +2377,30 @@ class TranscriptionUtils:
                 # get the next segment
                 next_segment = transcript_segments[transcript_segments.index(segment) + 1]
 
-                # if the next segment doesn't start exactly when this one ends, add a keyframe with an empty string
+                # if the next segment doesn't start exactly where this one ends, add a keyframe with an empty string
                 if next_segment.start != segment.end:
                     # calculate frame based on segment end and timeline fps
                     # we'll ignore the timeline_start_tc considering that we're in a comp file that starts at 0
-                    keyframe_tc = Timecode(timeline_fps, start_seconds=segment.end)
-                    frame = keyframe_tc.frames
-                    keyframe += ',\n[' + str(frame) + '] = { Value = Text { Value = "" } }'
+                    keyframe_tc = TranscriptionUtils.seconds_to_timecode(seconds=segment.end, fps=timeline_fps)
+
+                    # again, the frame needs subtracting by 1
+                    frame = keyframe_tc.frames-1
+                    keyframe += ',\n                        [' + str(frame) + '] = { Value = Text { Value = "" } }'
 
             keyframes.append(keyframe)
+
+        # after everything, add an empty keyframe at the end
+        if segment:
+            last_frame = TranscriptionUtils.seconds_to_timecode(seconds=segment.end, fps=timeline_fps).frames
+            keyframes.append('[' + str(last_frame-1) + '] = { Value = Text { Value = " " } }')
+            keyframes.append('[' + str(last_frame) + '] = { Value = Text { Value = " " } }')
 
         # if there are no keyframes, return False
         if len(keyframes) == 0:
             return False
 
         # turn the keyframes into a string with newlines and indentation
-        keyframes_str = ",\n            ".join(keyframes)
+        keyframes_str = ",\n                        ".join(keyframes)
 
         # place the above keyframes in the fusion template
         fusion_template = '''
