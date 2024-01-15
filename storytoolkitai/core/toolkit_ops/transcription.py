@@ -749,12 +749,14 @@ class Transcription:
 
         return True
 
-    def add_segments(self, segments: list, overwrite=False):
+    def add_segments(self, segments: list, overwrite=False, add_speaker=False):
         """
         This adds a list of segments to the transcription and then re-sets the segments
         :param segments: a list of segments
         :param overwrite: if True, in case a segment we add overlaps with the time range of an existing segment,
                           we remove the existing segment and add the new one.
+        :param add_speaker: if True, we add the speakers from the segments to the transcription
+                             (works only for simplified list version for now, so segments needs to be a list of lists)
         """
 
         # if we have to overwrite existing segments:
@@ -764,7 +766,7 @@ class Transcription:
 
                 # if the segment_data is a dict or list, turn it into a TranscriptionSegment object
                 segment = \
-                    TranscriptionSegment(segment, parent_transcription=self) \
+                    TranscriptionSegment(segment, parent_transcription=self, add_speaker=add_speaker) \
                         if isinstance(segment, dict) or isinstance(segment, list) else segment
 
                 # remove overlapping segments
@@ -774,12 +776,12 @@ class Transcription:
             self._set_segments()
 
         for segment in segments:
-            self.add_segment(segment, skip_reset=True)
+            self.add_segment(segment, skip_reset=True, add_speaker=add_speaker)
 
         # reset the segments here after we added all the segments
         self._set_segments()
 
-    def add_segment(self, segment: dict or object, segment_index: int = None, skip_reset=False):
+    def add_segment(self, segment: dict or object, segment_index: int = None, skip_reset=False, add_speaker=False):
         """
         This adds a segment to the transcription and then re-sets the segments.
         If a segment_index is passed, the segment will be added at that index, and the rest of the segments will be
@@ -787,6 +789,8 @@ class Transcription:
         :param segment: a segment object or a dict that can be turned into a segment object
         :param segment_index: the index at which to add the segment.
         :param skip_reset: if True, the segments will not be re-set (only use if you're doing _set_segments manually!)
+        :param add_speaker: if True, we add the speakers from the segments to the transcription
+                             (works only for simplified list version for now, so segment needs to be a simplified list)
         """
 
         # make sure we have a segments list
@@ -795,7 +799,7 @@ class Transcription:
 
         # if the segment_data is a dict or list, turn it into a TranscriptionSegment object
         segment = \
-            TranscriptionSegment(segment, parent_transcription=self) \
+            TranscriptionSegment(segment, parent_transcription=self, add_speaker=add_speaker) \
             if isinstance(segment, dict) or isinstance(segment, list) else segment
 
         # we need to add the transcription as a parent of the segment
@@ -1448,7 +1452,7 @@ class TranscriptionSegment:
     This class represents a segment in a transcription file
     """
 
-    def __init__(self, segment_data: dict, parent_transcription: Transcription = None):
+    def __init__(self, segment_data: dict, parent_transcription: Transcription = None, add_speaker: bool = False):
 
         # for the segment to be valid,
         # it needs to have start and end times
@@ -1482,7 +1486,37 @@ class TranscriptionSegment:
 
         # if the segment data is a list, turn it into a dict first
         if isinstance(segment_data, list):
-            segment_data = self.dict_from_list(segment_data)
+
+            # if the length of the list is 4, it means that we're doing the simplified version
+            # which means that the last value should be the speaker name
+            # however, if the end time is not greater than the start time,
+            # it means that this is speaker segment
+            if len(segment_data) == 4 and add_speaker and float(segment_data[0]) < float(segment_data[1]):
+
+                # if the previously found speaker is different from the current speaker
+                if self.get_segment_speaker_name() != segment_data[3]:
+
+                    # add the speaker to the transcription
+                    self.parent_transcription.add_segment(
+                        {'start': segment_data[0], 'end': segment_data[0], 'text': segment_data[3],
+                         'meta': True, 'category': 'speaker'},
+                    )
+
+                segment_data = self.dict_from_list(segment_data)
+
+            elif len(segment_data) == 4 and add_speaker and float(segment_data[0]) == float(segment_data[1]):
+
+                segment_data = {
+                    'start': segment_data[0],
+                    'end': segment_data[1],
+                    'text': segment_data[2],
+                    'meta': True,
+                    'category': 'speaker'
+                }
+
+            # otherwise, just process normally
+            elif len(segment_data) == 4 and not add_speaker:
+                segment_data = self.dict_from_list(segment_data)
 
         self._load_dict_into_attributes(segment_data)
 
@@ -1577,7 +1611,7 @@ class TranscriptionSegment:
                           'meta', 'category'
                           ]
 
-    __simplified_attributes = ['start', 'end', 'text', 'meta']
+    __simplified_attributes = ['start', 'end', 'text', 'segment_speaker_name()']
 
     def _load_dict_into_attributes(self, segment_dict):
 
@@ -1692,6 +1726,32 @@ class TranscriptionSegment:
 
         return self
 
+    def get_segment_speaker_name(self):
+
+        # get the index of the segment in the parent transcription
+        segment_index = self.get_index()
+
+        if segment_index is None:
+            # use entire transcription
+            segment_index = len(self.parent_transcription.segments) - 1
+
+        # don't return anything if the segment is a meta segment
+        if self.meta:
+            return ''
+
+        # go backwards and find the first segment that has the category 'speaker'
+        for i in range(segment_index, -1, -1):
+
+            # get the segment
+            segment = self.parent_transcription.get_segment(i)
+
+            # if the segment is a speaker, return its text
+            if segment.category == 'speaker':
+                return segment.text
+
+        # if we get here, it means that we didn't find a speaker segment
+        return ''
+
     def to_dict(self, simplify=False):
         """
         This returns the segment data as a dict, but it only converts the attributes that are __known_attributes
@@ -1727,8 +1787,12 @@ class TranscriptionSegment:
         # important: the order of the __simple_attributes list is important (start, end, text for eg.)
         for attribute in self.__simplified_attributes if simplify else self.__known_attributes:
 
+            # if the function is a callable, call it
+            if attribute == 'segment_speaker_name()':
+                segment_list.append(self.get_segment_speaker_name())
+
             # deal with meta separately
-            # add the negative value even if the meta is empty
+            # add meta false attribute even if the meta is empty
             # but also use int instead of bool when simplification is enabled so that the json is smaller
             if attribute == 'meta':
                 if (not hasattr(self, '_' + attribute)
@@ -1765,15 +1829,17 @@ class TranscriptionSegment:
         # important: the order of the __simple_attributes list is important (start, end, text for eg.)
         if len(segment_list) == len(TranscriptionSegment.__simplified_attributes):
             for i, attribute in enumerate(TranscriptionSegment.__simplified_attributes):
+
+                # except segment_speaker_name()
+                if attribute == 'segment_speaker_name()':
+                    continue
+
                 segment_dict[attribute] = segment_list[i]
 
-        elif len(segment_list) == len(TranscriptionSegment.__known_attributes):
+        # otherwise try to use the known attributes
+        else:
             for i, attribute in enumerate(TranscriptionSegment.__known_attributes):
                 segment_dict[attribute] = segment_list[i]
-
-        else:
-            raise Exception('The segment list length does not fit either '
-                            '__simplified_attributes nor __known_atttributs lengths.')
 
         # merge the other data with the transcription data
         segment_dict.update(segment_list[i+1:])

@@ -10209,7 +10209,7 @@ class toolkit_UI():
         if transcription_segments is not None:
 
             # add the segments to the transcription
-            transcription.add_segments(transcription_segments)
+            transcription.add_segments(transcription_segments, add_speaker=True)
 
         # otherwise use the list of segments from the source transcription
         elif source_transcription is not None:
@@ -16309,7 +16309,8 @@ class toolkit_UI():
 
                 # add the formatting details to the enhanced prompt
                 enhanced_prompt += "\nuse exact same json format or you'll break my code: "
-                enhanced_prompt += '{{"type": "{}", "lines": [[start, end, text], ...]'.format(temp_context_type)
+                enhanced_prompt += '{{"type": "{}", "lines": [[start, end, text, speaker], ...]'.\
+                                    format(temp_context_type)
                 enhanced_prompt += ', "groups": [[start, end, title, optional_text], ...]'
                 enhanced_prompt += '}}'
 
@@ -16769,10 +16770,9 @@ class toolkit_UI():
         else:
             return chat_history
 
-
     def assistant_parse_response(self, assistant_response, assistant_window_id):
         """
-        This tries to recognize what kind of response the assistant gave, for eg. transcription, story, etc.
+        This tries to recognize what kind of response the assistant gave, for e.g. transcription, story, etc.
         and populates the assistant window's text widget.
         """
 
