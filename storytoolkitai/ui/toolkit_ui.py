@@ -8690,8 +8690,10 @@ class toolkit_UI():
 
                 # first sort the selected segments by start time
                 # (but we are losing the line numbers which are normally in the dict keys!)
-                sorted_selected_segments = sorted(self.selected_segments[window_id].values(),
-                                                  key=lambda segment: segment.start)
+                sorted_selected_segments = sorted(
+                    self.selected_segments[window_id].values(),
+                    key=lambda segment: segment.start
+                )
 
                 # use this later to see where the selected_segment is in the original transcript
                 transcript_segment_index = 0
@@ -8704,11 +8706,17 @@ class toolkit_UI():
                 # add each text
                 for selected_segment in sorted_selected_segments:
 
+                    # add a new line if this is a meta segment
+                    if hasattr(selected_segment, 'meta') and selected_segment.meta is True:
+
+                        full_text = full_text + '\n'
+
                     # see where this selected_segment is in the original transcript
                     transcript_segment_index = \
                         window_transcription.get_segment(segment_id=selected_segment.id).get_index()
 
-                    # split each blocks of text that are next to each other in the main transcript_segments[window_id] list
+                    # split each blocks of text that are next to each other
+                    # in the main transcript_segments[window_id] list
                     if split_by == 'index':
 
                         # assign a value if this is the first transcript_segment_index of this iteration
