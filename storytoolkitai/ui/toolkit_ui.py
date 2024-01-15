@@ -6883,16 +6883,19 @@ class toolkit_UI():
                 index = text_element.index("@%s,%s" % (event.x, event.y))
                 line_str, char_str = index.split(".")
 
-                # make the clicked segment into active segment
-                self.set_active_segment(window_id, text_element, int(line_str))
+                # if we're not editing the transcript do this:
+                if not self.get_transcript_editing_in_window(window_id):
 
-                # and move playhead to that time
-                self.go_to_selected_time(window_id, 'start', ignore_selection=True)
+                    # make the clicked segment into active segment
+                    self.set_active_segment(window_id, text_element, int(line_str))
 
-                # if cmd was also pressed
-                if special_key == 'cmd':
-                    # add clicked segment to selection
-                    self.segment_to_selection(window_id, text_element, int(line_str))
+                    # and move playhead to that time
+                    self.go_to_selected_time(window_id, 'start', ignore_selection=True)
+
+                    # if cmd was also pressed
+                    if special_key == 'cmd':
+                        # add clicked segment to selection
+                        self.segment_to_selection(window_id, text_element, int(line_str))
 
             # what is the currently selected line number again?
             line = self.get_active_segment(window_id)
