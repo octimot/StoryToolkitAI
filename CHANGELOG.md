@@ -13,6 +13,7 @@ Meta Transcription Segments: add speakers, notes, etc. to your transcripts using
 - Ability to add transcript meta segments, such as speaker, notes, etc. - use SHIFT+ENTER while editing a transcript to add a meta segment
 - Ability to choose whether to keep or not whisper debug info in Transcriptions
 - Ability to delete multiple transcript lines at once
+- Find and Replace for Transcriptions via Find window
 
 ### Changes
 - Any line or group selections in the transcript are now cleared when editing transcript
