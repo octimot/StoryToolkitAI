@@ -633,7 +633,8 @@ class StoryToolkitAI:
 
             try:
                 # get the latest release from GitHub
-                latest_release = get('https://api.github.com/repos/octimot/storytoolkitai/releases/latest').json()
+                latest_release = (
+                    get('https://api.github.com/repos/octimot/storytoolkitai/releases/latest', timeout=5).json())
 
                 # remove the 'v' from the release version (tag)
                 online_version_raw = latest_release['tag_name'].replace('v', '')
@@ -652,7 +653,7 @@ class StoryToolkitAI:
 
             # retrieve the latest version number from github
             try:
-                r = get(version_request, verify=True)
+                r = get(version_request, verify=True, timeout=5)
 
                 # extract the actual version number from the string
                 online_version_raw = r.text.split('"')[1]
