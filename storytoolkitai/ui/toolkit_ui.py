@@ -7187,7 +7187,9 @@ class toolkit_UI():
 
             # todo: this is very un-necessary because it's redrawing the whole window on each segment move
             # final step, update the window
-            self.toolkit_UI_obj.update_transcription_window(window_id=window_id)
+            if not self.get_transcript_editing_in_window(window_id=window_id):
+                self.toolkit_UI_obj.update_transcription_window(window_id=window_id)
+
 
         def replace_action(self, find_text, replace_text, window_id, text_index):
             """
@@ -10039,12 +10041,20 @@ class toolkit_UI():
             with a few exceptions (Return Escape, BackSpace, Delete - see edit_transcript() for that)
             """
 
-            # if it's left, right, up, down, delete, backspace, return pass it down to the text widget
-            if event.keysym in ['Left', 'Right', 'Up', 'Down', 'Delete', 'BackSpace', 'Return']:
-                return
-
             # get the line_no
             line_no, char_no = window.text_widget.index(ctk.INSERT).split('.')
+
+            # if it's left, right, up, down, delete, backspace, return pass it down to the text widget
+            if event.keysym in ['Left', 'Right', 'Up', 'Down', 'Delete', 'BackSpace', 'Return']:
+
+                # do not allow delete or backspace if the line is empty
+                # this will merge the current segment into another and create havoc
+                # todo: find way to delete empty segment
+                line_length = len(window.text_widget.get('{}.0'.format(line_no), '{}.end'.format(line_no)).strip())
+                if line_length < 1 and event.keysym in ['Delete', 'BackSpace']:
+                    return 'break'
+
+                return
 
             # convert to transcription segment index
             segment_index = int(line_no) - 1
@@ -10055,6 +10065,10 @@ class toolkit_UI():
             # if this is a meta segment, insert the pressed key inside the already existing l_meta tag
             # since we can't do that with a native tkinter method, we need to do it manually
             if transcription_segment.meta:
+
+                # we're only interested in single characters (not in modifiers)
+                if len(str(event.char)) != 1:
+                    return
 
                 text_widget = window.text_widget
 
@@ -10491,27 +10505,29 @@ class toolkit_UI():
             # if we got here, the transcript is unchanged
             return changed
 
-        def save_transcript(self, window_id=None, text=None, force=False):
+        def save_transcript(self, window_id=None, force=False):
             """
             This function lets the Transcript object know that the transcription should be saved.
             The transcription object times the saving so that it doesn't happen too often
             and also does a check on its _dirty flag to see the transcription needs to be saved
 
             :param window_id:
-            :param text:
             :param force: if this is True, the tool
                             will ignore the transcript object's _dirty flag and save the transcript
             :return:
             """
 
-            # todo: remove the text parameter and use the window_id to get the text widget if needed...
-
-            if window_id is None and text is None:
-                logger.debug('No window id or text provided.')
+            if window_id is None:
+                logger.debug('No window id provided.')
                 return False
 
             # get the transcription object for this window
             window_transcription = self.get_window_transcription(window_id=window_id)
+
+            if not window_transcription:
+                logger.error('Unable to save transcript - '
+                             'no transcription object found for window {}.'.format(window_id))
+                return False
 
             # send the save command to the transcription object
             return window_transcription.save_soon(
