@@ -616,7 +616,8 @@ class Transcription:
                 if isinstance(self._text, str) else self._segments[index].text
 
         # sort all the segments by their start time
-        self._segments = sorted(self._segments, key=lambda x: x.start)
+        # and keep the meta segments before non-metas with the same start time
+        self._segments = sorted(self._segments, key=lambda x: (x.start, not x.meta))
 
         # re-calculate the self._has_segments attribute
         self._has_segments = len(self._segments) > 0
@@ -727,18 +728,41 @@ class Transcription:
         # set the dirty flag anyway
         self.set_dirty()
 
-    def delete_segments_between(self, start: float, end: float, reset_segments: bool = True):
+    def delete_segments_between(
+            self, start: float, end: float, reset_segments: bool = True, additional_condition: callable = None
+    ):
         """
         This removes all the segments that are between the specified time interval
+        and satisfy the given additional_condition (if any)
+
+        For e.g., if we want to delete all the segments between 10 and 20 seconds that are meta segments, we do this:
+        transcription.delete_segments_between(10, 20, additional_condition=lambda segment: segment.meta)
+
+        :param start: the start time of the interval
+        :param end: the end time of the interval
+        :param reset_segments: if True, we re-set the segments after we deleted the segments
+        :param additional_condition: (optional)
+                                     a callable that takes a segment as an argument;
+                                     if the callable returns True, the segment will be deleted;
+                                     if the callable returns False, the segment will not be deleted
         """
 
         if not self._has_segments:
             return None
 
-        # create new segments list that doesn't contain the segments that start or end between the specified interval
+        # if the additional_condition is not a callable, we set it to None
+        if additional_condition is None:
+            def additional_condition(segment):
+                if segment:
+                    # if we return True, the segment stays in the selection
+                    # and therefore it will be deleted
+                    return True
+
+        # create new segments list that doesn't contain
+        # the segments that start or end between the specified interval
         self._segments = \
             [segment for segment in self._segments
-             if not (start <= segment.start <= end or start <= segment.end <= end)]
+             if not ((start <= segment.start <= end or start <= segment.end <= end) and additional_condition(segment))]
 
         # reset the segments if not mentioned otherwise
         if reset_segments:

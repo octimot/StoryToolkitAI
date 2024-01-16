@@ -1470,6 +1470,7 @@ class ToolkitOps:
 
         processed_segments = 0
         queue_id = kwargs.get('queue_id', None)
+        resulting_segments = []
         for resulting_segments, speaker_embeddings in detect_speaker_changes(
             segments=segments, audio_file_path=transcription.audio_file_path, threshold=threshold,
             device_name=kwargs.get('device', None),
@@ -1493,8 +1494,8 @@ class ToolkitOps:
             # cancel detection if user requested it
             if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
 
-                # and only return received segments
-                return segments
+                # and return none
+                return None
 
         # no time intervals were passed or if the time intervals is not a list of lists
         if not kwargs.get('time_intervals', None) or not isinstance(kwargs['time_intervals'], list):
@@ -1504,14 +1505,16 @@ class ToolkitOps:
 
         # now take all the resulting segments and turn the speaker id's into meta segments
         last_speaker_id = None
-        final_transcription_segments = []
+        speaker_segments = []
         for segment in resulting_segments:
 
             # if there's no speaker_id for the segment, skip
             if 'speaker_id' not in segment:
                 continue
 
+            # if the speaker id is not the same as the last speaker id
             if not last_speaker_id or segment['speaker_id'] != last_speaker_id:
+
                 # create a new meta segment
                 meta_segment = {
                     'start': segment['start'],
@@ -1521,24 +1524,25 @@ class ToolkitOps:
                     'text': 'Speaker {}'.format(segment['speaker_id'])
                 }
 
-                # add the meta segment to the final transcription segments
-                final_transcription_segments.append(meta_segment)
+                # add the meta segment to the speaker_segments
+                speaker_segments.append(meta_segment)
 
             # update the last speaker id
             last_speaker_id = segment['speaker_id']
 
-            # remove the speaker id from the segment
-            del segment['speaker_id']
+        if not speaker_segments:
+            logger.debug('No speakers detected for the selected time intervals: {}.'.format(kwargs['time_intervals']))
+            return None
 
-            # add the segment to the final transcription segments
-            final_transcription_segments.append(segment)
-
-            # remove the segments between these time intervals
-            # from the transcription, but don't reset it just yet!
-            transcription.delete_segments_between(start=segment['start'], end=segment['end'], reset_segments=False)
+        # remove the speaker segments between the passed time intervals
+        for time_interval in kwargs['time_intervals']:
+            transcription.delete_segments_between(
+                start=time_interval[0], end=time_interval[1],
+                additional_condition=lambda l_segment: (l_segment.meta and l_segment.category == 'speaker')
+            )
 
         # add the new segments to the transcription
-        transcription.add_segments(final_transcription_segments)
+        transcription.add_segments(speaker_segments)
 
         # save the transcription
         transcription.save_soon(sec=0)
@@ -1550,7 +1554,7 @@ class ToolkitOps:
         # update all the observers that are listening for this transcription
         self.notify_observers('update_transcription_{}'.format(transcription.transcription_path_id))
 
-        return resulting_segments
+        return speaker_segments
 
     def whisper_transcribe_segments(self, audio_segments, task, other_options, queue_id=None):
         """
