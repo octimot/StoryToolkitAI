@@ -6694,6 +6694,9 @@ class toolkit_UI():
                     accelerator="Shift+C"
                 )
 
+                # the transcript actions
+                context_menu.add_separator()
+
                 context_menu.add_command(
                     label="Re-transcribe",
                     command=lambda: self.button_retranscribe(window_id=window_id),
@@ -6715,7 +6718,61 @@ class toolkit_UI():
                     accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+e"
                 )
 
-            # if this is a transcription window enable the relevant menu items
+            context_menu.add_separator()
+
+            # META BUTTONS
+            if segment.meta:
+                context_menu.add_command(
+                    label="Convert to Normal Segment",
+                    command=lambda: self.button_toggle_segment_type(
+                        window_id=window_id, line=line, meta=False),
+                )
+
+                # Meta categories sub-menu
+                meta_categories_menu = tk.Menu(context_menu, tearoff=0)
+
+                # the meta category var
+                meta_category_var = tk.StringVar(value=segment.category)
+
+                # add the meta categories
+                for meta_category in TranscriptionSegment.get_available_categories():
+                    meta_categories_menu.add_radiobutton(
+                        label=str(meta_category).capitalize(),
+                        value=meta_category,
+                        variable=meta_category_var,
+                        command=lambda mc=meta_category:
+                            self.button_set_meta_category(
+                                window_id=window_id, line=line, meta_category=mc)
+                    )
+
+                # add the meta categories sub-menu
+                context_menu.add_cascade(label="Category", menu=meta_categories_menu)
+
+                # Move up or down sub-menu
+                meta_move_menu = tk.Menu(context_menu, tearoff=0)
+                if line > 1:
+                    context_menu.add_command(
+                        label="Move Up",
+                        command=lambda: self.button_move_line(
+                            window_id=window_id, line=line, move=-1),
+                    )
+                
+                if line < len(self.get_window_transcription(window_id=window_id).segments) - 1:
+                    context_menu.add_command(
+                        label="Move Down",
+                        command=lambda: self.button_move_line(
+                            window_id=window_id, line=line, move=1),
+                    )
+
+            # Button to convert to meta if it isn't already
+            else:
+                context_menu.add_command(
+                    label="Convert to Meta-Segment",
+                    command=lambda: self.button_toggle_segment_type(
+                        window_id=window_id, line=line, meta=True),
+                )
+
+            # NLE-SPECIFIC BUTTONS
             if NLE.is_connected() and NLE.current_timeline is not None:
 
                 context_menu.add_separator()
@@ -7183,7 +7240,6 @@ class toolkit_UI():
             if story_editor_window := self.toolkit_UI_obj.open_new_story_editor_window():
                 self.button_add_to_story(window_id, story_editor_window.window_id)
 
-
         def button_add_to_new_group(self, window_id, only_add=True):
             """
             Adds the selected segments to a group
@@ -7234,6 +7290,244 @@ class toolkit_UI():
             else:
                 logger.debug('Not possible to copy segments to clipboard without timecodes using this function.')
                 return
+
+        def widget_line_to_segment(self, window_id, line: int) -> TranscriptionSegment or None:
+            """
+            This returns the relevant TranscriptionSegment based on the passed widget line number
+            """
+
+            if not isinstance(line, int):
+                logger.error('Line must be an integer.')
+                return False
+
+            segment_index = line - 1
+
+            # get the window transcription
+            window_transcription = self.get_window_transcription(window_id=window_id)
+
+            if window_transcription is None:
+                logger.error('Window transcription not found.')
+                return False
+
+            # get the segment
+            segment = window_transcription.get_segment(segment_index=segment_index)
+
+            return segment
+
+        def button_toggle_segment_type(self, window_id, line: int, meta: bool = None):
+            """
+            Toggles the segment type between normal and meta
+            """
+
+            window = self.toolkit_UI_obj.get_window_by_id(window_id=window_id)
+            segment = self.widget_line_to_segment(window_id=window_id, line=line)
+
+            if segment is None:
+                logger.error('Segment not found.')
+                return False
+
+            # let the user know that the time will be lost
+            if meta:
+                confirm = messagebox.askyesno(
+                    title='Convert to Meta-Segment',
+                    parent=self.toolkit_UI_obj.windows[window_id],
+                    message='Converting this segment to a meta-segment will also make '
+                            'the start and end time for this segment equal.\n\n'
+                            'Do you want to continue?')
+
+            else:
+                confirm = messagebox.askyesno(
+                    title='Convert to Normal Segment',
+                    parent=self.toolkit_UI_obj.windows[window_id],
+                    message='After converting this segment to normal segment you\'ll likely '
+                            'have to set its correct end time.\n\n'
+                            'Do you want to continue?')
+
+            if not confirm:
+                return False
+
+            if meta:
+                segment.set({
+                    'start': segment.start,
+                    'end': segment.start,
+                    'meta': True,
+                    'category': 'note'
+                })
+
+                # add the l_meta tag to the line
+                self._tag_meta_segment(text_widget=window.text_widget, line_no=line)
+                self._format_meta_tags(text_widget=window.text_widget)
+
+            else:
+
+                # add a bit to the end time to make sure it's not the same as the start time
+                segment.set({
+                    'end': float(segment.start) + 0.00001,
+                    'meta': False,
+                    'category': None,
+                })
+
+                # remove the l_meta tag from the line
+                self._tag_remove_meta_segment(text_widget=window.text_widget, line_no=line)
+
+            # mark the transcript as modified
+            self.set_transcript_modified(window_id=window_id, modified=True)
+
+            self.toolkit_UI_obj.update_window_status_label(
+                window_id=window_id, text='Transcript not saved.', color='bright_red')
+
+            # save the transcript
+            self.save_transcript(window_id=window_id)
+
+        def button_set_meta_category(self, window_id, line: int, meta_category=None):
+            """
+            Sets the meta category of the segment
+            """
+
+            segment = self.widget_line_to_segment(window_id=window_id, line=line)
+
+            if segment is None:
+                logger.error('Segment not found.')
+
+            if segment.meta and meta_category:
+                segment.set({
+                    'category': meta_category
+                })
+
+                # mark the transcript as modified
+                self.set_transcript_modified(window_id=window_id, modified=True)
+
+                self.toolkit_UI_obj.update_window_status_label(
+                    window_id=window_id, text='Transcript not saved.', color='bright_red')
+
+                # save the transcript
+                self.save_transcript(window_id=window_id)
+
+        def button_move_line(self, window_id, line: int, move):
+            """
+            Moves the active line up or down
+            """
+
+            if not isinstance(move, int) or not move:
+                logger.error('Cannot move line by {} lines'.format(move))
+                return
+
+            segment = self.widget_line_to_segment(window_id=window_id, line=line)
+            window = self.toolkit_UI_obj.get_window_by_id(window_id=window_id)
+
+            text_widget = window.text_widget
+
+            if segment is None:
+                logger.error('Segment not found.')
+                return False
+
+            if not segment.meta:
+                logger.error("Cannot move non-meta segments.")
+                return False
+
+            # if we're moving in a positive direction
+            # we need to add a unit to make sure that we're moving over the next segment
+            if move > 0:
+                move += 1
+
+            current_segment_id = segment.id
+            current_index = segment.get_index()
+            calculated_index = current_index + move
+            current_segment_text = segment.text
+
+            if calculated_index < 0:
+                logger.error('Cannot move segment to index {}.'.format(calculated_index))
+                return False
+
+            elif calculated_index == segment.get_index():
+                logger.warning('Segment is already at index {}.'.format(calculated_index))
+                return False
+
+            parent_transcription = segment.parent_transcription
+
+            new_segment = segment.to_dict()
+            if 'id' in new_segment:
+                del new_segment['id']
+                
+            # both the start time and the end times of the segment must have the ones of the next one
+            next_segment = parent_transcription.get_segment(segment_index=calculated_index)
+            
+            if next_segment is None:
+                logger.error('Cannot move segment further down.')
+                return False
+
+            new_segment['start'] = next_segment.start
+            new_segment['end'] = next_segment.start
+            
+            # transcript changes start here, so let's clear any selections in the window
+            self.clear_selection(window_id=window_id, text_element=text_widget)
+
+            # also de-select any groups
+            window.transcript_groups_module.deselect_group()
+
+            # add the segment at the new index
+            parent_transcription.add_segment(new_segment, segment_index=calculated_index)
+
+            # delete the segment from the old index
+            # but make sure we're deleting the right one!
+
+            # if the move was positive
+            if move > 0:
+                # delete the segment at the old index (since this should not have affected the index of the segment)
+                if current_segment_id == parent_transcription.get_segment(segment_index=current_index).id:
+                    parent_transcription.delete_segment(segment_index=current_index)
+
+            else:
+                # delete the segment at the old index plus 1, since we shifted all the segments by one
+                if current_segment_id == parent_transcription.get_segment(segment_index=current_index+1).id:
+                    parent_transcription.delete_segment(segment_index=current_index+1)
+
+            # get the line
+            tkinter_line_index = \
+                '{}.0'.format(line), '{}.0'.format(int(line) + 1).split(' ')
+
+            # enable editing on the text element
+            text_widget.config(state=ctk.NORMAL)
+
+            # remove the line from the text widget
+            text_widget.delete(tkinter_line_index[0], tkinter_line_index[1])
+
+            # add the line back to the text widget
+            # if the move was positive:
+            if move > 0:
+                text_widget.insert("{}.end".format(line+move-2), '\n' + current_segment_text)
+
+                # add the l_meta tag to the new line
+                self._tag_meta_segment(text_widget=text_widget, line_no=line+move-1)
+
+                # select the new line
+                self.set_active_segment(window_id=window_id, text_widget=text_widget, text_widget_line=line+move-1)
+
+            # if the move was negative:
+            else:
+                text_widget.insert("{}.end".format(line+move-1), '\n' + current_segment_text)
+
+                # add the l_meta tag to the new line
+                self._tag_meta_segment(text_widget=text_widget, line_no=line+move)
+
+                # select the new line
+                self.set_active_segment(window_id=window_id, text_widget=text_widget, text_widget_line=line+move)
+
+            self._format_meta_tags(text_widget=text_widget)
+
+            # disable editing on the text element
+            text_widget.config(state=ctk.DISABLED)
+
+            # mark the transcript as modified
+            self.set_transcript_modified(window_id=window_id, modified=True)
+
+            self.toolkit_UI_obj.update_window_status_label(
+                window_id=window_id, text='Transcript not saved.', color='bright_red')
+
+            # save the transcript
+            self.save_transcript(window_id=window_id)
+
+            return True
 
         def button_retranscribe(self, window_id):
             """
@@ -8087,7 +8381,6 @@ class toolkit_UI():
                 # enable editing on the text element
                 text_widget.config(state=ctk.NORMAL)
 
-                # delete the line - doesn't work!
                 # remove the line from the text widget
                 text_widget.delete(tkinter_line_index[0], tkinter_line_index[1])
 
@@ -8106,11 +8399,11 @@ class toolkit_UI():
                 # mark the transcript as modified
                 self.set_transcript_modified(window_id=window_id, modified=True)
 
-                # save the transcript
-                save_status = self.save_transcript(window_id=window_id)
+                self.toolkit_UI_obj.update_window_status_label(
+                    window_id=window_id, text='Transcript not saved.', color='bright_red')
 
-                # let the user know what happened via the status label
-                self.update_status_label_after_save(window_id=window_id, save_status=save_status)
+                # save the transcript
+                self.save_transcript(window_id=window_id)
 
                 return True
 
@@ -8173,8 +8466,8 @@ class toolkit_UI():
                 # save the transcript
                 save_status = self.save_transcript(window_id=window_id)
 
-                # let the user know what happened via the status label
-                self.update_status_label_after_save(window_id=window_id, save_status=save_status)
+                self.toolkit_UI_obj.update_window_status_label(
+                    window_id=window_id, text='Transcript not saved.', color='bright_red')
 
                 # set the text widget back to initial state
                 text_widget.config(state=initial_text_widget_state)
@@ -9048,6 +9341,7 @@ class toolkit_UI():
             """
             This clears the segment selection for the said window
             :param window_id:
+            :param text_element:
             :return:
             """
 
@@ -9325,7 +9619,8 @@ class toolkit_UI():
                         'text': ' ',
                         'start': next_segment.start if next_segment is not None else current_segment.end,
                         'end': next_segment.start if next_segment is not None else current_segment.end,
-                        'meta': True
+                        'meta': True,
+                        'category': 'note'
                     })
 
                 # otherwise insert the new line before the current segment
@@ -9343,7 +9638,8 @@ class toolkit_UI():
                         'text': ' ',
                         'start': current_segment.start,
                         'end': current_segment.start,
-                        'meta': True
+                        'meta': True,
+                        'category': 'note'
                     })
 
                 self._format_meta_tags(text_widget=text_widget)
@@ -9751,6 +10047,11 @@ class toolkit_UI():
 
             text_widget.tag_add('l_meta', "{}.0".format(line_no), "{}.end".format(line_no))
 
+        @staticmethod
+        def _tag_remove_meta_segment(text_widget, line_no):
+
+            text_widget.tag_remove('l_meta', "{}.0".format(line_no), "{}.end".format(line_no))
+
         def _format_meta_tags(self, text_widget):
 
             text_widget.tag_config('l_meta', foreground=toolkit_UI.theme_colors['meta_text'], )
@@ -9965,7 +10266,7 @@ class toolkit_UI():
 
             # save the transcript
             # (this will also update the status label depending on the result)
-            save_status = self.save_transcript(window_id=window_id)
+            self.save_transcript(window_id=window_id)
 
         def update_status_label_after_save(self, window_id, save_status=None):
 
@@ -10703,7 +11004,7 @@ class toolkit_UI():
             if new_transcription_segments is not None:
 
                 # add the segments to the transcription
-                transcription.add_segments(new_transcription_segments, overwrite=True)
+                transcription.add_segments(new_transcription_segments, overwrite=True, add_speaker=True)
                 # transcription.save_soon(force=True, sec=0)
 
                 # reload the groups in the transcript groups module
@@ -17210,7 +17511,8 @@ class toolkit_UI():
             # and ask the user if they want to connect to Resolve API on startup
             always_connect = messagebox.askyesno(title='Connect back at startup?',
                                                  message='Resolve API connection disabled.\n\n'
-                                                         'Do you want to still reconnect to the Resolve API at tool startup?'
+                                                         'Do you want to still reconnect to the '
+                                                         'Resolve API at tool startup?'
                                                  )
 
             if not always_connect:

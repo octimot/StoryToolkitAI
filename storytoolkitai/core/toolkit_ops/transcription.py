@@ -924,7 +924,7 @@ class Transcription:
         but keeping track of the last time it was saved, and only saving
         if it's been a while since the last save
         :param force: bool, whether to force save the transcription even if it's not dirty
-        :param backup: bool, whether to backup the transcription file before saving, if an integer is passed,
+        :param backup: bool, whether to back up the transcription file before saving, if an integer is passed,
                              it will be used to determine the time in hours between backups
         :param auxiliaries: bool, whether to save the auxiliaries
         :param sec: int, how soon in seconds to save the transcription, if 0, save immediately
@@ -1571,13 +1571,19 @@ class TranscriptionSegment:
     def other_data(self):
         return self._other_data
 
-    def set(self, key: str, value):
+    def set(self, key: str or dict, value=None):
         """
         We use this to set some of the attributes of the segment.
         If the segment has a parent, it flags it as dirty.
         """
 
         allowed_attributes = ['start', 'end', 'text', 'words', 'meta', 'category']
+
+        # if the key is a dict, set all the keys in the dict
+        if isinstance(key, dict):
+            for k, v in key.items():
+                self.set(k, v)
+            return True
 
         if key in allowed_attributes:
 
@@ -1612,6 +1618,12 @@ class TranscriptionSegment:
                           ]
 
     __simplified_attributes = ['start', 'end', 'text', 'segment_speaker_name()']
+
+    _categories = ['speaker', 'note']
+
+    @staticmethod
+    def get_available_categories():
+        return TranscriptionSegment._categories
 
     def _load_dict_into_attributes(self, segment_dict):
 
