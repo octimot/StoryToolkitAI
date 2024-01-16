@@ -73,6 +73,7 @@ class toolkit_UI():
     ctk_form_textbox = {'width': 240, 'height': 100}
     ctk_form_paddings = {'padx': 10, 'pady': 5}
     ctk_form_label_settings = {'width': 170, 'anchor': 'w'}
+    ctk_form_label_half_settings = {'width': 85, 'anchor': 'w'}
     ctk_frame_label_settings = {
         **{'fg_color': ctk.ThemeManager.theme["CTkScrollableFrame"]["label_fg_color"], 'anchor': 'w'},
         **ctk_frame_paddings
@@ -1825,6 +1826,10 @@ class toolkit_UI():
 
         move = False
 
+        # todo: figure out a different solution
+        #  this forces the windows to open on the main screen on MacOS,
+        #  since coordinates can be negative on multi-screen setups
+        """
         # if the window's top position is over the top of the screen
         if window.winfo_y() <= 0:
             # set the window's top position to 10
@@ -1842,6 +1847,7 @@ class toolkit_UI():
         # position the window
         if move:
             window.geometry('+{}+{}'.format(window_x, window_y))
+        """
 
     def create_or_open_window(self, parent_element: tk.Toplevel or tk = None, window_id: str = None,
                               title: str = None, resizable: tuple or bool = False,
@@ -3472,8 +3478,8 @@ class toolkit_UI():
 
     def open_find_replace_window(self, window_id=None, title: str = 'Find and Replace',
                                  parent_window_id: str = None, text_widget=None,
-                                 replace_field: bool = False, find_text: str = None, replace_text: str = None,
-                                 post_replace_action: str = None, post_replace_action_args: list = None,
+                                 replace_action: callable = None, find_text: str = None, replace_text: str = None,
+                                 replace_all_action: callable = None,
                                  **kwargs
                                  ):
         """
@@ -3482,7 +3488,7 @@ class toolkit_UI():
 
         if not parent_window_id and not text_widget:
             logger.error('Aborting. Unable to open find and replace window without a parent window.')
-            return False
+            return
 
         # always use the parent in the window id if no window id is given
         if not window_id:
@@ -3501,18 +3507,27 @@ class toolkit_UI():
 
             # create a frame for the find input
             find_frame = ctk.CTkFrame(self.windows[window_id], name='find_frame', **self.ctk_frame_transparent)
-            find_frame.pack(expand=True, fill='both', **self.ctk_popup_frame_paddings)
+            find_frame.pack(expand=True, fill='both', **toolkit_UI.ctk_popup_frame_paddings)
 
             # create a label for the find input
-            find_label = ctk.CTkLabel(find_frame, text='Find:', name='find_label')
-            find_label.pack(side=ctk.LEFT, **self.ctk_popup_input_paddings)
+            find_label = ctk.CTkLabel(
+                find_frame, text='Find:', name='find_label', **toolkit_UI.ctk_form_label_half_settings)
+            find_label.pack(side=ctk.LEFT, **toolkit_UI.ctk_popup_input_paddings)
 
             # create the find input
             find_str = tk.StringVar()
-            find_input = ctk.CTkEntry(find_frame, textvariable=find_str, name='find_input')
-            find_input.pack(side=ctk.LEFT, expand=True, fill='x', **self.ctk_popup_input_paddings)
+            find_input = ctk.CTkEntry(
+                find_frame, textvariable=find_str, name='find_input', **toolkit_UI.ctk_askdialog_input_size)
+            find_input.pack(side=ctk.LEFT, expand=True, fill='x', **toolkit_UI.ctk_popup_input_paddings)
 
             parent_text_widget = self.text_windows[parent_window_id]['text_widget']
+
+            # create the next button
+            kwargs['next_button'] = ctk.CTkButton(
+                find_frame, text='Next', name='next_button',
+                command=lambda l_parent_text_widget=parent_text_widget, l_parent_window_id=parent_window_id:
+                self._cycle_through_find_results(text_widget=l_parent_text_widget, window_id=l_parent_window_id)
+            )
 
             # create the select all button
             if kwargs.get('select_all_action', False):
@@ -3522,8 +3537,13 @@ class toolkit_UI():
 
             # if the user presses a key in the find input,
             # call the _find_text_in_widget function
-            find_str.trace("w", lambda name, index, mode, l_find_str=find_str, l_parent_window_id=parent_window_id:
-            self._find_text_in_widget(l_find_str, l_parent_window_id, text_widget=parent_text_widget, **kwargs))
+            find_str.trace(
+                "w",
+                lambda name, index, mode, l_find_str=find_str, l_parent_window_id=parent_window_id:
+                self._find_text_in_widget(
+                    l_find_str, l_parent_window_id, text_widget=parent_text_widget, **kwargs
+                )
+            )
 
             # return key cycles through the results
             find_input.bind('<Return>',
@@ -3532,40 +3552,93 @@ class toolkit_UI():
                                                              window_id=l_parent_window_id))
 
             # escape key closes the window
-            find_input.bind('<Escape>', lambda e, l_window_id=window_id: self.destroy_find_replace_window(l_window_id))
+            find_input.bind('<Escape>',
+                            lambda e, l_window_id=window_id: self.destroy_find_replace_window(l_window_id))
 
             # if a find text is given, add it to the find input
             if find_text:
                 find_input.insert(0, find_text)
 
-            # todo: add replace field when needed
-            if replace_field:
+            # if there is a replace field add it to the window
+            if replace_action:
+
                 # create a frame for the replace input
                 replace_frame = ctk.CTkFrame(self.windows[window_id], name='replace_frame',
-                                             **self.ctk_frame_transparent)
-                replace_frame.pack(expand=True, fill='both', **self.ctk_popup_frame_paddings)
+                                             **toolkit_UI.ctk_frame_transparent)
+                replace_frame.pack(expand=True, fill='both', **toolkit_UI.ctk_popup_frame_paddings)
 
                 # create a label for the replace input
-                replace_label = ctk.CTkLabel(replace_frame, text='Replace:', name='replace_label')
-                replace_label.pack(side=ctk.LEFT, **self.ctk_popup_input_paddings)
+                replace_label = ctk.CTkLabel(
+                    replace_frame, text='Replace:', name='replace_label', **toolkit_UI.ctk_form_label_half_settings)
+                replace_label.pack(side=ctk.LEFT, **toolkit_UI.ctk_popup_input_paddings)
 
-                # create the replace input
-                replace_input = ctk.CTkEntry(replace_frame, name='replace_input')
-                replace_input.pack(side=ctk.LEFT, expand=True, fill='x', **self.ctk_popup_input_paddings)
+                # create the replace-input
+                replace_str = tk.StringVar(value=replace_text if replace_text else '')
+                replace_input = ctk.CTkEntry(
+                    replace_frame, textvariable=replace_str, name='replace_input', **toolkit_UI.ctk_askdialog_input_size)
+                replace_input.pack(side=ctk.LEFT, expand=True, fill='x', **toolkit_UI.ctk_popup_input_paddings)
 
-                # if a replace text is given, add it to the replace input
-                if replace_text:
-                    replace_input.insert(0, replace_text)
+                def do_replace():
 
-                replace_button = ctk.CTkButton(replace_frame, text='Replace', name='replace_button',
-                                               command=lambda: self._replace_text_in_widget(
-                                                   window_id=window_id,
-                                                   text_widget=text_widget,
-                                                   post_replace_action=post_replace_action,
-                                                   post_replace_action_args=post_replace_action_args
-                                               )
-                                               )
-                replace_button.pack(side=ctk.LEFT, **self.ctk_popup_input_paddings)
+                    try:
+                        current_pos = self.find_result_pos[parent_window_id]
+                        result_indexes = self.find_result_indexes[parent_window_id]
+                        current_text_index = result_indexes[current_pos]
+
+                    except KeyError:
+                        return
+
+                    except IndexError:
+                        return
+
+                    replace_action(
+                        window_id=parent_window_id,
+                        text_index=current_text_index,
+                        find_text=find_str.get(),
+                        replace_text=replace_str.get()
+                    )
+
+                    # perform another search to update the find results
+                    self._find_text_in_widget(
+                        find_str, parent_window_id, text_widget=parent_text_widget, **kwargs
+                    )
+
+                replace_button = ctk.CTkButton(
+                    replace_frame, text='Replace', name='replace_button',
+                    command=do_replace
+                )
+
+                kwargs['replace_button'] = replace_button
+
+                if replace_all_action:
+
+                    def do_replace_all():
+                        try:
+                            result_indexes = self.find_result_indexes[parent_window_id]
+                        except KeyError:
+                            return
+
+                        except IndexError:
+                            return
+
+                        replace_all_action(
+                            window_id=parent_window_id,
+                            text_indexes=result_indexes,
+                            find_text=find_str.get(),
+                            replace_text=replace_str.get()
+                        )
+
+                        # perform another search to update the find results
+                        self._find_text_in_widget(
+                            find_str, parent_window_id, text_widget=parent_text_widget, **kwargs
+                        )
+
+                    replace_all_button = ctk.CTkButton(
+                        replace_frame, text='Replace All', name='replace_all_button',
+                        command=do_replace_all
+                    )
+
+                    kwargs['replace_all_button'] = replace_all_button
 
             # create a footer frame that holds stuff on the bottom of the window
             footer_frame = ctk.CTkFrame(self.windows[window_id], name='footer_frame', **self.ctk_frame_transparent)
@@ -3686,20 +3759,35 @@ class toolkit_UI():
 
                         # add the select_all_action to the select_all_button
                         # but also send the transcription window id, the text widget and the result indexes
-                        kwargs.get('select_all_button') \
-                            .configure(command=lambda l_window_id=window_id, l_text_widget=text_widget:
+                        kwargs.get('select_all_button').configure(
+                            command=lambda l_window_id=window_id, l_text_widget=text_widget:
                             select_all_action(
                                 window_id=l_window_id,
                                 text_element=l_text_widget,
                                 text_indices=self.find_result_indexes[window_id])
-                                           )
+                        )
 
+                        kwargs.get('next_button').pack(side=ctk.LEFT, **self.ctk_popup_input_paddings)
                         kwargs.get('select_all_button').pack(side=ctk.LEFT, **self.ctk_popup_input_paddings)
+
+                        if kwargs.get('replace_button', False):
+                            kwargs.get('replace_button').pack(side=ctk.LEFT, **self.ctk_popup_input_paddings)
+
+                        if kwargs.get('replace_all_button', False):
+                            kwargs.get('replace_all_button').pack(side=ctk.LEFT, **self.ctk_popup_input_paddings)
 
                 # if we don't have results, hide the select all button (if there is any)
                 else:
                     if kwargs.get('select_all_button', False):
                         kwargs.get('select_all_button').pack_forget()
+
+                    kwargs.get('next_button').pack_forget()
+
+                    if kwargs.get('replace_button', False):
+                        kwargs.get('replace_button').pack_forget()
+
+                    if kwargs.get('replace_all_button', False):
+                        kwargs.get('replace_all_button').pack_forget()
 
                 # mark located string with red
                 text_widget.tag_config('found', foreground=self.theme_colors['red'])
@@ -3722,6 +3810,14 @@ class toolkit_UI():
 
             if kwargs.get('select_all_button', False):
                 kwargs.get('select_all_button').pack_forget()
+
+            if kwargs.get('replace_button', False):
+                kwargs.get('replace_button').pack_forget()
+
+            if kwargs.get('replace_all_button', False):
+                kwargs.get('replace_all_button').pack_forget()
+
+            kwargs.get('next_button').pack_forget()
 
     def _tag_find_results(self, text_widget: tk.Text = None, text_index: str = None, window_id: str = None):
         """
@@ -3756,9 +3852,8 @@ class toolkit_UI():
                 or self.find_result_indexes[window_id] or self.find_result_indexes[window_id][0] != '':
 
             # if we have no results, return
-            if window_id not in self.find_result_indexes \
-                    or not self.find_result_indexes[window_id]:
-                return False
+            if window_id not in self.find_result_indexes or not self.find_result_indexes[window_id]:
+                return
 
             # get the current search result position
             current_pos = self.find_result_pos[window_id]
@@ -7093,6 +7188,63 @@ class toolkit_UI():
             # todo: this is very un-necessary because it's redrawing the whole window on each segment move
             # final step, update the window
             self.toolkit_UI_obj.update_transcription_window(window_id=window_id)
+
+        def replace_action(self, find_text, replace_text, window_id, text_index):
+            """
+            We use this mostly for the find-replace window
+            """
+
+            window = self.toolkit_UI_obj.get_window_by_id(window_id=window_id)
+            text_widget = window.text_widget
+
+            # is the find_text at the text_index?
+            if text_widget.get(text_index, text_index + "+{}c".format(len(find_text))).lower() == find_text.lower():
+
+                line = int(text_index.split('.')[0])
+
+                text_widget_state = text_widget.cget('state')
+
+                # make the text widget not read-only
+                text_widget.config(state=ctk.NORMAL)
+
+                # do not allow new line characters or carriage returns in the replace text
+                replace_text = replace_text.replace('\n', ' ').replace('\r', ' ')
+
+                # replace it
+                text_widget.delete(text_index, text_index + "+{}c".format(len(find_text)))
+                text_widget.insert(text_index, replace_text)
+
+                # now get the text of the line
+                line_text = text_widget.get('{}.0'.format(line), '{}.end'.format(line))
+
+                transcription_segment = window.transcription.get_segment(segment_index=line-1)
+                transcription_segment.set('text', line_text)
+
+                # if this was a meta segment, add the tag
+                if transcription_segment.meta:
+                    self._tag_meta_segment(text_widget=text_widget, line_no=line)
+                    self._format_meta_tags(text_widget=text_widget)
+
+                # mark the transcript as modified
+                self.set_transcript_modified(window_id=window_id, modified=True)
+
+                self.toolkit_UI_obj.update_window_status_label(
+                    window_id=window_id, text='Transcript not saved.', color='bright_red')
+
+                # save the transcript
+                self.save_transcript(window_id=window_id)
+
+                # return the text_widget to its original state
+                text_widget.config(state=text_widget_state)
+
+        def replace_all_action(self, find_text, replace_text, window_id, text_indexes):
+            """
+            We use this mostly for the find-replace window
+            """
+
+            for text_index in text_indexes:
+                self.replace_action(find_text, replace_text, window_id, text_index)
+
 
         def button_select_deselect_all(self, window_id, text_element=None):
             """
@@ -10836,7 +10988,9 @@ class toolkit_UI():
                     left_t_buttons_frame, text='Find', name='find_replace_button',
                     command=lambda: self.open_find_replace_window(
                         parent_window_id=t_window_id, title="Find in {}".format(title),
-                        select_all_action=self.t_edit_obj.text_indices_to_selection
+                        select_all_action=self.t_edit_obj.text_indices_to_selection,
+                        replace_action=self.t_edit_obj.replace_action,
+                        replace_all_action=self.t_edit_obj.replace_all_action
                     ),
                     **self.ctk_side_frame_button_size
                 )
@@ -10847,7 +11001,9 @@ class toolkit_UI():
                     lambda e: self.open_find_replace_window(
                         parent_window_id=t_window_id,
                         title="Find in {}".format(title),
-                        select_all_action=self.t_edit_obj.text_indices_to_selection
+                        select_all_action=self.t_edit_obj.text_indices_to_selection,
+                        replace_action=self.t_edit_obj.replace_action,
+                        replace_all_action=self.t_edit_obj.replace_all_action
                     )
                 )
 
@@ -10856,8 +11012,10 @@ class toolkit_UI():
                     lambda: self.open_find_replace_window(
                         parent_window_id=t_window_id,
                         title="Find in {}".format(title),
-                        select_all_action=self.t_edit_obj.text_indices_to_selection
-                )
+                        select_all_action=self.t_edit_obj.text_indices_to_selection,
+                        replace_action=self.t_edit_obj.replace_action,
+                        replace_all_action=self.t_edit_obj.replace_all_action
+                    )
 
                 # ADVANCED SEARCH
                 # this button will open a new window with advanced search options
