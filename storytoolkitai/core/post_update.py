@@ -124,6 +124,49 @@ def post_update_0_22_0(is_standalone=False):
         logger.warning('Config file not found. Skipping post-update task to update API Token to API Key.')
 
 
+def post_update_0_23_0(is_standalone=False):
+    """
+    This re-installs transformers and urllib3 to make sure we have the right version
+    """
+
+    # not needed if we are running in standalone mode
+    if is_standalone:
+        return True
+
+    import sys
+    import subprocess
+
+    # uninstall openai-whisper package
+    try:
+        # uninstall packages so we can re-install them
+        subprocess.check_call(
+            [sys.executable, '-m', 'pip', 'uninstall', '-y', 'transformers', 'urllib3', 'opencv-python'])
+        logger.info('Uninstalled openai-whisper package to re-install relevant version on restart.')
+
+    except Exception as e:
+        logger.error('Failed to uninstall packages. {}'.format(e))
+        logger.warning('Please uninstall and re-install transformers, urllib3, opencv-python packages manually.')
+
+        return False
+
+    # force a requirements.txt check and install
+    try:
+        # get the absolute path to requirements.txt,
+        # considering it should be relative to the current file
+        requirements_file_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), '..', '..', 'requirements.txt'
+        )
+
+        # don't use cache dir
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', requirements_file_path, '--no-cache-dir'])
+    except Exception as e:
+        logger.error('Failed to install requirements.txt: {}'.format(e))
+        logger.warning('Please install the requirements.txt manually.')
+
+        return False
+
+    return True
+
 # this is a dictionary of all the post_update functions
 # make sure to keep them in order
 # but remove update functions from the past which uninstall and install requirements.txt
@@ -131,5 +174,6 @@ def post_update_0_22_0(is_standalone=False):
 post_update_functions = {
     '0.20.1': post_update_0_20_1,
     '0.22.0': post_update_0_22_0,
+    '0.23.0': post_update_0_23_0,
 }
 

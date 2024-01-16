@@ -2,11 +2,11 @@
 
 ## Description
 
-**StoryToolkitAI is a film editing tool that understands your footage and helps you edit more efficiently with the help 
-of AI.**
+**StoryToolkitAI is a film editing tool that tries to understand your footage and helps you edit more efficiently with 
+the assistance of AI.**
 
 The tool works locally on your machine, independent of any other editing software, but it also integrates with DaVinci 
-Resolve Studio 18 and above.
+Resolve Studio 18.
 
 <img alt="StoryToolkitAI Interface" src="help/storytoolkitai_v0.19.0.png" width="750">
 
@@ -16,11 +16,12 @@ Resolve Studio 18 and above.
 - [x] **Free Automatic Translation** to English on your local machine
 - [x] **OpenAI GPT integration** - talk to AI about your content, or generate new ideas
 - [x] **Search Content** intuitively without having to type in exact words
-- [X] **Transcript Groups** - group transcript lines into whatever you need to find them easier
 - [X] **Story Editor** - write screenplays containing your transcripts and export them for editing (EDL/XML/Fountain) (v. 0.20.1+)
 - [X] **Translate transcripts** to other languages using OpenAI GPT (v. 0.22.0+)
 - [X] **Ask AI to create Stories and Selections** based on your footage using OpenAI GPT (v. 0.22.0+)
+- [X] **Automatic Speaker Detection** in transcripts (v. 0.23.0+)
 - [X] Automatic Question detection in transcripts
+- [X] Transcript Groups - group transcript lines into whatever you need to find them easier
 - [x] Multi-format export of transcripts, including SRT, TXT, AVID DS and as Fusion Text node
 - [X] Import of **existing SRT files** 
 - [X] Easy copy of timecoded transcript text to clipboard etc.
@@ -32,7 +33,7 @@ Resolve Studio 18 and above.
 - [x] Direct import of subtitles into Resolve bin
 
 ### Planned Features
-- [ ] **Speaker Diarization** to tag speakers in transcripts
+- [ ] **Project File Management** for more intuitive workflows and easier search
 - [ ] **Automatic Topic Classification** to help you discover ideas in your transcripts
 - [ ] **Integration with other AI tools**
 - [ ] **Integration with other software / standalone players**
@@ -71,8 +72,8 @@ the tool does not send anything that you don't want to the Internet, it only use
 translate your audio.
 
 Currently, the only features that send data from your machine to the Internet are:
-- The StoryToolkitAI API Token check to api.storytoolkit.ai (only when entered in the Settings Window)
-- The Assistant to OpenAI (only contexts and messages that you select and send).
+- The StoryToolkitAI API Key check to storytoolkit.ai (only when entered in the Settings Window)
+- The Assistant to OpenAI or storytoolkit.ai (only contexts and messages that you select and send).
 
 ---
 

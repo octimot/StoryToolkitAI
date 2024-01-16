@@ -99,6 +99,11 @@ For details regarding the models and their performance, please check
 Also, keep in mind that if you're transcribing on a CUDA device, you need minimum 5GB of VRAM for the medium model, and
 minimum 10GB for the large model.
 
+**Speaker Detection** when activated, the tool will try to detect when the speaker change between transcription segments.
+
+**Speaker Detection Threshold** allows you to tweak the speaker detection threshold between 0 and 1, 
+where 1 means no speaker change detection
+
 **Initial Prompt**. This is useful if you want the
 transcription algorithm to adopt a certain style (for e.g. separating speaker sentences, or using caps after 
 punctuation), or even prime it to use certain names (for e.g. "Helena" instead of "Elena"), or avoid rookie mistakes 
@@ -142,6 +147,9 @@ you would enter this in the Time Intervals field:
 0.00 - 10.00
 30.00 - 40.00
 ```
+
+**Keep Debug Info** will keep the debug info from the transcription process in the transcript file. Unless you know
+you'll be using these, we recommend keeping this disabled, to reduce the clutter in the transcription file.
 
 #### Resolve "transcription_WAV" Preset
 
@@ -198,6 +206,17 @@ This is probably due to the fact that the Whisper model works better when it has
 In these cases, try to use either a larger model, or provide Whisper with more info using the Initial Prompt. Let us
 know what tricks you use to get the best results!_
 
+### Speaker Detection
+
+Starting with version 0.23.0, the tool can also detect speaker changes between transcript segments.
+The speaker detection model is simple, but it does try to match different speakers throughout the transcription.
+
+We're planning a more advanced speaker detection model in the future, combined with video analysis and speaker recognition, 
+but for now, this is a fast way to populate the transcript with speaker segments.
+
+The **Speaker Detection Threshold** allows you to tweak the speaker detection threshold between 0 and 1, 
+where 1 means no speaker change detection and 0 means that all segments will be assigned a different speaker.
+
 ### Transcript Word Find
 Once a transcript is loaded, a basic find function (CMD/CTRL+F) will let you find words in the transcript and show you 
 their position. Press "ENTER" to cycle between results. Once you find what you're looking for, simply clicking the 
@@ -205,8 +224,8 @@ phrase will move the Resolve playhead to the respective timecode (if connected t
 
 ### Transcript Groups
 
-Starting with v0.17.5, you can group transcript segments together so that you can easily select them later if you need
-to. To add segments to groups, select them with V (or CMD/CTRL+Click, or other selection shortcuts) and then press 
+This allows grouping of transcript segments together so that they can be easily found and selected later. 
+To add segments to groups, select them with V (or CMD/CTRL+Click, or other selection shortcuts) and then press 
 CMD/CTRL+G. To see the group list for each transcript, click CMD/CTRL+G while in the transcription window. From there,
 you can also add group notes for each group. For e.g. if you group certain segments on a certain topic, you can add
 your notes on that particular topic in the group notes field. You can also use the groups to select all the segments
@@ -712,11 +731,6 @@ Please read the Davinci Resolve Studio integrations section above for more info.
 Currently, the tool gets stuck as it waits a reply from the Resolve API, while Resolve is playing back, but it gets
 un-stuck as soon as the playhead stops moving. This will be fixed in a future update soon.
 
-### Timecode issues with 23.976 timelines
-A bug in the Resolve API which sometimes reports 23.976 fps as 23fps creates a bunch of issues mainly for operations
-that use timecode (transcript to playhead navigation, adding markers at the precise frame etc.). Unfortunately, this
-can only be fixed by Blackmagic within Resolve itself (fingers crossed for an update?)
-
 ### RuntimeError: CUDA out of memory
 If you get this message while transcribing on the GPU, it means that your GPU doesn't have enough memory to run the
 model you have selected. The solution is to either use a smaller model, or to transcribe on the CPU.
@@ -755,5 +769,7 @@ Keep in mind that if you do this, the first time you transcribe or search someth
 
 
 ### Please report any other issues
-As mentioned, the tool is in a super raw state of development. Please report anything weird that you notice, and we'll 
+As mentioned, the tool is in a raw state of development. Please report anything weird that you notice, and we'll 
 look into it.
+
+To report any issues, please use the Issues tab here on Github: https://github.com/octimot/StoryToolkitAI/issues

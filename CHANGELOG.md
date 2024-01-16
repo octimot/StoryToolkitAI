@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.23.0] - 2024-01-16
+
+Speaker Detection: detect speaker changes in audio either while ingesting or directly from the transcription window.
+
+Meta Transcription Segments: add speakers, notes, etc. to your transcripts using SHIFT+ENTER while editing a transcript.
+
+### Added
+- Automatic Speaker Change Detection via Ingest or from the Transcription Window
+- Ability to add transcript meta segments, such as speaker, notes, etc. - use SHIFT+ENTER while editing a transcript to add a meta segment
+- Ability to choose whether to keep or not whisper debug info in Transcriptions
+- Ability to delete multiple transcript lines at once
+
+### Changes
+- Any line or group selections in the transcript are now cleared when editing transcript
+- Assistant also receives speakers when user requests transcription or story responses [t] or [st]
+- Improved transcript text editing
+- Removed Re-transcribe and Group Questions buttons from the Transcription Window (still available in main menu and on right-click)
+
+### Fixes
+- Fixed incorrect timecode calculation on EDL and FCP7XML export of Stories
+- Fixed a bug that prevented AVID DS exports dealing with 00:00:00:00 timecodes
+- Fixed incomplete Fusion Comp exports
+- Transcript segment selections are now cleared before editing the transcript
+- Fixed ingest time interval validation bug introduced in previous version
+- Fixed a bug that prevented the saving of the transcription_max_per_line_unit in Preferences
+- Other bug fixes and optimizations
+
 ## [0.22.0] - 2024-01-06
 
 Major improvements to the Assistant, including the ability to provide new Transcriptions or Stories as responses.
