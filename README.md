@@ -90,9 +90,10 @@ The tool would be useless without using the following open source projects:
 - [OpenAI Whisper](https://openai.com/blog/whisper/)
 - [Sentence Transformers](https://www.sbert.net/)
 - [OpenAI ChatGPT](https://openai.com/blog/chat-gpt/)
+- [pyannote.audio](https://github.com/pyannote/pyannote-audio/)
 - [spaCy](https://spacy.io/)
 - [CustomTkinter](https://customtkinter.tomschimansky.com/)
-- and many other packages that can be seen in the requirements.txt file
+- and many other packages listed in [requirements.txt](https://github.com/octimot/StoryToolkitAI/blob/main/requirements.txt)
 
 ---
 
