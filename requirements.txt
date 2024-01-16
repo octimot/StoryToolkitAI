@@ -22,9 +22,9 @@ torch
 torchaudio
 onnxruntime
 tqdm
-transformers>=4.29.3
+transformers>4.33.3
 typing_extensions==4.7
-urllib3==1.26.12
+urllib3
 openai-whisper @ git+https://github.com/openai/whisper.git@ba3f3cd54b0e5b8ce1ab3de13e32122d0d5f98ab
 dtw-python
 resampy
