@@ -2,6 +2,7 @@ import os.path
 
 from storytoolkitai.core.logger import logger
 import packaging
+import time
 
 
 def post_update(current_version, last_version, is_standalone=False):
@@ -58,24 +59,21 @@ def post_update_0_20_1(is_standalone=False):
     try:
         # uninstall openai-whisper package so we can re-install it and make sure we have the correct commit
         subprocess.check_call([sys.executable, '-m', 'pip', 'uninstall', '-y', 'openai-whisper'])
-        logger.info('Uninstalled openai-whisper package to re-install relevant version on restart.')
+        logger.info('Uninstalled openai-whisper package to re-install relevant version.')
 
     except Exception as e:
         logger.error('Failed to uninstall openai-whisper package: {}'.format(e))
         logger.warning('Please uninstall and re-install the openai-whisper package manually.')
+        time.sleep(3)
 
         return False
 
-    # force a requirements.txt check and install
+    # install the needed openai-whisper commit
     try:
-        # get the absolute path to requirements.txt,
-        # considering it should be relative to the current file
-        requirements_file_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), '..', '..', 'requirements.txt'
-        )
-
         # don't use cache dir
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', requirements_file_path, '--no-cache-dir'])
+        subprocess.check_call(
+            [sys.executable, '-m', 'pip', 'install', '--upgrade', '--no-cache-dir',
+             'openai-whisper@git+https://github.com/openai/whisper.git@ba3f3cd54b0e5b8ce1ab3de13e32122d0d5f98ab'])
     except Exception as e:
         logger.error('Failed to install requirements.txt: {}'.format(e))
         logger.warning('Please install the requirements.txt manually.')
@@ -146,6 +144,7 @@ def post_update_0_23_0(is_standalone=False):
     except Exception as e:
         logger.error('Failed to uninstall packages. {}'.format(e))
         logger.warning('Please uninstall and re-install transformers, urllib3, opencv-python packages manually.')
+        time.sleep(3)
 
         return False
 
