@@ -12507,6 +12507,12 @@ class toolkit_UI():
                                         e, window=window, toolkit_UI_obj=toolkit_UI_obj, special_key='cmd')
                                     )
 
+            # bind SHIFT + DELETE
+            window.text_widget.bind("<Shift-BackSpace>",
+                                    lambda e: toolkit_UI.StoryEdit.on_edit_press(
+                                        e, window=window, toolkit_UI_obj=toolkit_UI_obj, special_key='shift')
+                                    )
+
             # on any other button press, process through the on_edit_press function
             window.text_widget.bind('<Key>',
                                     lambda e: cls.on_edit_press(
@@ -13220,7 +13226,7 @@ class toolkit_UI():
             # DEL and BACKSPACE for non-text lines
             elif 'type' in window.story_lines[story_line_index] \
                 and window.story_lines[story_line_index]['type'] != 'text' \
-                and e.keysym in ['BackSpace', 'Delete']:
+                    and e.keysym in ['BackSpace', 'Delete']:
 
                 # add an undo step
                 cls.add_undo_step(window)
@@ -13238,12 +13244,14 @@ class toolkit_UI():
                     window.text_widget.mark_set('insert', '{}.0'.format(insert_line))
 
                 # stay on this line
-                elif e.keysym == 'Delete' and line != window.text_widget.index('end').split('.')[0]:
+                elif (e.keysym == 'Delete' or (e.keysym == 'BackSpace' and special_key)) \
+                      and line != window.text_widget.index('end').split('.')[0]:
                     insert_line = int(line)
                     window.text_widget.mark_set('insert', '{}.0'.format(insert_line))
 
                 # go to the previous line
-                elif e.keysym == 'Delete' and line == window.text_widget.index('end').split('.')[0]:
+                elif (e.keysym == 'Delete'  or (e.keysym == 'BackSpace' and special_key)) \
+                        and line == window.text_widget.index('end').split('.')[0]:
                     window.text_widget.mark_set('insert', '{}.end'.format(insert_line))
 
                 # stay on this line
@@ -13263,6 +13271,8 @@ class toolkit_UI():
                 logger.debug('Blocked key press on non-text line')
                 return 'break'
 
+            # todo: add the option of pressing DELETE or BACKSPACE
+            #  on text line, but if we're not at the end or at the beginning of the line
             # if the user pressed a key that represents a character
             elif e.char:
 
@@ -13277,8 +13287,21 @@ class toolkit_UI():
                 # if this is a text line
                 if window.story_lines[story_line_index]['type'] == 'text':
 
-                    # add the new character to the text widget
-                    window.text_widget.insert('{}.{}'.format(line, char), e.char)
+                    # it seems that we still have to filter out the backspace and delete keys here
+                    # since on some systems they are still passed as non-blank characters
+                    if str(e.keysym) not in ['BackSpace', 'Delete']:
+                        # add the new character to the text widget
+                        window.text_widget.insert('{}.{}'.format(line, char), e.char)
+
+                    elif e.keysym == 'BackSpace' and not special_key:
+                        # delete the character before the cursor
+                        window.text_widget.delete('{}.{}'.format(line, int(char) - 1))
+
+                    # delete is also equivalent to backspace+shift
+                    # we also have to add the special_key variants (in case we're doing shift+backspace)
+                    elif e.keysym == 'Delete' or (e.keysym == 'BackSpace' and special_key):
+                        # delete the character after the cursor
+                        window.text_widget.delete('{}.{}'.format(line, char))
 
                     # get the text of the line from the window
                     line_text = window.text_widget.get('{}.0'.format(line), '{}.end'.format(line))
