@@ -79,11 +79,11 @@ except:
         logger.warning('Attempting to automatically install the required packages...')
 
         # get the relative path to the requirements file
-        requirements_file_path_rel = os.path.relpath(requirements_file_path)
+        requirements_file_path_abs = os.path.abspath(requirements_file_path)
 
         # install the requirements
         # invoke pip as a subprocess:
-        pip_complete = subprocess.call([sys.executable, '-m', 'pip', 'install', '-r', requirements_file_path_rel])
+        pip_complete = subprocess.call([sys.executable, '-m', 'pip', 'install', '-r', requirements_file_path_abs])
 
         if pip_complete == 0:
             logger.warning('The required packages were installed. Restarting StoryToolkitAI...')
@@ -106,7 +106,7 @@ except:
                 'please close the tool and run:\n\n'
                 'pip install -r {} '
                 '\n\n'
-                .format(requirements_file_path_rel, APP_LOG_FILE))
+                .format(requirements_file_path_abs, APP_LOG_FILE))
 
     else:
         logger.warning('\n'
