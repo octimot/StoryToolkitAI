@@ -695,8 +695,8 @@ class toolkit_UI():
             # ASSISTANT MODEL
             assistant_model = \
                 kwargs.get('assistant_model', None) \
-                    if kwargs.get('assistant_model', None) is not None \
-                    else self.toolkit_UI_obj.stAI.get_app_setting('assistant_model', default_if_none='gpt-3.5-turbo')
+                if kwargs.get('assistant_model', None) is not None \
+                else self.toolkit_UI_obj.stAI.get_app_setting('assistant_model', default_if_none='gpt-3.5-turbo-1106')
 
             assistant_model_list = AssistantUtils.assistant_available_models(assistant_provider)
 
@@ -16187,7 +16187,7 @@ class toolkit_UI():
         assistant_window_title = 'Assistant'
 
         default_model_provider = self.stAI.get_app_setting('assistant_provider', default_if_none='OpenAI')
-        default_model_name = self.stAI.get_app_setting('assistant_model', default_if_none='gpt-3.5-turbo')
+        default_model_name = self.stAI.get_app_setting('assistant_model', default_if_none='gpt-3.5-turbo-1106')
 
         assistant_settings = {
             'system_prompt': self.stAI.get_app_setting(

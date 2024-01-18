@@ -772,7 +772,15 @@ LLM_AVAILABLE_MODELS = {
             'training_cutoff': '2021-09',
             'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT
-        }
+        },
+        'gpt-3.5-turbo': {
+            'description': 'GPT-3.5 Turbo',
+            'price': {'input': 0.001, 'output': 0.002, 'currency': 'USD'},
+            'token_limit': 4096,
+            'training_cutoff': '2021-09',
+            'pricing_info': 'https://openai.com/pricing/',
+            'handler': ChatGPT
+        },
     },
     'storytoolkit.ai': {
         'roy-4t': {
