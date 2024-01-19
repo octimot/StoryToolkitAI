@@ -572,7 +572,7 @@ class ToolkitOps:
             # if we need to detect speaker changes, add the speaker detection tasks too
             if kwargs.get('transcription_speaker_detection', True):
                 kwargs['tasks'] = ['speaker_detection']
-                kwargs['name'] = '{} {}'.format(kwargs['name'], '(Speaker Detection)')
+                kwargs['name'] = '{} {}'.format(c_name, '(Speaker Detection)')
                 kwargs['queue_id'] = None
 
                 kwargs['item_type'] = 'transcription'
@@ -591,7 +591,7 @@ class ToolkitOps:
             if kwargs.get('transcription_group_questions', False):
 
                 kwargs['tasks'] = ['group_questions']
-                kwargs['name'] = '{} {}'.format(kwargs['name'], '(Group Questions)')
+                kwargs['name'] = '{} {}'.format(c_name, '(Group Questions)')
                 kwargs['queue_id'] = None
 
                 kwargs['item_type'] = 'transcription'
