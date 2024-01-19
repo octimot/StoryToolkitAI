@@ -5257,6 +5257,8 @@ class toolkit_UI():
             if transcription_enabled_var.get():
                 # basic_frame_label.grid()
                 basic_frame.grid()
+                speakers_frame_label.grid()
+                speakers_frame.grid()
                 advanced_frame_label.grid()
                 advanced_frame.grid()
                 post_frame_label.grid()
@@ -5266,6 +5268,8 @@ class toolkit_UI():
             else:
                 # basic_frame_label.grid_remove()
                 basic_frame.grid_remove()
+                speakers_frame_label.grid_remove()
+                speakers_frame.grid_remove()
                 advanced_frame_label.grid_remove()
                 advanced_frame.grid_remove()
                 post_frame_label.grid_remove()
