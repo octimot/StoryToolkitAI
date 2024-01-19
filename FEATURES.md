@@ -739,6 +739,12 @@ model you have selected. The solution is to either use a smaller model, or to tr
 The Assistant feature requires an active connection with OpenAI servers, which sometimes can be slow or unresponsive.
 We'll try to improve this behavior in the future.
 
+### OS Permission errors
+If you get an error on windows that looks like this`OSError: [WinError 1314] A required privilege is not held by the client`,
+you need to run the tool with administrator privileges: 
+- For the **standalone** version, right click on the executable and select "Run as administrator"
+- For the **non-standalone** version, run Command Prompt as administrator, and then start the tool from there.
+
 ### Permission denied errors
 If you get something similar to this error (or anything related to the .cache folder): 
 
