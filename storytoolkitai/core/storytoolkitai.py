@@ -617,6 +617,7 @@ class StoryToolkitAI:
                 logger.debug('Unable to check user API key.', exc_info=True)
                 pass
 
+        logger.dbug('No API key found.')
         self.api_key_valid = False
         return False
 
@@ -754,19 +755,30 @@ class StoryToolkitAI:
 
                 main_script_path = os.path.realpath(sys.argv[0])
 
+                ffmpeg_executable = 'ffmpeg.exe' if platform.system() == 'Windows' else 'ffmpeg'
+
                 # ffmpeg should be in the same folder as the main script
-                ffmpeg_path = os.path.join(os.path.dirname(main_script_path), 'ffmpeg')
+                ffmpeg_path = os.path.join(os.path.dirname(main_script_path), ffmpeg_executable)
 
                 # and if it exists, define the environment variable for ffmpeg for this session
                 if os.path.isfile(ffmpeg_path):
                     logger.debug('Found FFmpeg in current working directory.')
                     os.environ['FFMPEG_BINARY'] = ffmpeg_path
                 else:
-                    logger.debug('FFmpeg not found in current working directory.')
+
+                    logger.debug(f'FFmpeg not found in current working directory: {ffmpeg_path}.')
+
+                    # try to find it in '_internal' folder
+                    # - this is where it's stored in the windows standalone version
+                    ffmpeg_path = os.path.join(os.path.dirname(main_script_path), '_internal', ffmpeg_executable)
+                    if os.path.isfile(ffmpeg_path):
+                        logger.debug('Found FFmpeg in _internal directory.')
+                        os.environ['FFMPEG_BINARY'] = ffmpeg_path
+
+                    else:
+                        logger.debug(f'FFmpeg not found in _internal directory: {ffmpeg_path}')
 
             # and check if it's working
-
-            logger.debug('Looking for FFmpeg in env variable.')
 
             # get the FFMPEG_BINARY variable
             ffmpeg_binary = os.getenv('FFMPEG_BINARY')
@@ -782,8 +794,7 @@ class StoryToolkitAI:
                 logger.debug('FFMPEG_BINARY environment variable not set. Trying to execute "FFmpeg".')
                 ffmpeg_binary = 'ffmpeg'
 
-            cmd = [
-                ffmpeg_binary]
+            cmd = [ffmpeg_binary]
 
             logger.debug('Checking ffmpeg binary: {}'.format(ffmpeg_binary))
 
@@ -795,15 +806,21 @@ class StoryToolkitAI:
             if exit_code == 1:
                 logger.debug('FFmpeg found at {}'.format(ffmpeg_binary))
 
+                # add it to the PATH for this session so that we can use it
+                os.environ['FFMPEG_BINARY'] = ffmpeg_binary
+                os.environ['PATH'] += os.pathsep + os.path.dirname(ffmpeg_binary)
+
             else:
-                logger.error('FFmpeg not found on this machine. Please install it and try again.')
+                logger.error('FFmpeg not found on this machine. '
+                             'Reading of certain audio and video files will not work. Please install it and try again.')
                 return False
 
             # if it does, just return true
             return True
 
         except FileNotFoundError:
-            logger.error('FFmpeg not found on this machine. Please install it and try again.')
+            logger.error('FFmpeg not found on this machine. '
+                         'Reading of certain audio and video files will not work. Please install it and try again.')
 
             # if the ffmpeg binary wasn't found, we presume that ffmpeg is not installed on the machine
             return False

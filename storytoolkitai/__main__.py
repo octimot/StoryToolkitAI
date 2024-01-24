@@ -37,46 +37,56 @@ if sys.version_info.major != 3 or sys.version_info.minor != 10:
 file_path = os.path.abspath(__file__)
 
 # the requirements file should be either one directory up from this file
-requirements_file_path = os.path.join(os.path.dirname(file_path), '..', 'requirements.txt')
-
-# or in this directory (valid for the standalone app)
-if not os.path.exists(requirements_file_path):
-    requirements_file_path = os.path.join(os.path.dirname(file_path), 'requirements.txt')
+requirements_file_path = os.path.abspath(os.path.join(os.path.dirname(file_path), '..', 'requirements.txt'))
 
 if not os.path.exists(requirements_file_path):
     logger.warning('Could not find the requirements.txt file.')
 
-# this makes sure that the user has all the required packages installed
-try:
+# this makes sure that the user has all the required packages installed for the non-standalone app
+if not getattr(sys, 'frozen', False):
 
-    # check if all the requirements are met
-    # important: this does not check if the correct versions of the packages are installed
-    # so if a specific version if required, we need to deal with it in the post_update() function
-    import pkg_resources
+    # check to see if all the requirements are met
+    requirements_failed = False
 
-    pkg_resources.require(open(requirements_file_path, mode='r'))
+    try:
 
-    logger.debug('All package requirements met.')
+        # check if all the requirements are met
+        # important: this does not check if the correct versions of the packages are installed
+        # so if a specific version if required, we need to deal with it in the post_update() function
+        import pkg_resources
 
-except:
+        pkg_resources.require(open(requirements_file_path, mode='r'))
 
-    # let the user know that the packages are wrong
-    import traceback
+        logger.debug('All package requirements met.')
 
-    traceback_str = traceback.format_exc()
+    except FileNotFoundError:
+        logger.error("Could not find {} to check the required packages" .format(requirements_file_path))
+        sys.exit()
 
-    logger.error(traceback_str)
+    except pkg_resources.VersionConflict as e:
+        # log the error and show the warning
+        logger.debug("Version conflict in package:", exc_info=True)
+        logger.warning("Version conflict in package: {}".format(e))
+        requirements_failed = True
 
-    requirements_warning_msg = ('Some of the packages required to run StoryToolkitAI '
-                                'are missing from your Python environment.\n')
+    except pkg_resources.DistributionNotFound as e:
+        # log the error and show the warning
+        logger.debug("Distribution not found for package:", exc_info=True)
+        logger.warning("Packages missing from the installation: {}".format(e))
+        requirements_failed = True
 
-    logger.warning(requirements_warning_msg)
+    except:
+        # log the error and show the warning
+        logger.warning("There's something wrong with the packages installed in your Python environment:", exc_info=True)
+        requirements_failed = True
 
-    # if this is not a standalone app, try to install the requirements automatically
-    if not getattr(sys, 'frozen', False):
+    # no matter what, we need to check if the user has the correct version of Python installed
+    if requirements_failed:
+
+        logger.warning('Some of the packages required to run StoryToolkitAI are missing from your Python environment.')
 
         # try to install the requirements automatically
-        logger.warning('Attempting to automatically install the required packages...')
+        logger.warning('Attempting to automatically install the missing packages...')
 
         # get the relative path to the requirements file
         requirements_file_path_abs = os.path.abspath(requirements_file_path)
@@ -108,13 +118,8 @@ except:
                 '\n\n'
                 .format(requirements_file_path_abs, APP_LOG_FILE))
 
-    else:
-        logger.warning('\n'
-                       'If you are running the standalone version of the app, please report this error to the developers together '
-                       'with the log file found at: {}\n'.format(APP_LOG_FILE))
-
-    # keep this message in the console for a bit
-    time.sleep(5)
+        # keep this message in the console for a bit
+        time.sleep(2)
 
 from storytoolkitai.core.storytoolkitai import StoryToolkitAI
 
