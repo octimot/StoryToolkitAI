@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.23.1]
+
+### Added
+- Added support for standalone version for Windows machines without CUDA-enabled graphics cards
+
+### Changes
+- Simplified installation instructions, see [INSTALLATION.md](https://github.com/octimot/StoryToolkitAI/blob/main/INSTALLATION.md#installing-the-tool-from-source-git-version)
+- Improved requirements and FFmpeg check
+- Better handling of FFmpeg
+
+### Fixes
+- Fixed a bug that prevented using the BACKSPACE and DEL key in the Story Editor on Windows
+- Fixed a bug that didn't allow the user to select gpt-3.5-turbo in the Assistant
+- Fixed some auto-update issues
+- Other bug fixes and optimizations
+
 ## [0.23.0] - 2024-01-16
 
 Speaker Detection: detect speaker changes in audio either while ingesting or directly from the transcription window.

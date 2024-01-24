@@ -735,8 +735,13 @@ un-stuck as soon as the playhead stops moving. This will be fixed in a future up
 If you get this message while transcribing on the GPU, it means that your GPU doesn't have enough memory to run the
 model you have selected. The solution is to either use a smaller model, or to transcribe on the CPU.
 
+### Cannot start ingest. See log for more details.
+If you get this message while trying to ingest a file, it's most likely because the tool can't find the ffmpeg binary on your system. 
+For the git version of the tool, see [INSTALLATION.md](https://github.com/octimot/StoryToolkitAI/blob/main/INSTALLATION.md) for more info on how to install ffmpeg.
+If you see this error on the standalone version, please report it as [an issue on Github](https://github.com/octimot/StoryToolkitAI/issues) together with your app.log file.
+
 ### Tool freezes when chatting with Assistant
-The Assistant feature requires an active connection with OpenAI servers, which sometimes can be slow or unresponsive.
+The Assistant feature requires an active connection with external servers, which sometimes can be slow or unresponsive.
 We'll try to improve this behavior in the future.
 
 ### OS Permission errors

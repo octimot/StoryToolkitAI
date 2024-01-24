@@ -75,9 +75,11 @@ Currently, the only features that send data from your machine to the Internet ar
 - The StoryToolkitAI API Key check to storytoolkit.ai (only when entered in the Settings Window)
 - The Assistant to OpenAI or storytoolkit.ai (only contexts and messages that you select and send).
 
+The tool also checks for updates on every start.
+
 ---
 
-# Contributions
+# Code
 This tool is coded by Octavian Mot, your unfriendly filmmaker who hates to code and tries to keep it together as
 [half of mots](https://mots.us). Our team uses it daily in our editing room which allows us to update it with
 features that we need and think will be useful to others.
@@ -91,16 +93,18 @@ The tool would be useless without using the following open source projects:
 - [Sentence Transformers](https://www.sbert.net/)
 - [OpenAI ChatGPT](https://openai.com/blog/chat-gpt/)
 - [pyannote.audio](https://github.com/pyannote/pyannote-audio/)
+- [speechbrain](https://github.com/speechbrain/speechbrain)
 - [spaCy](https://spacy.io/)
 - [CustomTkinter](https://customtkinter.tomschimansky.com/)
 - and many other packages listed in [requirements.txt](https://github.com/octimot/StoryToolkitAI/blob/main/requirements.txt)
 
 ---
 
-# Known issues
+# Known issues and Troubleshooting
 
-For troubleshooting and possible solutions to known issues, see [this](FEATURES.md#known-issues).
+For troubleshooting and possible solutions to known issues, [see the known issues section here](FEATURES.md#known-issues)
+or [do a quick search in the Issues tab](https://github.com/octimot/StoryToolkitAI/issues?q=) 
 
-To report any issues, please use the Issues tab here on Github: https://github.com/octimot/StoryToolkitAI/issues
+Please report any problems directly in the Issues tab, here on Github: https://github.com/octimot/StoryToolkitAI/issues
 
 ---
