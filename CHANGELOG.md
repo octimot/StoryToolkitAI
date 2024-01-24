@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
-## [0.23.1]
+## [0.23.1] - 2024-01-24
 
 ### Added
 - Added support for standalone version for Windows machines without CUDA-enabled graphics cards
