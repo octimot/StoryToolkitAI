@@ -13205,19 +13205,34 @@ class toolkit_UI():
                 # if this is not a text line
                 else:
 
-                    # insert a new line in the text widget to trigger the creation of a new line
-                    window.text_widget.insert('{}.end'.format(line, char), '\n')
+                    # if we are at the end of the line:
+                    if char == end_char:
 
-                    # then move the cursor to the new line
-                    window.text_widget.mark_set('insert', '{}.0'.format(int(line) + 1))
+                        # insert a new line after this line in the text widget to trigger the creation of a new line
+                        window.text_widget.insert('{}.end'.format(line), '\n')
+
+                        # then move the cursor to the new line
+                        window.text_widget.mark_set('insert', '{}.0'.format(int(line) + 1))
+
+                        # add the new line to the story lines list
+                        cls.add_line(window=window, line_index=story_line_index,
+                                     line_data='', toolkit_UI_obj=toolkit_UI_obj)
+
+                    # if we are not at the end of the line:
+                    else:
+                        # insert a new line before this line in the text widget to trigger the creation of a new line
+                        window.text_widget.insert('{}.end'.format(int(line)-1), '\n')
+
+                        # then move the cursor to the new line
+                        window.text_widget.mark_set('insert', '{}.0'.format(int(line)))
+
+                        # add the new line to the story lines list
+                        cls.add_line(window=window, line_index=story_line_index-1,
+                                     line_data='', toolkit_UI_obj=toolkit_UI_obj)
 
                     # see the cursor if it's not in view
                     if not cls.is_line_in_view(window.text_widget, line_no=int(line)+1):
                         window.text_widget.see('insert')
-
-                    # add the new line to the story lines list
-                    cls.add_line(window=window, line_index=story_line_index,
-                                 line_data='', toolkit_UI_obj=toolkit_UI_obj)
 
                     return 'break'
 
@@ -13269,10 +13284,59 @@ class toolkit_UI():
 
                 return 'break'
 
-            # block any other key presses if we're not on a text line
+            # deal with any other key presses if we're not on a text line
             elif 'type' in window.story_lines[story_line_index] \
                 and window.story_lines[story_line_index]['type'] != 'text':
-                logger.debug('Blocked key press on non-text line')
+
+                # todo: test this on windows
+                # if the char is empty, break
+                if e.char.encode('utf-8') == b'':
+                    return 'break'
+
+                # remove the active selection if there is one
+                if window.text_widget.tag_ranges('sel'):
+                    delete_active_selection()
+
+                    # simulate the key press again
+                    cls.on_edit_press(e, window=window, toolkit_UI_obj=toolkit_UI_obj)
+
+                    return 'break'
+
+                # add undo step
+                cls.add_undo_step(window)
+
+                # if we're not at the beginning of the line
+                if int(char) > 0:
+
+                    window.text_widget.insert('{}.end'.format(line), '\n'+str(e.char))
+
+                    # take the cursor on the new line, after the inserted character
+                    window.text_widget.mark_set('insert', '{}.1'.format(int(line) + 1))
+
+                    # add the new liine plus the event character to the story lines list
+                    cls.add_line(window=window, line_index=story_line_index,
+                                    line_data=str(e.char), toolkit_UI_obj=toolkit_UI_obj)
+
+                    # see the cursor if it's not in view
+                    if not cls.is_line_in_view(window.text_widget, line_no=int(line)+1):
+                        window.text_widget.see('insert')
+
+                else:
+
+                    # add a new line before this line and insert the character there
+                    window.text_widget.insert('{}.end'.format(int(line)-1), '\n'+str(e.char))
+
+                    # take the cursor on the new line, after the inserted character
+                    window.text_widget.mark_set('insert', '{}.1'.format(int(line)))
+
+                    # add the new line plus the event character to the story lines list
+                    cls.add_line(window=window, line_index=story_line_index-1,
+                                 line_data=str(e.char), toolkit_UI_obj=toolkit_UI_obj)
+
+                    # see the cursor if it's not in view
+                    if not cls.is_line_in_view(window.text_widget, line_no=int(line)):
+                        window.text_widget.see('insert')
+
                 return 'break'
 
             # todo: add the option of pressing DELETE or BACKSPACE
