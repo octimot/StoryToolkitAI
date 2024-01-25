@@ -7361,28 +7361,52 @@ class toolkit_UI():
 
         def button_add_to_story(self, window_id, story_editor_window_id):
 
-            text, full_text, start_sec, end_sec, _ \
+            text, full_text, start_sec, end_sec, transcription_segments \
                 = self.get_segments_or_selection(window_id, split_by='line',
                                                  add_time_column=False, timecodes=False)
 
             # get the transcription object associated with this window
             transcription = self.get_window_transcription(window_id=window_id)
 
-            new_lines = []
+            # always add an empty line at the beginning of the text
+            new_lines = [{'text': '', 'type': 'text'}]
 
-            for line in text:
+            last_speaker = ''
+            for segment in transcription_segments:
+
+                # do not add meta segments:
+                if segment.meta:
+                    continue
+
+                segment_speaker = segment.get_segment_speaker_name()
+
+                if last_speaker != segment_speaker and segment_speaker:
+                    # add empty line between speakers
+                    new_lines.append({'text': '', 'type': 'text'})
+
+                    # add the uppercase speaker name
+                    new_lines.append({
+                        'text': str(segment_speaker).upper(),
+                        'type': 'text'
+                    })
+
+                    last_speaker = segment_speaker
+
                 new_lines.append({
-                    'text': line.get('text', '').strip(),
+                    'text': segment.text.strip(),
                     'type': 'transcription_segment',
-                    'source_start': line.get('start', 0),
-                    'source_end': line.get('end', line.get('start', 0.01)),
+                    'source_start': segment.start,
+                    'source_end': segment.end if segment.end > segment.start else segment.start + 0.01,
                     'transcription_file_path': transcription.transcription_file_path,
                     'source_file_path': transcription.audio_file_path,
                     'source_fps': transcription.timeline_fps,
                     'source_start_tc': transcription.timeline_start_tc,
                 })
 
-            if new_lines:
+            # always add an empty line at the end of the text
+            new_lines.append({'text': '', 'type': 'text'})
+
+            if len(new_lines) > 2:
                 story_editor_window = self.toolkit_UI_obj.get_window_by_id(story_editor_window_id)
 
                 toolkit_UI.StoryEdit.paste_to_story_editor(
