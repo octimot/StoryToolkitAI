@@ -16009,10 +16009,13 @@ class toolkit_UI():
         transcription = Transcription(transcription_file_path)
 
         new_lines = list()
-
         for segment_index in segment_indexes:
 
             segment = transcription.get_segment(segment_index=segment_index)
+
+            # do not add if this is a meta segment
+            if segment.meta:
+                continue
 
             new_lines.append({
                 'text': segment.text.strip(),

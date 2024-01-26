@@ -318,7 +318,7 @@ class TextSearch(SearchItem):
 
     def prepare_search_corpus(self, force=False):
         """
-        Takes all all the files in self._search_file_paths
+        Takes all the files in self._search_file_paths
         and prepares them for indexing by extracting text and other needed data,
         while also creating an association list to know which text/segment belongs to which file
         """
@@ -352,7 +352,7 @@ class TextSearch(SearchItem):
         # use this to keep track of the transcription file path and the phrase index
         search_corpus_assoc = {}
 
-        # and if the hasn't already been created, just create it
+        # and if the corpus hasn't already been created, just create it
         if self._search_corpus_phrases is None:
 
             logger.debug('Reading text from {} files for search corpus {}.'
@@ -491,6 +491,10 @@ class TextSearch(SearchItem):
             # loop through the segments of this transcription file
             for segment_index, segment in enumerate(filtered_transcription_segments):
 
+                # skip speaker meta segments (but allow other meta segments, like notes)
+                if 'meta' in segment and segment['meta'] and 'category' in segment and segment['category'] == 'speaker':
+                    continue
+
                 filtered_segment_index = None
 
                 # if there is a segment index in the segment
@@ -556,7 +560,9 @@ class TextSearch(SearchItem):
 
                     # if a punctuation mark exists in the last 5 characters of the segment text
                     # it means that the current phrase is complete
-                    if re.search(r'[\.\?\!]{1}\s*$', segment_text[-5:]):
+                    # also split if this is a meta segment
+                    if re.search(r'[\.\?\!]{1}\s*$', segment_text[-5:])\
+                            or ('meta' in segment and segment['meta']):
                         # "close" the current phrase by adding it to the search corpus
                         search_corpus_phrases.append(current_phrase.strip())
 
