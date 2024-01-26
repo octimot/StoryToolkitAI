@@ -39,11 +39,11 @@ file_path = os.path.abspath(__file__)
 # the requirements file should be either one directory up from this file
 requirements_file_path = os.path.abspath(os.path.join(os.path.dirname(file_path), '..', 'requirements.txt'))
 
-if not os.path.exists(requirements_file_path):
-    logger.warning('Could not find the requirements.txt file.')
-
 # this makes sure that the user has all the required packages installed for the non-standalone app
 if not getattr(sys, 'frozen', False):
+
+    if not os.path.exists(requirements_file_path):
+        logger.warning('Could not find the requirements.txt file.')
 
     # check to see if all the requirements are met
     requirements_failed = False
