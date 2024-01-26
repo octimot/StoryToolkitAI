@@ -1458,6 +1458,12 @@ class ToolkitOps:
         # otherwise, start from 1
         speaker_id_offset = 0
 
+        # update the progress in the queue
+        queue_id = kwargs.get('queue_id', None)
+        self.processing_queue.update_queue_item(
+            queue_id=queue_id, save_to_file=False, status='preparing segments'
+        )
+
         # get the last speaker id from the transcription
         for segment in segments:
 
@@ -1468,8 +1474,13 @@ class ToolkitOps:
 
         threshold = kwargs.get('transcription_speaker_detection_threshold', None)
 
-        processed_segments = 0
+        # update the progress in the queue
         queue_id = kwargs.get('queue_id', None)
+        self.processing_queue.update_queue_item(
+            queue_id=queue_id, save_to_file=False, status='loading'
+        )
+
+        processed_segments = 0
         resulting_segments = []
         for resulting_segments, speaker_embeddings in detect_speaker_changes(
             segments=segments, audio_file_path=transcription.audio_file_path, threshold=threshold,
@@ -1488,7 +1499,7 @@ class ToolkitOps:
 
             # update the progress in the queue
             self.processing_queue.update_queue_item(
-                queue_id=queue_id, save_to_file=False, progress=progress
+                queue_id=queue_id, save_to_file=False, progress=progress, status='detecting changes'
             )
 
             # cancel detection if user requested it

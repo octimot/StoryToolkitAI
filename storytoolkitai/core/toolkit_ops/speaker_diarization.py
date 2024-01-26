@@ -10,7 +10,7 @@ import numpy as np
 from scipy.spatial.distance import cosine
 
 from storytoolkitai.core.logger import logger
-from .media import VideoFileClip, AudioFileClip, MediaUtils
+from .media import VideoFileClip, AudioFileClip, MediaUtils, MediaItem
 
 
 def find_closest_speaker(embedding, speaker_embeddings, threshold=0.3):
@@ -176,6 +176,10 @@ def detect_speaker_changes(
         end = segment.get('end', None)
         end = float(end) if end is not None else None
 
+        # skip meta segments
+        if segment.get('meta', False):
+            continue
+
         if time_intervals is not None and isinstance(time_intervals, list) and len(time_intervals) > 0:
             # are we in the time interval?
             if not any(start >= interval[0] and end <= interval[1]
@@ -189,13 +193,38 @@ def detect_speaker_changes(
 
         # skip segments that are 0 seconds long
         if start >= end:
-            logger.debug("Cannot detect speaker changes on segment - end time should be greater than start time: {}"
-                         .format(segment))
+            logger.debug("Cannot detect speaker changes on segment {}"
+                         " - end time {} should be greater than start time {}"
+                         .format(idx, segment.get('end', None), segment.get('start', None)))
             continue
 
         # crop the audio to the segment
         segment_speaker = Segment(start, end)
-        segment_audio, sample_rate = audio.crop(audio_file, segment_speaker)
+        try:
+            segment_audio, sample_rate = audio.crop(audio_file, segment_speaker)
+
+        # if this fails with a ValueError it's usually because the segment's end is beyond the audio's end
+        # this happens when the original transcription segment times are rounded up or imprecise
+        # luckily, this usually only happens with the last segment
+        except ValueError as e:
+
+            # only fix the last segment
+            if idx != len(resulting_segments) - 1:
+                logger.error("Cannot detect speaker changes on segment {}: {}".format(idx, e))
+                continue
+
+            logger.debug("Cannot detect speaker changes on segment {}: {}. Retrying with the audio duration."
+                         .format(idx, e))
+
+            # get the duration of the audio file
+            try:
+                audio_duration = MediaItem(audio_file_path).get_duration()
+                segment_speaker = Segment(start, audio_duration)
+                segment_audio, sample_rate = audio.crop(audio_file, segment_speaker)
+
+            except Exception as e:
+                logger.error("Cannot detect speaker changes on segment {}: {}".format(idx, e))
+                continue
 
         # get the embedding for the segment
         segment_embedding = model(segment_audio[None])
