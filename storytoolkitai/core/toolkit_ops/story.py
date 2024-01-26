@@ -1153,8 +1153,8 @@ class StoryUtils:
             total_duration_sec += line_duration_sec
 
             if line_duration_sec <= 0:
-                logger.warning('Skipping line "{}" because it\'s {} seconds in length.'
-                               .format(line.text, line_duration_sec))
+                logger.debug('Skipping line "{}" because it\'s {} seconds in length.'
+                             .format(line.text, line_duration_sec))
                 continue
 
             # we're adding the full path to the media file here if needed
@@ -1183,9 +1183,13 @@ class StoryUtils:
             # if the file name and the start of the line are the same as the last line
             # we just update the end timecode of the last line to chunk the lines together
             # also, if join_gaps is set, we join the lines if the gap is less than join_gaps
+            # and only if this line is not before the last line
             if export_blocks and last_file_name == file_name \
                 and (last_line_source_end_sec == source_start_sec
-                     or (join_gaps_sec and source_start_sec - last_line_source_end_sec < join_gaps_sec)):
+                     or (join_gaps_sec
+                         and 0 < source_start_sec - last_line_source_end_sec < join_gaps_sec
+                         )
+                     ):
 
                 lines_to_export[-1]['source_end_sec'] = source_end_sec
                 lines_to_export[-1]['duration_sec'] += line_duration_sec
@@ -1317,7 +1321,8 @@ class StoryUtils:
 
                 # if the duration is 0, skip the line
                 if clip_duration_sec <= 0 and 'marker' not in line:
-                    logger.warning('Skipping line "{}" because it\'s {} seconds in length.')
+                    logger.debug('Skipping line "{}" because it\'s {} seconds in length.'
+                                 .format(line, clip_duration_sec))
                     continue
 
                 # the start timecode in the timeline is where we were left off last time
@@ -1490,9 +1495,16 @@ class StoryUtils:
                 line['end_tc'] = Timecode(framerate=edit_timeline_fps)
                 line['end_frame'] = 0
 
-            if line['end_frame'] <= 0:
-                logger.debug('Skipping line "{}" because it\'s calculated length is 0.')
-                continue
+            # this check messes up the total_duration_using_edit_timeline_fps
+            # if line['end_frame'] <= 0:
+            #     logger.debug('Skipping line "{}" because its end frame is less than 0.'.format(line))
+            #     continue
+
+            # if the end frame is less than the start frame, skip the line
+            # if line['end_frame'] <= line['start_frame']:
+            #     logger.debug('Skipping line "{}" because its end frame ({}) is before its start frame ({}).'
+            #                  .format(line, line['end_frame'], line['start_frame']))
+            #     continue
 
             clip_duration_sec = line['source_end_sec'] - line['source_start_sec']
 
