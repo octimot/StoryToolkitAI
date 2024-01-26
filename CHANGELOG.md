@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.23.2] - 2024-01-26
+
+### Changes
+- Speakers are sent to Story Editor as uppercase plain text to respect Fountain format
+- Speakers segments are excluded from semantic search to avoid biases - will make use of them differently in the future
+- Improved Speaker Detection queue info
+
+### Fixes
+- Fixed XML export error when using Join Gaps feature with non-consecutive story lines
+- Fixed buggy behaviour when writing on non-text lines in Story Editor
+- Fixed Speaker Detection on segments with out of bounds approximated end times
+
 ## [0.23.1] - 2024-01-24
 
 ### Added
