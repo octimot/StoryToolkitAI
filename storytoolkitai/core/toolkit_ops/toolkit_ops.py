@@ -3739,8 +3739,54 @@ class ToolkitOps:
                 # remove the python executable from the command
                 command.pop(0)
 
+            elif sys.platform == 'darwin' and self.stAI.standalone:
+
+                # remove the python executable from the command
+                command.pop(0)
+
+                # and replace the main script path with the app bundle path
+                # since sys.argv[0] normally points to the script path (for e.g. __main__.py),
+                # we need to use the ARGVZERO that was hopefully packed in the environment variables while freezing
+                bundle_exec = os.environ.get('ARGVZERO', None)
+                if bundle_exec is None:
+                    logger.error('Cannot render timeline via CLI - ARGVZERO not available.')
+                    return False
+
+                # and then we can get the path to the main script
+                command[0] = bundle_exec
+
+            logger.debug('Executing CLI command {}'.format(' '.join(command)))
+
             # start the render process via CLI
-            subprocess.Popen(command)
+            process = subprocess.Popen(command)
+
+            def check_process(wait_time=2):
+                """
+                This function checks if the render command was successful
+                """
+                # wait a bit before checking if the process is still running
+                time.sleep(wait_time)
+
+                check_times = 0
+
+                # if the process is still running, check again after a bit
+                while process.poll() is None and check_times < 10:
+                    time.sleep(wait_time)
+                    check_times += 1
+
+                if check_times >= 10:
+                    logger.error("CLI subprocess is still running after {} seconds. Assuming render is running."
+                                 "Aborting check function to save resources."
+                                 .format(wait_time * check_times))
+
+                # check one more time if the process is still running
+                exit_code = process.poll()
+                if exit_code != 0 and exit_code is not None:
+                    logger.error(f"CLI subprocess exited with error code {exit_code}")
+
+            # Start the subprocess check in a separate thread
+            thread = Thread(target=check_process)
+            thread.start()
 
             # return the render job info
             return render_job_info
