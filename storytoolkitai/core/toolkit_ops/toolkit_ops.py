@@ -107,14 +107,6 @@ class ToolkitOps:
         # keep a reference to the StoryToolkitAI object here if one was passed
         self.stAI = stAI
 
-        # define the path to the  queue file relative to the user_data_path
-        if self.stAI is not None:
-            self.QUEUE_FILE_PATH = os.path.join(stAI.user_data_path, 'queue.json')
-
-        # use a relative path for the queue file, if no stAI was passed
-        else:
-            self.QUEUE_FILE_PATH = 'queue.json'
-
         # initialize the toolkit search engine
         self.t_search_obj = ToolkitSearch(toolkit_ops_obj=self)
 

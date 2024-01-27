@@ -6,6 +6,7 @@ import platform
 import subprocess
 import webbrowser
 
+from storytoolkitai import USER_DATA_PATH
 from storytoolkitai.core.logger import *
 from storytoolkitai.core.toolkit_ops.toolkit_ops import NLE
 
@@ -919,15 +920,15 @@ class UImenus:
     def open_userdata_dir(self):
         # if we're on a Mac, open the user data dir in Finder
         if platform.system() == 'Darwin':
-            subprocess.call(['open', '-R', self.stAI.user_data_path])
+            subprocess.call(['open', '-R', USER_DATA_PATH])
 
         # if we're on Windows, open the user data dir in Explorer
         elif platform.system() == 'Windows':
-            subprocess.call(['explorer', self.stAI.user_data_path])
+            subprocess.call(['explorer', USER_DATA_PATH])
 
         # if we're on Linux, open the user data dir in the file manager
         elif platform.system() == 'Linux':
-            subprocess.call(['xdg-open', self.stAI.user_data_path])
+            subprocess.call(['xdg-open', USER_DATA_PATH])
 
     @staticmethod
     def open_file_dir(file_path):

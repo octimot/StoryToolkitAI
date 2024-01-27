@@ -7,7 +7,7 @@ import time
 
 from threading import Thread
 
-from storytoolkitai import USER_DATA_PATH, OLD_USER_DATA_PATH, APP_CONFIG_FILE_NAME, initial_target_dir
+from storytoolkitai import USER_DATA_PATH, APP_CONFIG_FILE_PATH, initial_target_dir
 from storytoolkitai.core.logger import logger
 from storytoolkitai.core.logger import Style as loggerStyle
 from storytoolkitai.core.post_update import post_update
@@ -32,24 +32,8 @@ class StoryToolkitAI:
         # keep the version in memory
         self.__version__ = self.version = version.__version__
 
-        # this is where all the user files should be stored
-        # if it's not absolute, make sure it's relative to the app.py script location
-        # to make it easier for the users to find it
-        # (and to prevent paths relative to possible virtual environment paths)
-        if not os.path.isabs(USER_DATA_PATH):
-            self.user_data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), USER_DATA_PATH)
-        else:
-            self.user_data_path = USER_DATA_PATH
-
-        # the config file should be in the user data directory
-        self.config_file_path = os.path.join(self.user_data_path, APP_CONFIG_FILE_NAME)
-
         # create a config variable
         self.config = None
-
-        # the projects directory is always inside the user_data_path
-        # this is where we will store all the stuff related to specific projects
-        self.projects_dir_path = os.path.join(self.user_data_path, 'projects')
 
         # create a project settings variable
         self.project_settings = {}
@@ -183,7 +167,6 @@ class StoryToolkitAI:
             logger.error('Could not update StoryToolkitAI. Please update the app manually.')
             return False
 
-
     def restart(self):
         """
         This attempts to restart the app.
@@ -232,71 +215,21 @@ class StoryToolkitAI:
         return self.initial_target_dir
 
     def user_data_dir_exists(self, create_if_not=True):
-        '''
+        """
         Checks if the user data dir exists and creates one if asked to
         :param create_if_not:
         :return:
-        '''
+        """
 
         # if the directory doesn't exist
-        if not os.path.exists(self.user_data_path):
-            logger.warning('User data directory {} doesn\'t exist.'
-                           .format(os.path.abspath(self.user_data_path)))
+        if not os.path.exists(USER_DATA_PATH):
+            logger.warning("User data directory {} doesn't exist.".format(USER_DATA_PATH))
 
             if create_if_not:
                 logger.warning('Creating user data directory.')
 
                 # and create the whole path to it if it doesn't
-                os.makedirs(self.user_data_path)
-
-                # for users of versions prior to 0.16.14, the user data directory was at OLD_USER_DATA_PATH
-                # so make sure we copy everything from the old path to the new directory
-                old_user_data_path_abs = os.path.join(os.path.dirname(os.path.abspath(__file__)), OLD_USER_DATA_PATH)
-
-                # we first check if the old_user_data_path_abs exists
-                if os.path.exists(old_user_data_path_abs):
-                    import shutil
-                    from datetime import date
-                    import platform
-
-                    logger.warning('Old user data directory found.\n\n')
-
-                    # let the user know that we are moving the files
-                    move_user_data_path_msg = \
-                        'Starting with version 0.16.14, ' \
-                        'the user data directory on {} has moved to {}.\n' \
-                        'This means that any existing configuration and project ' \
-                        'settings files will be copied there.\n' \
-                        'If the files are at the new location, feel free to delete {}\n' \
-                            .format(platform.node(),
-                                    self.user_data_path, old_user_data_path_abs, old_user_data_path_abs)
-
-                    logger.warning(move_user_data_path_msg)
-
-                    logger.warning('Copying user data files to new location.')
-
-                    # copy all the contents of the OLD_USER_DATA_PATH to the new path
-                    for item in os.listdir(old_user_data_path_abs):
-                        s = os.path.join(old_user_data_path_abs, item)
-                        d = os.path.join(self.user_data_path, item)
-
-                        logger.warning((' - {}'.format(item)))
-
-                        if os.path.isdir(s):
-                            shutil.copytree(s, d, False, None)
-                        else:
-                            shutil.copy2(s, d)
-
-                    logger.warning('Finished copying user data files to {}'.format(self.user_data_path))
-
-                    # reload the config file
-                    self.config = self.get_config()
-
-                    # leave a readme file in the OLD_USER_DATA_PATH so that the user knows that stuff was moved
-                    with open(os.path.join(old_user_data_path_abs, 'README.txt'), 'a') as f:
-                        f.write('\n' + str(date.today()) + '\n')
-                        f.write(move_user_data_path_msg)
-
+                os.makedirs(USER_DATA_PATH)
 
             else:
                 return False
@@ -379,7 +312,7 @@ class StoryToolkitAI:
             self.config = self.get_config()
 
             logger.info('Updated config file {} with {} data.'
-                        .format(os.path.abspath(self.config_file_path), setting_name))
+                        .format(os.path.abspath(APP_CONFIG_FILE_PATH), setting_name))
             self.config[setting_name] = setting_value
 
         # if the config is empty something might be wrong
@@ -392,10 +325,10 @@ class StoryToolkitAI:
         self.user_data_dir_exists(create_if_not=True)
 
         # then write the config to the config json
-        with open(self.config_file_path, 'w') as outfile:
+        with open(APP_CONFIG_FILE_PATH, 'w') as outfile:
             json.dump(self.config, outfile, indent=3)
 
-            logger.info('Config file {} saved.'.format(os.path.abspath(self.config_file_path)))
+            logger.info('Config file {} saved.'.format(os.path.abspath(APP_CONFIG_FILE_PATH)))
 
         # and return the config back to the user
         return self.config
@@ -407,19 +340,19 @@ class StoryToolkitAI:
         '''
 
         # read the config file if it exists
-        if os.path.exists(self.config_file_path):
-            logger.debug('Loading config file {}.'.format(self.config_file_path))
+        if os.path.exists(APP_CONFIG_FILE_PATH):
+            logger.debug('Loading config file {}.'.format(APP_CONFIG_FILE_PATH))
 
             try:
                 # read the app config
-                with open(self.config_file_path, 'r') as json_file:
+                with open(APP_CONFIG_FILE_PATH, 'r') as json_file:
                     self.config = json.load(json_file)
 
                 # and return the config
                 return self.config
 
             except:
-                logger.error('Unable to read config file {}.'.format(self.config_file_path))
+                logger.error('Unable to read config file {}.'.format(APP_CONFIG_FILE_PATH))
                 logger.error('Make sure that it is a valid json file. '
                              'If you are not sure, delete it or rename it and restart the tool. '
                              'But keep in mind that you will lose all your settings.')
@@ -428,14 +361,14 @@ class StoryToolkitAI:
 
         # if the config file doesn't exist, return an empty dict
         else:
-            logger.debug('No config file found at {}.'.format(self.config_file_path))
+            logger.debug('No config file found at {}.'.format(APP_CONFIG_FILE_PATH))
             return {}
 
     def _project_settings_path(self, project_name=None):
 
         # the full path to the project settings file
         if project_name is not None and project_name != '':
-            return os.path.join(self.projects_dir_path, project_name, 'project.json')
+            return os.path.join(os.path.join(USER_DATA_PATH, 'projects'), project_name, 'project.json')
 
     def get_project_settings(self, project_name=None):
         '''

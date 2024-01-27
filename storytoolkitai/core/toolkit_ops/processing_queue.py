@@ -1,10 +1,14 @@
 import time
 import json
 
+from storytoolkitai import USER_DATA_PATH
 from storytoolkitai.core.logger import *
 
 import torch
 from threading import Thread
+
+
+QUEUE_FILE_PATH = os.path.join(USER_DATA_PATH, 'queue.json')
 
 
 class ProcessingQueue:
@@ -1076,12 +1080,9 @@ class ProcessingQueue:
             save_item = {k: v for k, v in item.items() if k not in ('task_queue', 'last_task', 'output')}
             save_queue_items.append(save_item)
 
-        # the queue file
-        queue_file = self.toolkit_ops_obj.QUEUE_FILE_PATH
-
         # save the queue items to the queue json file
         try:
-            with open(queue_file, 'w') as f:
+            with open(QUEUE_FILE_PATH, 'w') as f:
                 json.dump(save_queue_items, f, indent=4)
                 return True
 
@@ -1097,12 +1098,9 @@ class ProcessingQueue:
         # the empty queue history list
         queue_history = []
 
-        # the queue file
-        queue_file = self.toolkit_ops_obj.QUEUE_FILE_PATH
-
         try:
-            if os.path.exists(queue_file):
-                with open(queue_file, 'r') as f:
+            if os.path.exists(QUEUE_FILE_PATH):
+                with open(QUEUE_FILE_PATH, 'r') as f:
                     queue_history = json.load(f)
 
         except Exception as e:
