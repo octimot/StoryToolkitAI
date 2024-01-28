@@ -20,6 +20,8 @@ import tqdm
 from storytoolkitai.core.logger import logger
 
 from storytoolkitai.integrations.mots_resolve import MotsResolve
+
+from .projects import Project
 from .transcription import Transcription, TranscriptionSegment, TranscriptionUtils
 from .story import Story, StoryLine, StoryUtils
 from .processing_queue import ProcessingQueue
@@ -2165,10 +2167,12 @@ class ToolkitOps:
         # if there's a project_name and a timeline_name in the transcription
         # link the transcription to the project and timeline
         if transcription.project_name is not None and transcription.timeline_name is not None:
-            self.link_transcription_path_to_timeline(transcription_file_path=transcription.transcription_file_path,
-                                                     project_name=transcription.project_name,
-                                                     timeline_name=transcription.timeline_name,
-                                                     link=True)
+            project = Project(project_name=transcription.project_name)
+
+            project.link_transcription_to_timeline(
+                transcription_file_path=transcription.transcription_file_path,
+                timeline_name=transcription.timeline_name
+            )
 
         # get the queue item again, in case it was updated while we were transcribing
         queue_item = self.processing_queue.get_item(queue_id=queue_id)
@@ -2789,7 +2793,6 @@ class ToolkitOps:
         # save the transcription
         transcription.save_soon(sec=0)
 
-
     def add_index_video_to_queue(self, video_file_path, **other_options):
         """
         This adds the clip indexing task to the processing queue
@@ -2822,155 +2825,6 @@ class ToolkitOps:
         queue_item['detection_options'] = other_options.get('detection_options', dict())
 
         return self.processing_queue.add_to_queue(**queue_item)
-
-    # TIMELINE METHODS
-
-    def get_timeline_transcription_paths(self, timeline_name=None, project_name=None):
-        '''
-        Gets a list of all the transcriptions associated with a timeline
-        :param timeline_name:
-        :param project_name:
-        :return:
-        '''
-        if timeline_name is None:
-            return None
-
-        # get all the transcription files associated with the timeline
-        # by requesting the timeline setting named 'transcription_files'
-        return self.stAI.get_timeline_setting(
-            project_name=project_name, timeline_name=timeline_name, setting_key='transcription_files'
-        )
-
-    def get_transcription_path_to_timeline_link(self, transcription_file_path=None, timeline_name=None, project_name=None):
-        '''
-        Checks if a transcription is linked with a timeline but also returns all the transcription files
-        associated with that timeline
-
-        :param transcription:
-        :param transcription_file_path:
-        :param timeline_name:
-        :param project_name:
-        :return: bool, timeline_transcription_files
-        '''
-        if transcription_file_path is None or timeline_name is None:
-            return None
-
-        # get all the transcription files associated with the timeline
-        timeline_transcription_files = self.get_timeline_transcription_paths(timeline_name=timeline_name,
-                                                                        project_name=project_name)
-
-        # if the settings of our timeline were found
-        if timeline_transcription_files and timeline_transcription_files is not None:
-
-            # check if the transcription is linked to the timeline
-            if transcription_file_path in timeline_transcription_files:
-                return True, timeline_transcription_files
-            # if it's not just say so
-            else:
-                return False, timeline_transcription_files
-
-        # give None and an empty transcription list
-        return None, []
-
-    def link_transcription_path_to_timeline(self, transcription_file_path=None, timeline_name=None, link=None,
-                                       project_name=None):
-        '''
-        Links transcription files to timelines.
-        If the link parameter isn't passed, it first checks if the transcription is linked and then toggles the link
-        If no timeline_name is passed, it tries to use the timeline of the currently opened timeline in Resolve
-
-        :param transcription_file_path:
-        :param timeline_name:
-        :param link: If no link is passed, it will toggle the link
-        :return:
-        '''
-
-        # abort if no transcript file was passed
-        if transcription_file_path is None:
-            logger.error('No transcript path was passed. Unable to link transcript to timeline.')
-            return None
-
-        # if no timeline name was passed
-        if timeline_name is None:
-
-            # try to get the timeline currently opened in Resolve
-            # global current_timeline
-            if NLE.current_timeline and NLE.current_timeline is not None and 'name' in NLE.current_timeline:
-
-                # and use it as timeline name
-                timeline_name = NLE.current_timeline['name']
-
-
-            else:
-                logger.error('No timeline was passed. Unable to link transcript to timeline.')
-                return None
-
-        # if no project was passed
-        if project_name is None:
-
-            # try to get the project opened in Resolve
-            if NLE.current_project and NLE.current_project is not None:
-
-                # use that as a project name
-                project_name = NLE.current_project
-
-            else:
-                logger.error('No project name was passed. Unable to link transcript to timeline.')
-
-        # check the if the transcript is currently linked with the transcription
-        current_link, timeline_transcriptions = self.get_transcription_path_to_timeline_link(
-            transcription_file_path=transcription_file_path,
-            timeline_name=timeline_name, project_name=project_name)
-
-        # if the link action wasn't passed, decide here whether to link or unlink
-        # basically toggle between true or false by choosing the opposite of whether the current_link is true or false
-        if link is None and current_link is True:
-            link = False
-        elif link is None and current_link is not None and current_link is False:
-            link = True
-        else:
-            link = True
-
-        # now create the link if we should
-        if link:
-
-            logger.info('Linking to current timeline: {}'.format(timeline_name))
-
-            # but only create it if it isn't in there yet
-            if transcription_file_path not in timeline_transcriptions:
-                timeline_transcriptions.append(transcription_file_path)
-
-        # or remove the link if we shouldn't
-        else:
-            logger.info('Unlinking from current timeline: {}'.format(timeline_name))
-
-            # but only remove it if it is in there currently
-            if transcription_file_path in timeline_transcriptions:
-                timeline_transcriptions.remove(transcription_file_path)
-
-        # if we made it so far, get all the project settings
-        self.stAI.project_settings = self.stAI.get_project_settings(project_name=project_name)
-
-        # if there isn't a timeline dict in the project settings, create one
-        if 'timelines' not in self.stAI.project_settings:
-            self.stAI.project_settings['timelines'] = {}
-
-        # if there isn't a reference to this timeline in the timelines dict
-        # add one, including the transcription files list
-        if timeline_name not in self.stAI.project_settings['timelines']:
-            self.stAI.project_settings['timelines'][timeline_name] = {'transcription_files': []}
-
-        # overwrite the transcription file settings of the timeline
-        # within the timelines project settings of this project
-        self.stAI.project_settings['timelines'][timeline_name]['transcription_files'] \
-            = timeline_transcriptions
-
-        # print(json.dumps(self.stAI.project_settings, indent=4))
-
-        self.stAI.save_project_settings(project_name=project_name,
-                                        project_settings=self.stAI.project_settings)
-
-        return link
 
     def is_UI_obj_available(self, toolkit_UI_obj=None):
 
@@ -3141,49 +2995,6 @@ class ToolkitOps:
             # move playhead in resolve
             self.resolve_api.set_resolve_tc(str(new_timeline_tc))
 
-    def save_markers_to_project_settings(self):
-        '''
-        Saves the markers, the fps and the start_tc of the current timeline to the project settings
-        :return:
-        '''
-
-        if NLE.current_project is not None and NLE.current_project != '' \
-                and NLE.current_timeline is not None and NLE.current_timeline != '' \
-                and type(NLE.current_timeline) == dict and 'name' in NLE.current_timeline \
-                and 'markers' in NLE.current_timeline:
-
-            project_name = NLE.current_project
-            timeline_name = NLE.current_timeline['name']
-            markers = NLE.current_timeline['markers']
-
-            #  get all the project settings
-            self.stAI.project_settings = self.stAI.get_project_settings(project_name=project_name)
-
-            # if there isn't a timeline dict in the project settings, create one
-            if 'timelines' not in self.stAI.project_settings:
-                self.stAI.project_settings['timelines'] = {}
-
-            # if there isn't a reference to this timeline in the timelines dict
-            # add one, including the markers list
-            if timeline_name not in self.stAI.project_settings['timelines']:
-                self.stAI.project_settings['timelines'][timeline_name] = {'markers': []}
-
-            # overwrite the transcription file settings of the timeline
-            # within the timelines project settings of this project
-            self.stAI.project_settings['timelines'][timeline_name]['markers'] \
-                = markers
-
-            if NLE.current_timeline_fps is not None:
-                self.stAI.project_settings['timelines'][timeline_name]['timeline_fps'] \
-                    = NLE.current_timeline_fps
-
-            if NLE.current_start_tc is not None:
-                self.stAI.project_settings['timelines'][timeline_name]['timeline_start_tc'] \
-                    = NLE.current_start_tc
-
-            self.stAI.save_project_settings(project_name=project_name,
-                                            project_settings=self.stAI.project_settings)
-
     def on_resolve(self, event_name):
         '''
         Process resolve events
@@ -3191,7 +3002,8 @@ class ToolkitOps:
         :return:
         '''
 
-        # FOR NOW WE WILL KEEP THE UI UPDATES HERE AS WELL
+        # todo: remove UI updates from here and use observers instead
+        # but for now, we will keep the UI updates here too
 
         # when resolve connects / re-connects
         if event_name == 'resolve_changed':
@@ -3206,16 +3018,16 @@ class ToolkitOps:
         # when the timeline has changed
         elif event_name == 'timeline_changed':
 
-            # global current_timeline
-
             if NLE.current_timeline is not None and NLE.current_timeline != '' \
-                    and type(NLE.current_timeline) == dict and 'name' in NLE.current_timeline:
+                    and isinstance(NLE.current_timeline, dict) and 'name' in NLE.current_timeline:
+
+                # update the timecode data
+                # todo: change this to app-wide project?
+                project = Project(project_name=NLE.current_project)
 
                 # get the transcription_paths linked with this timeline
-                timeline_transcription_file_paths = self.get_timeline_transcription_paths(
-                    timeline_name=NLE.current_timeline['name'],
-                    project_name=NLE.current_project
-                )
+                timeline_transcription_file_paths = \
+                    project.get_timeline_transcriptions(timeline_name=NLE.current_timeline.get('name', None))
 
                 # close all the transcript windows that aren't linked with this timeline
                 if self.stAI.get_app_setting('close_transcripts_on_timeline_change', default_if_none=True):
@@ -3232,14 +3044,17 @@ class ToolkitOps:
                             self.toolkit_UI_obj.open_transcription_window(
                                 transcription_file_path=transcription_file_path)
 
-                # update the main window
                 if NLE is not None and NLE.current_timeline_fps is not None:
-                    self.stAI.project_settings['timelines'][NLE.current_timeline['name']]['timeline_fps'] \
-                        = NLE.current_timeline_fps
+                    project.set_timeline_timecode_data(
+                        timeline_name=NLE.current_timeline.get('name', None),
+                        timeline_fps=NLE.current_timeline_fps
+                    )
 
                 if NLE is not None and NLE.current_start_tc is not None:
-                    self.stAI.project_settings['timelines'][NLE.current_timeline['name']]['timeline_start_tc'] \
-                        = NLE.current_start_tc
+                    project.set_timeline_timecode_data(
+                        timeline_name=NLE.current_timeline.get('name', None),
+                        timeline_start_tc=NLE.current_start_tc
+                    )
 
         # when the playhead has moved
         elif event_name == 'tc_changed':
@@ -3250,8 +3065,33 @@ class ToolkitOps:
         # when the timeline markers have changed
         elif event_name == 'timeline_markers_changed':
 
-            # save the markers to the project settings
-            self.save_markers_to_project_settings()
+            # todo: change this to app-wide project?
+            project = Project(project_name=NLE.current_project)
+
+            # save the markers to the project timeline
+            project.set_timeline_markers(
+                timeline_name=NLE.current_timeline.get('name', None),
+                markers=NLE.current_timeline.get('markers', None),
+                save_soon=True
+            )
+
+        elif event_name == 'fps_changed' or event_name == 'start_tc_changed':
+
+            # todo: change this to app-wide project?
+            project = Project(project_name=NLE.current_project)
+
+            if NLE is not None and NLE.current_timeline is not None and NLE.current_timeline_fps is not None:
+                project.set_timeline_timecode_data(
+                    timeline_name=NLE.current_timeline.get('name', None),
+                    timeline_fps=NLE.current_timeline_fps
+                )
+
+            if NLE is not None and NLE.current_timeline is not None and NLE.current_start_tc is not None:
+                project.set_timeline_timecode_data(
+                    timeline_name=NLE.current_timeline.get('name', None),
+                    timeline_start_tc=NLE.current_start_tc
+                )
+
 
     def resolve_exists(self):
         '''
