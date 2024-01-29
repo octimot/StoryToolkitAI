@@ -72,7 +72,8 @@ class NLE:
     # this is used to suspend polling to avoid requests when the NLE might be busy
     suspend_polling = False
 
-    def reset_all(self=None):
+    @staticmethod
+    def reset_all():
 
         NLE.current_timeline \
             = NLE.current_project \
@@ -83,7 +84,8 @@ class NLE:
             = NLE.current_bin \
             = None
 
-    def is_connected(self=None):
+    @staticmethod
+    def is_connected():
         """
         Check if the NLE is connected
         """
@@ -119,6 +121,7 @@ class ToolkitOps:
         # the format is {queue_id: transcription_item_attributes}
         self.transcription_queue_current_item = {}
 
+        # todo: remove this and use observers instead
         # declare this as none for now so we know it exists
         self.toolkit_UI_obj = None
 
@@ -146,8 +149,8 @@ class ToolkitOps:
         # it's very likely that the model will not be loaded here, but in the SearchItem, for each search
         self.s_semantic_search_model = None
 
-        # add observers so that we can update the UI when something changes
-        # this dictionary will hold all the actions and their observers (for eg. from the UI)
+        # add observers so that we can trigger certain actions when something else happens
+        # this dictionary will hold all the actions and their observers (for e.g. from the UI)
         self._observers = {}
 
         self.processing_queue = ProcessingQueue(toolkit_ops_obj=self)
@@ -2054,7 +2057,7 @@ class ToolkitOps:
             debug_message = "Transcribing {}.".format(name)
         # logger.info(debug_message)
 
-        if self.is_UI_obj_available():
+        if self.toolkit_UI_obj:
             self.toolkit_UI_obj.notify_via_os("Starting Transcription",
                                               text="Transcribing {}".format(name),
                                               debug_message=debug_message)
@@ -2097,7 +2100,7 @@ class ToolkitOps:
         notification_msg = "Finished transcription for {} in {} seconds" \
             .format(name, round(time.time() - transcription_start_time))
 
-        if self.is_UI_obj_available():
+        if self.toolkit_UI_obj:
             self.toolkit_UI_obj.notify_via_os("Finished Transcription", notification_msg, notification_msg)
         else:
             logger.info(notification_msg)
@@ -2826,27 +2829,13 @@ class ToolkitOps:
 
         return self.processing_queue.add_to_queue(**queue_item)
 
-    def is_UI_obj_available(self, toolkit_UI_obj=None):
-
-        # todo: track all uses of this and use observers instead!
-        # if there's no toolkit_UI_obj in the object or one hasn't been passed, abort
-        if toolkit_UI_obj is None and self.toolkit_UI_obj is None:
-            return False
-        # if there was a toolkit_UI_obj passed, update the one in the object
-        elif toolkit_UI_obj is not None:
-            self.toolkit_UI_obj = toolkit_UI_obj
-            return True
-        # if there simply is a self.toolkit_UI_obj just return True
-        else:
-            return True
-
     # RESOLVE SPECIFIC METHODS
 
     def resolve_disable(self):
-        '''
+        """
         This function is used to disable the resolve API
         The polling thread will continue to run, but will not poll for data until the resolve API is re-enabled
-        '''
+        """
 
         # set the resolve object to None
         self.resolve_api = None
@@ -2858,13 +2847,13 @@ class ToolkitOps:
         NLE.resolve = None
         NLE.reset_all()
 
-        # trigger resolve changed
-        self.on_resolve('resolve_changed')
+        # notify observers that the NLE has been reset
+        self.notify_observers('update_NLE_status')
 
     def resolve_enable(self):
-        '''
+        """
         This function is used to enable the resolve API
-        '''
+        """
 
         # initialize a resolve object
         if not self.resolve_api or self.resolve_api is None:
@@ -2995,117 +2984,6 @@ class ToolkitOps:
             # move playhead in resolve
             self.resolve_api.set_resolve_tc(str(new_timeline_tc))
 
-    def on_resolve(self, event_name):
-        '''
-        Process resolve events
-        :param event_name:
-        :return:
-        '''
-
-        # todo: remove UI updates from here and use observers instead
-        # but for now, we will keep the UI updates here too
-
-        # when resolve connects / re-connects
-        if event_name == 'resolve_changed':
-
-            if self.is_UI_obj_available():
-                # update the main window
-                self.toolkit_UI_obj.update_main_window()
-
-                # sync all the synced transcription windows
-                self.toolkit_UI_obj.update_all_transcription_windows()
-
-        # when the timeline has changed
-        elif event_name == 'timeline_changed':
-
-            if NLE.current_timeline is not None and NLE.current_timeline != '' \
-                    and isinstance(NLE.current_timeline, dict) and 'name' in NLE.current_timeline:
-
-                # update the timecode data
-                # todo: change this to app-wide project?
-                project = Project(project_name=NLE.current_project)
-
-                # get the transcription_paths linked with this timeline
-                timeline_transcription_file_paths = \
-                    project.get_timeline_transcriptions(timeline_name=NLE.current_timeline.get('name', None))
-
-                # close all the transcript windows that aren't linked with this timeline
-                if self.stAI.get_app_setting('close_transcripts_on_timeline_change', default_if_none=True):
-                    if self.toolkit_UI_obj is not None:
-                        self.toolkit_UI_obj.close_inactive_transcription_windows(timeline_transcription_file_paths)
-
-                # and open a transcript window for each of them
-                if self.stAI.get_app_setting('open_transcripts_on_timeline_change', default_if_none=True):
-                    if timeline_transcription_file_paths \
-                            and timeline_transcription_file_paths is not None \
-                            and self.toolkit_UI_obj is not None:
-
-                        for transcription_file_path in timeline_transcription_file_paths:
-                            self.toolkit_UI_obj.open_transcription_window(
-                                transcription_file_path=transcription_file_path)
-
-                if NLE is not None and NLE.current_timeline_fps is not None:
-                    project.set_timeline_timecode_data(
-                        timeline_name=NLE.current_timeline.get('name', None),
-                        timeline_fps=NLE.current_timeline_fps
-                    )
-
-                if NLE is not None and NLE.current_start_tc is not None:
-                    project.set_timeline_timecode_data(
-                        timeline_name=NLE.current_timeline.get('name', None),
-                        timeline_start_tc=NLE.current_start_tc
-                    )
-
-        # when the playhead has moved
-        elif event_name == 'tc_changed':
-            if self.toolkit_UI_obj is not None:
-                # sync all the synced transcription windows
-                self.toolkit_UI_obj.sync_all_transcription_windows()
-
-        # when the timeline markers have changed
-        elif event_name == 'timeline_markers_changed':
-
-            # todo: change this to app-wide project?
-            project = Project(project_name=NLE.current_project)
-
-            # save the markers to the project timeline
-            project.set_timeline_markers(
-                timeline_name=NLE.current_timeline.get('name', None),
-                markers=NLE.current_timeline.get('markers', None),
-                save_soon=True
-            )
-
-        elif event_name == 'fps_changed' or event_name == 'start_tc_changed':
-
-            # todo: change this to app-wide project?
-            project = Project(project_name=NLE.current_project)
-
-            if NLE is not None and NLE.current_timeline is not None and NLE.current_timeline_fps is not None:
-                project.set_timeline_timecode_data(
-                    timeline_name=NLE.current_timeline.get('name', None),
-                    timeline_fps=NLE.current_timeline_fps
-                )
-
-            if NLE is not None and NLE.current_timeline is not None and NLE.current_start_tc is not None:
-                project.set_timeline_timecode_data(
-                    timeline_name=NLE.current_timeline.get('name', None),
-                    timeline_start_tc=NLE.current_start_tc
-                )
-
-
-    def resolve_exists(self):
-        '''
-        Checks if Resolve API is available and connected
-        :return:
-        '''
-
-        # global resolve
-
-        if NLE.resolve:
-            return True
-        else:
-            return False
-
     def poll_resolve_thread(self):
         '''
         This keeps resolve polling in a separate thread
@@ -3179,7 +3057,7 @@ class ToolkitOps:
                     #  but if the polled data does not contain the key, also set the NLE variable to None
                     #  also, if the global variable is not None and the polled data doesn't contain the key,
                     #  set the global variable to None
-                    # also, make sure you trigger the on_resolve event if the data has changed
+                    # also, make sure you notify the relevant observers that the data has changed
 
                     # RESOLVE OBJECT CHANGE
                     # if the resolve object has changed (for eg. from None to an object)
@@ -3192,14 +3070,15 @@ class ToolkitOps:
                             # set the resolve object to whatever it is now
                             NLE.resolve = resolve_data['resolve']
 
-                            # trigger the resolve_changed event
-                            self.on_resolve('resolve_changed')
+                            # notify the observers that the resolve object has changed
+                            self.notify_observers('update_NLE_status')
+                            self.notify_observers('update_all_transcriptions')
 
                             # if the resolve object is now None,
                             # reset all and skip the rest of the polling
                             if NLE.resolve is None:
-                                self.on_resolve('project_changed')
-                                self.on_resolve('timeline_changed')
+                                self.notify_observers('NLE_project_changed')
+                                self.notify_observers('NLE_timeline_changed')
 
                                 NLE.reset_all()
                     except:
@@ -3222,13 +3101,13 @@ class ToolkitOps:
                             NLE.current_project = resolve_data[
                                 'currentProject'] if 'currentProject' in resolve_data else None
 
-                            # trigger the project_changed event
-                            self.on_resolve('project_changed')
+                            # notify the observers that the project has changed
+                            self.notify_observers('NLE_project_changed')
+                            self.notify_observers('update_all_transcriptions')
 
-                    except:
-                        import traceback
-                        logger.debug('Fail detected in resolve project change check.')
-                        logger.debug(traceback.format_exc())
+                    except Exception as e:
+                        logger.debug(e)
+                        logger.debug('Fail detected in resolve project change check.', exc_info=True)
                         continue
 
                     # if the current timeline was already set and now it's no longer set in the polled data
@@ -3255,8 +3134,7 @@ class ToolkitOps:
                                 # set the current timeline to None
                                 NLE.current_timeline = None
 
-                                # and trigger the timeline_changed event
-                                self.on_resolve('timeline_changed')
+                                self.notify_observers('NLE_timeline_changed')
 
                             # if the polled data contains the currentTimeline key
                             elif 'currentTimeline' in resolve_data \
@@ -3274,20 +3152,21 @@ class ToolkitOps:
                                 NLE.current_timeline = resolve_data['currentTimeline'] \
                                     if 'currentTimeline' in resolve_data else None
 
-                                # and trigger the timeline_changed event
-                                self.on_resolve('timeline_changed')
+                                # and notify the observers that the timeline has changed
+                                self.notify_observers('NLE_timeline_changed')
+                                self.notify_observers('NLE_timecode_data_changed')
 
-                            # if the polled data contains the currentTimeline key, but the name of the timeline hasn't changed
+                            # if the polled data contains the currentTimeline key,
+                            # but the name of the timeline hasn't changed
                             else:
                                 # set the current timeline to whatever it is now
                                 # but don't trigger the timeline_changed event
                                 NLE.current_timeline = resolve_data['currentTimeline'] \
                                     if 'currentTimeline' in resolve_data else None
 
-                    except:
-                        import traceback
-                        logger.debug('Fail detected in resolve timeline change check.')
-                        logger.debug(traceback.format_exc())
+                    except Exception as e:
+                        logger.debug(e)
+                        logger.debug('Fail detected in resolve timeline change check.', exc_info=True)
                         continue
 
                     # did the markers change?
@@ -3301,7 +3180,7 @@ class ToolkitOps:
                         # first compare the types
                         if type(NLE.current_timeline_markers) != type(resolve_data['currentTimeline']['markers']):
                             # if the types are different, then the markers have changed
-                            self.on_resolve('timeline_markers_changed')
+                            self.notify_observers('NLE_markers_changed')
 
                             NLE.current_timeline_markers = resolve_data['currentTimeline']['markers']
 
@@ -3309,14 +3188,14 @@ class ToolkitOps:
                         elif set(NLE.current_timeline_markers.keys()) != set(
                                 resolve_data['currentTimeline']['markers'].keys()):
                             # if the keys are different, then the markers have changed
-                            self.on_resolve('timeline_markers_changed')
+                            self.notify_observers('NLE_markers_changed')
 
                             NLE.current_timeline_markers = resolve_data['currentTimeline']['markers']
 
                         # but if the marker keys are the same do a deeper compare
                         elif NLE.current_timeline_markers != resolve_data['currentTimeline']['markers']:
                             # if the keys are the same, but the values are different, then the markers have changed
-                            self.on_resolve('timeline_markers_changed')
+                            self.notify_observers('NLE_markers_changed')
 
                             NLE.current_timeline_markers = resolve_data['currentTimeline']['markers']
 
@@ -3327,21 +3206,19 @@ class ToolkitOps:
                     if (NLE.current_bin is not None and NLE.current_bin != '' and 'currentBin' not in resolve_data) \
                             or NLE.current_bin != resolve_data['currentBin']:
                         NLE.current_bin = resolve_data['currentBin'] if 'currentBin' in resolve_data else ''
-
-                        self.on_resolve('bin_changed')
-                        # logger.info("Current Bin: {}".format(NLE.current_bin))
+                        self.notify_observers('NLE_bin_changed')
 
                     # update current playhead timecode
                     if (NLE.current_tc is not None and 'currentTC' not in resolve_data) \
                             or NLE.current_tc != resolve_data['currentTC']:
                         NLE.current_tc = resolve_data['currentTC']
-                        self.on_resolve('tc_changed')
+                        self.notify_observers('NLE_tc_changed')
 
                     # update current playhead timecode
                     if (NLE.current_timeline_fps is not None and 'currentTimelineFPS' not in resolve_data) \
                             or NLE.current_timeline_fps != resolve_data['currentTimelineFPS']:
                         NLE.current_timeline_fps = resolve_data['currentTimelineFPS']
-                        self.on_resolve('fps_changed')
+                        self.notify_observers('NLE_timecode_data_changed')
 
                     # update start_tc timecode
                     if (NLE.current_start_tc is not None
@@ -3351,7 +3228,7 @@ class ToolkitOps:
                             and NLE.current_start_tc != resolve_data['currentTimeline']['startTC']):
                         NLE.current_start_tc = \
                             resolve_data['currentTimeline']['startTC'] if isinstance(resolve_data, dict) else None
-                        self.on_resolve('start_tc_changed')
+                        self.notify_observers('NLE_timecode_data_changed')
 
                     # was there a previous error?
                     if NLE.resolve is not None and NLE.resolve_error > 0:
@@ -3365,18 +3242,13 @@ class ToolkitOps:
                         NLE.resolve_error += 1
 
                 # if an exception is thrown while trying to work with Resolve, don't crash, but continue to try to poll
-                except:
+                except Exception as e:
 
-                    import traceback
-                    print(traceback.format_exc())
+                    logger.debug(e)
+                    logger.debug('Fail detected in resolve polling loop.', exc_info=True)
 
                     # count the number of errors
                     NLE.resolve_error += 1
-
-                    # resolve is now None in the global variable
-                    # resolve = None
-
-                    # return False
 
                 # how often do we poll resolve?
                 polling_interval = 500

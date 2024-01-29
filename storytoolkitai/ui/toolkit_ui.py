@@ -2058,7 +2058,7 @@ class toolkit_UI():
         if action in self.windows_observers[window_id]:
             return False
 
-        # add an Observer to the transcription window
+        # add an Observer to the window
         window_observer = Observer()
 
         # wrap the call with after() so that all notifications are executed sequentially and not in parallel
@@ -2606,6 +2606,72 @@ class toolkit_UI():
         # update the window after it's been created
         self.root.after(500, self.update_main_window())
 
+        # add the window observer that will update the main window if the NLE status changes
+        def add_main_window_observers():
+
+            # this updates the buttons in the main window
+            self.add_observer_to_window(
+                window_id='main',
+                action='update_NLE_status',
+                callback=lambda: self.update_main_window()
+            )
+
+            # this deals with NLE project changes in relation to the UI
+            self.add_observer_to_window(
+                window_id='main',
+                action='NLE_project_changed',
+                callback=lambda: self.change_project(project_name=NLE.current_project)
+            )
+
+            # this opens the relevant transcriptions if the NLE timeline changed
+            # - it only works if the relevant app settings are enabled - see open_active_transcription_windows()
+            self.add_observer_to_window(
+                window_id='main',
+                action='NLE_timeline_changed',
+                callback=lambda l_NLE=NLE: self.open_active_transcription_windows(
+                    timeline_name=l_NLE.current_timeline.get('name', None)
+                )
+            )
+
+            # this syncs the relevant transcriptions if the NLE timecode changed
+            self.add_observer_to_window(
+                window_id='main',
+                action='NLE_tc_changed',
+                callback=lambda: self.sync_all_transcription_windows()
+            )
+
+            # this updates the timecode data of the timeline if the NLE timeline timecode data changed
+            self.add_observer_to_window(
+                window_id='main',
+                action='NLE_timecode_data_changed',
+                callback=lambda l_NLE=NLE: self.update_timeline_timecode_data(
+                    timeline_name=l_NLE.current_timeline.get('name', None),
+                    timeline_fps=l_NLE.current_timeline_fps,
+                    start_tc=l_NLE.current_start_tc
+                )
+            )
+
+            # this updates the markers of the timeline if the NLE timeline markers changed
+            self.add_observer_to_window(
+                window_id='main',
+                action='NLE_markers_changed',
+                callback=lambda l_NLE=NLE: self.update_timeline_markers(
+                    timeline_name=l_NLE.current_timeline.get('name', None),
+                    markers=l_NLE.current_timeline.get('markers', None)
+                )
+            )
+
+        # add the observer after half a second
+        self.root.after(501, add_main_window_observers)
+
+        # if there is a project already open, change the project after half a second
+        if self.current_project is not None:
+            self.root.after(
+                505, lambda: self.change_project(
+                    project_name=self.current_project.name, confirmed=True, force=True
+                )
+            )
+
         logger.info("Starting StoryToolkitAI GUI")
 
         # when the window is focused or clicked on
@@ -2646,6 +2712,39 @@ class toolkit_UI():
 
         # update the main window title
         self.change_main_window_title(title=self.current_project.name)
+
+    def update_timeline_timecode_data(self, timeline_name, timeline_fps, start_tc):
+        """
+        This function updates the timecode data of a project timeline (if the project is open)
+        """
+
+        if self.current_project is None:
+            return
+
+        if timeline_name:
+
+            # the project method decides whether to update the fps and start_tc or not
+            self.current_project.set_timeline_timecode_data(
+                timeline_name=timeline_name,
+                timeline_fps=timeline_fps,
+                timeline_start_tc=start_tc
+            )
+
+    def update_timeline_markers(self, timeline_name, markers):
+        """
+        This function updates the markers of a project timeline (if the project is open)
+        """
+
+        if self.current_project is None:
+            return
+
+        if timeline_name:
+            self.current_project.set_timeline_markers(
+                timeline_name=timeline_name,
+                markers=markers,
+                save_soon=True
+            )
+
 
     @staticmethod
     def get_line_char_from_click(event, text_widget=None):
@@ -6538,9 +6637,6 @@ class toolkit_UI():
             # the current timecode of each window
             self.current_window_tc = {}
 
-            # this keeps track of which transcription window is in sync with the resolve playhead
-            self.sync_with_playhead = {}
-
         def link_to_timeline_button(self, window_id: str, link=None, timeline_name: str = None):
 
             # the window
@@ -6665,14 +6761,16 @@ class toolkit_UI():
 
         def sync_with_playhead_update(self, window_id, sync=None):
 
-            if window_id not in self.sync_with_playhead:
-                self.sync_with_playhead[window_id] = False
+            window = self.toolkit_UI_obj.get_window_by_id(window_id=window_id)
+
+            if not hasattr(window, 'sync_with_playhead'):
+                window.sync_with_playhead = False
 
             # if no sync variable was passed, toggle the current sync state
             if sync is None:
-                sync = not self.sync_with_playhead[window_id]
+                sync = not window.sync_with_playhead
 
-            self.sync_with_playhead[window_id] = sync
+            window.sync_with_playhead = sync
 
             return sync
 
@@ -7163,7 +7261,7 @@ class toolkit_UI():
             if event.keysym == 'm' or event.keysym == 'M':
 
                 # this only works if resolve is connected
-                if self.toolkit_ops_obj.resolve_exists() and 'name' in NLE.current_timeline:
+                if NLE.resolve and NLE.current_timeline is not None and 'name' in NLE.current_timeline:
 
                     # if CMD/CTRL+M was pressed
                     # select segments based on current timeline markers
@@ -11269,6 +11367,13 @@ class toolkit_UI():
                 callback=lambda: self.update_transcription_window(t_window_id)
             )
 
+            # update this window also when the general update_all_transcriptions action is notified
+            self.add_observer_to_window(
+                window_id=t_window_id,
+                action='update_all_transcriptions',
+                callback=lambda: self.update_transcription_window(t_window_id)
+            )
+
             # add the transcript groups form to the right frame
             transcript_groups_module = self.TranscriptGroupsModule(
                 master=right_frame, window_id=t_window_id, toolkit_UI_obj=self)
@@ -11276,8 +11381,7 @@ class toolkit_UI():
             # and attach it to the window
             t_window.transcript_groups_module = transcript_groups_module
 
-        # if the transcription window already exists,
-        # we won't know the window id since it's not passed
+        # if the transcription window already exists
         else:
 
             # get the current window and the transcript groups module
@@ -11318,7 +11422,8 @@ class toolkit_UI():
                 self.t_edit_obj.add_segments_to_text_widget(transcription, t_window.text_widget)
 
             # so update all the windows just to make sure that all the elements are in the right state
-            self.update_all_transcription_windows()
+            # self.update_all_transcription_windows()
+            self.update_transcription_window(window_id=t_window_id)
 
         # if select_line_no was passed
         if select_line_no is not None:
@@ -11465,13 +11570,13 @@ class toolkit_UI():
                 update_attr['link_button'] \
                     .pack(side=tk.BOTTOM, fill='x', **self.ctk_side_frame_button_paddings, anchor='sw')
 
-            if window_id not in self.t_edit_obj.sync_with_playhead:
-                self.t_edit_obj.sync_with_playhead[window_id] = False
+            if not hasattr(t_window, 'sync_with_playhead'):
+                t_window.sync_with_playhead = False
 
             # update the sync button if it was passed in the call
             if update_attr.get('sync_button', None) is not None:
 
-                if self.t_edit_obj.sync_with_playhead[window_id]:
+                if t_window.sync_with_playhead:
                     sync_button_text = "Don't sync"
                 else:
                     sync_button_text = "Sync with Playhead"
@@ -11489,7 +11594,7 @@ class toolkit_UI():
 
             # only do this if the sync is on for this window
             # and if the timecode in resolve has changed compared to last time
-            if self.t_edit_obj.sync_with_playhead[window_id] \
+            if t_window.sync_with_playhead \
                     and self.t_edit_obj.current_window_tc[window_id] != NLE.current_tc:
                 update_attr = self.sync_current_tc_to_transcript(window_id=window_id, **update_attr)
 
@@ -11611,11 +11716,12 @@ class toolkit_UI():
                 # just move the NLE playhead (if any)
                 toolkit_UI_obj.toolkit_ops_obj.go_to_time(seconds=transcript_sec)
 
-                toolkit_UI_obj.notify_via_messagebox(
-                    title="Not Found",
-                    message="No segment found for the requested time. Selecting previous segment.",
-                    parent=toolkit_UI_obj.get_window_by_id(window_id),
-                )
+                # this notification might be annoying, so maybe remove it
+                # toolkit_UI_obj.notify_via_messagebox(
+                #     title="Not Found",
+                #     message="No segment found for the requested time. Selecting previous segment.",
+                #     parent=toolkit_UI_obj.get_window_by_id(window_id),
+                # )
 
                 text_widget_line = index
 
@@ -11633,20 +11739,30 @@ class toolkit_UI():
         for window_id in self.windows:
 
             # check if it needs to be synced with the playhead
-            if window_id in self.t_edit_obj.sync_with_playhead \
-                    and self.t_edit_obj.sync_with_playhead[window_id]:
-                # and if it does, sync it
+            # use the self.windows dict directly to save time
+            if hasattr(self.windows[window_id], 'sync_with_playhead') \
+                    and self.windows[window_id].sync_with_playhead:
                 self.sync_current_tc_to_transcript(window_id)
 
-    def update_all_transcription_windows(self):
+    def open_active_transcription_windows(self, timeline_name):
 
-        # loop through all the open windows
-        for window_id in self.windows:
+        # if no timeline name was passed, abort
+        if timeline_name is None:
+            return
 
-            # if the window is a transcription window
-            if self.get_window_type(window_id=window_id) == 'transcription':
-                # update the window
-                self.update_transcription_window(window_id)
+        # get the transcription_paths linked with this timeline
+        timeline_transcription_file_paths = \
+            self.current_project.get_timeline_transcriptions(timeline_name=timeline_name)
+
+        # close all the transcript windows that aren't linked with this timeline
+        if self.stAI.get_app_setting('close_transcripts_on_timeline_change', default_if_none=True):
+            self.close_inactive_transcription_windows(timeline_transcription_file_paths)
+
+        # and open a transcript window for each of them
+        if self.stAI.get_app_setting('open_transcripts_on_timeline_change', default_if_none=True):
+            if timeline_transcription_file_paths:
+                for transcription_file_path in timeline_transcription_file_paths:
+                    self.open_transcription_window(transcription_file_path=transcription_file_path)
 
     def close_inactive_transcription_windows(self, timeline_transcription_file_paths=None):
         """
@@ -11660,17 +11776,24 @@ class toolkit_UI():
         transcription_windows = self.get_all_windows_of_type('transcription')
 
         # loop through all transcription windows
-        for transcription_window in transcription_windows:
+        for transcription_window_id in transcription_windows:
+
+            transcription_window = self.get_window_by_id(transcription_window_id)
+
+            # if the transcription window doesn't have a transcription object, skip it
+            if not hasattr(transcription_window, 'transcription'):
+                continue
+
+            # get the transcription_file_path from the window transcription object
+            transcription_file_path = transcription_window.transcription.transcription_file_path
 
             # if the transcription window is not in the timeline_transcription_file_paths
-            if timeline_transcription_file_paths is None \
-                    or timeline_transcription_file_paths == [] \
-                    not in timeline_transcription_file_paths:
+            if not timeline_transcription_file_paths \
+                    or transcription_file_path not in timeline_transcription_file_paths:
 
-                # if the transcription window is open
-                if transcription_window in self.windows:
-                    # close the window
-                    self.destroy_transcription_window(transcription_window)
+                # if the transcription window is open, close it
+                if transcription_window_id in self.windows:
+                    self.destroy_transcription_window(transcription_window_id)
 
     def destroy_transcription_window(self, window_id):
 
@@ -11711,9 +11834,6 @@ class toolkit_UI():
 
         if window_id in self.t_edit_obj.current_window_tc:
             del self.t_edit_obj.current_window_tc[window_id]
-
-        if window_id in self.t_edit_obj.typing:
-            del self.t_edit_obj.sync_with_playhead[window_id]
 
         # call the default destroy window function
         self.destroy_window_(windows_dict=self.windows, window_id=window_id)
@@ -17869,7 +17989,8 @@ class toolkit_UI():
             always_connect = messagebox.askyesno(title='Always Connect?',
                                                  message='We\'re now connected to Resolve.\n\n'
                                                          'Do you want to always connect to the Resolve API '
-                                                         'on tool startup?'
+                                                         'on tool startup?',
+                                                 parent=self.root
                                                  )
 
             time.sleep(0.1)
@@ -17889,7 +18010,8 @@ class toolkit_UI():
             always_connect = messagebox.askyesno(title='Connect back at startup?',
                                                  message='Resolve API connection disabled.\n\n'
                                                          'Do you want to still reconnect to the '
-                                                         'Resolve API at tool startup?'
+                                                         'Resolve API at tool startup?',
+                                                 parent=self.root
                                                  )
 
             if not always_connect:
