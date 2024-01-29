@@ -10816,13 +10816,22 @@ class toolkit_UI():
 
         # only continue if the transcription path was passed and the file exists
         if not transcription.exists:
-            self.notify_via_messagebox(
-                title='Not found',
-                type='error',
-                message='The transcription file {} cannot be found.'
-                .format(transcription.transcription_file_path)
-            )
-            return False
+
+            # we need to do a second check in case the file was declared non-existing in a previous initialization
+            # in the meantime, the file might have appeared on the system (mounted drive, etc.)
+            # so, try to reload one more time
+            transcription.reload_from_file(save_first=True)
+
+            # and check again if the file still doesn't exist
+            if not transcription.exists:
+
+                self.notify_via_messagebox(
+                    title='Not found',
+                    type='error',
+                    message='The transcription file {} cannot be found.'
+                    .format(transcription.transcription_file_path)
+                )
+                return False
 
         if not transcription.is_transcription_file:
             self.notify_via_messagebox(
@@ -18173,7 +18182,6 @@ class toolkit_UI():
         self.root.clipboard_append(full_text.strip())
 
         logger.debug('Copied text to clipboard')
-
 
 
 def run_gui(toolkit_ops_obj, stAI):

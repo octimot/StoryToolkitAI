@@ -147,6 +147,9 @@ class Transcription:
         Make sure we remove this from the instances dict when it's deleted
         """
 
+        # todo: this might not work work since __del__ is only called when all references to the object are deleted
+        #  so considering that the instance is stored in the instances dict, at least that reference will still exist
+        #  and therefore __del__ will not be called
         # if we're deleting the instance that is stored in the instances dict
         # we remove it from the dict, so we don't have a reference to a deleted object
         if self.__class__._instances[self.transcription_path_id] == self:
@@ -2050,7 +2053,7 @@ class TranscriptionUtils:
         # if the directory of the transcription file path doesn't exist
         if not os.path.exists(os.path.dirname(transcription_file_path)):
             # create the directory
-            logger.debug("Creating directory for transcription file path: {}")
+            logger.debug("Creating directory for transcription file path: {}".format(transcription_file_path))
             try:
                 os.makedirs(os.path.dirname(transcription_file_path))
             except OSError:
