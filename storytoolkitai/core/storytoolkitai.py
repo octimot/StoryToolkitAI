@@ -617,7 +617,7 @@ class StoryToolkitAI:
                 logger.debug('Unable to check user API key.', exc_info=True)
                 pass
 
-        logger.dbug('No API key found.')
+        logger.debug('No API key found.')
         self.api_key_valid = False
         return False
 
