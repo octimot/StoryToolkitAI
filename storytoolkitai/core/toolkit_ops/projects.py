@@ -405,14 +405,17 @@ class Project:
                          .format(transcription_file_path, timeline_name))
             return False
 
+        if self.timelines is None:
+            self._timelines = {}
+
         if timeline_name not in self.timelines:
-            self.timelines[timeline_name] = {}
+            self._timelines[timeline_name] = {}
 
         if 'transcription_files' not in self.timelines[timeline_name]:
-            self.timelines[timeline_name]['transcription_files'] = []
+            self._timelines[timeline_name]['transcription_files'] = []
 
         if transcription_file_path not in self.timelines[timeline_name]['transcription_files']:
-            self.timelines[timeline_name]['transcription_files'].append(transcription_file_path)
+            self._timelines[timeline_name]['transcription_files'].append(transcription_file_path)
 
         self.set_dirty(save_soon=save_soon)
 
@@ -457,8 +460,11 @@ class Project:
             logger.debug('Cannot set markers for timeline "{}".'.format(timeline_name))
             return False
 
+        if self.timelines is None:
+            self._timelines = {}
+
         if timeline_name not in self.timelines:
-            self.timelines[timeline_name] = {}
+            self._timelines[timeline_name] = {}
 
         # only allow a dict of markers or None
         # the dict items usually look like this: {marker_frame: {color, duration, note, name, customData, ...}}
@@ -468,11 +474,11 @@ class Project:
 
         # remove the markers key from the timeline if the markers are None
         if not markers and 'markers' in self.timelines[timeline_name]:
-            del self.timelines[timeline_name]['markers']
+            del self._timelines[timeline_name]['markers']
 
         # otherwise set the markers
         else:
-            self.timelines[timeline_name]['markers'] = markers
+            self._timelines[timeline_name]['markers'] = markers
 
         self.set_dirty(save_soon=save_soon)
 
@@ -496,14 +502,17 @@ class Project:
             logger.debug('Cannot set timecode data for timeline "{}".'.format(timeline_name))
             return False
 
+        if self.timelines is None:
+            self._timelines = {}
+
         if timeline_name not in self.timelines:
-            self.timelines[timeline_name] = {}
+            self._timelines[timeline_name] = {}
 
         if timeline_fps is not None:
-            self.timelines[timeline_name]['timeline_fps'] = timeline_fps
+            self._timelines[timeline_name]['timeline_fps'] = timeline_fps
 
         if timeline_start_tc is not None:
-            self.timelines[timeline_name]['timeline_start_tc'] = timeline_start_tc
+            self._timelines[timeline_name]['timeline_start_tc'] = timeline_start_tc
 
         self.set_dirty(save_soon=save_soon)
 

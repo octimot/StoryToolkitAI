@@ -1271,6 +1271,9 @@ class toolkit_UI():
         # make a reference to StoryToolkitAI obj
         self.stAI = stAI
 
+        # we need to keep track of the current loaded project
+        self.current_project = None
+
         # initialize tkinter as the main GUI
         self.root = ctk.CTk()
 
@@ -2440,11 +2443,9 @@ class toolkit_UI():
 
     def update_main_window(self):
         """
-        Updates the main window GUI
+        Updates the main window GUI (excluding the title)
         :return:
         """
-
-        main_window = self.windows['main']
 
         #  show the tool buttons if they're not visible already
         self.show_main_window_frame('tool_buttons_frame')
@@ -2459,6 +2460,16 @@ class toolkit_UI():
             self.show_main_window_frame('resolve_buttons_frame')
 
         return
+
+    def change_main_window_title(self, title):
+        """
+        Changes the title of the main window
+        """
+
+        app_name = "StoryToolkitAI v{}".format(self.stAI.__version__)
+
+        self.root.title("{} - {}".format(app_name, title) if title else app_name)
+
 
     def create_main_window(self):
         """
@@ -2614,6 +2625,27 @@ class toolkit_UI():
         self.root.mainloop()
 
         return
+
+    def change_project(self, project_name, confirmed=False, force=False):
+        """
+        This function is called when the current project is changed
+        """
+
+        if self.current_project and project_name == self.current_project.name and not force:
+            return
+
+        if not confirmed:
+            if not messagebox.askyesno(
+                    title='Change Project',
+                    message='Do you want to change the current project to {}?'.format(project_name),
+                    parent=self.root):
+                return
+
+        # change the current project
+        self.current_project = Project(project_name=project_name) if project_name else None
+
+        # update the main window title
+        self.change_main_window_title(title=self.current_project.name)
 
     @staticmethod
     def get_line_char_from_click(event, text_widget=None):
@@ -6129,11 +6161,11 @@ class toolkit_UI():
                 and 'currentTimeline' in resolve_data and \
                 resolve_data['currentTimeline'] != '' and resolve_data['currentTimeline'] is not None:
 
-            # todo: change this to app-wide project
-            project = Project(project_name=NLE.current_project)
-
             # did we ever save a target dir for this project?
-            last_target_dir = project.last_target_dir
+            if self.current_project:
+                last_target_dir = self.current_project.last_target_dir
+            else:
+                last_target_dir = self.stAI.initial_target_dir
 
             # get the current timeline from Resolve
             currentTimelineName = resolve_data['currentTimeline']['name']
@@ -6155,10 +6187,8 @@ class toolkit_UI():
 
                 # remember this target_dir for the next time we're working on this project
                 # (but only if it was selected by the user)
-                if target_dir and target_dir != last_target_dir:
-                    # todo: change this to app-wide project
-                    project = Project(project_name=NLE.current_project)
-                    project.set('last_target_dir', target_dir, save_soon=True)
+                if target_dir and target_dir != last_target_dir and self.current_project:
+                    self.current_project.set('last_target_dir', target_dir, save_soon=True)
 
                 # cancel if the user presses cancel
                 if not target_dir:
@@ -6526,10 +6556,12 @@ class toolkit_UI():
                 logger.debug('No transcription or window id provided')
                 return None
 
-            # try to get the project opened in Resolve
-            if not NLE.current_project or NLE.current_project is None:
+            # try to get the project from the UI
+            if not self.toolkit_UI_obj.current_project:
                 logger.error('No project name was passed. Unable to link transcript to timeline.')
                 return None
+
+            current_project = self.toolkit_UI_obj.current_project
 
             # if no timeline name was passed, try to use the current timeline
             if timeline_name is None:
@@ -6539,14 +6571,10 @@ class toolkit_UI():
                     logger.error('No timeline name was passed and no current timeline was found. ')
                     return None
 
-            # todo: change this to app-wide project name
-            # use that as a project name
-            project = Project(project_name=NLE.current_project)
-
             # if the link action wasn't passed, decide here whether to link or unlink
             if link is None:
                 # check if the transcription is linked with the timeline
-                current_link = project.is_transcription_linked_to_timeline(
+                current_link = current_project.is_transcription_linked_to_timeline(
                     transcription_file_path=window_transcription.transcription_file_path,
                     timeline_name=timeline_name)
 
@@ -6556,7 +6584,7 @@ class toolkit_UI():
             if link:
 
                 logger.info('Linking to current timeline: {}'.format(timeline_name))
-                project.link_transcription_to_timeline(
+                current_project.link_transcription_to_timeline(
                     transcription_file_path=window_transcription.transcription_file_path,
                     timeline_name=timeline_name,
                     save_soon=True
@@ -6568,7 +6596,7 @@ class toolkit_UI():
             else:
                 logger.info('Unlinking from current timeline: {}'.format(timeline_name))
                 # but only remove it if it is in there currently
-                project.unlink_transcription_from_timeline(
+                current_project.unlink_transcription_from_timeline(
                     transcription_file_path=window_transcription.transcription_file_path,
                     timeline_name=timeline_name,
                     save_soon=True
@@ -7881,13 +7909,22 @@ class toolkit_UI():
                 text_element = self.toolkit_UI_obj.windows[window_id] \
                     .nametowidget('middle_frame.text_form_frame.transcript_text')
 
-            # todo: change from NLE.current_project to app-wide project
-            project = Project(project_name=NLE.current_project)
+            if not self.toolkit_UI_obj.current_project:
+                self.notify_via_messagebox(
+                    title='No project found',
+                    message_log="No project is currently open.",
+                    message='No project found. Please open a project first.',
+                    type='warning',
+                    parent=self.toolkit_UI_obj.get_window_by_id(window_id=window_id)
+                )
+                return
+
+            current_project = self.toolkit_UI_obj.current_project
 
             # check the if the transcription is linked with the timeline
             # check if the user is trying to add markers
             # to a timeline that is not connected to the transcription in this window
-            is_linked = project.is_transcription_linked_to_timeline(
+            is_linked = current_project.is_transcription_linked_to_timeline(
                 transcription_file_path=self.get_window_transcription(window_id).transcription_file_path,
                 timeline_name=NLE.current_timeline['name'])
 
@@ -10636,11 +10673,8 @@ class toolkit_UI():
 
         # did we ever save a target dir for this project?
         last_target_dir = None
-        if NLE.is_connected() and NLE.current_project is not None:
-
-            # todo: change this to app-wide project
-            project = Project(project_name=NLE.current_project)
-            last_target_dir = project.last_target_dir
+        if self.current_project:
+            last_target_dir = self.current_project.last_target_dir
 
         # ask user which transcript to open
         transcription_json_file_path = self.ask_for_target_file(filetypes=[("Json files", "json srt")],
@@ -10650,11 +10684,11 @@ class toolkit_UI():
         if not transcription_json_file_path:
             return False
 
-        # if resolve is connected, save the directory where the file is as a last last target dir
-        if NLE.is_connected() and transcription_json_file_path and os.path.exists(transcription_json_file_path):
-            # todo: change this to app-wide project
-            project = Project(project_name=NLE.current_project)
-            project.set('last_target_dir', os.path.dirname(transcription_json_file_path), save_soon=True)
+        # if we have a project, save the directory where the file is as a last target dir
+        if self.current_project and transcription_json_file_path and os.path.exists(transcription_json_file_path):
+            self.current_project.set(
+                'last_target_dir', os.path.dirname(transcription_json_file_path), save_soon=True
+            )
 
         # if this is an srt file, but a .transcription.json file exists in the same directory,
         # ask the user if they want to open the .transcription.json file instead
@@ -11397,13 +11431,15 @@ class toolkit_UI():
                 link = False
             else:
 
-                # todo: change from NLE.current_project to app-wide current_project
-                project = Project(project_name=NLE.current_project)
+                # todo: don't show the link button at all if there is no current_project
+                if not self.current_project:
+                    link = False
 
-                # is there a link between the transcription and the resolve timeline?
-                link = project.is_transcription_linked_to_timeline(
-                    transcription_file_path=update_attr['transcription_file_path'],
-                    timeline_name=NLE.current_timeline['name'])
+                else:
+                    # is there a link between the transcription and the resolve timeline?
+                    link = self.current_project.is_transcription_linked_to_timeline(
+                        transcription_file_path=update_attr['transcription_file_path'],
+                        timeline_name=NLE.current_timeline['name'])
 
             # update the import srt button if it was passed in the call
             if update_attr.get('import_srt_button', None) is not None:
@@ -14925,14 +14961,11 @@ class toolkit_UI():
         # ask the user to manually select the files
         if search_file_path is None and not search_file_paths:
 
-            # todo: change this to app-wide project
-            # get the initial dir to use in the file dialog
-            # depending if we're using the NLE
-            if NLE.is_connected():
-                project = Project(project_name=NLE.current_project)
-                initial_dir = project.last_target_dir
+            # get the initial dir to use in the file dialog from the project
+            if self.current_project:
+                initial_dir = self.current_project.last_target_dir
 
-            # if we're not using the NLE, use the last selected dir
+            # or directly from the config use the last selected dir
             else:
                 initial_dir = self.stAI.initial_target_dir
 
@@ -14977,12 +15010,10 @@ class toolkit_UI():
                     )
                     self.stAI.update_initial_target_dir(os.path.dirname(selected_file_path[0]))
 
-            # if resolve is connected, save the last target dir
-            if NLE.is_connected() and search_file_paths \
-                    and type(search_file_paths) is list and os.path.exists(search_file_paths[0]):
-                # todo: change this to app-wide project
-                project = Project(project_name=NLE.current_project)
-                project.set(
+            # if we're in a project, save the last target dir
+            if self.current_project and search_file_paths \
+                    and isinstance(search_file_paths, list) and os.path.exists(search_file_paths[0]):
+                self.current_project.set(
                     'last_target_dir', os.path.dirname(os.path.dirname(search_file_paths[0]), save_soon=True)
                 )
 
