@@ -79,7 +79,7 @@ class toolkit_UI():
         **ctk_frame_paddings
     }
 
-    ctk_main_button_size = {'width': 200, 'height': 45}
+    ctk_main_button_size = {'width': 100, 'height': 45}
 
     ctk_list_item = {'fg_color': ctk.ThemeManager.theme["CTkScrollableFrame"]["label_fg_color"]}
 
@@ -542,6 +542,23 @@ class toolkit_UI():
                                                       text='',
                                                       **toolkit_UI.ctk_form_entry_settings)
 
+            # CHANGE PROJECT ON PROJECT CHANGE
+            ignore_project_switch = \
+                kwargs.get('ignore_project_switch', None) \
+                if kwargs.get('ignore_project_switch', None) is not None \
+                else self.toolkit_UI_obj.stAI.get_app_setting('ignore_project_switch', default_if_none=False)
+
+            form_vars['ignore_project_switch'] = \
+                ignore_project_switch_var = tk.BooleanVar(resolve_prefs_frame,
+                                                                     value=ignore_project_switch)
+            ignore_project_switch_label = ctk.CTkLabel(resolve_prefs_frame,
+                                                                  text='Ignore Project Switch',
+                                                                  **toolkit_UI.ctk_form_label_settings)
+            ignore_project_switch_input = ctk.CTkSwitch(resolve_prefs_frame,
+                                                                   variable=ignore_project_switch_var,
+                                                                   text='',
+                                                                   **toolkit_UI.ctk_form_entry_settings)
+
             # OPEN TRANSCRIPTS ON TIMELINE CHANGE
             open_transcripts_on_timeline_change = \
                 kwargs.get('open_transcripts_on_timeline_change', None) \
@@ -553,7 +570,7 @@ class toolkit_UI():
                 open_transcripts_on_timeline_change_var = tk.BooleanVar(resolve_prefs_frame,
                                                                         value=open_transcripts_on_timeline_change)
             open_transcripts_on_timeline_change_label = ctk.CTkLabel(resolve_prefs_frame,
-                                                                     text='Open Transcripts on Timeline',
+                                                                     text='Open Transcripts on Timeline Change',
                                                                      **toolkit_UI.ctk_form_label_settings)
             open_transcripts_on_timeline_change_input = ctk.CTkSwitch(resolve_prefs_frame,
                                                                       variable=open_transcripts_on_timeline_change_var,
@@ -571,7 +588,7 @@ class toolkit_UI():
                 close_transcripts_on_timeline_change_var = tk.BooleanVar(resolve_prefs_frame,
                                                                          value=close_transcripts_on_timeline_change)
             close_transcripts_on_timeline_change_label = ctk.CTkLabel(resolve_prefs_frame,
-                                                                      text='Close Transcripts on Timeline',
+                                                                      text='Close Transcripts on Timeline Change',
                                                                       **toolkit_UI.ctk_form_label_settings)
             close_transcripts_on_timeline_change_input = ctk.CTkSwitch(resolve_prefs_frame,
                                                                        variable=close_transcripts_on_timeline_change_var,
@@ -624,16 +641,18 @@ class toolkit_UI():
             # ADD ELEMENTS TO GRID
             disable_resolve_api_label.grid(row=1, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
             disable_resolve_api_input.grid(row=1, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-            open_transcripts_on_timeline_change_label.grid(row=2, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            open_transcripts_on_timeline_change_input.grid(row=2, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-            close_transcripts_on_timeline_change_label.grid(row=3, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            close_transcripts_on_timeline_change_input.grid(row=3, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-            default_marker_color_label.grid(row=4, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            default_marker_color_input.grid(row=4, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-            transcription_render_preset_label.grid(row=5, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            transcription_render_preset_input.grid(row=5, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-            ingest_render_preset_label.grid(row=6, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            ingest_render_preset_input.grid(row=6, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            ignore_project_switch_label.grid(row=2, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            ignore_project_switch_input.grid(row=2, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            open_transcripts_on_timeline_change_label.grid(row=3, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            open_transcripts_on_timeline_change_input.grid(row=3, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            close_transcripts_on_timeline_change_label.grid(row=4, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            close_transcripts_on_timeline_change_input.grid(row=4, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            default_marker_color_label.grid(row=5, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            default_marker_color_input.grid(row=5, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            transcription_render_preset_label.grid(row=6, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            transcription_render_preset_input.grid(row=6, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            ingest_render_preset_label.grid(row=7, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            ingest_render_preset_input.grid(row=7, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
 
             return form_vars
 
@@ -2420,12 +2439,95 @@ class toolkit_UI():
         main_window = self.windows['main']
 
         # make the resolve buttons visible if resolve is connected
-        if NLE.is_connected():
-            main_window.resolve_buttons_frame.pack(fill='x')
+        # if NLE.is_connected():
+        #    main_window.resolve_buttons_frame.pack(fill='x')
 
         # otherwise, make sure they're hidden
+        # else:
+        #     main_window.resolve_buttons_frame.pack_forget()
+
+        projects = None
+
+        # get the projects if we're not using one already
+        if self.current_project is None:
+            projects = get_projects_from_path()
+
+        # if there are projects, add them to the middle frame
+        if projects and len(projects) > 0:
+
+            for row_num, project in enumerate(projects):
+
+                project = Project(project_name=project)
+
+                # create a frame to hold the project
+                project_frame = ctk.CTkFrame(main_window.middle_frame, **self.ctk_list_item)
+
+                # add the project name
+                project_name_var = tk.StringVar(main_window, value=project.name)
+                project_name = ctk.CTkLabel(project_frame, textvariable=project_name_var, anchor='w')
+
+                # add a status label
+                # project_status_var = tk.StringVar(main_window, value=project.project_path)
+                # project_status = ctk.CTkLabel(project_frame, textvariable=project_status_var, anchor='e')
+
+                # add the project name to the project frame
+                project_name.grid(row=0, column=0, sticky='w', **self.ctk_form_paddings)
+
+                # add project buttons frame
+                # project_status.grid(row=0, column=1, sticky='e', **self.ctk_form_paddings)
+
+                # add the project to the grid
+                project_frame.grid(row=row_num, column=0, sticky='ew', **self.ctk_form_paddings)
+
+                # add an onclick event to the project frame and name
+                project_frame.bind(
+                    '<Button-1>',
+                    lambda event, l_project_name=project.name: self.change_project(project_name=l_project_name)
+                )
+                project_name.bind(
+                    '<Button-1>',
+                    lambda event, l_project_name=project.name: self.change_project(project_name=l_project_name)
+                )
+
+                # add right click for context menu
+                project_frame.bind(
+                    '<Button-3>',
+                    lambda e, l_project_name=project_name_var.get(): self._project_context_menu(e, l_project_name))
+
+                # make context menu work on mac trackpad too
+                project_frame.bind(
+                    '<Button-2>',
+                    lambda e, l_project_name=project_name_var.get(): self._project_context_menu(e, l_project_name))
+
+                # add right click for context menu
+                project_name.bind(
+                    '<Button-3>',
+                    lambda e, l_project_name=project_name_var.get(): self._project_context_menu(e, l_project_name))
+
+                # make context menu work on mac trackpad too
+                project_name.bind(
+                    '<Button-2>',
+                    lambda e, l_project_name=project_name_var.get(): self._project_context_menu(e, l_project_name))
+
+            # expand project frames on the x axis
+            main_window.middle_frame.grid_columnconfigure(0, weight=1)
+
+            # show the middle frame
+            main_window.middle_frame.grid(row=1, column=0, sticky='nsew')
+
+            # make the middle frame expand on the y and x-axis
+            main_window.grid_rowconfigure(1, weight=1)
+            main_window.grid_columnconfigure(0, weight=1)
+
+            # make window resizable
+            self.root.resizable(False, True)
+
         else:
-            main_window.resolve_buttons_frame.pack_forget()
+            # hide the middle frame
+            main_window.middle_frame.grid_remove()
+
+            # make the window not resizable after it's been drawn
+            self.root.after_idle(lambda: self.root.resizable(False, False))
 
     def change_main_window_title(self, title):
         """
@@ -2461,10 +2563,6 @@ class toolkit_UI():
 
         # add the frames to the grid
         top_frame.grid(row=0, column=0, sticky='ew')
-        middle_frame.grid(row=1, column=0, sticky='nsew')
-
-        # but hide the middle frame for now
-        middle_frame.grid_remove()
 
         # the top frame can only expand on the x axis
         main_window.grid_columnconfigure(0, weight=1)
@@ -2526,12 +2624,12 @@ class toolkit_UI():
 
         main_window.t_open_transcript = ctk.CTkButton(
             tool_buttons_frame, **self.ctk_main_button_size,
-            text="Open Transcription",
+            text="Transcription",
             command=lambda: self.open_transcript())
 
         main_window.open_story = ctk.CTkButton(
             tool_buttons_frame, **self.ctk_main_button_size,
-            text="Open Story",
+            text="Story",
             command=lambda: self.open_story_editor_window()
         )
 
@@ -2568,11 +2666,11 @@ class toolkit_UI():
         main_window.open_assistant.grid(row=1, column=6, **self.ctk_main_paddings)
 
         # add the tool buttons to the grid
-        main_window.r_transcribe.grid(row=1, column=1, **self.ctk_main_paddings)
-        main_window.r_copy_markers_clip.grid(row=1, column=2, **self.ctk_main_paddings)
-        main_window.r_copy_markers_timeline.grid(row=1, column=3, **self.ctk_main_paddings)
-        main_window.r_render_marker_stils.grid(row=1, column=4, **self.ctk_main_paddings)
-        main_window.r_render_marker_clips.grid(row=1, column=5, **self.ctk_main_paddings)
+        # main_window.r_transcribe.grid(row=1, column=1, **self.ctk_main_paddings)
+        # main_window.r_copy_markers_clip.grid(row=1, column=2, **self.ctk_main_paddings)
+        # main_window.r_copy_markers_timeline.grid(row=1, column=3, **self.ctk_main_paddings)
+        # main_window.r_render_marker_stils.grid(row=1, column=4, **self.ctk_main_paddings)
+        # main_window.r_render_marker_clips.grid(row=1, column=5, **self.ctk_main_paddings)
 
         # make the window resizable only on the height
         # we're going to make it resizable in the update function, if we have a middle frame
@@ -2591,11 +2689,16 @@ class toolkit_UI():
                 callback=lambda: self.update_main_window()
             )
 
+            # this also checks if we need to automatically switch projects
+            def change_project_wrapper(project_name):
+                if not self.stAI.get_app_setting('ignore_project_switch', default_if_none=False):
+                    self.change_project(project_name=project_name)
+
             # this deals with NLE project changes in relation to the UI
             self.add_observer_to_window(
                 window_id='main',
                 action='NLE_project_changed',
-                callback=lambda: self.change_project(project_name=NLE.current_project)
+                callback=lambda: change_project_wrapper(project_name=NLE.current_project)
             )
 
             # this opens the relevant transcriptions if the NLE timeline changed
@@ -2667,9 +2770,353 @@ class toolkit_UI():
 
         return
 
+    def create_new_project(self, project_name=None):
+        """
+        This function creates a project
+        """
+
+        # use askdialog to get the project name
+        if project_name is None:
+            input_widgets = [
+                {'name': 'project_name', 'label': 'Project Name:', 'type': 'entry', 'default_value': project_name or ''}
+            ]
+
+            user_input = self.AskDialog(
+                title='Create New Project',
+                input_widgets=input_widgets,
+                parent=self.root,
+                toolkit_UI_obj=self,
+                cancel_return=False
+            ).value()
+
+            if not user_input or not user_input.get('project_name', None):
+                return False
+
+            else:
+                project_name = user_input.get('project_name', None)
+
+        if project_name is None:
+            logger.warning('Cannot create new project - no project name was specified.')
+            return False
+
+        # if the project name is not None, use it
+        new_project = Project(project_name=str(project_name).strip())
+
+        # if the project already exists, ask the user if they want to overwrite it
+        if new_project.exists:
+            if not messagebox.askyesno(
+                    title='Create New Project',
+                    message='The project {} already exists.\n\nDo you want to open it?'.format(project_name),
+                    parent=self.root):
+                return False
+
+            # if the user wants to open the project, open it
+            self.change_project(project_name=project_name, confirmed=True, force=True)
+
+            return True
+
+        # if the project doesn't exist, save it
+        else:
+            new_project.set('name', project_name)
+            new_project.save_soon()
+
+            # and open it
+            self.change_project(project_name=project_name, confirmed=True, force=True)
+
+        return True
+
+    def rename_project(self, project_name=None):
+
+        # try to use the current project if no project name was specified
+        if project_name is None:
+            project_name = self.current_project.name
+
+        # if we still don't have a project name, return
+        if project_name is None:
+            logger.warning('Cannot rename project - no project was selected.')
+            return False
+
+        project = Project(project_name=project_name)
+
+        if not project.exists:
+            logger.warning('Cannot rename project - project does not exist.')
+            return False
+
+        # use askdialog to get the project name
+        input_widgets = [
+            {
+                'name': 'project_name',
+                'label': 'New Project Name:', 'type': 'entry', 'default_value': project_name or ''
+            },
+        ]
+
+        user_input = self.AskDialog(
+            title='Rename Project',
+            input_widgets=input_widgets,
+            parent=self.root,
+            toolkit_UI_obj=self,
+            cancel_return=False
+        ).value()
+
+        if not user_input or not user_input.get('project_name', None):
+            return False
+
+        project_name = user_input.get('project_name', None)
+
+        if project_name and str(project_name).strip() and project_name != project.name:
+
+            try:
+                # if the project name is not None, use it
+                project.set('name', str(project_name).strip())
+
+                # save the project
+                project.save_soon()
+
+                # if the project we renamed is the current project, change the project
+                if self.current_project and self.current_project.name == project_name:
+                    self.change_project(project_name=str(project_name))
+
+                self.update_main_window()
+
+                return True
+
+            except FileExistsError:
+                self.notify_via_messagebox(
+                    title='Project rename failed',
+                    message='Another project has the same name. Try again.'.format(project_name),
+                    message_log='The project {} was not renamed.'.format(project_name),
+                    type='error',
+                    parent=self.root
+                )
+                return False
+
+        else:
+            self.notify_via_messagebox(
+                title='Project rename failed',
+                message='Another project has the same name. Try again.'.format(project_name),
+                message_log='The project {} was not renamed.'.format(project_name),
+                type='error',
+                parent=self.root
+            )
+            return False
+
+    def delete_project(self, project_name=None):
+
+        # try to use the current project if no project name was specified
+        if project_name is None:
+            project_name = self.current_project.name
+
+        # if we still don't have a project name, return
+        if project_name is None:
+            logger.warning('Cannot delete project - no project was selected.')
+            return False
+
+        project = Project(project_name=project_name)
+
+        if not project.exists:
+            logger.warning('Cannot delete project - project does not exist.')
+            return False
+
+        # ask the user if they want to delete the project
+        if not messagebox.askyesno(
+                title='Delete Project',
+                message='Are you sure you want to delete the project {}?'
+                        '\n\nAll references, caches and links stored in the project will be deleted.'
+                        .format(project_name),
+                parent=self.root):
+            return False
+
+        if project.delete():
+            # notify the user
+            self.notify_via_messagebox(
+                title='Project deleted',
+                message='The project {} was deleted successfully.'.format(project_name),
+                message_log='The project {} was deleted successfully.'.format(project_name),
+                type='info',
+                parent=self.root
+            )
+
+            # if the project we deleted is the current project, close it
+            if self.current_project and self.current_project.name == project_name:
+                self.close_project()
+
+            self.update_main_window()
+
+            return True
+
+        else:
+            # notify the user
+            self.notify_via_messagebox(
+                title='Project deletion failed',
+                message='The project {} was not deleted successfully. See logs for more info.'.format(project_name),
+                message_log='The project {} was not deleted successfully.'.format(project_name),
+                type='error',
+                parent=self.root
+            )
+
+            return False
+
+    def export_project(self, project_name=None):
+        """
+        This function opens a project
+        """
+
+        if self.current_project is None and not project_name:
+            logger.warning('Cannot export project - no project was selected.')
+            return None
+
+        if project_name is None and self.current_project is not None:
+            project_name = self.current_project.name
+
+        if project_name is None:
+            logger.warning('Cannot export project - no project was selected.')
+            return None
+
+        project = Project(project_name=project_name)
+
+        if not project.exists:
+            logger.warning('Cannot export project - project does not exist.')
+            return None
+
+        # use the initial dir of the project if we are in one
+        initial_target_dir = None
+        if project.last_target_dir:
+            initial_target_dir = project.last_target_dir
+
+        if not initial_target_dir:
+            initial_target_dir = self.stAI.initial_target_dir
+
+        # ask the user where to save the project
+        export_path = filedialog.asksaveasfilename(
+            title='Export Project as...',
+            initialdir=initial_target_dir,
+            initialfile=project_name + '.zip',
+            filetypes=[('Project zip files', '*.zip')],
+            defaultextension='.zip'
+        )
+
+        if not export_path:
+            return False
+
+        # export the project
+        if self.current_project.export(export_path=export_path):
+
+            # notify the user
+            self.notify_via_messagebox(
+                title='Project export',
+                message='The project {} was exported successfully.'.format(project_name),
+                message_log='The project was exported successfully to {}.'.format(project_name, export_path),
+                type='info',
+                parent=self.root
+            )
+
+            return True
+
+        else:
+            # notify the user
+            self.notify_via_messagebox(
+                title='Project export failed',
+                message='The project {} was not exported successfully.'.format(project_name),
+                message_log='The project was not exported to {}.'.format(project_name, export_path),
+                type='error',
+                parent=self.root
+            )
+
+            return False
+
+    def import_project(self):
+        """
+        This function imports a project into the PROJECTS_PATH
+        """
+
+        # use the initial dir of the project if we are in one
+        initial_target_dir = None
+        if self.current_project and self.current_project.last_target_dir:
+            initial_target_dir = self.current_project.last_target_dir
+
+        if not initial_target_dir:
+            initial_target_dir = self.stAI.initial_target_dir
+
+        # ask the user from where to import the project
+        import_path = filedialog.askopenfilename(
+            title='Import Project from...',
+            initialdir=initial_target_dir,
+            filetypes=[('Project zip files', '*.zip')],
+            defaultextension='.zip'
+        )
+
+        if not import_path:
+            return False
+
+        # import the project
+        imported_project_path = None
+        project_name = None
+
+        while imported_project_path is None:
+
+            try:
+                if imported_project_name := ProjectUtils.import_project_from_file(
+                        import_path=import_path, project_name=project_name):
+
+                    self.update_main_window()
+
+                    # ask user if they want to open the project
+                    self.change_project(project_name=imported_project_name)
+
+                    return True
+
+            except FileExistsError:
+
+                input_widgets = [
+                    {'name': 'info', 'label_split': 52, 'type': 'label',
+                     'label': 'Another project with the same name exists.'
+                     },
+                    {'name': 'project_name',
+                     'label': 'New Project Name:', 'type': 'entry', 'default_value': project_name or ''
+                     },
+                ]
+
+                user_input = self.AskDialog(
+                    title='Import Project',
+                    input_widgets=input_widgets,
+                    parent=self.root,
+                    toolkit_UI_obj=self,
+                    cancel_return=False
+                ).value()
+
+                if not user_input or not user_input.get('project_name', None):
+                    return False
+
+                project_name = user_input.get('project_name', None)
+
+        # if we got here we were unsuccessful:
+        # so notify the user
+        self.notify_via_messagebox(
+            title='Project import failed',
+            message='The project was not imported successfully.',
+            message_log='The project was not imported from {}.'.format(import_path),
+            type='error',
+            parent=self.root
+        )
+
+        return False
+
+    def close_project(self):
+        """
+        This closes the current project and resets the UI
+        """
+
+        self.current_project = None
+
+        # update the main window title
+        self.change_main_window_title(title="")
+
+        # update the main window
+        self.update_main_window()
+
     def change_project(self, project_name, confirmed=False, force=False):
         """
-        This function is called when the current project is changed
+        Change the current project by name
         """
 
         if self.current_project and project_name == self.current_project.name and not force:
@@ -2687,6 +3134,45 @@ class toolkit_UI():
 
         # update the main window title
         self.change_main_window_title(title=self.current_project.name)
+
+        # update the main window
+        self.update_main_window()
+
+    def _project_context_menu(self, event, project_name):
+
+        main_window = self.windows['main']
+
+        # spawn the context menu
+        context_menu = tk.Menu(main_window, tearoff=0)
+
+        # add the menu items
+        context_menu.add_command(
+            label="Open Project",
+            command=lambda: self.change_project(project_name=project_name)
+        )
+
+        # rename
+        context_menu.add_command(
+            label="Rename Project",
+            command=lambda: self.rename_project(project_name=project_name)
+        )
+
+        # export
+        context_menu.add_command(
+            label="Export Project",
+            command=lambda: self.export_project(project_name=project_name)
+        )
+
+        # delete
+        context_menu.add_command(
+            label="Delete Project",
+            command=lambda: self.delete_project(project_name=project_name)
+        )
+
+        # show the context menu
+        context_menu.tk_popup(event.x_root, event.y_root)
+
+        return
 
     def update_timeline_timecode_data(self, timeline_name, timeline_fps, start_tc):
         """
@@ -11716,6 +12202,9 @@ class toolkit_UI():
         if timeline_name is None:
             return
 
+        if not self.current_project:
+            return
+
         # get the transcription_paths linked with this timeline
         timeline_transcription_file_paths = \
             self.current_project.get_timeline_transcriptions(timeline_name=timeline_name)
@@ -11737,6 +12226,9 @@ class toolkit_UI():
         :param timeline_transcription_file_paths: list of transcription file paths
         :return: None
         """
+
+        if not self.current_project:
+            return
 
         # get all transcription windows
         transcription_windows = self.get_all_windows_of_type('transcription')
@@ -14504,9 +14996,17 @@ class toolkit_UI():
 
         if story_file_path is None:
 
+            # use the initial dir of the project if we are in one
+            initial_target_dir = None
+            if self.current_project:
+                initial_target_dir = self.current_project.last_target_dir
+
+            if not initial_target_dir:
+                initial_target_dir = self.stAI.initial_target_dir
+
             # ask the user which story file to open
             story_file_path = filedialog.askopenfilename(
-                initialdir=self.stAI.initial_target_dir,
+                initialdir=initial_target_dir,
                 title='Open Story',
                 filetypes=[('Story files', '.sts')]
             )

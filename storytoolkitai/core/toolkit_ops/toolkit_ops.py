@@ -21,7 +21,7 @@ from storytoolkitai.core.logger import logger
 
 from storytoolkitai.integrations.mots_resolve import MotsResolve
 
-from .projects import Project
+from .projects import Project, get_projects_from_path, ProjectUtils
 from .transcription import Transcription, TranscriptionSegment, TranscriptionUtils
 from .story import Story, StoryLine, StoryUtils
 from .processing_queue import ProcessingQueue

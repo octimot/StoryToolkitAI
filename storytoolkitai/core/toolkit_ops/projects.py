@@ -14,6 +14,30 @@ from storytoolkitai.core.logger import logger
 PROJECTS_PATH = os.path.join(os.path.join(USER_DATA_PATH, 'projects'))
 
 
+def get_projects_from_path(projects_path=PROJECTS_PATH):
+    """
+    This gets all the projects in a path.
+    :param projects_path: str, the path to the projects directory
+    :return: list, a list of project names
+    """
+
+    if projects_path is None:
+        projects_path = PROJECTS_PATH
+
+    # if the projects path doesn't exist, return an empty list
+    if not os.path.exists(projects_path):
+        return []
+
+    # get the list of projects in the projects path
+    projects = [f for f in os.listdir(projects_path) if Project(project_name=f).exists]
+
+    # sort by last modified
+    projects.sort(key=lambda x: os.path.getmtime(os.path.join(projects_path, x, 'project.json')), reverse=True)
+
+    # return the list of projects
+    return projects
+
+
 class Project:
 
     _instances = {}
@@ -87,6 +111,12 @@ class Project:
         if not self.load_from_path(project_path=self._project_path):
             self._dirty = True
 
+            # but also set the exists flag to False
+            self._exists = False
+
+        else:
+            self._exists = True
+
         # with this we can set a timer to save the project after a certain amount of time
         # this way, we don't create another timer if one is already running and the save_soon method is called again
         self._save_timer = None
@@ -119,6 +149,10 @@ class Project:
     @property
     def is_dirty(self):
         return self._dirty
+
+    @property
+    def exists(self):
+        return self._exists
 
     def set_dirty(self, value=True, *, save_soon=False):
         """
@@ -162,6 +196,36 @@ class Project:
                 # set the dirty flag
                 self.set_dirty(save_soon=save_soon)
 
+                # if this is the name of the project, we also need to rename the project folder
+                if key == 'name':
+
+                    # get the old project path
+                    old_project_path = self._project_path
+
+                    # get the new project path
+                    new_project_path = os.path.join(PROJECTS_PATH, value)
+
+                    # if the new project path is different from the old project path
+                    if new_project_path == old_project_path:
+                        logger.debug('Cannot rename project to "{}" '
+                                     '- the new name is the same as the old name.'.format(value))
+                        return False
+
+                    # if the new project path already exists, we can't rename the project
+                    if os.path.exists(new_project_path):
+                        raise FileExistsError('Cannot rename project "{}"'
+                                              '- A project with the same name already exists.'.format(value))
+
+                    # rename the project folder
+                    os.rename(old_project_path, new_project_path)
+
+                    # set the project path to the new project path
+                    self._project_path = new_project_path
+
+                    # recalculate the project path id and update the instances dict
+                    del self.__class__._instances[self.get_project_path_id(old_project_path)]
+                    self.__class__._instances[self.get_project_path_id(self._project_path)] = self
+
             return True
 
         # throw an error if the key is not valid
@@ -190,6 +254,8 @@ class Project:
 
         # load the json found in the file into attributes
         self._load_json_into_attributes()
+
+        return True
 
     def _load_json_into_attributes(self):
 
@@ -530,6 +596,30 @@ class Project:
             self.get_timeline_setting(timeline_name=timeline_name, setting_key='timeline_start_tc')
         )
 
+    def export(self, export_path):
+        """
+        This exports a project folder to a zip file
+        """
+
+        return ProjectUtils.export_project_to_file(project_path=self._project_path, export_path=export_path)
+
+    def delete(self):
+        """
+        This deletes a project folder
+        """
+
+        # if the project doesn't exist, return False
+        if not self.exists:
+            return False
+
+        # delete the project folder
+        shutil.rmtree(self._project_path)
+
+        # delete the instance from the instances dict
+        del self._instances[self.get_project_path_id(self._project_path)]
+
+        return True
+
 
 class ProjectUtils:
 
@@ -611,3 +701,93 @@ class ProjectUtils:
         logger.debug('Saved project to file: {}'.format(project_file_path))
 
         return project_file_path
+
+    @staticmethod
+    def export_project_to_file(project_path, export_path):
+        """
+        This exports a project folder to a zip file
+        """
+
+        # create a project instance
+        project = Project(project_path=project_path)
+
+        # if the project doesn't exist, return False
+        if not project.exists:
+            return None
+
+        # if the export path is not a zip file, make it into one
+        if not export_path.endswith('.zip'):
+            export_path += '.zip'
+
+        # if the export path already exists, delete it
+        if os.path.exists(export_path):
+            os.remove(export_path)
+
+        # create the export directory
+        os.makedirs(os.path.dirname(export_path), exist_ok=True)
+
+        # create the zip file
+        import zipfile
+        zip_file = zipfile.ZipFile(export_path, 'w', zipfile.ZIP_DEFLATED)
+
+        # for now, we're interested to add the following:
+
+        # the project.json file
+        zip_file.write(os.path.join(project_path, 'project.json'), 'project.json')
+
+        # the cache folder and its contents
+        zip_file.write(os.path.join(project_path, 'cache'), 'cache')
+
+        # close the zip file
+        zip_file.close()
+
+        return True
+
+    @staticmethod
+    def import_project_from_file(import_path, projects_path=PROJECTS_PATH, overwrite=False, project_name=None):
+        """
+        This imports a project from a zip file
+        """
+
+        # create the zip file
+        import zipfile
+        zip_file = zipfile.ZipFile(import_path, 'r')
+
+        # create a temporary directory to extract the zip file
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # extract all the files from the zip file
+            zip_file.extractall(temp_dir)
+
+            # do we have a project.json file in the zip file?
+            if not os.path.exists(os.path.join(temp_dir, 'project.json')):
+                raise FileNotFoundError('No project.json file found in the zip file. Aborting import.')
+
+            # get the project name from the using the Project class
+            project = Project(project_path=temp_dir)
+
+            if project_name is not None:
+                project.set('name', project_name)
+                project.save_soon(force=True, sec=0)
+
+            # the full project path
+            project_path = os.path.join(projects_path, project.name)
+
+            if not project_path:
+                raise ValueError('Project name must be passed to import a project.')
+
+            if os.path.exists(project_path) and not overwrite:
+                raise FileExistsError('A project with the same name already exists. Aborting import.')
+
+            # create the projects directory
+            os.makedirs(project_path, exist_ok=True)
+
+            # recursively move all the files and folders from the temp directory to the projects directory
+            for item in os.listdir(temp_dir):
+                shutil.move(os.path.join(temp_dir, item), project_path)
+
+        # close the zip file
+        zip_file.close()
+
+        return project.name

@@ -171,6 +171,18 @@ class UImenus:
         self.filemenu = Menu(self.menubar, tearoff=0, **self._menu_ui)
 
         # add story file menu items
+        self.filemenu.add_command(label="New project...",
+                                  command=self.toolkit_UI_obj.create_new_project)
+        self.filemenu.add_command(label="Import project...",
+                                  command=self.toolkit_UI_obj.import_project)
+        self.filemenu.add_command(label="Export current project...",
+                                  command=self.toolkit_UI_obj.export_project)
+        self.filemenu.add_command(label="Close current project",
+                                  command=self.toolkit_UI_obj.close_project)
+
+        self.filemenu.add_separator()
+
+        # add story file menu items
         self.filemenu.add_command(label="New story...",
                                   command=self.toolkit_UI_obj.open_new_story_editor_window)
         self.filemenu.add_command(label="Open story file...",
@@ -217,6 +229,13 @@ class UImenus:
 
             # make sure we know which window is focused etc.
             self.update_current_window_references()
+
+            if self.toolkit_UI_obj.current_project is None:
+                self.filemenu.entryconfig('Export current project...', state=DISABLED)
+                self.filemenu.entryconfig('Close current project', state=DISABLED)
+            else:
+                self.filemenu.entryconfig('Export current project...', state=NORMAL)
+                self.filemenu.entryconfig('Close current project', state=NORMAL)
 
             if self.current_window_type == 'transcription':
 
