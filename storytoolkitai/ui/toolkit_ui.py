@@ -3550,7 +3550,7 @@ class toolkit_UI():
         # display the context menu
         context_menu.tk_popup(event.x_root, event.y_root)
 
-    def _text_window_keypress(self, event=None, window_id: str=None, **attributes):
+    def _text_window_keypress(self, event=None, window_id: str = None, **attributes):
 
         window = self.get_window_by_id(window_id=window_id)
 
@@ -3561,6 +3561,17 @@ class toolkit_UI():
 
             if hasattr(window, 'text_widget') and window.text_widget.tag_ranges("sel"):
                 window.text_widget.event_generate("<<Copy>>")
+
+            return 'break'
+
+        if event.keysym == 'v' and attributes.get('special_key', None) == 'cmd':
+            # move cursor on last line
+
+            if hasattr(window, 'text_widget'):
+
+                # move cursor to the end of the last line
+                window.text_widget.mark_set('insert', 'end-1c')
+                window.text_widget.event_generate("<<Paste>>")
 
             return 'break'
 
