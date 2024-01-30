@@ -3661,14 +3661,17 @@ class toolkit_UI():
             # create the text widget
             # set up the text element where we'll add the actual transcript
             self.windows[window_id].text_widget = \
-                text = tk.Text(text_form_frame,
-                               font=self.console_font,
-                               width=kwargs.get('window_width', 45),
-                               height=kwargs.get('window_height', 30),
-                               wrap=tk.WORD,
-                               **self.ctk_full_textbox_paddings,
-                               background=self.theme_colors['black'],
-                               foreground=self.theme_colors['normal'])
+                text = tk.Text(
+                    text_form_frame,
+                    font=self.console_font,
+                    width=kwargs.get('window_width', 45),
+                    height=kwargs.get('window_height', 30),
+                    wrap=tk.WORD,
+                    **self.ctk_full_textbox_paddings,
+                    background=self.theme_colors['black'],
+                    foreground=self.theme_colors['normal'],
+                    insertbackground=self.theme_colors['normal']
+                )
 
             # make the widget highlight color the same as the background color
             text.configure(highlightbackground=self.theme_colors['black'], highlightcolor=self.theme_colors['normal'])
@@ -11561,17 +11564,19 @@ class toolkit_UI():
 
                 # initialize the transcript text element
                 t_window.text_widget = \
-                    text = tk.Text(text_form_frame,
-                                   name='transcript_text',
-                                   font=self.transcript_font,
-                                   width=45, height=30,
-                                   **self.ctk_full_textbox_paddings,
-                                   wrap=tk.WORD,
-                                   background=self.theme_colors['black'],
-                                   foreground=self.theme_colors['normal'],
-                                   highlightcolor=self.theme_colors['dark'],
-                                   highlightbackground=self.theme_colors['dark'],
-                                   )
+                    text = tk.Text(
+                        text_form_frame,
+                        name='transcript_text',
+                        font=self.transcript_font,
+                        width=45, height=30,
+                        **self.ctk_full_textbox_paddings,
+                        wrap=tk.WORD,
+                        background=self.theme_colors['black'],
+                        foreground=self.theme_colors['normal'],
+                        highlightcolor=self.theme_colors['dark'],
+                        highlightbackground=self.theme_colors['dark'],
+                        insertbackground=self.theme_colors['normal']
+                    )
 
                 # add a scrollbar to the text element
                 text_scrollbar = ctk.CTkScrollbar(text_form_frame)
@@ -15096,17 +15101,19 @@ class toolkit_UI():
             window.grid_rowconfigure(0, weight=1)
 
             # initialize the story text element
-            window.text_widget = tk.Text(window.text_form_frame,
-                               name='story_text',
-                               font=self.transcript_font,
-                               width=45, height=30,
-                               **self.ctk_full_textbox_paddings,
-                               wrap=tk.WORD,
-                               background=self.theme_colors['black'],
-                               foreground=self.theme_colors['normal'],
-                               highlightcolor=self.theme_colors['dark'],
-                               highlightbackground=self.theme_colors['dark'],
-                               )
+            window.text_widget = tk.Text(
+                window.text_form_frame,
+                name='story_text',
+                font=self.transcript_font,
+                width=45, height=30,
+                **self.ctk_full_textbox_paddings,
+                wrap=tk.WORD,
+                background=self.theme_colors['black'],
+                foreground=self.theme_colors['normal'],
+                highlightcolor=self.theme_colors['dark'],
+                highlightbackground=self.theme_colors['dark'],
+                insertbackground=self.theme_colors['normal']
+            )
 
             # add a scrollbar to the text element
             text_scrollbar = ctk.CTkScrollbar(window.text_form_frame)
