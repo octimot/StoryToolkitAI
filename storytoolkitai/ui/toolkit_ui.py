@@ -79,7 +79,7 @@ class toolkit_UI():
         **ctk_frame_paddings
     }
 
-    ctk_button_size = {'width': 200, 'height': 45}
+    ctk_main_button_size = {'width': 200, 'height': 45}
 
     ctk_list_item = {'fg_color': ctk.ThemeManager.theme["CTkScrollableFrame"]["label_fg_color"]}
 
@@ -2400,46 +2400,15 @@ class toolkit_UI():
             ('Cannot update status label for window with id {} - label attribute not found.'.format(window_id))
         return False
 
+    @staticmethod
+    def get_line_char_from_click(event, text_widget=None):
+
+        index = text_widget.index("@%s,%s" % (event.x, event.y))
+        line, char = index.split(".")
+
+        return line, char
+
     # MAIN WINDOW
-
-    def hide_main_window_frame(self, frame_name):
-        """
-        Used to hide main window frames, but only if they're not invisible already
-        :param frame_name:
-        :return:
-        """
-
-        # only attempt to remove the frame from the main window if it's known to be visible
-        if frame_name in self.windows['main'].main_window_visible_frames:
-            # first remove it from the view
-            self.windows['main'].__dict__[frame_name].pack_forget()
-
-            # then remove if from the visible frames list
-            if frame_name in self.windows['main'].main_window_visible_frames:
-                self.windows['main'].main_window_visible_frames.remove(frame_name)
-
-            return True
-
-        return False
-
-    def show_main_window_frame(self, frame_name):
-        """
-        Used to show main window frames, but only if they're not visible already
-        :param frame_name:
-        :return:
-        """
-
-        # only attempt to show the frame from the main window if it's known not to be visible
-        if frame_name not in self.windows['main'].main_window_visible_frames:
-            # first show it
-            self.windows['main'].__dict__[frame_name].pack(expand=True, fill=tk.X)
-
-            # then add it to the visible frames list
-            self.windows['main'].main_window_visible_frames.append(frame_name)
-
-            return True
-
-        return False
 
     def update_main_window(self):
         """
@@ -2447,19 +2416,16 @@ class toolkit_UI():
         :return:
         """
 
-        #  show the tool buttons if they're not visible already
-        self.show_main_window_frame('tool_buttons_frame')
+        # the main window, for easier reference
+        main_window = self.windows['main']
 
-        # if resolve isn't connected or if there's a communication error
-        if not NLE.is_connected():
-            # hide resolve related buttons
-            self.hide_main_window_frame('resolve_buttons_frame')
+        # make the resolve buttons visible if resolve is connected
+        if NLE.is_connected():
+            main_window.resolve_buttons_frame.pack(fill='x')
 
-        # if resolve is connected and the resolve buttons are not visible
+        # otherwise, make sure they're hidden
         else:
-            self.show_main_window_frame('resolve_buttons_frame')
-
-        return
+            main_window.resolve_buttons_frame.pack_forget()
 
     def change_main_window_title(self, title):
         """
@@ -2469,7 +2435,6 @@ class toolkit_UI():
         app_name = "StoryToolkitAI v{}".format(self.stAI.__version__)
 
         self.root.title("{} - {}".format(app_name, title) if title else app_name)
-
 
     def create_main_window(self):
         """
@@ -2486,110 +2451,115 @@ class toolkit_UI():
         # the reference to the main window
         main_window = self.windows['main'] = self.root
 
-        # any frames stored here in the future will be considered visible
-        main_window.main_window_visible_frames = []
+        # the top frame holds all the buttons
+        top_frame = main_window.top_frame = \
+            ctk.CTkFrame(main_window, **self.ctk_frame_transparent)
 
-        # retrieve toolkit_ops object
-        toolkit_ops_obj = self.toolkit_ops_obj
+        # the middle frame holds the projects or file list
+        middle_frame = main_window.middle_frame = \
+            ctk.CTkScrollableFrame(main_window, **self.ctk_frame_transparent)
 
-        # create the frame that will hold the tool buttons
-        main_window.tool_buttons_frame = ctk.CTkFrame(self.root, **self.ctk_frame_transparent)
+        # add the frames to the grid
+        top_frame.grid(row=0, column=0, sticky='ew')
+        middle_frame.grid(row=1, column=0, sticky='nsew')
 
-        # create the frame that will hold the resolve buttons
-        main_window.resolve_buttons_frame = ctk.CTkFrame(self.root, **self.ctk_frame_transparent)
+        # but hide the middle frame for now
+        middle_frame.grid_remove()
 
-        # add footer frame
-        main_window.footer_frame = ctk.CTkFrame(self.root, **self.ctk_frame_transparent)
+        # the top frame can only expand on the x axis
+        main_window.grid_columnconfigure(0, weight=1)
+        main_window.grid_rowconfigure(0, weight=0)
 
-        # draw buttons
+        tool_buttons_frame = main_window.tool_buttons_frame = \
+            ctk.CTkFrame(top_frame, **self.ctk_frame_transparent)
 
-        # resolve buttons frame
-        main_window.r_transcribe = ctk.CTkButton(main_window.resolve_buttons_frame,
-                                                 **self.ctk_button_size, text="Transcribe Timeline",
-                                                 command=lambda: self.button_nle_transcribe_timeline())
+        resolve_buttons_frame = main_window.resolve_buttons_frame = \
+            ctk.CTkFrame(top_frame, **self.ctk_frame_transparent)
 
-        main_window.r_copy_markers_clip = ctk.CTkButton(main_window.resolve_buttons_frame,
-                                                        **self.ctk_button_size,
-                                                        text="Timeline Markers to Same Clip",
-                                                        command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
-                                                            'copy_markers_timeline_to_clip', self))
+        # pack the tool buttons
+        # (we're handling the resolve buttons in the update function)
+        tool_buttons_frame.pack(fill='x')
 
-        main_window.r_copy_markers_timeline = ctk.CTkButton(main_window.resolve_buttons_frame,
-                                                            **self.ctk_button_size,
-                                                            text="Clip Markers to Same Timeline",
-                                                            command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
-                                                                'copy_markers_clip_to_timeline', self))
+        # RESOLVE BUTTONS (these are only visible if resolve is connected)
+        main_window.r_transcribe = ctk.CTkButton(
+            resolve_buttons_frame, **self.ctk_main_button_size,
+            text="Transcribe Timeline",
+            command=lambda: self.button_nle_transcribe_timeline()
+        )
 
-        # resolve buttons frame row 2
-        main_window.r_render_marker_stils = ctk.CTkButton(main_window.resolve_buttons_frame,
-                                                          **self.ctk_button_size, text="Render Markers to Stills",
-                                                          command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
-                                                              'render_markers_to_stills', self))
+        main_window.r_copy_markers_clip = ctk.CTkButton(
+            resolve_buttons_frame, **self.ctk_main_button_size,
+            text="Timeline Markers to Same Clip",
+            command=lambda: self.toolkit_ops_obj.execute_resolve_operation('copy_markers_timeline_to_clip', self)
+        )
 
-        main_window.r_render_marker_clips = ctk.CTkButton(main_window.resolve_buttons_frame,
-                                                          **self.ctk_button_size, text="Render Markers to Clips",
-                                                          command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
-                                                              'render_markers_to_clips', self))
+        main_window.r_copy_markers_timeline = ctk.CTkButton(
+            resolve_buttons_frame, **self.ctk_main_button_size,
+            text="Clip Markers to Same Timeline",
+            command=lambda: self.toolkit_ops_obj.execute_resolve_operation('copy_markers_clip_to_timeline', self)
+        )
+
+        main_window.r_render_marker_stils = ctk.CTkButton(
+            resolve_buttons_frame, **self.ctk_main_button_size,
+            text="Render Markers to Stills",
+            command=lambda: self.toolkit_ops_obj.execute_resolve_operation('render_markers_to_stills', self)
+        )
+
+        main_window.r_render_marker_clips = ctk.CTkButton(
+            resolve_buttons_frame, **self.ctk_main_button_size,
+            text="Render Markers to Clips",
+            command=lambda: self.toolkit_ops_obj.execute_resolve_operation('render_markers_to_clips', self)
+        )
 
         # TOOL BUTTONS
-
-        main_window.t_ingest = ctk.CTkButton(main_window.tool_buttons_frame,
-                                             **self.ctk_button_size,
-                                             text="Ingest", command=self.button_ingest)
+        main_window.t_ingest = ctk.CTkButton(
+            tool_buttons_frame, **self.ctk_main_button_size,
+            text="Ingest",
+            command=self.button_ingest
+        )
 
         # add the shift+click binding to the button
-        main_window.t_ingest.bind('<Shift-Button-1>',
-                                  lambda event: self.button_ingest(select_dir=True))
+        main_window.t_ingest.bind(
+            '<Shift-Button-1>',
+            lambda event: self.button_ingest(select_dir=True)
+        )
 
-        main_window.t_open_transcript = ctk.CTkButton(main_window.tool_buttons_frame,
-                                                      **self.ctk_button_size,
-                                                      text="Open Transcription", command=lambda: self.open_transcript())
+        main_window.t_open_transcript = ctk.CTkButton(
+            tool_buttons_frame, **self.ctk_main_button_size,
+            text="Open Transcription",
+            command=lambda: self.open_transcript())
 
-        # THE STORY BUTTON
-        main_window.open_story = ctk.CTkButton(main_window.tool_buttons_frame,
-                                               **self.ctk_button_size,
-                                                  text="Open Story",
-                                                    command=lambda: self.open_story_editor_window())
+        main_window.open_story = ctk.CTkButton(
+            tool_buttons_frame, **self.ctk_main_button_size,
+            text="Open Story",
+            command=lambda: self.open_story_editor_window()
+        )
 
-        main_window.t_queue = ctk.CTkButton(main_window.tool_buttons_frame,
-                                            **self.ctk_button_size,
-                                            text="Queue",
-                                            command=lambda: self.open_queue_window())
+        main_window.t_queue = ctk.CTkButton(
+            tool_buttons_frame, **self.ctk_main_button_size,
+            text="Queue",
+            command=lambda: self.open_queue_window()
+        )
 
-        # THE ADVANCED SEARCH BUTTON
-        main_window.t_adv_search = ctk.CTkButton(main_window.tool_buttons_frame,
-                                                 **self.ctk_button_size,
-                                                 text="Search",
-                                                 command=lambda: self.open_advanced_search_window())
+        main_window.t_adv_search = ctk.CTkButton(
+            tool_buttons_frame, **self.ctk_main_button_size,
+            text="Search",
+            command=lambda: self.open_advanced_search_window()
+        )
+
         # add the shift+click binding to the button
-        main_window.t_adv_search.bind('<Shift-Button-1>',
-                                      lambda event: self.open_advanced_search_window(select_dir=True))
+        main_window.t_adv_search.bind(
+            '<Shift-Button-1>',
+            lambda event: self.open_advanced_search_window(select_dir=True)
+        )
 
-        # THE ASSISTANT BUTTON
-        main_window.open_assistant = ctk.CTkButton(main_window.tool_buttons_frame,
-                                                   **self.ctk_button_size,
-                                                   text="Assistant",
-                                                   command=lambda: self.open_assistant_window())
+        main_window.open_assistant = ctk.CTkButton(
+            tool_buttons_frame, **self.ctk_main_button_size,
+            text="Assistant",
+            command=lambda: self.open_assistant_window()
+        )
 
-        # add the resolve buttons to the window
-        # but first a label
-        # ctk.CTkLabel(main_window.resolve_buttons_frame, text="Resolve", **self.ctk_main_window_label_settings)\
-        #    .grid(row=1, column=0, sticky='ew')
-
-        main_window.r_transcribe.grid(row=1, column=1, **self.ctk_main_paddings)
-        main_window.r_copy_markers_clip.grid(row=1, column=2, **self.ctk_main_paddings)
-        main_window.r_copy_markers_timeline.grid(row=1, column=3, **self.ctk_main_paddings)
-        main_window.r_render_marker_stils.grid(row=1, column=4, **self.ctk_main_paddings)
-        main_window.r_render_marker_clips.grid(row=1, column=5, **self.ctk_main_paddings)
-
-        # make column 1 the size of the window
-        # main_window.resolve_buttons_frame.grid_columnconfigure(1, weight=1)
-
-        # add the app buttons to the window
-        # but first the tool label
-        # ctk.CTkLabel(main_window.tool_buttons_frame, text="Tool", **self.ctk_main_window_label_settings)\
-        #    .grid(row=1, column=0, sticky='ew')
-
+        # add the resolve buttons to the grid
         main_window.t_ingest.grid(row=1, column=1, **self.ctk_main_paddings)
         main_window.t_open_transcript.grid(row=1, column=2, **self.ctk_main_paddings)
         main_window.open_story.grid(row=1, column=3, **self.ctk_main_paddings)
@@ -2597,10 +2567,15 @@ class toolkit_UI():
         main_window.t_adv_search.grid(row=1, column=5, **self.ctk_main_paddings)
         main_window.open_assistant.grid(row=1, column=6, **self.ctk_main_paddings)
 
-        # make column 1 the size of the window
-        # main_window.tool_buttons_frame.grid_columnconfigure(1, weight=1)
+        # add the tool buttons to the grid
+        main_window.r_transcribe.grid(row=1, column=1, **self.ctk_main_paddings)
+        main_window.r_copy_markers_clip.grid(row=1, column=2, **self.ctk_main_paddings)
+        main_window.r_copy_markers_timeline.grid(row=1, column=3, **self.ctk_main_paddings)
+        main_window.r_render_marker_stils.grid(row=1, column=4, **self.ctk_main_paddings)
+        main_window.r_render_marker_clips.grid(row=1, column=5, **self.ctk_main_paddings)
 
-        # Make the window resizable false
+        # make the window resizable only on the height
+        # we're going to make it resizable in the update function, if we have a middle frame
         self.root.resizable(False, False)
 
         # update the window after it's been created
@@ -2744,15 +2719,6 @@ class toolkit_UI():
                 markers=markers,
                 save_soon=True
             )
-
-
-    @staticmethod
-    def get_line_char_from_click(event, text_widget=None):
-
-        index = text_widget.index("@%s,%s" % (event.x, event.y))
-        line, char = index.split(".")
-
-        return line, char
 
     # TEXT WINDOWS
 
@@ -16244,7 +16210,6 @@ class toolkit_UI():
             toolkit_UI.StoryEdit.save_story(window_id=story_editor_window, toolkit_UI_obj=self)
 
         pass
-
 
     @staticmethod
     def cv2_image_to_tkinter(parent, cv2_image):
