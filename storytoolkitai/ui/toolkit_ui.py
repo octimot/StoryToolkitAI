@@ -41,7 +41,7 @@ class toolkit_UI():
     # (the customtkinter theme colors are defined in the theme file)
     theme_colors = dict()
     theme_colors['black'] = '#1F1F1F'
-    theme_colors['supernormal'] = '#C2C2C2',
+    theme_colors['supernormal'] = '#C2C2C2'
     theme_colors['white'] = '#ffffff'
     theme_colors['highlight'] = theme_colors['white']
     theme_colors['normal'] = '#929292'
@@ -15618,7 +15618,7 @@ class toolkit_UI():
             if self.current_project and search_file_paths \
                     and isinstance(search_file_paths, list) and os.path.exists(search_file_paths[0]):
                 self.current_project.set(
-                    'last_target_dir', os.path.dirname(os.path.dirname(search_file_paths[0]), save_soon=True)
+                    'last_target_dir', os.path.dirname(os.path.dirname(search_file_paths[0])), save_soon=True
                 )
 
         # but if the call included a search file path, format it as a list if it isn't already
