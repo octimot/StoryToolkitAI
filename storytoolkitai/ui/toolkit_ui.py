@@ -2522,6 +2522,61 @@ class toolkit_UI():
             # make window resizable
             self.root.resizable(False, True)
 
+        # if we're inside a project, show the list of all the files
+        elif not projects and self.current_project:
+
+            # clear the middle frame
+            for widget in main_window.middle_frame.winfo_children():
+                widget.destroy()
+
+            # get the transcriptions from the project
+            transcriptions = self.current_project.get_linked_transcriptions()
+
+            # print(json.dumps(transcriptions, indent=4))
+
+            transcriptions.sort(key=lambda x: os.path.basename(x))
+
+            for row_num, transcription_file_path in enumerate(transcriptions):
+
+                transcription = Transcription(transcription_file_path=transcription_file_path)
+
+                if not transcription.exists:
+                    transcription_name = os.path.basename(transcription_file_path)
+                    label_color = toolkit_UI.theme_colors['resolve_red']
+
+                else:
+                    transcription_name = transcription.name
+                    label_color = toolkit_UI.theme_colors['supernormal']
+
+                # create a frame to hold the project
+                transcription_frame = ctk.CTkFrame(main_window.middle_frame, **self.ctk_list_item)
+
+                # add the project name
+                transcription_name_var = tk.StringVar(main_window, value=transcription_name)
+                transcription_name = ctk.CTkLabel(
+                    transcription_frame, textvariable=transcription_name_var, anchor='w',
+                    text_color=label_color
+                )
+
+                # add the project name to the project frame
+                transcription_name.grid(row=0, column=0, sticky='w', **self.ctk_form_paddings)
+
+                # add the project to the grid
+                transcription_frame.grid(row=row_num, column=0, sticky='ew', **self.ctk_form_paddings)
+
+            # expand project frames on the x axis
+            main_window.middle_frame.grid_columnconfigure(0, weight=1)
+
+            # show the middle frame
+            main_window.middle_frame.grid(row=1, column=0, sticky='nsew')
+
+            # make the middle frame expand on the y and x-axis
+            main_window.grid_rowconfigure(1, weight=1)
+            main_window.grid_columnconfigure(0, weight=1)
+
+            # make window resizable
+            self.root.resizable(False, True)
+
         else:
             # hide the middle frame
             main_window.middle_frame.grid_remove()

@@ -406,6 +406,29 @@ class Project:
 
         return save_result
 
+    def get_linked_transcriptions(self):
+        """
+        This looks through all the timelines and gets all the transcriptions linked to them
+        """
+
+        linked_transcriptions = []
+
+        # loop through all the timelines and get the linked transcription_files
+        for timeline_name, timeline_data in self.timelines.items():
+
+            # if there are no transcription_files in the timeline_data, skip this timeline
+            if 'transcription_files' not in timeline_data:
+                continue
+
+            # loop through all the transcription_files in the timeline_data
+            for transcription_file_path in timeline_data['transcription_files']:
+
+                # yield the transcription_file_path
+                if transcription_file_path not in linked_transcriptions:
+                    linked_transcriptions.append(transcription_file_path)
+
+        return linked_transcriptions
+
     @staticmethod
     def get_project_path_id(project_path):
         return hashlib.md5(project_path.encode('utf-8')).hexdigest()
