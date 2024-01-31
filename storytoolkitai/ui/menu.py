@@ -59,13 +59,7 @@ class UImenus:
         # set the initial state to whatever the config says
         self.keep_main_window_on_top_state.set(self.root.attributes('-topmost'))
 
-        # what is the name of the file browser, depending on which OS we're on?
-        if platform.system() == 'Darwin':
-            self.file_browser_name = 'Finder'
-        elif platform.system() == 'Windows':
-            self.file_browser_name = 'Explorer'
-        else:
-            self.file_browser_name = 'File Browser'
+        self.file_browser_name = self.toolkit_UI_obj.file_browser_name
 
         # the font sizes for the menu bar
         if platform.system() == 'Windows':
@@ -236,7 +230,7 @@ class UImenus:
 
         # FILE MENU - other app related items
         self.filemenu.add_separator()
-        self.filemenu.add_command(label="Show transcription in " + self.file_browser_name, command=self.donothing)
+        self.filemenu.add_command(label="Show file in " + self.file_browser_name, command=self.donothing)
         self.filemenu.add_command(label="Open configuration folder", command=self.open_userdata_dir)
         self.filemenu.add_command(label="Open last used folder", command=self.open_last_dir)
 
@@ -301,7 +295,7 @@ class UImenus:
                     )
 
                 self.filemenu.entryconfig(
-                    "Show transcription in " + self.file_browser_name, state=NORMAL,
+                    "Show file in " + self.file_browser_name, state=NORMAL,
                     command=lambda: self.open_file_dir(transcription_file_path)
                 )
 
@@ -312,7 +306,7 @@ class UImenus:
                 self.filemenu.entryconfig('Export transcript as Fusion Text...', state=DISABLED)
                 self.filemenu.entryconfig(link_transcription_project_index,
                                           label="Link transcription to project", state=DISABLED)
-                self.filemenu.entryconfig("Show transcription in " + self.file_browser_name, state=DISABLED)
+                self.filemenu.entryconfig("Show file in " + self.file_browser_name, state=DISABLED)
 
             if self.current_window_type == 'story_editor':
 
@@ -348,10 +342,17 @@ class UImenus:
                         )
                     )
 
+                self.filemenu.entryconfig(
+                    "Show file in " + self.file_browser_name, state=NORMAL,
+                    command=lambda: self.open_file_dir(self.current_window.story.story_file_path)
+                )
+
             else:
                 self.filemenu.entryconfig('Export story as text or Fountain...', state=DISABLED)
                 self.filemenu.entryconfig('Export story as EDL or FCP7XML...', state=DISABLED)
-                self.filemenu.entryconfig('Link story to project', state=DISABLED)
+                self.filemenu.entryconfig(link_story_project_index,
+                                          label='Link story to project', state=DISABLED)
+                self.filemenu.entryconfig("Show file in " + self.file_browser_name, state=DISABLED)
 
         # add a postcommand to the file menu to enable/disable menu items depending on the current window
         self.filemenu.configure(postcommand=toggle_file_menu_items)
@@ -1012,31 +1013,11 @@ class UImenus:
         elif platform.system() == 'Linux':
             subprocess.call(['xdg-open', USER_DATA_PATH])
 
-    @staticmethod
-    def open_file_dir(file_path):
+    def open_file_dir(self, file_path):
         """
         This takes the user to the directory of the file in question using the OS file manager.
         """
-        # if we're on a Mac, use Finder to show the file
-        if platform.system() == 'Darwin':
-            subprocess.call(['open', '-R', file_path])
-        elif platform.system() == 'Windows':
-            file_path = os.path.normpath(file_path)
-
-            # make sure the file_path is a valid path to prevent security issues
-            if not os.path.exists(file_path):
-                logger.debug('Invalid file path: {}'.format(file_path))
-                return
-
-            # single command string to be provided as argument to the shell
-            cmd = 'explorer /select,"{}"'.format(file_path)
-
-            # pass the command to the shell
-            subprocess.call(cmd, shell=True)
-
-        # if we're on Linux, open the user data dir in the file manager
-        elif platform.system() == 'Linux':
-            subprocess.call(['xdg-open', os.path.dirname(file_path)])
+        self.toolkit_UI_obj.open_file_dir(file_path)
 
     @staticmethod
     def open_project_page(*args, **kwargs):

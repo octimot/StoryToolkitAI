@@ -45,6 +45,7 @@ class toolkit_UI():
     theme_colors['white'] = '#ffffff'
     theme_colors['highlight'] = theme_colors['white']
     theme_colors['normal'] = '#929292'
+    theme_colors['darkernormal'] = '#5D5D5D'
     theme_colors['superblack'] = '#000000'
     theme_colors['dark'] = '#282828'
     theme_colors['darker'] = '#242424'    # lighter than black, but darker than dark
@@ -64,6 +65,7 @@ class toolkit_UI():
     ctk_frame_paddings = {'padx': 5, 'pady': 5}
     ctk_form_paddings_ext = {'padx': 10, 'pady': 5}
     ctk_form_entry_paddings = {'padx': 10, 'pady': 10}
+    ctk_small_label_paddings = {'padx': 10, 'pady': 0}
     ctk_frame_transparent = {'fg_color': 'transparent'}
     ctk_form_entry_settings = {'width': 120}
     ctk_form_slider_settings = {'width': 60}
@@ -1315,6 +1317,14 @@ class toolkit_UI():
         # initialize app items object
         self.app_items_obj = self.AppItemsUI(toolkit_UI_obj=self)
 
+        # what is the name of the file browser, depending on which OS we're on?
+        if platform.system() == 'Darwin':
+            self.file_browser_name = 'Finder'
+        elif platform.system() == 'Windows':
+            self.file_browser_name = 'Explorer'
+        else:
+            self.file_browser_name = 'File Browser'
+
         # load menu object
         self.main_menu = UImenus(toolkit_UI_obj=self, parent=self.root)
 
@@ -1417,6 +1427,10 @@ class toolkit_UI():
         # meta transcript segment font
         self.meta_transcript_font = \
             ctk.CTkFont(family=self.ctk_default_font_family, size=int(self.transcript_font_size*0.8))
+
+        self.ctk_font_small_label = (
+            ctk.CTkFont(family=self.ctk_default_font_family, size=int(self.transcript_font_size*0.7)))
+
 
         # set the platform independent fixed font (for console)
         # self.console_font = ctk.CTkFont(family='TkFixedFont', size=self.console_font_size)
@@ -2486,11 +2500,15 @@ class toolkit_UI():
                 # add an onclick event to the project frame and name
                 project_frame.bind(
                     '<Button-1>',
-                    lambda event, l_project_name=project.name: self.change_project(project_name=l_project_name)
+                    lambda event, l_project_name=project.name: self.change_project(
+                        project_name=l_project_name, confirmed=True
+                    )
                 )
                 project_name.bind(
                     '<Button-1>',
-                    lambda event, l_project_name=project.name: self.change_project(project_name=l_project_name)
+                    lambda event, l_project_name=project.name: self.change_project(
+                        project_name=l_project_name, confirmed=True
+                    )
                 )
 
                 # add right click for context menu
@@ -2524,7 +2542,7 @@ class toolkit_UI():
             main_window.grid_columnconfigure(0, weight=1)
 
             # make window resizable
-            self.root.resizable(False, True)
+            self.root.resizable(True, True)
 
         # if we're inside a project, show the list of all the files
         elif not projects and self.current_project:
@@ -2536,9 +2554,6 @@ class toolkit_UI():
             # get the transcriptions and stories linked to the project
             transcriptions = self.current_project.transcriptions
             stories = self.current_project.stories
-
-            # transcriptions.sort(key=lambda x: os.path.basename(x))
-            # stories.sort(key=lambda x: os.path.basename(x))
 
             # parse the transcriptions into the file list
             file_list = {}
@@ -2554,12 +2569,23 @@ class toolkit_UI():
                 else:
                     transcription_name = os.path.basename(transcription_file_path)
 
+                # this helps us determine if the transcription has text
+                transcription_text = transcription.text.strip() if transcription.text else ''
+
+                # source media
+                transcription_source_media = transcription.audio_file_path
+
                 # add to the file list
-                file_list[transcription_name] = {}
-                file_list[transcription_name]['object'] = transcription
-                file_list[transcription_name]['file_exists'] = transcription.exists
-                file_list[transcription_name]['file_path'] = transcription_file_path
-                file_list[transcription_name]['on_click'] = \
+                file_list[transcription_file_path] = {}
+                file_list[transcription_file_path]['object'] = transcription
+                file_list[transcription_file_path]['name'] = transcription_name
+                file_list[transcription_file_path]['file_exists'] = transcription.exists
+                file_list[transcription_file_path]['has_video'] = transcription.video_index_path
+                file_list[transcription_file_path]['has_text'] = True if len(transcription_text) > 0 else False
+                file_list[transcription_file_path]['file_path'] = transcription_file_path
+                file_list[transcription_file_path]['source_media_path'] = transcription_source_media
+                file_list[transcription_file_path]['type'] = 'transcription'
+                file_list[transcription_file_path]['on_click'] = \
                     lambda event, l_path=transcription_file_path: open_on_click(event, l_path)
 
             for story_file_path in stories or []:
@@ -2573,20 +2599,26 @@ class toolkit_UI():
                 else:
                     story_name = os.path.basename(story_file_path)
 
+                # this helps us determine if the story has text
+                story_text = str(story.text).strip() if str(story.text) else ''
+
                 # add to the story list
-                file_list[story_name] = {}
-                file_list[story_name]['object'] = story
-                file_list[story_name]['file_exists'] = story.exists
-                file_list[story_name]['file_path'] = story_file_path
-                file_list[story_name]['on_click'] = \
+                file_list[story_file_path] = {}
+                file_list[story_file_path]['object'] = story
+                file_list[story_file_path]['name'] = story_name
+                file_list[story_file_path]['file_exists'] = story.exists
+                file_list[story_file_path]['file_path'] = story_file_path
+                file_list[story_file_path]['has_text'] = True if len(story_text) > 0 else False
+                file_list[story_file_path]['type'] = 'story'
+                file_list[story_file_path]['on_click'] = \
                     lambda event, l_path=transcription_file_path: open_on_click(event, l_path)
 
             # sort the file dict by key and file_exists
-            file_list = dict(sorted(file_list.items(), key=lambda x: (-x[1]['file_exists'], x[0].lower())))
+            file_list = dict(sorted(file_list.items(), key=lambda x: (-x[1]['file_exists'], x[1]['name'].lower())))
 
-            for row_num, item_name in enumerate(file_list):
+            for row_num, item_path in enumerate(file_list):
 
-                if not file_list[item_name].get('file_exists'):
+                if not file_list[item_path].get('file_exists'):
                     label_color = toolkit_UI.theme_colors['resolve_red']
 
                 else:
@@ -2596,18 +2628,31 @@ class toolkit_UI():
                 file_frame = ctk.CTkFrame(main_window.middle_frame, **self.ctk_list_item)
 
                 # add the project name
-                file_name_var = tk.StringVar(main_window, value=item_name)
+                file_name_var = tk.StringVar(
+                    main_window,
+                    value=file_list[item_path]['name']
+                )
                 file_name = ctk.CTkLabel(
                     file_frame, textvariable=file_name_var, anchor='w',
-                    text_color=label_color
+                    text_color=label_color,
+                    width=200
                 )
 
-                if isinstance(file_list[item_name]['object'], Transcription):
+                # add a label with the item type
+                file_type = ctk.CTkLabel(
+                    file_frame, anchor='e',
+                    text=file_list[item_path]['type'],
+                    font=self.ctk_font_small_label,
+                    text_color=self.theme_colors['normal'],
+                    width=100
+                )
+
+                if isinstance(file_list[item_path]['object'], Transcription):
                     def open_on_click(event, path):
                         # open the transcription
                         self.open_transcription_window(transcription_file_path=path)
 
-                elif isinstance(file_list[item_name]['object'], Story):
+                elif isinstance(file_list[item_path]['object'], Story):
                     def open_on_click(event, path):
                         # open the story
                         self.open_story_editor_window(story_file_path=path)
@@ -2616,21 +2661,80 @@ class toolkit_UI():
                     def open_on_click(event, path):
                         return
 
+                # add the stuff to the project frame
+                file_name.grid(row=0, column=0, sticky='w', **self.ctk_form_paddings)
+                # index_status.grid(row=0, column=1, sticky='w', **self.ctk_small_label_paddings)
+                # text_status.grid(row=0, column=2, sticky='w', **self.ctk_small_label_paddings)
+                file_type.grid(row=0, column=5, sticky='w', **self.ctk_small_label_paddings)
+                # file_checkbox.grid(row=0, column=4, sticky='e', **self.ctk_form_paddings)
+
+                # add a label that says if this has video
+                if file_list[item_path].get('has_video', False):
+                    has_video = ctk.CTkLabel(
+                        file_frame, anchor='e',
+                        text='video',
+                        font=self.ctk_font_small_label,
+                        text_color=self.theme_colors['darkernormal']
+                    )
+
+                    has_video.grid(row=0, column=4, sticky='e', **self.ctk_small_label_paddings)
+
+                # add a label that says if this has text
+                if file_list[item_path].get('has_text', False):
+                    has_video = ctk.CTkLabel(
+                        file_frame, anchor='e',
+                        text='text',
+                        font=self.ctk_font_small_label,
+                        text_color=self.theme_colors['darkernormal']
+                    )
+
+                    has_video.grid(row=0, column=3, sticky='e', **self.ctk_small_label_paddings)
+
+
                 # add on_click event
                 file_frame.bind(
                     '<Button-1>',
-                    lambda x, l_path=file_list[item_name]['file_path']: open_on_click(x, l_path)
+                    lambda x, l_path=file_list[item_path]['file_path'], l_open_on_click=open_on_click:
+                    l_open_on_click(x, l_path)
                 )
                 file_name.bind(
                     '<Button-1>',
-                    lambda x, l_path=file_list[item_name]['file_path']: open_on_click(x, l_path)
+                    lambda x, l_path=file_list[item_path]['file_path'], l_open_on_click=open_on_click:
+                    l_open_on_click(x, l_path)
                 )
 
-                # add the project name to the project frame
-                file_name.grid(row=0, column=0, sticky='w', **self.ctk_form_paddings)
+                # add right click for context menu
+                file_frame.bind(
+                    '<Button-3>',
+                    lambda e, l_item=file_list[item_path]:
+                    self._project_file_context_menu(e, l_item)
+                )
+
+                # make context menu work on mac trackpad too
+                file_frame.bind(
+                    '<Button-2>',
+                    lambda e, l_item=file_list[item_path]:
+                    self._project_file_context_menu(e, l_item)
+                )
+
+                # add right click for context menu
+                file_name.bind(
+                    '<Button-3>',
+                    lambda e, l_item=file_list[item_path]:
+                    self._project_file_context_menu(e, l_item)
+                )
+
+                # make context menu work on mac trackpad too
+                file_name.bind(
+                    '<Button-2>',
+                    lambda e, l_item=file_list[item_path]:
+                    self._project_file_context_menu(e, l_item)
+                )
 
                 # add the project to the grid
                 file_frame.grid(row=row_num, column=0, sticky='ew', **self.ctk_form_paddings)
+
+                file_frame.grid_columnconfigure(0, weight=1)
 
             # expand project frames on the x axis
             main_window.middle_frame.grid_columnconfigure(0, weight=1)
@@ -2643,7 +2747,7 @@ class toolkit_UI():
             main_window.grid_columnconfigure(0, weight=1)
 
             # make window resizable
-            self.root.resizable(False, True)
+            self.root.resizable(True, True)
 
         else:
             # hide the middle frame
@@ -3296,6 +3400,98 @@ class toolkit_UI():
         context_menu.tk_popup(event.x_root, event.y_root)
 
         return
+
+    def _project_file_context_menu(self, event, item):
+
+        if not item or not isinstance(item, dict):
+            return
+
+        # spawn the context menu
+        context_menu = tk.Menu(self.root, tearoff=0)
+
+        exists = item.get('file_exists', None)
+        search_label = None
+        send_to_assistant_label = None
+
+        if exists and isinstance(item['object'], Transcription):
+
+            # add the Open Transcription menu item
+            context_menu.add_command(
+                label="Open Transcription",
+                command=lambda: self.open_transcription_window(transcription_file_path=item['file_path'])
+            )
+
+            search_label = 'Search Transcription'
+            send_to_assistant_label = 'Send Transcription to Assistant'
+
+        if exists and isinstance(item['object'], Story):
+
+            # add the Open Story menu item
+            context_menu.add_command(
+                label="Open Story",
+                command=lambda: self.open_story_editor_window(story_file_path=item['file_path'])
+            )
+
+        if search_label:
+
+            # add the Search menu item
+            context_menu.add_command(
+                label=search_label,
+                command=lambda: self.open_advanced_search_window(
+                    search_file_path=item['file_path']
+                )
+            )
+
+        if send_to_assistant_label:
+
+            # add the Send to Assistant menu item
+            context_menu.add_command(
+                label=send_to_assistant_label,
+                command=lambda: self.open_assistant_window(
+                    transcription_file_path=item['file_path']
+                )
+            )
+
+        # add separator
+        context_menu.add_separator()
+
+        # add the Open in File Browser menu item
+        if exists:
+            context_menu.add_command(
+                label="Show File in {}".format(self.file_browser_name),
+                command=lambda: self.open_file_dir(file_path=item['file_path'])
+            )
+
+            # add Open Source Media menu item
+            if item.get('source_media_path', None):
+                context_menu.add_command(
+                    label="Show Source Media in {}".format(self.file_browser_name),
+                    command=lambda: self.open_file_dir(file_path=item['source_media_path'])
+                )
+
+        # add the Relink menu item
+        context_menu.add_command(
+            label="Relink File",
+            command=lambda: self.button_relink_file(
+                file_path=item['file_path'],
+                object_type=str(item['object'].__class__.__name__).lower()
+            )
+        )
+
+        # add the Unlink menu item
+        context_menu.add_command(
+            label="Unlink File",
+            command=lambda: self.button_set_file_link_to_project(
+                file_path=item['file_path'],
+                object_type=str(item['object'].__class__.__name__).lower(),
+                link=False
+            )
+        )
+
+        # show the context menu
+        context_menu.tk_popup(event.x_root, event.y_root)
+
+        return True
 
     def update_timeline_timecode_data(self, timeline_name, timeline_fps, start_tc):
         """
@@ -12434,7 +12630,7 @@ class toolkit_UI():
         # call the default destroy window function
         self.destroy_window_(windows_dict=self.windows, window_id=window_id)
 
-    def button_set_file_link_to_project(self, file_path, object_type, link):
+    def button_set_file_link_to_project(self, file_path, object_type, link, confirmed=False):
 
         # if no story file path was passed, abort
         if file_path is None:
@@ -12447,9 +12643,84 @@ class toolkit_UI():
         if link:
             self.current_project.link_to_project(object_type=object_type, file_path=file_path, save_soon=True)
         else:
+
+            # if the user didn't confirm, ask them to confirm
+            if not confirmed:
+                confirmed = messagebox.askyesno(
+                    title='Unlink from Project',
+                    message='Are you sure you want to unlink this {} from the project?'.format(object_type),
+                    parent=self.root
+                )
+                if not confirmed:
+                    return
+
             self.current_project.unlink_from_project(object_type=object_type, file_path=file_path, save_soon=True)
 
         # update the UI
+        self.update_main_window()
+
+    def button_relink_file(self, file_path, object_type):
+        """
+        This function will open a file dialog to select a new file to link to the current project
+        """
+
+        # if no file path was passed, abort
+        if file_path is None:
+            return
+
+        # if no project is open, abort
+        if not self.current_project:
+            return
+
+        # use the initial dir of the project if we are in one
+        initial_target_dir = \
+            self.current_project.last_target_dir \
+            if self.current_project.last_target_dir \
+            else self.stAI.initial_target_dir
+
+        new_file_path = None
+        if object_type == 'story':
+
+            # ask the user which story file to open
+            new_file_path = filedialog.askopenfilename(
+                initialdir=initial_target_dir,
+                title='Open Story',
+                filetypes=[('Story files', '.sts')]
+            )
+
+        elif object_type == 'transcription':
+
+            # ask the user which transcription file to open
+            new_file_path = filedialog.askopenfilename(
+                initialdir=initial_target_dir,
+                title='Open Transcription',
+                filetypes=[('Transcription files', '.json')]
+            )
+
+        if not new_file_path:
+            return False
+
+        logger.debug('Relinking {} to {}'.format(file_path, new_file_path))
+
+        # check if it's not already linked with something else in the project
+        if self.current_project.is_linked_to_project(object_type=object_type, file_path=new_file_path):
+            self.notify_via_messagebox(
+                title='Already Linked',
+                message='The file {} is already linked in the project. Try again.'.format(
+                    os.path.basename(new_file_path), object_type),
+                type='warning',
+                parent=self.root
+            )
+            return False
+
+        # if not, just unlink the old file
+        self.current_project.unlink_from_project(object_type=object_type, file_path=file_path)
+
+        # and link the new one
+        self.current_project.link_to_project(object_type=object_type, file_path=new_file_path, save_soon=True)
+
+        self.stAI.update_initial_target_dir(os.path.dirname(new_file_path))
+
         self.update_main_window()
 
     # TRANSCRIPT GROUP UI FUNCTIONS
@@ -17121,6 +17392,7 @@ class toolkit_UI():
     def open_assistant_window(self, assistant_window_id: str = None,
                               transcript_text: str = None,
                               transcription_segments: list = None,
+                              transcription_file_path: str = None
                               ):
 
         if self.toolkit_ops_obj is None:
@@ -17204,12 +17476,26 @@ class toolkit_UI():
 
             self._text_window_update(assistant_window_id, initial_info)
 
+        # if we have no transcript_text and no transcription_segments
+        # see if we have a transcription_file_path
+        if transcript_text is None and transcription_segments is None \
+                and transcription_file_path:
+
+            # get all the segments of the transcription
+            transcription = Transcription(transcription_file_path=transcription_file_path)
+
+            # get all the segments of the transcription
+            transcription_segments = transcription.get_segments()
+
+            # place all the transcript segments into a single string separated by new lines
+            transcript_text = '\n'.join([segment.text for segment in transcription_segments])
+
         # add the transcript text as context to the assistant
         if transcript_text is not None:
             transcript_text = "TRANSCRIPT\n\n{}\n\nEND".format(transcript_text)
             assistant_window.assistant_item.add_context(context=transcript_text)
 
-            self._text_window_update(assistant_window_id, 'Added items as context.')
+            self._text_window_update(assistant_window_id, 'Changing context with the received text.')
 
         if transcription_segments is not None:
             assistant_window.transcription_segments = transcription_segments
@@ -18958,6 +19244,32 @@ class toolkit_UI():
         self.root.clipboard_append(full_text.strip())
 
         logger.debug('Copied text to clipboard')
+
+    @staticmethod
+    def open_file_dir(file_path):
+        """
+        This takes the user to the directory of the file in question using the OS file manager.
+        """
+        # if we're on a Mac, use Finder to show the file
+        if platform.system() == 'Darwin':
+            subprocess.call(['open', '-R', file_path])
+        elif platform.system() == 'Windows':
+            file_path = os.path.normpath(file_path)
+
+            # make sure the file_path is a valid path to prevent security issues
+            if not os.path.exists(file_path):
+                logger.debug('Invalid file path: {}'.format(file_path))
+                return
+
+            # single command string to be provided as argument to the shell
+            cmd = 'explorer /select,"{}"'.format(file_path)
+
+            # pass the command to the shell
+            subprocess.call(cmd, shell=True)
+
+        # if we're on Linux, open the user data dir in the file manager
+        elif platform.system() == 'Linux':
+            subprocess.call(['xdg-open', os.path.dirname(file_path)])
 
 
 def run_gui(toolkit_ops_obj, stAI):
