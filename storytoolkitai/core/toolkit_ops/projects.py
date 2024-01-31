@@ -16,7 +16,7 @@ PROJECTS_PATH = os.path.join(os.path.join(USER_DATA_PATH, 'projects'))
 
 def get_projects_from_path(projects_path=PROJECTS_PATH):
     """
-    This gets all the projects in a path.
+    This gets all the valid projects from a given path.
     :param projects_path: str, the path to the projects directory
     :return: list, a list of project names
     """
@@ -99,7 +99,17 @@ class Project:
         self._name = None
         self._last_target_dir = None
 
+        # this stores NLE timeline/sequence data such as timeline markers
         self._timelines = {}
+
+        # these store the paths to the linked transcriptions
+        self._transcriptions = []
+
+        # these store the paths to the linked stories
+        self._stories = []
+
+        # these store the paths to the linked text files
+        self._texts = []
 
         # we use this to keep track if we updated, deleted, added, or changed anything
         self._dirty = False
@@ -147,6 +157,18 @@ class Project:
         return self._timelines
 
     @property
+    def transcriptions(self):
+        return self._transcriptions
+
+    @property
+    def stories(self):
+        return self._stories
+
+    @property
+    def texts(self):
+        return self._texts
+
+    @property
     def is_dirty(self):
         return self._dirty
 
@@ -165,7 +187,7 @@ class Project:
         if save_soon:
             self.save_soon()
 
-    __known_attributes = ['name', 'last_target_dir', 'timelines']
+    __known_attributes = ['name', 'last_target_dir', 'timelines', 'transcriptions', 'stories', 'texts']
 
     def set(self, key: str or dict, value=None, save_soon=False):
         """
@@ -406,32 +428,110 @@ class Project:
 
         return save_result
 
-    def get_linked_transcriptions(self):
+    def link_to_project(self, object_type: str, file_path: str, save_soon=False):
         """
-        This looks through all the timelines and gets all the transcriptions linked to them
+        This links a file to a project by adding its path to the transcriptions list
         """
 
-        linked_transcriptions = []
+        if file_path is None or not isinstance(file_path, str):
+            logger.debug('Cannot link file {} to project {}.'.format(file_path, self._project_path))
+            return False
 
-        # loop through all the timelines and get the linked transcription_files
-        for timeline_name, timeline_data in self.timelines.items():
+        # decide which list to add the file path to
+        if object_type == 'transcription':
 
-            # if there are no transcription_files in the timeline_data, skip this timeline
-            if 'transcription_files' not in timeline_data:
-                continue
+            if not self._transcriptions:
+                self._transcriptions = []
 
-            # loop through all the transcription_files in the timeline_data
-            for transcription_file_path in timeline_data['transcription_files']:
+            if file_path not in self._transcriptions:
+                self._transcriptions.append(file_path)
 
-                # yield the transcription_file_path
-                if transcription_file_path not in linked_transcriptions:
-                    linked_transcriptions.append(transcription_file_path)
+        elif object_type == 'story':
 
-        return linked_transcriptions
+            if not self._stories:
+                self._stories = []
+
+            if file_path not in self._stories:
+                self._stories.append(file_path)
+
+        elif object_type == 'text':
+
+            if not self._texts:
+                self._texts = []
+
+            if file_path not in self._texts:
+                self._texts.append(file_path)
+
+        else:
+            logger.debug('Cannot link file {} to project {} - unknown object type "{}".'
+                         .format(file_path, self._project_path, object_type))
+            return False
+
+        self.set_dirty(save_soon=save_soon)
+
+        return True
+
+    def unlink_from_project(self, object_type: str, file_path: str, save_soon=False):
+        """
+        This removes a file from the project
+        """
+
+        if file_path is None or not isinstance(file_path, str):
+            logger.debug('Cannot unlink file {} from project {}.'.format(file_path, self._project_path))
+            return False
+
+        # decide which list to add the file path to
+        if object_type == 'transcription':
+            if self._transcriptions and file_path in self._transcriptions:
+                self._transcriptions.remove(file_path)
+
+        elif object_type == 'story':
+            if self._stories and file_path in self._stories:
+                self._stories.remove(file_path)
+
+        elif object_type == 'text':
+            if self._texts and file_path in self._texts:
+                self._texts.remove(file_path)
+
+        else:
+            logger.debug('Cannot unlink file {} from project {} - unknown object type "{}".'
+                         .format(file_path, self._project_path, object_type))
+            return False
+
+        self.set_dirty(save_soon=save_soon)
+
+        return True
 
     @staticmethod
     def get_project_path_id(project_path):
         return hashlib.md5(project_path.encode('utf-8')).hexdigest()
+
+    def is_linked_to_project(self, object_type, file_path):
+        """
+        This checks if a transcription is linked to the project
+        """
+
+        if file_path is None or not isinstance(file_path, str):
+            logger.debug('Cannot unlink file {} from project {}.'.format(file_path, self._project_path))
+            return False
+
+        # decide which list to add the file path to
+        if object_type == 'transcription':
+            if self._transcriptions:
+                return file_path in self._transcriptions
+
+        elif object_type == 'story':
+            if self._stories:
+                return file_path in self._stories
+
+        elif object_type == 'text':
+            if self._texts:
+                return file_path in self._texts
+
+        else:
+            logger.debug('Cannot unlink file {} from project {} - unknown object type "{}".'
+                         .format(file_path, self._project_path, object_type))
+        return False
 
     def get_timeline_setting(self, timeline_name: str, setting_key: str):
         """
@@ -485,7 +585,7 @@ class Project:
 
     def link_transcription_to_timeline(self, transcription_file_path: str, timeline_name: str, save_soon=False):
         """
-        This links a transcription to a timeline
+        This links a transcription to a timeline and the project if it's not already linked
         """
 
         if transcription_file_path is None or not isinstance(transcription_file_path, str)\
@@ -506,13 +606,16 @@ class Project:
         if transcription_file_path not in self.timelines[timeline_name]['transcription_files']:
             self._timelines[timeline_name]['transcription_files'].append(transcription_file_path)
 
+        # link the transcription to the project too
+        self.link_to_project(object_type='transcription', file_path=transcription_file_path, save_soon=save_soon)
+
         self.set_dirty(save_soon=save_soon)
 
         return True
 
     def unlink_transcription_from_timeline(self, transcription_file_path: str, timeline_name: str, save_soon=False):
         """
-        This unlinks a transcription from a timeline
+        This unlinks a transcription from a timeline, but it doesn't remove it from the project
         """
 
         if transcription_file_path is None or not isinstance(transcription_file_path, str)\

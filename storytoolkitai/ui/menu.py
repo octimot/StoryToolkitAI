@@ -45,6 +45,7 @@ class UImenus:
         # keep track of the current window id
         self.current_window_id = None
         self.current_window_type = None
+        self.current_window = None
 
         # create a variable to store the keep_on_top state of the current window
         self.keep_on_top_state = BooleanVar()
@@ -108,6 +109,8 @@ class UImenus:
         # set the window id
         self.current_window_id = \
             self.toolkit_UI_obj.current_focused_window if self.parent == self.root else self.parent.window_id
+
+        self.current_window = self.toolkit_UI_obj.get_window_by_id(self.current_window_id)
 
         # set the window type
         self.current_window_type = self.toolkit_UI_obj.get_window_type(self.current_window_id)
@@ -204,7 +207,7 @@ class UImenus:
         # FILE MENU - export items
         self.filemenu.add_separator()
 
-        self.filemenu.add_command(label='Export story as Text or Fountain...', state=DISABLED)
+        self.filemenu.add_command(label='Export story as text or Fountain...', state=DISABLED)
         self.filemenu.add_command(label='Export story as EDL or FCP7XML...', state=DISABLED)
         # self.filemenu.add_command(label='Export story as PDF...', state=DISABLED)
 
@@ -216,6 +219,20 @@ class UImenus:
         # add Export as AVID/Fusion etc. menu items, but keep them disabled until a relevant window is focused
         self.filemenu.add_command(label="Export transcript as AVID DS...", state=DISABLED)
         self.filemenu.add_command(label="Export transcript as Fusion Text...", state=DISABLED)
+
+        # FILE MENU - project linking
+        self.filemenu.add_separator()
+
+        # for linking / unlinking items to projects,
+        # we need to refer by the numeric index of the menu items so we can change the label
+        self.filemenu.add_command(label="Link transcription to project", command=self.donothing, state=DISABLED)
+        link_transcription_project_index = self.filemenu.index('end')
+
+        self.filemenu.add_command(label="Link story to project", command=self.donothing, state=DISABLED)
+        link_story_project_index = self.filemenu.index('end')
+
+        # self.filemenu.add_command(label="Link file to project", command=self.donothing, state=DISABLED)
+        # link_file_project_index = self.filemenu.index('end')
 
         # FILE MENU - other app related items
         self.filemenu.add_separator()
@@ -260,6 +277,29 @@ class UImenus:
                     self.toolkit_UI_obj.t_edit_obj.get_window_transcription(self.current_window_id) \
                         .transcription_file_path
 
+                # if we're in a project and the transcription is not linked to the project
+                if self.toolkit_UI_obj.current_project:
+
+                    transcription_linked_to_project = \
+                        self.toolkit_UI_obj.current_project.is_linked_to_project(
+                            object_type='transcription',
+                            file_path=transcription_file_path
+                        )
+
+                    self.filemenu.entryconfig(
+                        link_transcription_project_index,
+                        label="Link transcription to project"
+                        if not transcription_linked_to_project
+                        else "Unlink transcription from project",
+                        state=NORMAL,
+                        command=lambda:
+                        self.toolkit_UI_obj.button_set_file_link_to_project(
+                            object_type='transcription',
+                            file_path=transcription_file_path,
+                            link=not transcription_linked_to_project
+                        )
+                    )
+
                 self.filemenu.entryconfig(
                     "Show transcription in " + self.file_browser_name, state=NORMAL,
                     command=lambda: self.open_file_dir(transcription_file_path)
@@ -270,12 +310,14 @@ class UImenus:
                 self.filemenu.entryconfig('Export transcript as...', state=DISABLED)
                 self.filemenu.entryconfig('Export transcript as AVID DS...', state=DISABLED)
                 self.filemenu.entryconfig('Export transcript as Fusion Text...', state=DISABLED)
+                self.filemenu.entryconfig(link_transcription_project_index,
+                                          label="Link transcription to project", state=DISABLED)
                 self.filemenu.entryconfig("Show transcription in " + self.file_browser_name, state=DISABLED)
 
-            if self.current_window_type =='story_editor':
+            if self.current_window_type == 'story_editor':
 
                 # enable the Export as TXT menu item
-                self.filemenu.entryconfig('Export story as Text or Fountain...', state=NORMAL,
+                self.filemenu.entryconfig('Export story as text or Fountain...', state=NORMAL,
                                           command=lambda: self.toolkit_UI_obj.StoryEdit.button_export_as_text(
                                               window_id=self.current_window_id, toolkit_UI_obj=self.toolkit_UI_obj)
                                           )
@@ -286,9 +328,30 @@ class UImenus:
                                               window_id=self.current_window_id, toolkit_UI_obj=self.toolkit_UI_obj)
                                           )
 
+                if self.toolkit_UI_obj.current_project:
+
+                    story_linked_to_project = \
+                        self.toolkit_UI_obj.current_project.is_linked_to_project(
+                            object_type='story',
+                            file_path=self.current_window.story.story_file_path
+                        )
+
+                    self.filemenu.entryconfig(
+                        link_story_project_index,
+                        label="Link story to project" if not story_linked_to_project else "Unlink story from project",
+                        state=NORMAL,
+                        command=lambda:
+                        self.toolkit_UI_obj.button_set_file_link_to_project(
+                            object_type='story',
+                            file_path=self.current_window.story.story_file_path,
+                            link=not story_linked_to_project
+                        )
+                    )
+
             else:
-                self.filemenu.entryconfig('Export story as Text or Fountain...', state=DISABLED)
+                self.filemenu.entryconfig('Export story as text or Fountain...', state=DISABLED)
                 self.filemenu.entryconfig('Export story as EDL or FCP7XML...', state=DISABLED)
+                self.filemenu.entryconfig('Link story to project', state=DISABLED)
 
         # add a postcommand to the file menu to enable/disable menu items depending on the current window
         self.filemenu.configure(postcommand=toggle_file_menu_items)

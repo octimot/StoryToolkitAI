@@ -2530,9 +2530,7 @@ class toolkit_UI():
                 widget.destroy()
 
             # get the transcriptions from the project
-            transcriptions = self.current_project.get_linked_transcriptions()
-
-            # print(json.dumps(transcriptions, indent=4))
+            transcriptions = self.current_project.transcriptions
 
             transcriptions.sort(key=lambda x: os.path.basename(x))
 
@@ -7932,7 +7930,6 @@ class toolkit_UI():
             for text_index in text_indexes:
                 self.replace_action(find_text, replace_text, window_id, text_index)
 
-
         def button_select_deselect_all(self, window_id, text_element=None):
             """
             Selects or deselects all the text in the transcript text element
@@ -12366,6 +12363,24 @@ class toolkit_UI():
 
         # call the default destroy window function
         self.destroy_window_(windows_dict=self.windows, window_id=window_id)
+
+    def button_set_file_link_to_project(self, file_path, object_type, link):
+
+        # if no story file path was passed, abort
+        if file_path is None:
+            return
+
+        # if no project is open, abort
+        if not self.current_project:
+            return
+
+        if link:
+            self.current_project.link_to_project(object_type=object_type, file_path=file_path, save_soon=True)
+        else:
+            self.current_project.unlink_from_project(object_type=object_type, file_path=file_path, save_soon=True)
+
+        # update the UI
+        self.update_main_window()
 
     # TRANSCRIPT GROUP UI FUNCTIONS
 

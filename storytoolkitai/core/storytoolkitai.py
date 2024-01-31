@@ -46,7 +46,12 @@ class StoryToolkitAI:
         self.debug_mode = False
 
         # trigger post_update if necessary
-        if post_update(self.version, self.get_app_setting('last_update'), is_standalone=self.standalone):
+        # if not last_update key is found in the config, it will assume that the app was just installed
+        if post_update(
+                current_version=self.version,
+                last_version=self.get_app_setting('last_update', self.version),
+                is_standalone=self.standalone
+        ):
 
             # save the current version as the last_post_update
             self.save_config('last_update', self.version)
