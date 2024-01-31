@@ -2455,6 +2455,10 @@ class toolkit_UI():
         # if there are projects, add them to the middle frame
         if projects and len(projects) > 0:
 
+            # clear the middle frame
+            for widget in main_window.middle_frame.winfo_children():
+                widget.destroy()
+
             for row_num, project in enumerate(projects):
 
                 project = Project(project_name=project)
@@ -2529,38 +2533,104 @@ class toolkit_UI():
             for widget in main_window.middle_frame.winfo_children():
                 widget.destroy()
 
-            # get the transcriptions from the project
+            # get the transcriptions and stories linked to the project
             transcriptions = self.current_project.transcriptions
+            stories = self.current_project.stories
 
-            transcriptions.sort(key=lambda x: os.path.basename(x))
+            # transcriptions.sort(key=lambda x: os.path.basename(x))
+            # stories.sort(key=lambda x: os.path.basename(x))
 
-            for row_num, transcription_file_path in enumerate(transcriptions):
+            # parse the transcriptions into the file list
+            file_list = {}
+            for transcription_file_path in transcriptions or []:
 
+                # get the transcription object
                 transcription = Transcription(transcription_file_path=transcription_file_path)
 
-                if not transcription.exists:
+                # get the transcription name
+                if transcription.exists:
+                    transcription_name = transcription.name
+
+                else:
                     transcription_name = os.path.basename(transcription_file_path)
+
+                # add to the file list
+                file_list[transcription_name] = {}
+                file_list[transcription_name]['object'] = transcription
+                file_list[transcription_name]['file_exists'] = transcription.exists
+                file_list[transcription_name]['file_path'] = transcription_file_path
+                file_list[transcription_name]['on_click'] = \
+                    lambda event, l_path=transcription_file_path: open_on_click(event, l_path)
+
+            for story_file_path in stories or []:
+
+                # get the story object
+                story = Story(story_file_path=story_file_path)
+
+                if story.exists:
+                    story_name = story.name
+
+                else:
+                    story_name = os.path.basename(story_file_path)
+
+                # add to the story list
+                file_list[story_name] = {}
+                file_list[story_name]['object'] = story
+                file_list[story_name]['file_exists'] = story.exists
+                file_list[story_name]['file_path'] = story_file_path
+                file_list[story_name]['on_click'] = \
+                    lambda event, l_path=transcription_file_path: open_on_click(event, l_path)
+
+            # sort the file dict by key and file_exists
+            file_list = dict(sorted(file_list.items(), key=lambda x: (-x[1]['file_exists'], x[0].lower())))
+
+            for row_num, item_name in enumerate(file_list):
+
+                if not file_list[item_name].get('file_exists'):
                     label_color = toolkit_UI.theme_colors['resolve_red']
 
                 else:
-                    transcription_name = transcription.name
                     label_color = toolkit_UI.theme_colors['supernormal']
 
                 # create a frame to hold the project
-                transcription_frame = ctk.CTkFrame(main_window.middle_frame, **self.ctk_list_item)
+                file_frame = ctk.CTkFrame(main_window.middle_frame, **self.ctk_list_item)
 
                 # add the project name
-                transcription_name_var = tk.StringVar(main_window, value=transcription_name)
-                transcription_name = ctk.CTkLabel(
-                    transcription_frame, textvariable=transcription_name_var, anchor='w',
+                file_name_var = tk.StringVar(main_window, value=item_name)
+                file_name = ctk.CTkLabel(
+                    file_frame, textvariable=file_name_var, anchor='w',
                     text_color=label_color
                 )
 
+                if isinstance(file_list[item_name]['object'], Transcription):
+                    def open_on_click(event, path):
+                        # open the transcription
+                        self.open_transcription_window(transcription_file_path=path)
+
+                elif isinstance(file_list[item_name]['object'], Story):
+                    def open_on_click(event, path):
+                        # open the story
+                        self.open_story_editor_window(story_file_path=path)
+
+                else:
+                    def open_on_click(event, path):
+                        return
+
+                # add on_click event
+                file_frame.bind(
+                    '<Button-1>',
+                    lambda x, l_path=file_list[item_name]['file_path']: open_on_click(x, l_path)
+                )
+                file_name.bind(
+                    '<Button-1>',
+                    lambda x, l_path=file_list[item_name]['file_path']: open_on_click(x, l_path)
+                )
+
                 # add the project name to the project frame
-                transcription_name.grid(row=0, column=0, sticky='w', **self.ctk_form_paddings)
+                file_name.grid(row=0, column=0, sticky='w', **self.ctk_form_paddings)
 
                 # add the project to the grid
-                transcription_frame.grid(row=row_num, column=0, sticky='ew', **self.ctk_form_paddings)
+                file_frame.grid(row=row_num, column=0, sticky='ew', **self.ctk_form_paddings)
 
             # expand project frames on the x axis
             main_window.middle_frame.grid_columnconfigure(0, weight=1)
