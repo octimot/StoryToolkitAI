@@ -7562,39 +7562,30 @@ class toolkit_UI():
             # get the transcription object
             transcription = self.get_window_transcription(window_id=window_id)
 
+            # save a srt file next to the transcription file
+            full_srt_file_path = transcription.transcription_file_path.replace('.transcription.json', '.srt')
 
-            # get the srt file name
-            full_srt_file_path = transcription.srt_file_path
+            # use a temporary folder instead of the transcription folder
+            import tempfile
+            with tempfile.TemporaryDirectory() as temp_dir:
+                full_srt_file_path = os.path.join(temp_dir, os.path.basename(full_srt_file_path))
+                TranscriptionUtils.write_srt(transcription.segments, full_srt_file_path)
 
-            if full_srt_file_path is None:
-                self.toolkit_UI_obj.notify_via_messagebox(
-                    title="Cannot find SRT file",
-                    type="error",
-                    message='No SRT file seems to be linked to this transcription. Cannot import to bin.',
-                )
-                return
+                logger.debug('Exported temporary SRT file to: {}'.format(full_srt_file_path))
 
-            # if the path is not absolute, use the transcription file path to get the absolute path
-            if not os.path.isabs(full_srt_file_path):
-                full_srt_file_path = \
-                    os.path.join(os.path.dirname(transcription.transcription_file_path), full_srt_file_path)
-
-            # test if the file exists
-            while not os.path.isfile(full_srt_file_path):
-                logger.warning('The SRT file {} doesn\'t exist.'.format(transcription.srt_file_path))
-
-                window = self.toolkit_UI_obj.get_window_by_id(window_id=window_id)
-
-                # ask user via messagebox whether to make it
-                if not messagebox.askyesno(title='SRT file not found',
-                                           message='The SRT file was not found, should we export it?',
-                                           parent=window):
+                if full_srt_file_path is None or not os.path.isfile(full_srt_file_path):
+                    self.toolkit_UI_obj.notify_via_messagebox(
+                        title="Cannot find SRT file",
+                        type="error",
+                        message='No SRT file seems to be linked to this transcription. Cannot import to bin.',
+                    )
                     return
 
-                self.button_export_as_srt(window_id=window_id, export_file_path=full_srt_file_path)
+                # if we reached this point, import the srt file to the bin
+                self.toolkit_ops_obj.resolve_api.import_media(full_srt_file_path)
 
-            # if we reached this point, import the srt file to the bin
-            self.toolkit_ops_obj.resolve_api.import_media(full_srt_file_path)
+                # and delete the temporary file
+                os.remove(full_srt_file_path)
 
         def sync_with_playhead_update(self, window_id, sync=None):
 

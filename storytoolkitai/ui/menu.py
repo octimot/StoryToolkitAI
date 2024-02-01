@@ -207,7 +207,7 @@ class UImenus:
 
         self.filemenu.add_separator()
         # add Export as... menu item, but keep it disabled until a relevant window is focused
-        self.filemenu.add_command(label="Export transcript as...", state=DISABLED,
+        self.filemenu.add_command(label="Export transcript as SRT or text...", state=DISABLED,
                                   accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+Shift+s")
 
         # add Export as AVID/Fusion etc. menu items, but keep them disabled until a relevant window is focused
@@ -259,7 +259,7 @@ class UImenus:
             if self.current_window_type == 'transcription':
 
                 # enable the Export as SRT menu item
-                self.filemenu.entryconfig('Export transcript as...', state=NORMAL,
+                self.filemenu.entryconfig('Export transcript as SRT or text...', state=NORMAL,
                                           command=lambda: self.toolkit_UI_obj.t_edit_obj.button_export_as(
                                               self.current_window_id)
                                           )
@@ -309,7 +309,7 @@ class UImenus:
 
             # if this is not a transcription window, disable the non-relevant menu items
             else:
-                self.filemenu.entryconfig('Export transcript as...', state=DISABLED)
+                self.filemenu.entryconfig('Export transcript as SRT or text...', state=DISABLED)
                 self.filemenu.entryconfig('Export transcript as AVID DS...', state=DISABLED)
                 self.filemenu.entryconfig('Export transcript as Fusion Text...', state=DISABLED)
                 self.filemenu.entryconfig(link_transcription_project_index,

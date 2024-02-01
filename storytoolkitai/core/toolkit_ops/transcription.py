@@ -70,11 +70,6 @@ class Transcription:
         # the transcript groups are used to group segments together by time intervals
         self._transcript_groups = {}
 
-        # these are the paths to other files that are associated with the transcription file
-        # we call them auxiliary files
-        self._srt_file_path = None
-        self._txt_file_path = None
-
         # this is the path to the audio file that is associated with the transcription file
         self._audio_file_path = None
 
@@ -208,14 +203,6 @@ class Transcription:
     @property
     def transcript_groups(self):
         return self._transcript_groups
-
-    @property
-    def srt_file_path(self):
-        return self._srt_file_path
-
-    @property
-    def txt_file_path(self):
-        return self._txt_file_path
 
     @property
     def audio_file_path(self):
@@ -361,7 +348,7 @@ class Transcription:
 
     __known_attributes = [
         'name', 'task', 'whisper_model', 'segments', 'transcript_groups',
-        'srt_file_path', 'audio_file_path', 'txt_file_path',
+        'audio_file_path',
         'language',
         'whisper_language',
         'timeline_fps', 'timeline_start_tc',
@@ -373,7 +360,7 @@ class Transcription:
     def copy_transcription(self, source_transcription, include_groups=False, include_segments=False):
         """
         This copies the known attributes from the source transcription into this transcription,
-        Some attributes are not copied, like srt_file_path, txt_file_path, incomplete, transcription_id etc.
+        Some attributes are not copied, like incomplete, transcription_id etc.
         While others are modified to keep them unique, like transcription_id, etc.
         It does not copy segments.
         """
@@ -382,9 +369,9 @@ class Transcription:
         # read all the attributes from the source transcription
         for attribute in self.__known_attributes:
 
-            # if the attribute is srt_file_path or txt_file_path
+            # if the attribute is named 'incomplete'
             # skip it
-            if attribute in ['srt_file_path', 'txt_file_path', 'incomplete']:
+            if attribute in ['incomplete']:
                 continue
 
             # if this is the transcription id, generate a new one
@@ -565,9 +552,7 @@ class Transcription:
                 value = os.path.splitext(os.path.basename(self.__transcription_file_path))[0]
 
         # for other file paths, do this
-        elif attribute_name == 'srt_file_path' \
-                or attribute_name == 'audio_file_path' \
-                or attribute_name == 'txt_file_path':
+        elif attribute_name == 'audio_file_path':
 
             # use the absolute path to check if the file exists
             abs_value = value
@@ -575,7 +560,7 @@ class Transcription:
             # if not we're dealing with an absolute path
             if not os.path.isabs(abs_value):
 
-                # assume that the srt is in the same directory as the transcription
+                # assume that the file is in the same directory as the transcription
                 abs_value = os.path.join(os.path.dirname(self.__transcription_file_path), value)
 
             # if the file doesn't exist, set the value to None
@@ -945,7 +930,7 @@ class Transcription:
         # set the dirty flag
         self.set_dirty()
 
-    def save_soon(self, force=False, backup: bool or float = False, auxiliaries=True, sec=1, **kwargs):
+    def save_soon(self, force=False, backup: bool or float = False, sec=1, **kwargs):
         """
         This saves the transcription to the file,
         but keeping track of the last time it was saved, and only saving
@@ -953,7 +938,6 @@ class Transcription:
         :param force: bool, whether to force save the transcription even if it's not dirty
         :param backup: bool, whether to back up the transcription file before saving, if an integer is passed,
                              it will be used to determine the time in hours between backups
-        :param auxiliaries: bool, whether to save the auxiliaries
         :param sec: int, how soon in seconds to save the transcription, if 0, save immediately
                     (0 seconds also means waiting for the execution to finish before returning from the function)
         """
@@ -973,7 +957,7 @@ class Transcription:
                 self._save_timer.cancel()
                 self._save_timer = None
 
-            return self._save(backup=backup, auxiliaries=auxiliaries)
+            return self._save(backup=backup)
 
         # if we're calling this function again before the last save was done
         # it means that we're calling this function more often so many changes might follow in our Transcript,
@@ -996,13 +980,12 @@ class Transcription:
         self._save_timer = Timer(throttled_sec, self._save, kwargs=kwargs)
         self._save_timer.start()
 
-    def _save(self, backup: bool or float = False, auxiliaries=True,
+    def _save(self, backup: bool or float = False,
               if_successful: callable = None, if_failed: callable = None, if_none: callable = None, **kwargs):
         """
         This saves the transcription to the file
         :param backup: bool, whether to backup the transcription file before saving, if an integer is passed,
                                 it will be used to determine the time in hours between backups
-        :param auxiliaries: bool, whether to save the auxiliaries
         :param if_successful: callable, a function to call if the transcription was saved successfully
         :param if_failed: callable, a function to call if the transcription failed to save
         :param if_none: callable, a function to call if the transcription was not saved because it was not dirty
@@ -1037,10 +1020,6 @@ class Transcription:
             # reset the dirty flag back to False
             self.set_dirty(False)
 
-            # save the auxiliaries
-            if auxiliaries:
-                self._save_auxiliaries()
-
         # if we're supposed to call a function when the transcription is saved
         if save_result and if_successful is not None:
 
@@ -1052,64 +1031,6 @@ class Transcription:
             if_failed()
 
         return save_result
-
-    def _save_auxiliaries(self):
-        """
-        This saves the srt and txt files next to the transcription file
-        and then updates the transcription file with the paths to the srt and txt files
-        """
-
-        # if the srt or txt file paths are not set
-        if self._srt_file_path is None or self._txt_file_path is None:
-
-            # for the filename use the basename of the transcription file,
-            # without the .transcription.json extension
-            if self.__transcription_file_path.endswith(".transcription.json"):
-                file_name = self.__transcription_file_path[:-len(".transcription.json")]
-
-            # if the transcription file extension is different (it shouldn't...),
-            # remove the extension after the last dot using os splitext
-            else:
-                file_name = os.path.splitext(self.__transcription_file_path)[0]
-
-            # if the srt file path is not set
-            if self._srt_file_path is None and self.has_segments:
-                # set the srt file path
-                self._srt_file_path = file_name + '.srt'
-
-            # if the txt file path is not set
-            if self._txt_file_path is None and self.has_segments:
-                # set the txt file path
-                self._txt_file_path = file_name + '.txt'
-
-            # make sure that the srt and txt file paths are not absolute
-            if self._srt_file_path is not None:
-                self._srt_file_path = os.path.basename(self._srt_file_path)
-
-            if self._txt_file_path is not None:
-                self._txt_file_path = os.path.basename(self._txt_file_path)
-
-            # save the transcription to file to add the new paths
-            # but don't save the auxiliaries again, or we might get into an endless recursion
-            if self._save(auxiliaries=False):
-                logger.debug('Updated auxiliaries paths in transcription file {}.'
-                             .format(self.__transcription_file_path))
-
-        # update srt file
-        if self._srt_file_path is not None:
-
-            # save the srt file next to the transcription file
-            full_srt_file_path = os.path.join(os.path.dirname(self.__transcription_file_path), self._srt_file_path)
-
-            TranscriptionUtils.write_srt(self._segments, full_srt_file_path)
-
-        # update txt file
-        if self._txt_file_path is not None:
-
-            # save the txt file next to the transcription file
-            full_txt_file_path = os.path.join(os.path.dirname(self.__transcription_file_path), self._txt_file_path)
-
-            TranscriptionUtils.write_txt(self._segments, full_txt_file_path)
 
     def _get_transcription_hash(self):
         """
@@ -1147,7 +1068,7 @@ class Transcription:
         self._timeline_start_tc = timeline_start_tc
 
         self._dirty = True
-        self.save_soon(sec=0, auxiliaries=False)
+        self.save_soon(sec=0)
 
     def time_intervals_to_transcript_segments(self, time_intervals: list) -> list or None:
         '''
