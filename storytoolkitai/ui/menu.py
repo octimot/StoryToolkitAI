@@ -217,6 +217,12 @@ class UImenus:
         # FILE MENU - project linking
         self.filemenu.add_separator()
 
+        self.filemenu.add_command(
+            label="Link file to project...",
+            command=self.toolkit_UI_obj.button_link_file_to_project,
+            state=DISABLED
+        )
+
         # for linking / unlinking items to projects,
         # we need to refer by the numeric index of the menu items so we can change the label
         self.filemenu.add_command(label="Link transcription to project", command=self.donothing, state=DISABLED)
@@ -244,9 +250,11 @@ class UImenus:
             if self.toolkit_UI_obj.current_project is None:
                 self.filemenu.entryconfig('Export current project...', state=DISABLED)
                 self.filemenu.entryconfig('Close current project', state=DISABLED)
+                self.filemenu.entryconfig('Link file to project...', state=DISABLED)
             else:
                 self.filemenu.entryconfig('Export current project...', state=NORMAL)
                 self.filemenu.entryconfig('Close current project', state=NORMAL)
+                self.filemenu.entryconfig('Link file to project...', state=NORMAL)
 
             if self.current_window_type == 'transcription':
 

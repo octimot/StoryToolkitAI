@@ -108,8 +108,8 @@ class Project:
         # these store the paths to the linked stories
         self._stories = []
 
-        # these store the paths to the linked text files
-        self._texts = []
+        # these store the paths to the linked documents
+        self._documents = []
 
         # we use this to keep track if we updated, deleted, added, or changed anything
         self._dirty = False
@@ -165,8 +165,8 @@ class Project:
         return self._stories
 
     @property
-    def texts(self):
-        return self._texts
+    def documents(self):
+        return self._documents
 
     @property
     def is_dirty(self):
@@ -187,7 +187,7 @@ class Project:
         if save_soon:
             self.save_soon()
 
-    __known_attributes = ['name', 'last_target_dir', 'timelines', 'transcriptions', 'stories', 'texts']
+    __known_attributes = ['name', 'last_target_dir', 'timelines', 'transcriptions', 'stories', 'documents']
 
     def set(self, key: str or dict, value=None, save_soon=False):
         """
@@ -454,13 +454,13 @@ class Project:
             if file_path not in self._stories:
                 self._stories.append(file_path)
 
-        elif object_type == 'text':
+        elif object_type == 'document':
 
-            if not self._texts:
-                self._texts = []
+            if not self._documents:
+                self._documents = []
 
-            if file_path not in self._texts:
-                self._texts.append(file_path)
+            if file_path not in self._documents:
+                self._documents.append(file_path)
 
         else:
             logger.debug('Cannot link file {} to project {} - unknown object type "{}".'
@@ -489,9 +489,9 @@ class Project:
             if self._stories and file_path in self._stories:
                 self._stories.remove(file_path)
 
-        elif object_type == 'text':
-            if self._texts and file_path in self._texts:
-                self._texts.remove(file_path)
+        elif object_type == 'document':
+            if self._documents and file_path in self._documents:
+                self._documents.remove(file_path)
 
         else:
             logger.debug('Cannot unlink file {} from project {} - unknown object type "{}".'
@@ -524,9 +524,9 @@ class Project:
             if self._stories:
                 return file_path in self._stories
 
-        elif object_type == 'text':
-            if self._texts:
-                return file_path in self._texts
+        elif object_type == 'document':
+            if self._documents:
+                return file_path in self._documents
 
         else:
             logger.debug('Cannot unlink file {} from project {} - unknown object type "{}".'

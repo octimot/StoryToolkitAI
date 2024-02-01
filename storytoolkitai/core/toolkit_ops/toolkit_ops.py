@@ -24,6 +24,7 @@ from storytoolkitai.integrations.mots_resolve import MotsResolve
 from .projects import Project, get_projects_from_path, ProjectUtils
 from .transcription import Transcription, TranscriptionSegment, TranscriptionUtils
 from .story import Story, StoryLine, StoryUtils
+from .document import Document
 from .processing_queue import ProcessingQueue
 from .search import ToolkitSearch, SearchItem, TextSearch, VideoSearch, cv2
 from .assistant import ToolkitAssistant, AssistantUtils

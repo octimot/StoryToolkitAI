@@ -2551,9 +2551,10 @@ class toolkit_UI():
             for widget in main_window.middle_frame.winfo_children():
                 widget.destroy()
 
-            # get the transcriptions and stories linked to the project
+            # get the transcriptions, stories and documents linked to the project
             transcriptions = self.current_project.transcriptions
             stories = self.current_project.stories
+            document_files = self.current_project.documents
 
             # parse the transcriptions into the file list
             file_list = {}
@@ -2611,7 +2612,31 @@ class toolkit_UI():
                 file_list[story_file_path]['has_text'] = True if len(story_text) > 0 else False
                 file_list[story_file_path]['type'] = 'story'
                 file_list[story_file_path]['on_click'] = \
-                    lambda event, l_path=transcription_file_path: open_on_click(event, l_path)
+                    lambda event, l_path=story_file_path: open_on_click(event, l_path)
+
+            for document_file_path in document_files or []:
+
+                # get the text file object
+                document_file = Document(document_file_path=document_file_path)
+
+                if document_file.exists:
+                    document_file_name = document_file.name
+
+                else:
+                    document_file_name = os.path.basename(document_file_path)
+
+                # this helps us determine if the story has text
+                document_file_text = str(document_file.text).strip() if str(document_file.text) else ''
+
+                file_list[document_file_path] = {}
+                file_list[document_file_path]['object'] = document_file
+                file_list[document_file_path]['name'] = document_file_name
+                file_list[document_file_path]['file_exists'] = document_file.exists
+                file_list[document_file_path]['file_path'] = document_file_path
+                file_list[document_file_path]['has_text'] = True if len(document_file_text) > 0 else False
+                file_list[document_file_path]['type'] = 'document'
+                file_list[document_file_path]['on_click'] = \
+                    lambda event, l_path=document_file_path: open_on_click(event, l_path)
 
             # sort the file dict by key and file_exists
             file_list = dict(sorted(file_list.items(), key=lambda x: (-x[1]['file_exists'], x[1]['name'].lower())))
@@ -2656,6 +2681,11 @@ class toolkit_UI():
                     def open_on_click(event, path):
                         # open the story
                         self.open_story_editor_window(story_file_path=path)
+
+                elif isinstance(file_list[item_path]['object'], Document):
+                    def open_on_click(event, path):
+                        # open the text file
+                        self.open_text_file(file_path=path)
 
                 else:
                     def open_on_click(event, path):
@@ -4355,8 +4385,8 @@ class toolkit_UI():
 
         # now load the file
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                file_content = f.read()
+            text_file = Document(document_file_path=file_path)
+            file_content = text_file.text
         except Exception as e:
             logger.error(f'Unable to open text file. Error: {e}')
             return False
@@ -4402,6 +4432,10 @@ class toolkit_UI():
                     text_widget.see(f'{tag_index}')
 
         text_window = self.get_window_by_id(window_id)
+
+        # if the file path ends with .md, format the text as markdown
+        if file_path.endswith('.md'):
+            self.text_window_format_md(window_id=window_id, text_widget=text_window.text_widget)
 
         # tag the text 50 ms after the window is opened
         if tag_text:
@@ -12676,6 +12710,93 @@ class toolkit_UI():
         # update the UI
         self.update_main_window()
 
+    def button_link_file_to_project(self):
+        """
+        We use this to link documents, stories and transcriptions to the current project
+        based on what kind of file the user selected
+        """
+
+        # if no project is open, abort
+        if not self.current_project:
+            return
+
+        # use the initial dir of the project if we are in one
+        initial_target_dir = \
+            self.current_project.last_target_dir \
+            if self.current_project.last_target_dir \
+            else self.stAI.initial_target_dir
+
+        # ask the user which file to open
+        new_file_path = filedialog.askopenfilename(
+            initialdir=initial_target_dir,
+            title='Link File',
+            filetypes=[('Project files', '*.sts *.json *.txt')]
+        )
+
+        if not new_file_path:
+            return
+
+        # if the file ends with .transcription.json, check if it's a valid transcription file
+        if new_file_path.endswith('.transcription.json'):
+
+            transcription = Transcription(transcription_file_path=new_file_path)
+
+            if not transcription.is_transcription_file:
+                self.notify_via_messagebox(
+                    title="Cannot link file",
+                    message="The file {} is not a valid transcription file.".format(
+                        os.path.basename(new_file_path)),
+                    type='warning',
+                    parent=self.root
+                )
+
+                return False
+
+            object_type = 'transcription'
+
+        # if the file ends with .sts, check if it's a valid story file
+
+        elif new_file_path.endswith('.sts'):
+
+            story = Story(story_file_path=new_file_path)
+
+            if not story.is_story_file:
+                self.notify_via_messagebox(
+                    title="Cannot link file",
+                    message="The file {} is not a valid story file.".format(
+                        os.path.basename(new_file_path)),
+                    type='warning',
+                    parent=self.root
+                )
+
+                return False
+
+            object_type = 'story'
+
+        elif new_file_path.endswith('.txt'):
+
+            object_type = 'document'
+
+        else:
+
+            self.notify_via_messagebox(
+                title="Cannot link file",
+                message="The file {} cannot be linked to the project.".format(
+                    os.path.basename(new_file_path)),
+
+                type='warning',
+                parent=self.root
+            )
+
+            return False
+
+        # if we made it here, link the file to the project
+        self.current_project.link_to_project(object_type=object_type, file_path=new_file_path, save_soon=True)
+
+        self.stAI.update_initial_target_dir(os.path.dirname(new_file_path))
+
+        self.update_main_window()
+
     def button_relink_file(self, file_path, object_type):
         """
         This function will open a file dialog to select a new file to link to the current project
@@ -12701,7 +12822,7 @@ class toolkit_UI():
             # ask the user which story file to open
             new_file_path = filedialog.askopenfilename(
                 initialdir=initial_target_dir,
-                title='Open Story',
+                title='Relink Story',
                 filetypes=[('Story files', '.sts')]
             )
 
@@ -12710,7 +12831,7 @@ class toolkit_UI():
             # ask the user which transcription file to open
             new_file_path = filedialog.askopenfilename(
                 initialdir=initial_target_dir,
-                title='Open Transcription',
+                title='Relink Transcription',
                 filetypes=[('Transcription files', '.json')]
             )
 
@@ -16947,7 +17068,6 @@ class toolkit_UI():
                         l_file_basename=file_basename:
                         self.open_text_file(
                             file_path=l_file_path,
-                            window_id="text_" + l_file_path_hash,
                             title=l_file_basename,
                             tag_text=l_result_text,
                             tag_text_start_index=l_idx,
