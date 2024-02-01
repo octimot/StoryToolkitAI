@@ -1591,9 +1591,10 @@ class ClipIndex:
                         or points_matching_ratio > 0.50:
 
                     # let's remove this shot from the list
-                    filtered_scene_changes.remove(next_frame_index)
+                    if next_frame_index in filtered_scene_changes:
+                        filtered_scene_changes.remove(next_frame_index)
 
-                    shot_removed = True
+                        shot_removed = True
 
                 # if the ssim index is low, and the points matching ratio is low
                 # we need to analyze the frames more closely using ML
@@ -1606,10 +1607,11 @@ class ClipIndex:
 
                     if similarity > 0.85:
 
-                        # let's remove this shot from the list
-                        filtered_scene_changes.remove(next_frame_index)
+                        # let's remove this shot from the list (if it isn't already)
+                        if next_frame_index in filtered_scene_changes:
+                            filtered_scene_changes.remove(next_frame_index)
 
-                        shot_removed = True
+                            shot_removed = True
 
                         # idx += 1
 
