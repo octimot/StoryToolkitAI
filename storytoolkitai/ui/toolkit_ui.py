@@ -4111,15 +4111,16 @@ class toolkit_UI():
         :return:
         """
 
-        # close any find windows
-        if 'find_window_id' in self.text_windows[window_id]:
-            find_window_id = self.text_windows[window_id]['find_window_id']
-
-            # call the default destroy window function to destroy the find window
-            self.destroy_find_replace_window(window_id=find_window_id)
-
         # clear the text windows dict
         if window_id in self.text_windows:
+
+            # close any find windows
+            if 'find_window_id' in self.text_windows[window_id]:
+                find_window_id = self.text_windows[window_id]['find_window_id']
+
+                # call the default destroy window function to destroy the find window
+                self.destroy_find_replace_window(window_id=find_window_id)
+
             del self.text_windows[window_id]
 
         # call the default destroy window function
@@ -4334,12 +4335,16 @@ class toolkit_UI():
         if execute:
             text_widget.event_generate('<Return>')
 
-    def open_text_file(self, file_path: str = None, window_id: str = None, tag_text=None, **kwargs):
+    def open_text_file(self, file_path: str = None, window_id: str = None, tag_text=None,
+                       tag_text_start_index='1.0', tag_text_end_index='end',
+                       **kwargs):
         """
         This opens a text file in a new (or existing) text window
         :param file_path:
         :param window_id:
-        :param tag_text:
+        :param tag_text: the text to tag in the text window
+        :param tag_text_start_index: where to start the search for the text that needs to be tagged
+        :param tag_text_end_index: where to end the search for the text that needs to be tagged
         :return:
         """
 
@@ -4356,13 +4361,19 @@ class toolkit_UI():
             logger.error(f'Unable to open text file. Error: {e}')
             return False
 
-        # now open the text window
-        self.open_text_window(initial_text=file_content, window_id=window_id, can_find=True, **kwargs)
+        if not window_id:
 
-        def tag_passed_text():
+            # hash the file path to get a unique window id
+            window_id = 'text_file_' + str(hashlib.md5(file_path.encode()).hexdigest())
+
+        # now open the text window if it doesn't exist
+        if not self.get_window_by_id(window_id):
+            self.open_text_window(initial_text=file_content, window_id=window_id, can_find=True, **kwargs)
+
+        def tag_passed_text(search_text, start_index, end_index):
 
             # if we have a tag_text, tag the text in the window
-            if tag_text is not None and window_id in self.text_windows:
+            if search_text is not None and window_id in self.text_windows:
 
                 # get the text widget
                 text_widget = self.text_windows[window_id]['text_widget']
@@ -4370,10 +4381,15 @@ class toolkit_UI():
                 # remove existing tags
                 text_widget.tag_delete('find_result_tag')
 
-                tag_index = text_widget.search(tag_text, 1.0, nocase=True, stopindex="end")
+                # make sure that the tag_text_start_index and tag_text_end_index are floats converted to strings
+                start_index = "{}.0".format(start_index) if start_index else '1.0'
+                end_index = "{}.0".format(end_index) if end_index else 'end'
+
+                tag_index = text_widget.search(
+                    search_text, index=start_index, nocase=True, stopindex=end_index)
 
                 # if we have a tag_index, tag the text
-                if tag_index != -1:
+                if tag_index and tag_index != -1:
 
                     # tag the text
                     # text_widget.tag_add('find_result_tag', f'{tag_index}', f'{tag_index} + {len(tag_text)}c')
@@ -4388,7 +4404,8 @@ class toolkit_UI():
         text_window = self.get_window_by_id(window_id)
 
         # tag the text 50 ms after the window is opened
-        text_window.after(50, tag_passed_text)
+        if tag_text:
+            text_window.after(50, lambda: tag_passed_text(tag_text, tag_text_start_index, tag_text_end_index))
 
     # FIND-REPLACE MODAL WINDOW
 
@@ -16919,16 +16936,24 @@ class toolkit_UI():
 
                     # if the user clicks on the result
                     # open the file in the default program (must work for Windows, Mac and Linux)
-                    results_text_element.tag_bind(tag_name, '<Button-1>',
-                                                  lambda event,
-                                                         l_file_path=result['file_path'],
-                                                         l_result_text=result['text'],
-                                                         l_file_path_hash=file_path_hash,
-                                                         l_file_basename=file_basename:
-                                                  self.open_text_file(file_path=l_file_path,
-                                                                      window_id="text_" + l_file_path_hash,
-                                                                      title=l_file_basename,
-                                                                      tag_text=l_result_text))
+                    # we add +1 to the index, to convert it to a line index
+                    results_text_element.tag_bind(
+                        tag_name, '<Button-1>',
+                        lambda event,
+                        l_file_path=result['file_path'],
+                        l_result_text=result['text'],
+                        l_file_path_hash=file_path_hash,
+                        l_idx=result['idx']+1,
+                        l_file_basename=file_basename:
+                        self.open_text_file(
+                            file_path=l_file_path,
+                            window_id="text_" + l_file_path_hash,
+                            title=l_file_basename,
+                            tag_text=l_result_text,
+                            tag_text_start_index=l_idx,
+                            tag_text_end_index=l_idx + 1
+                        )
+                    )
 
                 # if the type is a marker
                 elif result['type'] == 'marker':

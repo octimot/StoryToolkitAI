@@ -1195,11 +1195,13 @@ class TextSearch(SearchItem):
 
         return search_results, top_k
 
-    def add_search_result(self, search_results, query, search_corpus_phrases, search_corpus_assoc, idx, score):
+    @staticmethod
+    def add_search_result(search_results, query, search_corpus_phrases, search_corpus_assoc, idx, score):
         """
         This function adds a search result to the search results list.
         :param search_results:
         :param query:
+        :param search_corpus_phrases:
         :param search_corpus_assoc:
         :param idx:
         :param score:
@@ -1231,7 +1233,7 @@ class TextSearch(SearchItem):
             transcript_time = search_corpus_assoc[int(idx)]['start']
             line_no = int(segment_index) + 1
             all_lines = search_corpus_assoc[int(idx)]['all_lines']
-            type = search_corpus_assoc[int(idx)]['type']
+            file_type = search_corpus_assoc[int(idx)]['type']
 
             # compile the results into the search results dict
             search_results.append({
@@ -1246,7 +1248,7 @@ class TextSearch(SearchItem):
                 'timecode': search_corpus_assoc[int(idx)]['timecode'],
                 'score': score,
                 'text': search_corpus_phrases[idx],
-                'type': type
+                'type': file_type
             })
 
         elif search_corpus_assoc[int(idx)]['type'] == 'marker':
@@ -1281,7 +1283,7 @@ class TextSearch(SearchItem):
         else:
             # in case the source file was a text file
             file_path = search_corpus_assoc[int(idx)]['file_path']
-            type = search_corpus_assoc[int(idx)]['type']
+            file_type = search_corpus_assoc[int(idx)]['type']
 
             # compile the results into the search results dict
             search_results.append({
@@ -1290,7 +1292,7 @@ class TextSearch(SearchItem):
                 'idx': int(idx),
                 'score': score,
                 'text': search_corpus_phrases[idx],
-                'type': type
+                'type': file_type
             })
 
         return True
