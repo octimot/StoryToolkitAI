@@ -2896,10 +2896,11 @@ class toolkit_UI():
             command=lambda: self.open_queue_window()
         )
 
+        # if we're in a project, the search button will search in all the files in the project
         main_window.t_adv_search = ctk.CTkButton(
             tool_buttons_frame, **self.ctk_main_button_size,
             text="Search",
-            command=lambda: self.open_advanced_search_window()
+            command=lambda: self.open_advanced_search_window(project=self.current_project)
         )
 
         # add the shift+click binding to the button
@@ -16176,15 +16177,32 @@ class toolkit_UI():
 
         return search_file_paths
 
-    def open_advanced_search_window(self, transcription_window_id=None, search_file_path=None,
+    def open_advanced_search_window(self, project=None, transcription_window_id=None, search_file_path=None,
                                     select_dir=False, **kwargs):
 
         if self.toolkit_ops_obj is None or self.toolkit_ops_obj.t_search_obj is None:
             logger.error('Cannot open advanced search window. A ToolkitSearch object is needed to continue.')
             return False
 
-        # get the transcription object, if a transcription window id was passed
-        window_transcription = self.t_edit_obj.get_window_transcription(transcription_window_id)
+        # if a project was sent
+        if project:
+
+            # load all the transcriptions and documents of the project
+            transcription_paths = project.transcriptions
+            document_paths = project.documents
+
+            # merge the two lists
+            search_file_path = transcription_paths + document_paths
+
+            # and add the project.json file too
+            search_file_path.append(os.path.join(project.project_path, 'project.json'))
+
+            # make sure we're not triggering the window_transcription behaviour later
+            window_transcription = None
+            transcription_window_id = None
+        else:
+            # get the transcription object, if a transcription window id was passed
+            window_transcription = self.t_edit_obj.get_window_transcription(transcription_window_id)
 
         # process the selected paths and return only the files that are valid
         # this works for both a single file path and a directory (depending what the user selected above)

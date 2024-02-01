@@ -529,6 +529,7 @@ class UImenus:
 
         self.searchmenu = Menu(self.menubar, tearoff=0, **self._menu_ui)
 
+        self.searchmenu.add_command(label="Advanced Search in current project...", command=self.donothing, state=DISABLED)
         self.searchmenu.add_command(label="Advanced Search in files...",
                                     command=lambda: self.toolkit_UI_obj.open_advanced_search_window())
         self.searchmenu.add_command(label="Advanced Search in folders...",
@@ -557,6 +558,19 @@ class UImenus:
 
             # make sure we know which window is focused etc.
             self.update_current_window_references()
+
+            if self.toolkit_UI_obj.current_project:
+                self.searchmenu.entryconfig(
+                    "Advanced Search in current project...",
+                    command=lambda:
+                    self.toolkit_UI_obj.open_advanced_search_window(project=self.toolkit_UI_obj.current_project),
+                    state=NORMAL
+                )
+            else:
+                self.searchmenu.entryconfig(
+                    "Advanced Search in current project...",
+                    state=DISABLED
+                )
 
             if self.current_window_type == 'transcription':
                 self.searchmenu.entryconfig("Advanced Search in current transcription...", state=NORMAL,
