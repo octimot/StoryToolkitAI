@@ -1950,7 +1950,7 @@ class toolkit_UI():
                     parent_height = parent_element.winfo_height()
 
                     self.windows[window_id].geometry("+{}+{}".format(
-                        parent_element.winfo_x() + 20, parent_element.winfo_y() + parent_height + 20))
+                        parent_element.winfo_x() + 20, parent_element.winfo_y() + 20))
 
                     def push_higher_if_too_low():
                         """
@@ -4462,8 +4462,10 @@ class toolkit_UI():
         if not window_id:
             window_id = 'find_' + parent_window_id.replace(' ', '_').replace('.', '')
 
+        parent_window = self.get_window_by_id(parent_window_id)
+
         # open the find and replace window
-        if self.create_or_open_window(parent_element=self.root, window_id=window_id, title=title, type='find',
+        if self.create_or_open_window(parent_element=parent_window, window_id=window_id, title=title, type='find',
                                       close_action=lambda l_window_id=window_id:
                                       self.destroy_find_replace_window(l_window_id, parent_window_id=parent_window_id)):
 
