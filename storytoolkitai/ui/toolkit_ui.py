@@ -7717,47 +7717,50 @@ class toolkit_UI():
                     command=lambda: self.button_deselect_all(window_id, text_element=text_widget)
                 )
 
-                # add separator
-                context_menu.add_separator()
+            # add separator
+            context_menu.add_separator()
 
-                # the add to story sub-menu
-                add_to_story_menu = tk.Menu(context_menu, tearoff=0)
+            # the add to story sub-menu
+            add_to_story_menu = tk.Menu(context_menu, tearoff=0)
 
-                # the "New Story" button
+            # the "New Story" button
+            add_to_story_menu.add_command(
+                label="New Story...",
+                command=lambda: self.button_add_to_new_story(window_id=window_id)
+            )
+            add_to_story_menu.add_separator()
+
+            story_editor_windows = self.toolkit_UI_obj.get_all_windows_of_type('story_editor')
+
+            for story_editor_window_id in story_editor_windows:
+
+                story_editor_window = self.toolkit_UI_obj.get_window_by_id(window_id=story_editor_window_id)
+
                 add_to_story_menu.add_command(
-                    label="New Story...",
-                    command=lambda: self.button_add_to_new_story(window_id=window_id)
-                )
-                add_to_story_menu.add_separator()
-
-                story_editor_windows = self.toolkit_UI_obj.get_all_windows_of_type('story_editor')
-
-                for story_editor_window_id in story_editor_windows:
-
-                    story_editor_window = self.toolkit_UI_obj.get_window_by_id(window_id=story_editor_window_id)
-
-                    add_to_story_menu.add_command(
-                        label="{}".format(story_editor_window.title()),
-                        command=lambda: self.button_add_to_story(
-                            window_id=window_id, story_editor_window_id=story_editor_window_id)
-                    )
-
-                # add the add to story sub-menu
-                context_menu.add_cascade(label="Add to Story", menu=add_to_story_menu)
-
-                # add send to assistant
-                context_menu.add_command(
-                    label="Send to Assistant",
-                    command=lambda: self.button_send_to_assistant(window_id),
-                    accelerator="o"
+                    label="{}".format(story_editor_window.title()),
+                    command=lambda: self.button_add_to_story(
+                        window_id=window_id, story_editor_window_id=story_editor_window_id)
                 )
 
-                context_menu.add_command(
-                    label="Send to Assistant with TC",
-                    command=lambda: self.button_send_to_assistant(window_id=window_id, with_timecodes=True),
-                    accelerator="Shift+O"
-                )
+            # add the add to story sub-menu
+            context_menu.add_cascade(label="Add to Story", menu=add_to_story_menu)
 
+            # add send to assistant
+            context_menu.add_command(
+                label="Send to Assistant",
+                command=lambda: self.button_send_to_assistant(window_id),
+                accelerator="o"
+            )
+
+            context_menu.add_command(
+                label="Send to Assistant with TC",
+                command=lambda: self.button_send_to_assistant(window_id=window_id, with_timecodes=True),
+                accelerator="Shift+O"
+            )
+
+            # also only if the window has a selection
+
+            if self.has_selected_segments(window_id=window_id):
                 # add: add to new group
                 context_menu.add_command(
                     label="Add to New Group",
@@ -7765,44 +7768,44 @@ class toolkit_UI():
                     accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+g"
                 )
 
-                # copy selected segments
-                context_menu.add_command(
-                    label="Copy with TC",
-                    command=lambda: self.button_copy_segments_to_clipboard(
-                        window_id, with_timecodes=True, per_line=True),
-                    accelerator="Shift+"+self.toolkit_UI_obj.ctrl_cmd_bind + "+c"
-                )
+            # copy selected segments
+            context_menu.add_command(
+                label="Copy with TC",
+                command=lambda: self.button_copy_segments_to_clipboard(
+                    window_id, with_timecodes=True, per_line=True),
+                accelerator="Shift+"+self.toolkit_UI_obj.ctrl_cmd_bind + "+c"
+            )
 
-                context_menu.add_command(
-                    label="Copy with Block TC",
-                    command=lambda: self.button_copy_segments_to_clipboard(
-                        window_id, with_timecodes=True, per_line=False),
-                    accelerator="Shift+C"
-                )
+            context_menu.add_command(
+                label="Copy with Block TC",
+                command=lambda: self.button_copy_segments_to_clipboard(
+                    window_id, with_timecodes=True, per_line=False),
+                accelerator="Shift+C"
+            )
 
-                # the transcript actions
-                context_menu.add_separator()
+            # the transcript actions
+            context_menu.add_separator()
 
-                context_menu.add_command(
-                    label="Re-transcribe",
-                    command=lambda: self.button_retranscribe(window_id=window_id),
-                    accelerator="t"
-                )
+            context_menu.add_command(
+                label="Re-transcribe",
+                command=lambda: self.button_retranscribe(window_id=window_id),
+                accelerator="t"
+            )
 
-                speaker_ignore_selection = \
-                    False if len(self.get_window_selected_segments(window_id=window_id, list_only=True)) > 1 else True
+            speaker_ignore_selection = \
+                False if len(self.get_window_selected_segments(window_id=window_id, list_only=True)) > 1 else True
 
-                context_menu.add_command(
-                    label="Detect Speakers for Selection" if not speaker_ignore_selection else "Detect Speakers",
-                    command=lambda: self.button_detect_speakers(
-                        window_id=window_id, ignore_selection=speaker_ignore_selection),
-                )
+            context_menu.add_command(
+                label="Detect Speakers for Selection" if not speaker_ignore_selection else "Detect Speakers",
+                command=lambda: self.button_detect_speakers(
+                    window_id=window_id, ignore_selection=speaker_ignore_selection),
+            )
 
-                context_menu.add_command(
-                    label="Edit",
-                    command=lambda: self.edit_transcript(window_id=window_id),
-                    accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+e"
-                )
+            context_menu.add_command(
+                label="Edit",
+                command=lambda: self.edit_transcript(window_id=window_id),
+                accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+e"
+            )
 
             context_menu.add_separator()
 
@@ -7956,6 +7959,27 @@ class toolkit_UI():
             # print(event.state)
             # for now simply pass the event to the segment actions
             self.segment_actions(event, mouse=True, **attributes)
+
+        def transcription_window_mouse_release(self, event, window_id=None):
+
+            # check if there is a 'sel' selection
+            try:
+                selection = event.widget.get("sel.first", "sel.last")
+
+                if selection and window_id:
+
+                    # raise the priority of 'sel' tag over 'l_active' tags
+                    event.widget.tag_raise('sel', 'l_active')
+
+                    # close any groups
+                    self.toolkit_UI_obj.get_window_by_id(window_id).transcript_groups_module.deselect_group()
+
+                    # clear selected segments to only see sel selection
+                    self.button_deselect_all(window_id=window_id, text_element=event.widget)
+
+            except tk.TclError:
+                # no selection
+                pass
 
         def segment_actions(self, event=None, text_element=None, window_id=None,
                             special_key=None, mouse=False, status_label=None):
@@ -10204,6 +10228,25 @@ class toolkit_UI():
                 if not timeline_start_tc or timeline_start_tc is None:
                     timecodes = False
 
+            # get the window
+            window = self.toolkit_UI_obj.get_window_by_id(window_id=window_id)
+
+            # do we have a 'sel' tag on the window.text_widget?
+            if window.text_widget.tag_ranges('sel'):
+
+                text_widget = window.text_widget
+
+                # get the start and the end of the selection
+                selection_start = int(text_widget.index('sel.first').split('.')[0])
+                selection_end = int(text_widget.index('sel.last').split('.')[0])
+
+                # get the range of the selection
+                selection_range = list(range(selection_start, selection_end + 1))
+
+                self.segment_to_selection(
+                    window_id=window_id, text_element=text_widget, line=selection_range, only_add=True
+                )
+
             # if we have some selected segments, use their start and end times
             if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0:
 
@@ -10369,7 +10412,7 @@ class toolkit_UI():
                 # add this to the return list
                 text = [{'text': full_text.strip(), 'start': start_sec, 'end': end_sec, 'start_tc': None}]
 
-                if NLE.is_connected() and timecodes:
+                if timecodes:
                     start_seconds = start_sec if int(start_sec) > 0 else 0.01
                     start_tc = None
 
@@ -12110,6 +12153,12 @@ class toolkit_UI():
                     self.t_edit_obj.transcription_window_mouse(e, special_key='cmd', **l_select_options)
                 )
 
+                # bind to mouse release
+                text.bind(
+                    "<ButtonRelease-1>",
+                    lambda e: self.t_edit_obj.transcription_window_mouse_release(e, window_id=t_window_id)
+                )
+
                 # bind ALT/OPT + mouse Click to edit transcript
                 text.bind(
                     "<" + self.alt_bind + "-Button-1>",
@@ -13716,7 +13765,8 @@ class toolkit_UI():
             if not group_time_intervals or not isinstance(group_time_intervals, list) or len(group_time_intervals) == 0:
                 if not messagebox.askyesno(title="Empty group",
                                            message="You haven't selected any segments to add to the group.\n"
-                                                   "Add new group anyway?"):
+                                                   "Add new group anyway?",
+                                           parent=self.window):
                     return False
 
             # prepare the new dict of the new group
