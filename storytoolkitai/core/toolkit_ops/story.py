@@ -1728,6 +1728,9 @@ class StoryUtils:
                 if not 'file_name' in line:
                     continue
 
+                if 'total_duration_using_edit_timeline_fps' not in line:
+                    return False
+
                 xml_file_path.write('\t\t\t\t\t<clipitem id="{}">\n'.format(line['audio_clip_unique_id']))
                 xml_file_path.write('\t\t\t\t\t\t<name>{}</name>\n'.format(line['file_name']))
                 xml_file_path.write('\t\t\t\t\t\t<duration>{}</duration>\n'

@@ -2965,7 +2965,7 @@ class toolkit_UI():
                 window_id='main',
                 action='NLE_timeline_changed',
                 callback=lambda l_NLE=NLE: self.open_active_transcription_windows(
-                    timeline_name=l_NLE.current_timeline.get('name', None)
+                    timeline_name=l_NLE.current_timeline.get('name', None) if l_NLE.current_timeline else None,
                 )
             )
 
@@ -2981,9 +2981,9 @@ class toolkit_UI():
                 window_id='main',
                 action='NLE_timecode_data_changed',
                 callback=lambda l_NLE=NLE: self.update_timeline_timecode_data(
-                    timeline_name=l_NLE.current_timeline.get('name', None),
-                    timeline_fps=l_NLE.current_timeline_fps,
-                    start_tc=l_NLE.current_start_tc
+                    timeline_name=l_NLE.current_timeline.get('name', None) if l_NLE.current_timeline else None,
+                    timeline_fps=l_NLE.current_timeline_fps if l_NLE.current_timeline else None,
+                    start_tc=l_NLE.current_start_tc if l_NLE.current_start_tc else None,
                 )
             )
 
@@ -2992,8 +2992,8 @@ class toolkit_UI():
                 window_id='main',
                 action='NLE_markers_changed',
                 callback=lambda l_NLE=NLE: self.update_timeline_markers(
-                    timeline_name=l_NLE.current_timeline.get('name', None),
-                    markers=l_NLE.current_timeline.get('markers', None)
+                    timeline_name=l_NLE.current_timeline.get('name', None) if l_NLE.current_timeline else None,
+                    markers=l_NLE.current_timeline.get('markers', None) if l_NLE.current_timeline else None
                 )
             )
 
@@ -7536,6 +7536,9 @@ class toolkit_UI():
                 )
 
                 button.configure(text="Link to Timeline")
+
+            # update the main window
+            self.toolkit_UI_obj.update_main_window()
 
             return link
 
@@ -15497,6 +15500,17 @@ class toolkit_UI():
                                                          type='info',
                                                          parent=window
                                                          )
+                else:
+                    # notify the user
+                    toolkit_UI_obj.notify_via_messagebox(
+                        title='File export',
+                        message="The file {} could not be exported and might be incomplete. "
+                                "Check logs for details and try again.".format(os.path.basename(export_file_path)),
+                        message_log="File export failed: {}"
+                        .format(export_file_path),
+                        parent=window,
+                        type='error'
+                    )
 
                 # focus back on the window
                 toolkit_UI_obj.focus_window(window_id)
