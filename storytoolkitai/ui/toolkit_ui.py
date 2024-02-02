@@ -7699,29 +7699,23 @@ class toolkit_UI():
             )
 
             # THE SELECT ALL BUTTON
-            select_all_button_text = "Select All Segments"
-
-            if self.has_selected_segments(window_id=window_id):
-                select_all_button_text = "Deselect All Segments"
-
-            # add the select/deselect all option
-            context_menu.add_command(
-                label=select_all_button_text,
-                command=lambda: self.button_select_deselect_all(window_id, text_element=text_widget),
-                accelerator=self.toolkit_UI_obj.ctrl_cmd_bind + "+a"
-            )
-
-            # THIS MAKES SURE WE SEE THE SELECTION CONTEXT MENU WITHOUT A SELECTION
-            # temporary solution to force the context menu to always think there are selected segments
-            none_selected = False
-            if not self.has_selected_segments(window_id=window_id):
-                none_selected = True
-
-                # temporary select the segment at the click
-                self.segment_to_selection(window_id, text_widget, line)
+            # add the select all option if there are no selected segments or
+            # if number of selected segments are less than the total number of segments
+            if not self.has_selected_segments(window_id=window_id) or \
+                    len(self.selected_segments[window_id]) < len(window.transcription.segments):
+                context_menu.add_command(
+                    label="Select All Segments",
+                    command=lambda: self.button_select_all(window_id, text_element=text_widget)
+                )
 
             # if the window has a selection
             if self.has_selected_segments(window_id=window_id):
+
+                # THE DESELECT ALL BUTTON
+                context_menu.add_command(
+                    label="Deselect All Segments",
+                    command=lambda: self.button_deselect_all(window_id, text_element=text_widget)
+                )
 
                 # add separator
                 context_menu.add_separator()
@@ -7932,10 +7926,6 @@ class toolkit_UI():
 
             # display the context menu
             context_menu.tk_popup(event.x_root, event.y_root)
-
-            # this will deselect the temporary selection
-            if none_selected:
-                self.segment_to_selection(window_id, text_widget, line)
 
             return
 
@@ -8244,6 +8234,59 @@ class toolkit_UI():
             for text_index in text_indexes:
                 self.replace_action(find_text, replace_text, window_id, text_index)
 
+        def button_select_all(self, window_id, text_element=None):
+            """
+            Selects all the segments in the transcript text element
+            """
+
+            transcription = self.get_window_transcription(window_id=window_id)
+
+            # if the text element hasn't been sent
+            if text_element is None and window_id in self.toolkit_UI_obj.windows:
+                # try to find it in the transcript text elements
+                text_element = self.toolkit_UI_obj.windows[window_id] \
+                    .nametowidget('middle_frame.text_form_frame.transcript_text')
+
+            # create a list containing all the segment numbers
+            segment_list = list(range(1, transcription.get_num_lines() + 1))
+
+            # select all segments by passing all the line numbers
+            self.segment_to_selection(window_id, text_element, segment_list)
+
+            # call auto add to group function
+            self.auto_add_selection_to_group(window_id, confirm=True if len(segment_list) > 10 else False)
+
+            return 'break'
+
+        def button_deselect_all(self, window_id, text_element=None):
+            """
+            Deselects all the selected segments in the transcript text element
+            """
+
+            # if the text element hasn't been sent
+            if text_element is None and window_id in self.toolkit_UI_obj.windows:
+                # try to find it in the transcript text elements
+                text_element = self.toolkit_UI_obj.windows[window_id] \
+                    .nametowidget('middle_frame.text_form_frame.transcript_text')
+
+            if text_element is None:
+                logger.error('Could not find transcript text element in window {}'.format(window_id))
+                return 'break'
+
+            # if this window contains a selection, just clear it
+            # since we're expecting the user to want to deselect first
+            if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0:
+
+                # deselect any group
+                self.toolkit_UI_obj.get_window_by_id(window_id).transcript_groups_module.deselect_group()
+
+                self.clear_selection(window_id, text_element)
+
+                # and clear any selection on the text element
+                text_element.tag_remove("sel", "1.0", "end")
+
+            return 'break'
+
         def button_select_deselect_all(self, window_id, text_element=None):
             """
             Selects or deselects all the text in the transcript text element
@@ -8267,23 +8310,12 @@ class toolkit_UI():
             # if this window contains a selection, just clear it
             # since we're expecting the user to want to deselect first
             if window_id in self.selected_segments and len(self.selected_segments[window_id]) > 0:
-                self.clear_selection(window_id, text_element)
-
-                # and clear any selection on the text element
-                text_element.tag_remove("sel", "1.0", "end")
+                self.button_deselect_all(window_id, text_element)
 
                 return 'break'
 
             # but if no selection exists, select all segments:
-
-            # create a list containing all the segment numbers
-            segment_list = list(range(1, transcription.get_num_lines() + 1))
-
-            # select all segments by passing all the line numbers
-            self.segment_to_selection(window_id, text_element, segment_list)
-
-            # call auto add to group function
-            self.auto_add_selection_to_group(window_id, confirm=True if len(segment_list) > 10 else False)
+            self.button_select_all(window_id, text_element)
 
             return 'break'
 
@@ -12008,8 +12040,8 @@ class toolkit_UI():
                 # bind all mouse clicks on text
                 text.bind(
                     "<Button-1>",
-                    lambda e, select_options1=select_options:
-                    self.t_edit_obj.transcription_window_mouse(e,  **select_options))
+                    lambda e, l_select_options=select_options:
+                    self.t_edit_obj.transcription_window_mouse(e,  **l_select_options))
 
                 # bind CMD/CTRL + mouse Clicks to text
                 text.bind(
