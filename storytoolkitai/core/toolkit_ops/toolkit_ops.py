@@ -803,14 +803,27 @@ class ToolkitOps:
 
         # Removes silences from the audio file.
         # This results in better transcription quality, without hallucinations.
-        vad_model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad', model='silero_vad', force_reload=False,
-                                          onnx=True, trust_repo=True, verbose=False)
-        (get_speech_timestamps, _, read_audio, _, collect_chunks) = utils
+        try:
+            vad_model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad', model='silero_vad', force_reload=False,
+                                              onnx=True, trust_repo=True, verbose=False)
+            (get_speech_timestamps, _, read_audio, _, collect_chunks) = utils
+
+        except (PermissionError, FileNotFoundError):
+            logger.error(
+                'Could not load the VAD model. There might be an issue with your cache folder. ',
+                exc_info=True
+            )
+
+            logger.error('Try running the tool with Administrator rights '
+                         'or try deleting the cache folder mentioned in the error.')
+
+            # pass the error to whatever called this function
+            raise
 
         # convert the audio_segment to a torch tensor
         # if the audio segment is a list containing the start time, end time and the audio array,
         #  we only take the audio array
-        if type(audio_segment) == list and len(audio_segment) == 3:
+        if isinstance(audio_segment, list) and len(audio_segment) == 3:
             audio_segment_torch = torch.from_numpy(audio_segment[2])
         else:
             audio_segment_torch = torch.from_numpy(audio_segment)
