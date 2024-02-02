@@ -8026,6 +8026,9 @@ class toolkit_UI():
                 index = text_element.index("@%s,%s" % (event.x, event.y))
                 line_str, char_str = index.split(".")
 
+                # set the last active segment to the current line number
+                self.last_active_segment[window_id] = int(line_str)
+
                 # if we're not editing the transcript do this:
                 if not self.get_transcript_editing_in_window(window_id):
 
@@ -8040,6 +8043,10 @@ class toolkit_UI():
                         # add clicked segment to selection
                         self.segment_to_selection(window_id, text_element, int(line_str))
 
+                # save the line number as the last active segment so that,
+                # we can pick up active segment navigation from this position
+                self.last_active_segment[window_id] = int(line_str)
+
             # what is the currently selected line number again?
             line = self.get_active_segment(window_id)
 
@@ -8048,6 +8055,7 @@ class toolkit_UI():
 
             # v key events
             if event.keysym == 'v' and transcript_focused:
+
                 # add/remove active segment to selection
                 # if it's not in the selection
                 self.segment_to_selection(window_id, text_element, line)
@@ -8251,7 +8259,7 @@ class toolkit_UI():
             segment_list = list(range(1, transcription.get_num_lines() + 1))
 
             # select all segments by passing all the line numbers
-            self.segment_to_selection(window_id, text_element, segment_list)
+            self.segment_to_selection(window_id, text_element, segment_list, only_add=True)
 
             # call auto add to group function
             self.auto_add_selection_to_group(window_id, confirm=True if len(segment_list) > 10 else False)
@@ -10460,16 +10468,17 @@ class toolkit_UI():
             :return:
             """
 
-            # if there is no active_segment for the window, create one
-            # this will help us keep track of where we are with the cursor
-            if window_id not in self.active_segment:
-                # but start with 0, considering that it will be re-calculated below
-                self.active_segment[window_id] = initial_value
-
             # same as above for the last_active_segment
             if window_id not in self.last_active_segment:
                 # but start with 0, considering that it will be re-calculated below
                 self.last_active_segment[window_id] = initial_value
+
+            # if there is no active_segment for the window, create one
+            # this will help us keep track of where we are with the cursor
+            if window_id not in self.active_segment:
+
+                # use the last known active segment, considering that it will be re-calculated below
+                self.active_segment[window_id] = self.last_active_segment[window_id]
 
             return self.active_segment[window_id]
 
@@ -10520,6 +10529,11 @@ class toolkit_UI():
 
             # remove the active segment if no text_widget_line or line_calc was passed
             if text_widget_line is None and line_calc is None:
+
+                # copy the active segment line number to the last active segment line number
+                self.last_active_segment[window_id] = self.active_segment[window_id]
+
+                # then delete the active segment
                 del self.active_segment[window_id]
                 return False
 
@@ -11035,7 +11049,7 @@ class toolkit_UI():
             # prevent RETURN key from adding another line break in the text
             return 'break'
 
-        def edit_transcript(self, window_id=None):
+        def edit_transcript(self, event=None, window_id=None):
 
             if window_id is None:
                 logger.error('Unable to edit transcript - no window id or text widget was passed.')
@@ -11068,6 +11082,13 @@ class toolkit_UI():
 
             # remove active segment tag
             self.set_active_segment(window_id=window_id, text_widget=text, text_widget_line=None)
+
+            # set the current line number as the last active segment
+            # but first get the line and char numbers based text under the click event
+            if event is not None:
+                index = text.index("@%s,%s" % (event.x, event.y))
+                line_str, char_str = index.split(".")
+                self.last_active_segment[window_id] = int(line_str)
 
             text.bind('<Return>', lambda e: self.on_press_add_segment(e, window_id=window_id, text_widget=text))
 
@@ -11108,6 +11129,10 @@ class toolkit_UI():
             # get the line_no
             line_no, char_no = window.text_widget.index(ctk.INSERT).split('.')
 
+            # save the line number as the last active segment so that if we finish editing after this,
+            # we can pick up active segment navigation from this position
+            self.last_active_segment[window.window_id] = int(line_no)
+
             # if it's left, right, up, down, delete, backspace, return pass it down to the text widget
             if event.keysym in ['Left', 'Right', 'Up', 'Down', 'Delete', 'BackSpace', 'Return']:
 
@@ -11118,6 +11143,10 @@ class toolkit_UI():
                 if line_length < 1 and event.keysym in ['Delete', 'BackSpace']:
                     return 'break'
 
+                return
+
+            # if we're not typing pass it down to the text widget
+            if not self.get_typing_in_window(window_id=window.window_id):
                 return
 
             # convert to transcription segment index
@@ -11201,12 +11230,19 @@ class toolkit_UI():
 
                     return 'break'
 
-        def add_segments_to_text_widget(self, transcription: Transcription, text_widget, clear_text_widget=True):
+        def add_segments_to_text_widget(
+                self,
+                transcription: Transcription,
+                text_widget,
+                clear_text_widget=True,
+                window_id=None,
+        ):
             """
             This function adds the segments from the transcription object to the text widget
             :param transcription: the transcription object
             :param text_widget: the text widget
             :param clear_text_widget: whether to clear the text widget before adding the segments
+            :param window_id: (optional, needed only if we want to restore the segment selection)
             """
 
             # get the text_widget state
@@ -11265,6 +11301,18 @@ class toolkit_UI():
 
             # format the meta tags
             self._format_meta_tags(text_widget)
+
+            # select the selected segments
+            if window_id:
+                segment_list = self.get_window_selected_segments(window_id=window_id, list_only=True)
+
+                if segment_list:
+                    self.segment_to_selection(
+                        window_id=window_id,
+                        text_element=text_widget,
+                        line=segment_list,
+                        only_add=True
+                    )
 
             # return the text_widget to its original state
             text_widget.config(state=text_widget_state)
@@ -11525,9 +11573,21 @@ class toolkit_UI():
             if window_id is None:
                 return False
 
-            # if the transcript was changed
+            # if the transcript was changed, save it
             if self.is_transcript_changed(window_id=window_id):
                 self.on_press_save_transcript(e, window_id=window_id)
+
+            # otherwise, we still have to disable typing and editing features
+            else:
+                # get the window object
+                window = self.toolkit_UI_obj.get_window_by_id(window_id=window_id)
+
+                # unbind all the editing keys
+                self.unbind_editing_keys(window.text_widget)
+
+                # deactivate typing and editing for this window
+                self.set_typing_in_window(window_id=window_id, typing=False)
+                self.set_transcript_editing(window_id=window_id, editing=False)
 
         def is_transcript_changed(self, window_id):
             """
@@ -12053,13 +12113,13 @@ class toolkit_UI():
                 # bind ALT/OPT + mouse Click to edit transcript
                 text.bind(
                     "<" + self.alt_bind + "-Button-1>",
-                    lambda e: self.t_edit_obj.edit_transcript(window_id=t_window_id)
+                    lambda e: self.t_edit_obj.edit_transcript(e, window_id=t_window_id)
                 )
 
                 # bind CMD/CTRL + e to edit transcript
                 self.windows[t_window_id].bind(
                     "<" + self.ctrl_cmd_bind + "-e>",
-                    lambda e: self.t_edit_obj.edit_transcript(window_id=t_window_id)
+                    lambda e: self.t_edit_obj.edit_transcript(e, window_id=t_window_id)
                 )
 
                 # add right click for context menu
@@ -12267,7 +12327,9 @@ class toolkit_UI():
                 self.t_edit_obj.clear_selection(t_window_id, text_element=t_window.text_widget)
 
                 # add the segments to the text widget
-                self.t_edit_obj.add_segments_to_text_widget(transcription, t_window.text_widget)
+                self.t_edit_obj.add_segments_to_text_widget(
+                    transcription=transcription, text_widget=t_window.text_widget, window_id=t_window_id
+                )
 
                 # refresh the transcription window to make sure everything updated (except groups)
                 self.update_transcription_window(t_window_id)
@@ -12285,7 +12347,9 @@ class toolkit_UI():
             if t_window.text_widget.last_hash != transcription.last_hash:
 
                 # add the segments to the text widget
-                self.t_edit_obj.add_segments_to_text_widget(transcription, t_window.text_widget)
+                self.t_edit_obj.add_segments_to_text_widget(
+                    transcription=transcription, text_widget=t_window.text_widget, window_id=t_window_id
+                )
 
             # so update all the windows just to make sure that all the elements are in the right state
             # self.update_all_transcription_windows()
@@ -12343,7 +12407,7 @@ class toolkit_UI():
         if t_window.text_widget.last_hash != transcription.last_hash and confirmed:
 
             # add the segments to the text widget
-            self.t_edit_obj.add_segments_to_text_widget(transcription, t_window.text_widget)
+            self.t_edit_obj.add_segments_to_text_widget(transcription, t_window.text_widget, window_id=window_id)
 
         # reset the status_label if it's been more than 5 seconds since the last update
         self.reset_status_label_after(window_id=window_id, seconds=5)
