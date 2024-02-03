@@ -776,7 +776,7 @@ class ProcessingQueue:
         # if we get here, the execution was successful
         return executed
 
-    def update_status(self, queue_id, status):
+    def update_status(self, queue_id, status, fail_error=None):
         """
         This function updates the status of a queue item
         """
@@ -790,6 +790,9 @@ class ProcessingQueue:
             return False
 
         item['status'] = status
+
+        if fail_error:
+            item['fail_error'] = fail_error
 
         # also reset the progress if the status update is 'done', 'failed', 'canceled' or 'canceling'
         if status in ['done', 'failed', 'canceled', 'canceling'] and 'progress' in item:

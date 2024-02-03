@@ -16235,6 +16235,26 @@ class toolkit_UI():
 
                 self.open_advanced_search_window(search_file_path=queue_item['search_file_paths'])
 
+        elif queue_item['status'] == 'failed':
+
+            initial_text = (
+                '### The queue item failed with the following error message:\n\n{}'
+                .format(queue_item.get('fail_error', 'Unknown error'))
+            )
+
+            # open a text window with the fail_error message
+            error_window_id = self.open_text_window(
+                title='{} failed'.format(queue_item.get('name', 'Queue item')),
+                initial_text=initial_text
+            )
+
+            error_window = self.get_window_by_id(error_window_id)
+
+            error_window.after(
+                50,
+                lambda: self.text_window_format_md(window_id=error_window_id)
+            )
+
         else:
             logger.debug('Queue item is not done yet. Status: {}'.format(queue_item['status']))
 
@@ -16399,6 +16419,20 @@ class toolkit_UI():
                 window_queue_item['status_var'] = \
                     status_var = ctk.StringVar(queue_window)
                 status_label = ctk.CTkLabel(queue_item_frame, textvariable=status_var)
+
+                def style_queue_item_label(label):
+                    # if the status var is 'failed', make it red
+                    if label == 'failed':
+                        status_label.configure(text_color=toolkit_UI.theme_colors['resolve_red'])
+
+                    elif label == 'done':
+                        status_label.configure(text_color=toolkit_UI.theme_colors['supernormal'])
+
+                    else:
+                        status_label.configure(text_color=toolkit_UI.theme_colors['normal'])
+
+                # whenever the status var changes, call the style_queue_item_label function
+                status_var.trace('w', lambda *args: style_queue_item_label(status_var.get()))
 
                 # add the progress bar (under both the name and status labels)
                 window_queue_item['progress_bar'] = \

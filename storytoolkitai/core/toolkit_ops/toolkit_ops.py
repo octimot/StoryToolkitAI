@@ -323,11 +323,12 @@ class ToolkitOps:
 
         # if no source file path was passed, return False
         if not source_file_paths:
-            logger.warning('No source file path was passed for ingest. Aborting.')
+            fail_error = 'No source file path was passed for ingest. Aborting.'
+            logger.warning(fail_error)
 
             # update the queue item status
             if queue_id is not None:
-                self.processing_queue.update_queue_item(queue_id=queue_id, status='failed')
+                self.processing_queue.update_queue_item(queue_id=queue_id, status='failed', fail_error=fail_error)
 
             return False
 
@@ -483,11 +484,12 @@ class ToolkitOps:
 
         # if no audio file path was passed, return False
         if not audio_file_path:
-            logger.warning('No audio file path was passed for transcription. Aborting.')
+            fail_error = 'No audio file path was passed for transcription. Aborting.'
+            logger.warning(fail_error)
 
             # update the queue item status
             if queue_id is not None:
-                self.processing_queue.update_queue_item(queue_id=queue_id, status='failed')
+                self.processing_queue.update_queue_item(queue_id=queue_id, status='failed', fail_error=fail_error)
 
             return False
 
@@ -1449,11 +1451,11 @@ class ToolkitOps:
         transcription = Transcription(transcription_file_path=transcription_file_path)
 
         if not transcription:
-            logger.error('Unable to detect speakers - no transcription available: {}.'
-                         .format(transcription.transcription_file_path))
+            fail_error = 'Unable to detect speakers - no transcription available: {}.'.format(transcription_file_path)
+            logger.error(fail_error)
 
             if kwargs.get('queue_id'):
-                self.processing_queue.update_status(kwargs['queue_id'], 'failed')
+                self.processing_queue.update_status(kwargs['queue_id'], status='failed', fail_error=fail_error)
 
             return None
 
@@ -1842,10 +1844,11 @@ class ToolkitOps:
             try:
                 self.whisper_model = whisper.load_model(self.whisper_model_name, device=self.torch_device)
             except Exception as e:
-                logger.error('Error loading Whisper {} model: {}'.format(self.whisper_model_name, e))
+                fail_error = 'Error loading Whisper {} model: {}'.format(self.whisper_model_name, e)
+                logger.error(fail_error)
 
                 # update the status of the item in the transcription log
-                self.processing_queue.update_queue_item(queue_id=queue_id, status='failed')
+                self.processing_queue.update_queue_item(queue_id=queue_id, status='failed', fail_error=fail_error)
 
             # once the model has been loaded, we can note that in the app settings
             # this is a wat to keep track if the model has been downloaded or not
@@ -1926,11 +1929,12 @@ class ToolkitOps:
 
             # fail if no speech was detected
             if len(time_intervals) == 0:
-                logger.info('No speech was detected in {}.'.format(kwargs.get('name', 'audio file')))
+                fail_error = 'No speech was detected in {}.'.format(kwargs.get('name', 'audio file'))
+                logger.info(fail_error)
 
                 # update the queue item status
                 if queue_id is not None:
-                    self.processing_queue.update_queue_item(queue_id=queue_id, status='failed')
+                    self.processing_queue.update_queue_item(queue_id=queue_id, status='failed', fail_error=fail_error)
 
                 return None, None
 
@@ -1996,11 +2000,12 @@ class ToolkitOps:
 
         # don't continue if we don't have an audio file path
         if audio_file_path is None or not audio_file_path:
-            logger.warning('No audio file path was passed to whisper_transcribe. Aborting.')
+            fail_error = 'No audio file path was passed to whisper_transcribe. Aborting.'
+            logger.warning(fail_error)
 
             # update the queue item status
             if queue_id is not None:
-                self.processing_queue.update_queue_item(queue_id=queue_id, status='failed')
+                self.processing_queue.update_queue_item(queue_id=queue_id, status='failed', fail_error=fail_error)
 
             return False
 
@@ -2087,23 +2092,36 @@ class ToolkitOps:
                                                       other_options=other_options,
                                                       queue_id=queue_id
                                                       )
-        except:
-            logger.error('Error transcribing audio {} using Whisper.'.format(name), exc_info=True)
+        except Exception as e:
+            import traceback
+            exc_info = traceback.format_exc()
+
+            # format your message
+            fail_error = ('Error transcribing audio {} using Whisper.\n'
+                          '{}\n {}').format(name, e, exc_info)
+
+            # log the message
+            logger.error(fail_error)
 
             # update the status of the item in the transcription log
-            self.processing_queue.update_queue_item(queue_id=queue_id, status='failed', progress='')
+            self.processing_queue.update_queue_item(
+                queue_id=queue_id, status='failed', progress='', fail_error=fail_error)
 
         # was the transcription canceled or failed?
         # if whisper returned None or a dict with status failed or canceled
         if result is None \
                 or (type(result) is dict and 'status' in result
                     and (result['status'] == 'failed' or result['status'] == 'canceled')
-        ):
+                    ):
             # copy the status from the result to the log status
             # or simply set it to failed if the result is None
             queue_status = result['status'] if type(result) is dict and 'status' in result else 'failed'
 
-            self.processing_queue.update_queue_item(queue_id=queue_id, status=queue_status, progress='')
+            # set the fail error message
+            fail_error = 'See app.log for possible details.' if queue_status == 'failed' else None
+
+            self.processing_queue.update_queue_item(
+                queue_id=queue_id, status=queue_status, progress='', fail_error=fail_error)
 
             return None
 
@@ -2433,11 +2451,11 @@ class ToolkitOps:
         transcription = Transcription(transcription_file_path)
 
         if not transcription:
-            logger.error('Unable to group questions - no transcription available: {}.'
-                         .format(transcription.transcription_file_path))
+            fail_error = 'Unable to group questions - no transcription available: {}.'.format(transcription_file_path)
+            logger.error(fail_error)
 
             if kwargs.get('queue_id'):
-                self.processing_queue.update_status(kwargs['queue_id'], 'failed')
+                self.processing_queue.update_status(kwargs['queue_id'], status='failed', fail_error=fail_error)
 
             return None
 
@@ -2771,7 +2789,12 @@ class ToolkitOps:
 
         # if we didn't get the embedding paths, something went wrong
         if not embedding_paths or not isinstance(embedding_paths, tuple) or len(embedding_paths) != 2:
-            self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='failed')
+            logger.error('Indexing failed - embedding paths not received.')
+            self.processing_queue.update_status(
+                queue_id=kwargs.get('queue_id', None),
+                status='failed',
+                fail_error='Embedding paths not received. See app.log for possible details.'
+            )
             return None
 
         # this is the path to the numpy file which contains the embeddings
