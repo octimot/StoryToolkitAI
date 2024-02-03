@@ -3260,6 +3260,10 @@ class toolkit_UI():
         if not export_path:
             return False
 
+        # update the last target dir of the project and the app
+        self.update_project_last_target_dir(project=self.current_project, dir_path=export_path)
+        self.stAI.update_initial_target_dir(os.path.dirname(export_path))
+
         # export the project
         if self.current_project.export(export_path=export_path):
 
@@ -3313,6 +3317,10 @@ class toolkit_UI():
         # import the project
         imported_project_path = None
         project_name = None
+
+        # update the last target dir of the project and the app
+        self.update_project_last_target_dir(project=self.current_project, dir_path=import_path)
+        self.stAI.update_initial_target_dir(os.path.dirname(import_path))
 
         while imported_project_path is None:
 
@@ -3399,6 +3407,32 @@ class toolkit_UI():
 
         # update the main window
         self.update_main_window()
+
+    @staticmethod
+    def get_project_last_target_dir(project):
+
+        # if a project was sent, use it
+        if project and isinstance(project, Project):
+            return project.last_target_dir
+
+        # if there is no project
+        return None
+
+    @staticmethod
+    def update_project_last_target_dir(project, dir_path):
+        """
+        :param project: Project object
+        :param dir_path: the path to the last target directory - dirname() will be used if it's a file
+        """
+
+        # if we have a project and a dir_path, save the director as a last target dir
+        if project and isinstance(project, Project) and dir_path and os.path.exists(dir_path):
+
+            # if the path is a file, use its directory
+            if not os.path.isdir(dir_path):
+                dir_path = os.path.dirname(dir_path)
+
+            project.set('last_target_dir', dir_path, save_soon=True)
 
     def _project_context_menu(self, event, project_name):
 
@@ -7103,11 +7137,12 @@ class toolkit_UI():
                 and 'currentTimeline' in resolve_data and \
                 resolve_data['currentTimeline'] != '' and resolve_data['currentTimeline'] is not None:
 
-            # did we ever save a target dir for this project?
-            if self.current_project:
-                last_target_dir = self.current_project.last_target_dir
-            else:
-                last_target_dir = self.stAI.initial_target_dir
+            # use the initial dir of the project if we are in one
+            initial_target_dir = self.get_project_last_target_dir(self.current_project)
+
+            # or use the initial target dir of the app
+            if not initial_target_dir:
+                initial_target_dir = self.stAI.initial_target_dir
 
             # get the current timeline from Resolve
             currentTimelineName = resolve_data['currentTimeline']['name']
@@ -7117,7 +7152,7 @@ class toolkit_UI():
                 logger.info("Prompting user for render path.")
                 # target_dir = self.ask_for_target_dir(target_dir=last_target_dir)
 
-                target_file = self.ask_for_save_file(target_dir=last_target_dir,
+                target_file = self.ask_for_save_file(target_dir=initial_target_dir,
                                                      initialfile=currentTimelineName
                                                      )
                 if target_file:
@@ -7127,10 +7162,9 @@ class toolkit_UI():
                     # get the file_name
                     file_name = os.path.basename(target_file)
 
-                # remember this target_dir for the next time we're working on this project
-                # (but only if it was selected by the user)
-                if target_dir and target_dir != last_target_dir and self.current_project:
-                    self.current_project.set('last_target_dir', target_dir, save_soon=True)
+                # update the last target dir of the project and the app
+                self.update_project_last_target_dir(project=self.current_project, dir_path=target_dir)
+                self.stAI.update_initial_target_dir(target_dir)
 
                 # cancel if the user presses cancel
                 if not target_dir:
@@ -11912,9 +11946,7 @@ class toolkit_UI():
         """
 
         # did we ever save a target dir for this project?
-        last_target_dir = None
-        if self.current_project:
-            last_target_dir = self.current_project.last_target_dir
+        last_target_dir = self.get_project_last_target_dir(project=self.current_project)
 
         # ask user which transcript to open
         transcription_json_file_path = self.ask_for_target_file(filetypes=[("Json files", "json srt")],
@@ -11924,11 +11956,7 @@ class toolkit_UI():
         if not transcription_json_file_path:
             return False
 
-        # if we have a project, save the directory where the file is as a last target dir
-        if self.current_project and transcription_json_file_path and os.path.exists(transcription_json_file_path):
-            self.current_project.set(
-                'last_target_dir', os.path.dirname(transcription_json_file_path), save_soon=True
-            )
+        self.update_project_last_target_dir(project=self.current_project, dir_path=transcription_json_file_path)
 
         # if this is an srt file, but a .transcription.json file exists in the same directory,
         # ask the user if they want to open the .transcription.json file instead
@@ -13038,10 +13066,11 @@ class toolkit_UI():
             return
 
         # use the initial dir of the project if we are in one
-        initial_target_dir = \
-            self.current_project.last_target_dir \
-            if self.current_project.last_target_dir \
-            else self.stAI.initial_target_dir
+        initial_target_dir = self.get_project_last_target_dir(self.current_project)
+
+        # or use the initial target dir of the app
+        if not initial_target_dir:
+            initial_target_dir = self.stAI.initial_target_dir
 
         # ask the user which file to open
         new_file_path = filedialog.askopenfilename(
@@ -13052,6 +13081,10 @@ class toolkit_UI():
 
         if not new_file_path:
             return
+
+        # update the last target dir of the project and the app
+        self.update_project_last_target_dir(project=self.current_project, dir_path=new_file_path)
+        self.stAI.update_initial_target_dir(os.path.dirname(new_file_path))
 
         # if the file ends with .transcription.json, check if it's a valid transcription file
         if new_file_path.endswith('.transcription.json'):
@@ -13110,8 +13143,6 @@ class toolkit_UI():
         # if we made it here, link the file to the project
         self.current_project.link_to_project(object_type=object_type, file_path=new_file_path, save_soon=True)
 
-        self.stAI.update_initial_target_dir(os.path.dirname(new_file_path))
-
         self.update_main_window()
 
     def button_relink_file(self, file_path, object_type):
@@ -13128,10 +13159,11 @@ class toolkit_UI():
             return
 
         # use the initial dir of the project if we are in one
-        initial_target_dir = \
-            self.current_project.last_target_dir \
-            if self.current_project.last_target_dir \
-            else self.stAI.initial_target_dir
+        initial_target_dir = self.get_project_last_target_dir(self.current_project)
+
+        # or use the initial target dir of the app
+        if not initial_target_dir:
+            initial_target_dir = self.stAI.initial_target_dir
 
         new_file_path = None
         if object_type == 'story':
@@ -13155,6 +13187,10 @@ class toolkit_UI():
         if not new_file_path:
             return False
 
+        # update the last target dir of the project and the app
+        self.update_project_last_target_dir(project=self.current_project, dir_path=new_file_path)
+        self.stAI.update_initial_target_dir(os.path.dirname(new_file_path))
+
         logger.debug('Relinking {} to {}'.format(file_path, new_file_path))
 
         # check if it's not already linked with something else in the project
@@ -13173,8 +13209,6 @@ class toolkit_UI():
 
         # and link the new one
         self.current_project.link_to_project(object_type=object_type, file_path=new_file_path, save_soon=True)
-
-        self.stAI.update_initial_target_dir(os.path.dirname(new_file_path))
 
         self.update_main_window()
 
@@ -15879,10 +15913,9 @@ class toolkit_UI():
         if story_file_path is None:
 
             # use the initial dir of the project if we are in one
-            initial_target_dir = None
-            if self.current_project:
-                initial_target_dir = self.current_project.last_target_dir
+            initial_target_dir = self.get_project_last_target_dir(self.current_project)
 
+            # or use the initial target dir of the app
             if not initial_target_dir:
                 initial_target_dir = self.stAI.initial_target_dir
 
@@ -15896,6 +15929,8 @@ class toolkit_UI():
             if not story_file_path:
                 return False
 
+            # update the last target dir of the project and the app
+            self.update_project_last_target_dir(project=self.current_project, dir_path=story_file_path)
             self.stAI.update_initial_target_dir(os.path.dirname(story_file_path))
 
         story = Story(story_file_path=story_file_path)
@@ -16431,12 +16466,11 @@ class toolkit_UI():
         # ask the user to manually select the files
         if search_file_path is None and not search_file_paths:
 
-            # get the initial dir to use in the file dialog from the project
-            if self.current_project:
-                initial_dir = self.current_project.last_target_dir
+            # use the initial dir of the project if we are in one
+            initial_dir = self.get_project_last_target_dir(self.current_project)
 
-            # or directly from the config use the last selected dir
-            else:
+            # or use the initial target dir of the app
+            if not initial_dir:
                 initial_dir = self.stAI.initial_target_dir
 
             # if select_dir is true, allow the user to select a directory
@@ -16452,6 +16486,9 @@ class toolkit_UI():
                 # update the last selected dir
                 if selected_file_path:
                     search_file_paths = selected_file_path
+
+                    # update the last target dir of the project and the app
+                    self.update_project_last_target_dir(project=self.current_project, dir_path=selected_file_path)
                     self.stAI.update_initial_target_dir(selected_file_path)
 
             else:
@@ -16478,6 +16515,9 @@ class toolkit_UI():
                         search_paths=selected_file_path,
                         file_validator=validate_either
                     )
+
+                    # update the last target dir of the project and the app
+                    self.update_project_last_target_dir(project=self.current_project, dir_path=selected_file_path[0])
                     self.stAI.update_initial_target_dir(os.path.dirname(selected_file_path[0]))
 
             # if we're in a project, save the last target dir
