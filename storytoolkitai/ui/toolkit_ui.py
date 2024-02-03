@@ -3434,6 +3434,25 @@ class toolkit_UI():
 
             project.set('last_target_dir', dir_path, save_soon=True)
 
+    def ask_to_link_unlinked(self, project, object_type, file_path, parent_window=None):
+
+        if not project or not isinstance(project, Project):
+            return
+
+        if not project.is_linked_to_project(object_type, file_path):
+
+            if messagebox.askyesno(
+                    'Add to project',
+                    message='This {} is not linked to the current project.\n\n'
+                            'Would you like to link it now?'.format(object_type),
+                    parent=parent_window
+            ):
+                project.link_to_project(
+                    object_type=object_type, file_path=file_path, save_soon=True
+                )
+
+                self.update_main_window()
+
     def _project_context_menu(self, event, project_name):
 
         main_window = self.windows['main']
@@ -4437,7 +4456,23 @@ class toolkit_UI():
 
         # now open the text window if it doesn't exist
         if not self.get_window_by_id(window_id):
-            self.open_text_window(initial_text=file_content, window_id=window_id, can_find=True, **kwargs)
+
+            # open the window
+            window_id = self.open_text_window(initial_text=file_content, window_id=window_id, can_find=True, **kwargs)
+
+            # get the window object
+            window = self.get_window_by_id(window_id)
+
+            # find out if this is linked to the project and if we should
+            window.after(
+                500,
+                lambda: self.ask_to_link_unlinked(
+                    project=self.current_project,
+                    object_type='document',
+                    file_path=file_path,
+                    parent_window=window
+                )
+            )
 
         def tag_passed_text(search_text, start_index, end_index):
 
@@ -12091,6 +12126,13 @@ class toolkit_UI():
 
         transcription.save_soon(backup=False, force=True, sec=0)
 
+        # also add the transcription to the project if we're in one
+        if self.current_project:
+            self.current_project.link_to_project(
+                object_type='transcription', file_path=transcription_file_path, save_soon=True
+            )
+            self.update_main_window()
+
         time.sleep(0.2)
 
         # open the story editor window and return it
@@ -12558,6 +12600,17 @@ class toolkit_UI():
 
             # and attach it to the window
             t_window.transcript_groups_module = transcript_groups_module
+
+            # find out if this is linked to the project and ask if we should
+            t_window.after(
+                500,
+                lambda: self.ask_to_link_unlinked(
+                    project=self.current_project,
+                    object_type='transcription',
+                    file_path=transcription_file_path,
+                    parent_window=t_window
+                )
+            )
 
         # if the transcription window already exists
         else:
@@ -15903,6 +15956,11 @@ class toolkit_UI():
         story.set('name', os.path.basename(story_file_path).split('.')[0])
         story.save_soon(backup=False, force=True, sec=0)
 
+        # also add the story to the project if we're in one
+        if self.current_project:
+            self.current_project.link_to_project(object_type='story', file_path=story_file_path, save_soon=True)
+            self.update_main_window()
+
         time.sleep(0.1)
 
         # open the story editor window and return it
@@ -16101,6 +16159,17 @@ class toolkit_UI():
             window.text_widget.bind(
                 '<Button-2>', lambda e: self.StoryEdit.story_editor_context_menu(
                     e, window_id=window_id, toolkit_UI_obj=self))
+
+            # find out if this is linked to the project and if we should
+            window.after(
+                500,
+                lambda: self.ask_to_link_unlinked(
+                    project=self.current_project,
+                    object_type='story',
+                    file_path=story_file_path,
+                    parent_window=window
+                )
+            )
 
             return window
 

@@ -529,7 +529,7 @@ class Project:
                 return file_path in self._documents
 
         else:
-            logger.debug('Cannot unlink file {} from project {} - unknown object type "{}".'
+            logger.debug('Cannot find link for file {} to project {} - unknown object type "{}".'
                          .format(file_path, self._project_path, object_type))
         return False
 
