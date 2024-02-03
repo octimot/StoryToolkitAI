@@ -16231,9 +16231,15 @@ class toolkit_UI():
                 # open the transcription window
                 self.open_transcription_window(transcription_file_path=queue_item['transcription_file_path'])
 
+            # open search window for searches
             elif queue_item['item_type'] == 'search' and queue_item.get('search_file_paths', None):
 
                 self.open_advanced_search_window(search_file_path=queue_item['search_file_paths'])
+
+            # open search window for index_video
+            elif queue_item['item_type'] == 'index_video' and queue_item.get('transcription_file_path', None):
+
+                self.open_advanced_search_window(search_file_path=queue_item['transcription_file_path'])
 
         elif queue_item['status'] == 'failed':
 
