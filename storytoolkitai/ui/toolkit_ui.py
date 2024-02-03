@@ -1504,161 +1504,179 @@ class toolkit_UI():
             if random.randint(0, 50) < 20:
                 self.root.after(random.randint(4000, 7000), show_support_popup, ["Thanks for using StoryToolkitAI!"])
 
-        # show the update available message if any
-        if self.stAI.update_available and self.stAI.update_available is not None:
-
-            # the url to the releases page
-            release_url = 'https://github.com/octimot/StoryToolkitAI/releases/latest'
-
-            goto_projectpage = False
-
-            update_window_id = 'update_available'
-
-            # if there is a new version available
-            # the user will see a different update message
-            # depending if they're using the standalone version or not
-            if self.stAI.standalone:
-                warn_message = 'A new standalone version of StoryToolkitAI is available.'
-
-                # add the question to the pop up message box
-                messagebox_message = warn_message + ' \n\nDo you want to open the release page?\n'
-
-                changelog_instructions = 'Open the [release page]({}) to download it.\n\n'.format(release_url)
-
-                # prepare some action buttons for the text window
-                action_buttons = [{'text': 'Open release page', 'command': lambda: webbrowser.open(release_url)}]
-
-            # for the non-standalone version
-            else:
-                warn_message = 'A new version of StoryToolkitAI is available.\n\n' \
-                               'Use git pull to update.\n '
-
-                changelog_instructions = 'Maybe update now before getting back to work?\n' + \
-                                         'Click Update or quit the tool and use `git pull` to update.\n\n' \
-
-                # prepare some action buttons for the text window
-                def update_via_git():
-                    """
-                    This calls the update via git function from the stAI object
-                    And triggers an error message if it fails
-                    """
-
-                    # try to update via git
-                    if not self.stAI.update_via_git():
-
-                        # if the update failed, show an error message
-                        self.notify_via_messagebox(
-                            type='error',
-                            title='Unable to update',
-                            message='Something went wrong with the automatic update process.\n\n'
-                                    'Please check logs and try to update manually by running `git pull` '
-                                    'in the installation folder.',
-                            message_log='Unable to update via git',
-                        )
-
-
-
-
-                action_buttons = [{'text': 'Update', 'command': lambda: update_via_git()}]
-
-            # read the CHANGELOG.md file from github
-            changelog_file = get('https://raw.githubusercontent.com/octimot/StoryToolkitAI/master/CHANGELOG.md')
-
-            # if the request was successful
-            if changelog_file.status_code == 200:
-
-                import packaging
-
-                # get the changelog text
-                changelog_text = changelog_file.text
-                changelog_new_versions = '# A new update is waiting!\n' + \
-                                         changelog_instructions
-
-                changelog_new_versions_info = ''
-
-                # split the changelog into versions
-                # the changelog is in a markdown format
-                changelog_versions = dict()
-                for version_full in changelog_text.split('\n## '):
-
-                    # split the version into the version string and the text
-                    version_str, text = version_full.split('\n', 1)
-
-                    version_no_and_date = version_str.split('] - ')
-
-                    if len(version_no_and_date) == 2:
-                        version_no = version_no_and_date[0].strip('[')
-                        version_date = version_no_and_date[1].strip()
-
-                        # add the version to the dictionary
-                        changelog_versions[version_no] = {'date': version_date, 'text': text.strip()}
-
-                # get the current installed version
-                current_version = self.stAI.version
-
-                # show the changelog for all versions newer than the current installed version
-                for version_no, version_info in changelog_versions.items():
-
-                    version_date = version_info['date']
-                    text = version_info['text']
-
-                    # remove any double newlines from the text
-                    text = text.replace('\n\n', '\n')
-
-                    # if we reached the current version, stop
-                    # this doesn't behave well if the version number is x.x.x.x vs x.x.x
-                    if packaging.version.parse(version_no) <= packaging.version.parse(current_version):
-                        break
-
-                    changelog_new_versions_info += f'\n## Version {version_no}\n\n{text}\n'
-
-                # add the changelog to the message
-                if changelog_new_versions_info != '':
-                    changelog_new_versions += '# What\'s new since you last updated?\n' + changelog_new_versions_info
-
-                # add the skip and later buttons to the action buttons
-                action_buttons.append({'text': 'Skip this version',
-                                       'command': lambda: self.ignore_update(
-                                           version_to_ignore=self.stAI.online_version,
-                                           window_id=update_window_id),
-                                       'side': tk.RIGHT,
-                                       'anchor': 'e'
-                                       })
-                action_buttons.append({'text': 'Later', 'command': lambda: self.destroy_text_window(update_window_id),
-                                       'side': tk.RIGHT, 'anchor': 'e'})
-
-                # open the CHANGELOG.md file from github in a text window
-                update_window_id = self.open_text_window(title='New Update',
-                                                         window_id=update_window_id,
-                                                         initial_text=changelog_new_versions,
-                                                         action_buttons=action_buttons)
-
-                # format the text
-                self.text_window_format_md(update_window_id)
-
-            # if the changelog file is not available
-            # show a simple message popup
-            else:
-
-                if self.stAI.standalone:
-                    # notify the user and ask whether to open the release website or not
-                    goto_projectpage = messagebox.askyesno(title="Update available",
-                                                           message=messagebox_message)
-
-                else:
-                    messagebox.showinfo(title="Update available",
-                                        message=warn_message)
-
-            # notify the user via console
-            logger.warning(warn_message)
-
-            # open the browser and go to the release_url
-            if goto_projectpage:
-                webbrowser.open(release_url)
+        # wait for the update check to finish but in a different thread
+        # so that the UI can load in the meantime
+        Thread(target=self.update_wait).start()
 
         # open the Queue window if something is up in the transcription queue
         if len(self.toolkit_ops_obj.processing_queue.get_all_queue_items()) > 0:
             self.open_queue_window()
+
+    def update_wait(self):
+
+        n = 0
+        # keep checking if the stAI object has finished checking for updates
+        while n < 5:
+            time.sleep(1)
+
+            if self.stAI.update_available:
+                return self.update_popup()
+
+            if self.stAI.update_available is False:
+                logger.debug('No update available.')
+                return
+
+            n += 1
+
+        logger.debug('Timed out update_wait after {} seconds.'.format(n))
+
+    def update_popup(self):
+
+        # the url to the releases page
+        release_url = 'https://github.com/octimot/StoryToolkitAI/releases/latest'
+
+        goto_projectpage = False
+
+        update_window_id = 'update_available'
+
+        # if there is a new version available
+        # the user will see a different update message
+        # depending on whether they're using the standalone version or not
+        if self.stAI.standalone:
+            warn_message = 'A new standalone version of StoryToolkitAI is available.'
+
+            # add the question to the pop up message box
+            messagebox_message = warn_message + ' \n\nDo you want to open the release page?\n'
+
+            changelog_instructions = 'Open the [release page]({}) to download it.\n\n'.format(release_url)
+
+            # prepare some action buttons for the text window
+            action_buttons = [{'text': 'Open release page', 'command': lambda: webbrowser.open(release_url)}]
+
+        # for the non-standalone version
+        else:
+            warn_message = 'A new version of StoryToolkitAI is available.\n\n' \
+                           'Use git pull to update.\n '
+
+            changelog_instructions = 'Maybe update now before getting back to work?\n' + \
+                                     'Click Update or quit the tool and use `git pull` to update.\n\n' \
+
+            # prepare some action buttons for the text window
+
+            def update_via_git():
+                """
+                This calls the update via git function from the stAI object
+                And triggers an error message if it fails
+                """
+
+                # try to update via git
+                if not self.stAI.update_via_git():
+                    # if the update failed, show an error message
+                    self.notify_via_messagebox(
+                        type='error',
+                        title='Unable to update',
+                        message='Something went wrong with the automatic update process.\n\n'
+                                'Please check logs and try to update manually by running `git pull` '
+                                'in the installation folder.',
+                        message_log='Unable to update via git',
+                    )
+
+            action_buttons = [{'text': 'Update', 'command': lambda: update_via_git()}]
+
+        # read the CHANGELOG.md file from github
+        changelog_file = get('https://raw.githubusercontent.com/octimot/StoryToolkitAI/master/CHANGELOG.md')
+
+        # if the request was successful
+        if changelog_file.status_code == 200:
+
+            import packaging
+
+            # get the changelog text
+            changelog_text = changelog_file.text
+            changelog_new_versions = '# A new update is waiting!\n' + \
+                                     changelog_instructions
+
+            changelog_new_versions_info = ''
+
+            # split the changelog into versions
+            # the changelog is in a Markdown format
+            changelog_versions = dict()
+            for version_full in changelog_text.split('\n## '):
+
+                # split the version into the version string and the text
+                version_str, text = version_full.split('\n', 1)
+
+                version_no_and_date = version_str.split('] - ')
+
+                if len(version_no_and_date) == 2:
+                    version_no = version_no_and_date[0].strip('[')
+                    version_date = version_no_and_date[1].strip()
+
+                    # add the version to the dictionary
+                    changelog_versions[version_no] = {'date': version_date, 'text': text.strip()}
+
+            # get the current installed version
+            current_version = self.stAI.version
+
+            # show the changelog for all versions newer than the current installed version
+            for version_no, version_info in changelog_versions.items():
+
+                version_date = version_info['date']
+                text = version_info['text']
+
+                # remove any double newlines from the text
+                text = text.replace('\n\n', '\n')
+
+                # if we reached the current version, stop
+                # this doesn't behave well if the version number is x.x.x.x vs x.x.x
+                if packaging.version.parse(version_no) <= packaging.version.parse(current_version):
+                    break
+
+                changelog_new_versions_info += f'\n## Version {version_no}\n\n{text}\n'
+
+            # add the changelog to the message
+            if changelog_new_versions_info != '':
+                changelog_new_versions += '# What\'s new since you last updated?\n' + changelog_new_versions_info
+
+            # add the skip and later buttons to the action buttons
+            action_buttons.append({'text': 'Skip this version',
+                                   'command': lambda: self.ignore_update(
+                                       version_to_ignore=self.stAI.online_version,
+                                       window_id=update_window_id),
+                                   'side': tk.RIGHT,
+                                   'anchor': 'e'
+                                   })
+            action_buttons.append({'text': 'Later', 'command': lambda: self.destroy_text_window(update_window_id),
+                                   'side': tk.RIGHT, 'anchor': 'e'})
+
+            # open the CHANGELOG.md file from github in a text window
+            update_window_id = self.open_text_window(title='New Update',
+                                                     window_id=update_window_id,
+                                                     initial_text=changelog_new_versions,
+                                                     action_buttons=action_buttons)
+
+            # format the text
+            self.text_window_format_md(update_window_id)
+
+        # if the changelog file is not available
+        # show a simple message popup
+        else:
+
+            if self.stAI.standalone:
+                # notify the user and ask whether to open the release website or not
+                goto_projectpage = messagebox.askyesno(title="Update available",
+                                                       message=messagebox_message)
+
+            else:
+                messagebox.showinfo(title="Update available",
+                                    message=warn_message)
+
+        # notify the user via console
+        logger.warning(warn_message)
+
+        # open the browser and go to the release_url
+        if goto_projectpage:
+            webbrowser.open(release_url)
 
     def UI_scale(self, value: int) -> int:
         """

@@ -70,11 +70,17 @@ class StoryToolkitAI:
         # this is the directory that the user has last used in the file dialogs
         self.initial_target_dir = self.get_app_setting('last_target_dir', initial_target_dir)
 
+        self.update_available = None
+        self.online_version = None
+
         # check if a new version of the app exists on GitHub
         # but use either the release version number or version.py,
         # depending on standalone is True or False
         if not self.cli_args or not self.cli_args.mode == 'cli' or not self.cli_args.skip_update_check:
-            [self.update_available, self.online_version] = self.check_update()
+            def check_update_wrapper():
+                self.update_available, self.online_version = self.check_update()
+
+            Thread(target=check_update_wrapper).start()
         else:
             logger.debug("Skipping update check due to command line argument.")
 
