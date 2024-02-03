@@ -1384,6 +1384,11 @@ class toolkit_UI():
         # this holds the index of the current prompt in the prompt history
         self.window_prompts_index = {}
 
+        # use this to store transcription segments copied from the transcript window via CMD+C
+        # these are not added to the clipboard,
+        # but are stored here in case we want to paste them somewhere, e.g. Story, Assistant etc.
+        self.transcription_segments_clipboard = []
+
         # currently focused window (id only)
         self.current_focused_window = None
 
@@ -1430,7 +1435,6 @@ class toolkit_UI():
 
         self.ctk_font_small_label = (
             ctk.CTkFont(family=self.ctk_default_font_family, size=int(self.transcript_font_size*0.7)))
-
 
         # set the platform independent fixed font (for console)
         # self.console_font = ctk.CTkFont(family='TkFixedFont', size=self.console_font_size)
@@ -7726,7 +7730,11 @@ class toolkit_UI():
             # the "New Story" button
             add_to_story_menu.add_command(
                 label="New Story...",
-                command=lambda: self.button_add_to_new_story(window_id=window_id)
+                command=lambda: self.button_add_to_new_story(
+                    window_id=window_id,
+                    add_extra_start_line=True,
+                    add_extra_end_line=True
+                )
             )
             add_to_story_menu.add_separator()
 
@@ -7739,7 +7747,11 @@ class toolkit_UI():
                 add_to_story_menu.add_command(
                     label="{}".format(story_editor_window.title()),
                     command=lambda: self.button_add_to_story(
-                        window_id=window_id, story_editor_window_id=story_editor_window_id)
+                        window_id=window_id,
+                        story_editor_window_id=story_editor_window_id,
+                        add_extra_start_line=True,
+                        add_extra_end_line=True
+                        )
                 )
 
             # add the add to story sub-menu
@@ -7943,7 +7955,7 @@ class toolkit_UI():
                 return
 
             # for now, simply pass to select text lines if it matches one of these keys
-            if event.keysym in ['Up', 'Down', 'v', 'V', 'A', 'i', 'o', 'O', 'm', 'M', 'C', 's', 'S', 'L',
+            if event.keysym in ['Up', 'Down', 'v', 'V', 'A', 'i', 'o', 'O', 'm', 'M', 'c', 'C', 's', 'S', 'L',
                                 'g', 'G', 'BackSpace', 't', 'a', 'equal',
                                 'apostrophe', 'semicolon', 'colon', 'quotedbl']:
                 self.segment_actions(event, **attributes)
@@ -8099,6 +8111,75 @@ class toolkit_UI():
             # Shift+A key (select between current and last active segment)
             if event.keysym == 'A':
                 self.button_select_between_segments(window_id, text_element)
+
+            # CMD+C key event (stores the selected segments
+            # in case we want to paste them into Story or Assistant windows)
+            if event.keysym == 'c' and special_key == 'cmd':
+
+                selection_range = []
+
+                # do we have a 'sel' tag on the window.text_widget?
+                # then use it to determine the selection range of the transcription segments
+                if text_element.tag_ranges('sel'):
+
+                    # get the start and the end of the selection
+                    selection_start = int(text_element.index('sel.first').split('.')[0])
+                    selection_end = int(text_element.index('sel.last').split('.')[0])
+
+                    # get the range of the selection
+                    selection_range = list(range(selection_start, selection_end + 1))
+
+                    # clear 'sel' tag from the text widget
+                    text_element.tag_remove('sel', '1.0', 'end')
+
+                # if there is no 'sel' tag try to get the selected segments
+                elif self.has_selected_segments(window_id=window_id):
+
+                    # clear the real clipboard
+                    self.root.clipboard_clear()
+
+                    full_text_for_clipboard = ''
+
+                    # get the selection range from the selected windows
+                    # and add their texts to the real clipboard
+                    for segment in self.selected_segments[window_id]:
+
+                        # add the key to the selection range
+                        selection_range.append(segment)
+
+                        # add the segment text to the clipboard
+                        full_text_for_clipboard += str(self.selected_segments[window_id][segment].text).strip() + '\n'
+
+                    self.root.clipboard_clear()
+                    self.root.clipboard_append(full_text_for_clipboard.strip())
+
+                # if there is no 'sel' and no selected segments,
+                # try to get the active segment
+                else:
+
+                    # we only do this if 'l_active' tag is seen on the window
+                    # so that the user knows what they are copying
+
+                    if 'l_active' not in text_element.tag_names():
+                        return
+
+                    # use the active segment as the only element in the selection range
+                    active_segment = self.get_active_segment(window_id)
+                    selection_range = [active_segment]
+
+                    # then add it to the real clipboard too
+                    self.root.clipboard_clear()
+                    self.root.clipboard_append(
+                        str(transcription_window.transcription.segments[active_segment-1].text).strip()
+                    )
+
+                # get the selection range from transcription_window.transcription.segments
+                self.toolkit_UI_obj.transcription_segments_clipboard = \
+                    ([transcription_window.transcription.segments[i - 1] for i in selection_range]) \
+                        if selection_range else []
+
+                # pass the copy event further for plain text copying
+                return
 
             # Shift+C and CMD/CTRL+Shift+C key event (copy segments with timecodes to clipboard)
             if event.keysym == 'C':
@@ -8415,54 +8496,85 @@ class toolkit_UI():
                 assistant_window_id='assistant', transcript_text=full_text.strip(),
                 transcription_segments=transcription_segments)
 
-        def button_add_to_story(self, window_id, story_editor_window_id):
+        def button_add_to_story(
+                self, window_id=None, story_editor_window_id=None, transcription_segments=None,
+                add_extra_end_line=False, add_extra_start_line=False
+        ):
+            """
+            This formats the selected segments and pastes them to the story editor
+            """
 
-            text, full_text, start_sec, end_sec, transcription_segments \
-                = self.get_segments_or_selection(window_id, split_by='line',
-                                                 add_time_column=False, timecodes=False)
+            if not story_editor_window_id:
+                logger.debug('Cannot add to story - No story editor window id was provided.')
+                return False
 
-            # get the transcription object associated with this window
-            transcription = self.get_window_transcription(window_id=window_id)
+            # if no segments were passed during the call, get them from the window
+            if transcription_segments is None:
 
-            # always add an empty line at the beginning of the text
-            new_lines = [{'text': '', 'type': 'text'}]
+                if window_id is None:
+                    logger.debug('Cannot add to story - No window_id or segments provided.')
+                    return False
+
+                text, full_text, start_sec, end_sec, transcription_segments \
+                    = self.get_segments_or_selection(window_id, split_by='line',
+                                                     add_time_column=False, timecodes=False)
+
+                # get the transcription object associated with this window
+                transcription = self.get_window_transcription(window_id=window_id)
+
+            new_lines = []
+
+            # add an empty line at the beginning of the text
+            if add_extra_start_line:
+                new_lines = [{'text': '', 'type': 'text'}]
 
             last_speaker = ''
             for segment in transcription_segments:
 
-                # do not add meta segments:
-                if segment.meta:
-                    continue
+                # if the segment is a TranscriptionSegment, we need to format it
+                if isinstance(segment, TranscriptionSegment):
 
-                segment_speaker = segment.get_segment_speaker_name()
+                    # do not add meta segments:
+                    if segment.meta:
+                        continue
 
-                if last_speaker != segment_speaker and segment_speaker:
-                    # add empty line between speakers
-                    new_lines.append({'text': '', 'type': 'text'})
+                    # use the parent transcription of the first segment
+                    transcription = segment.parent_transcription
 
-                    # add the uppercase speaker name
+                    segment_speaker = segment.get_segment_speaker_name()
+
+                    if last_speaker != segment_speaker and segment_speaker:
+                        # add empty line between speakers
+                        new_lines.append({'text': '', 'type': 'text'})
+
+                        # add the uppercase speaker name
+                        new_lines.append({
+                            'text': str(segment_speaker).upper(),
+                            'type': 'text'
+                        })
+
+                        last_speaker = segment_speaker
+
                     new_lines.append({
-                        'text': str(segment_speaker).upper(),
-                        'type': 'text'
+                        'text': segment.text.strip(),
+                        'type': 'transcription_segment',
+                        'source_start': segment.start,
+                        'source_end': segment.end if segment.end > segment.start else segment.start + 0.01,
+                        'transcription_file_path': transcription.transcription_file_path,
+                        'source_file_path': transcription.audio_file_path,
+                        'source_fps': transcription.timeline_fps,
+                        'source_start_tc': transcription.timeline_start_tc,
                     })
 
-                    last_speaker = segment_speaker
+                # if the segment is a dictionary, we can just add it to the new_lines list
+                elif isinstance(segment, dict) and 'text' in segment:
+                    new_lines.append(segment)
 
-                new_lines.append({
-                    'text': segment.text.strip(),
-                    'type': 'transcription_segment',
-                    'source_start': segment.start,
-                    'source_end': segment.end if segment.end > segment.start else segment.start + 0.01,
-                    'transcription_file_path': transcription.transcription_file_path,
-                    'source_file_path': transcription.audio_file_path,
-                    'source_fps': transcription.timeline_fps,
-                    'source_start_tc': transcription.timeline_start_tc,
-                })
+            # add an empty line at the end of the text if requested
+            if add_extra_end_line:
+                new_lines.append({'text': '', 'type': 'text'})
 
-            # always add an empty line at the end of the text
-            new_lines.append({'text': '', 'type': 'text'})
-
-            if len(new_lines) > 2:
+            if len(new_lines) > 0:
                 story_editor_window = self.toolkit_UI_obj.get_window_by_id(story_editor_window_id)
 
                 toolkit_UI.StoryEdit.paste_to_story_editor(
@@ -8472,11 +8584,13 @@ class toolkit_UI():
                 # save the story
                 toolkit_UI.StoryEdit.save_story(window_id=story_editor_window, toolkit_UI_obj=self.toolkit_UI_obj)
 
-        def button_add_to_new_story(self, window_id):
+        def button_add_to_new_story(self, window_id, **kwargs):
 
             # first open a new story
             if story_editor_window := self.toolkit_UI_obj.open_new_story_editor_window():
-                self.button_add_to_story(window_id, story_editor_window.window_id)
+
+                # then add the selected segments to the new story
+                self.button_add_to_story(window_id, story_editor_window.window_id, **kwargs)
 
         def button_add_to_new_group(self, window_id, only_add=True):
             """
@@ -11730,6 +11844,67 @@ class toolkit_UI():
                 # return either the object or None
                 return getattr(window, 'transcription') if getattr(window, 'transcription') is not None else None
 
+    def get_segments_from_clipboard(self):
+        """
+        This checks if there are segments in the clipboard,
+        checks if their text roughly matches the clipboard text,
+        with the actual clipboard root.clipboard_get()
+        and decides if the segments should be used or not
+        """
+
+        # get the clipboard text
+        clipboard_text = self.root.clipboard_get()
+
+        # split the clipboard text into lines
+        clipboard_lines = clipboard_text.split('\n')
+
+        # if the number of lines and segments don't match, abort
+        if len(clipboard_lines) != len(self.transcription_segments_clipboard):
+            self.transcription_segments_clipboard = []
+            return None
+
+        # take each segment from the clipboard and see if they match the clipboard text
+        for segment_index, segment in enumerate(self.transcription_segments_clipboard):
+
+            # the first and the last segment can be roughly matched since they might not be complete
+            # due to how the user made the selection with the mouse
+
+            # get the current segment text depending on what kind of object we're dealing with
+            # if this was added from a transcription window, it's usually a TranscriptionSegment object
+            if isinstance(segment, TranscriptionSegment):
+                current_segment_text = segment.text.strip()
+
+            # if this was added from another story, it's usually a dict
+            elif isinstance(segment, dict):
+                current_segment_text = segment['text'].strip()
+
+            # if this is just a string, let's use it as is
+            elif isinstance(segment, str):
+                current_segment_text = segment.strip()
+
+            # if this is something else, we can't use it
+            else:
+                self.transcription_segments_clipboard = []
+                return None
+
+            # if this is the first or the last segment
+            if segment_index in [0, len(self.transcription_segments_clipboard) - 1]:
+                
+                # do a rough match - the clipboard text must be in the segment text, but not fully
+                if not current_segment_text.endswith(clipboard_lines[segment_index].strip())\
+                        and not current_segment_text.startswith(clipboard_lines[segment_index].strip()):
+                    self.transcription_segments_clipboard = []
+                    return None
+                
+            # if this is not the first or the last segment, they have to match
+            else:
+                if current_segment_text != clipboard_lines[segment_index].strip():
+                    self.transcription_segments_clipboard = []
+                    return None
+
+        # if we got here, the segments match the clipboard text, so we can use them
+        return self.transcription_segments_clipboard
+
     def open_transcript(self, **options):
         """
         This prompts the user to open a transcript file and then opens it a transcript window
@@ -14253,7 +14428,7 @@ class toolkit_UI():
                     window.clipboard_clear()
 
                     # clear the story editor clipboard
-                    window.story_list_clipboard = []
+                    toolkit_UI_obj.transcription_segments_clipboard = []
 
                     for c_line in range(sel_start_line, sel_end_line+1):
 
@@ -14277,8 +14452,8 @@ class toolkit_UI():
                             elif c_line == sel_end_line:
                                 current_line['text'] = current_line['text'][:sel_end_char]
 
-                        # add to story editor clipboard
-                        window.story_list_clipboard.append(current_line)
+                        # add to the transcription segments clipboard
+                        toolkit_UI_obj.transcription_segments_clipboard.append(current_line)
 
                         # add to real clipboard
                         clipboard_text += current_line['text'] + '\n'
@@ -14334,7 +14509,17 @@ class toolkit_UI():
                 # move the index on the current line
                 story_line_index = int(line) - 1
 
-                cls.paste_to_story_editor(window=window, toolkit_UI_obj=toolkit_UI_obj, line=line, char=char)
+                # if there is something in the transcription_segments_clipboard, use them
+                if segments_from_clipboard := toolkit_UI_obj.get_segments_from_clipboard():
+
+                    # wrap the paste function with button_add_to_story
+                    # to simulate sending segments from the transcription window
+                    toolkit_UI_obj.t_edit_obj.button_add_to_story(
+                        story_editor_window_id=window.window_id, transcription_segments=segments_from_clipboard)
+
+                else:
+                    cls.paste_to_story_editor(window=window, toolkit_UI_obj=toolkit_UI_obj, line=line, char=char)
+
                 return 'break'
 
             # DEL, BACKSPACE
@@ -14896,35 +15081,12 @@ class toolkit_UI():
                     # restore the text widget state
                     window.text_widget.config(state=text_widget_state)
 
-                # if the window doesn't have a story_list_clipboard, create it
-                if not hasattr(window, 'story_list_clipboard'):
-                    window.story_list_clipboard = []
+                lines_to_paste = []
 
-                # we need to compare the story_list_clipboard with the text we have in the real clipboard
-                # since we will eventually use the story_list_clipboard to paste the text and build the story lines list
+                # since we're pasting from the real clipboard we need to add each pasted_line as a text line
                 for pasted_line_index, pasted_line in enumerate(pasted_lines):
 
-                    # if the story_list_clipboard at this index doesn't exist
-                    if len(window.story_list_clipboard) <= pasted_line_index:
-                        window.story_list_clipboard.append({'text': pasted_line, 'type': 'text'})
-
-                    # if the text of don't match, update the story_list_clipboard
-                    elif 'text' not in window.story_list_clipboard[pasted_line_index] \
-                        or window.story_list_clipboard[pasted_line_index]['text'] != pasted_line:
-
-                        window.story_list_clipboard[pasted_line_index]['text'] = pasted_line
-                        window.story_list_clipboard[pasted_line_index]['type'] = 'text'
-
-                # if for some reason our story_list_clipboard is empty, stop
-                if len(window.story_list_clipboard) == 0:
-                    logger.debug('Nothing to paste - story_list_clipboard is empty')
-                    return 'break'
-
-                # remove all other lines from the story_list_clipboard that are beyond the length of the pasted lines
-                window.story_list_clipboard = window.story_list_clipboard[:len(pasted_lines)]
-
-                # use this variable to paste the lines into the story editor
-                lines_to_paste = window.story_list_clipboard
+                    lines_to_paste.append({'text': pasted_line, 'type': 'text'})
 
             if not isinstance(lines_to_paste, list):
                 logger.error('Unable to paste to story editor - lines_to_paste is not a list')
@@ -15016,10 +15178,10 @@ class toolkit_UI():
             cls.update_text_widget(window_id=window, toolkit_UI_obj=toolkit_UI_obj)
 
             # go to the line at the end of the pasted text
-            window.text_widget.mark_set('insert', '{}.{}'.format(current_line_index + 1 + insert_line_add, insert_char))
+            window.text_widget.mark_set('insert', '{}.{}'.format(current_line_index + insert_line_add, insert_char))
 
             # see the cursor if it's not in view
-            if not cls.is_line_in_view(window.text_widget, line_no=current_line_index + 1 + insert_line_add):
+            if not cls.is_line_in_view(window.text_widget, line_no=current_line_index + insert_line_add):
                 window.text_widget.see('insert')
 
             # revert the text widget state to whatever it was before
@@ -15179,11 +15341,12 @@ class toolkit_UI():
 
                 # show PASTE if there is something in the clipboard
                 if window.clipboard_get():
-                   context_menu.add_command(
-                       label="Paste",
-                       command=lambda: cls.paste_to_story_editor(
-                           window=window, toolkit_UI_obj=toolkit_UI_obj, line=line, char=char)
-                   )
+                    context_menu.add_command(
+                        label="Paste",
+                        command=lambda: cls.paste_to_story_editor(
+                            window=window, toolkit_UI_obj=toolkit_UI_obj, line=line, char=char
+                        )
+                    )
 
                 # add a separator
                 context_menu.add_separator()
