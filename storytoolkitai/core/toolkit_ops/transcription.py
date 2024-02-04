@@ -1943,6 +1943,17 @@ class TranscriptionUtils:
                 else:
                     timecode = start_tc + timecode
 
+                    # for this case, we need to subtract 1 frame from the timecode
+                    # since the start_tc is normally a display timecode which doesn't include the first frame
+                    # - the first frame is already included in the original timecode variable!
+                    # this is still WIP, so let's catch any exceptions (i.e. timecode is 00:00:00:00)
+                    try:
+                        timecode = timecode - Timecode(fps)
+                    except Exception as e:
+                        logger.debug('Cannot subtract 1 frame from the timecode.\n{}:'.format(e), exc_info=True)
+
+                        timecode = timecode
+
             else:
                 start_tc = Timecode(fps)
 

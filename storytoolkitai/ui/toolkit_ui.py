@@ -10121,11 +10121,22 @@ class toolkit_UI():
                     # if the user input is not a valid timecode, we'll ask them to try again
                     try:
 
-                        goto_timecode = Timecode(fps, user_input['goto_timecode'])
+                        goto_timecode = Timecode(
+                            fps,
+                            user_input['goto_timecode']
+                            if user_input['goto_timecode'] != '00:00:00:00'
+                            else None
+                        )
 
                         self.toolkit_UI_obj \
                             .sync_current_tc_to_transcript(window_id=window_id,
                                                            timecode=goto_timecode, fps=fps, start_tc=start_tc)
+
+                        # if the NLE is connected, move the playhead to the new timecode
+                        if NLE.is_connected():
+                            # convert the entered timecode to seconds,
+                            # but use the tc_to_sec method to remove one frame
+                            self.toolkit_ops_obj.go_to_time(seconds=tc_to_sec(str(goto_timecode), fps=float(fps)))
 
                         goto_time = True
 
@@ -10650,6 +10661,27 @@ class toolkit_UI():
 
             return text, full_text, start_sec, end_sec, transcription_segments
 
+        def get_active_segment(self, window_id=None, initial_value=0):
+            """
+            This returns the active segment number for the window with the window_id
+            :param window_id:
+            :return:
+            """
+
+            # same as above for the last_active_segment
+            if window_id not in self.last_active_segment:
+                # but start with 0, considering that it will be re-calculated below
+                self.last_active_segment[window_id] = initial_value
+
+            # if there is no active_segment for the window, create one
+            # this will help us keep track of where we are with the cursor
+            if window_id not in self.active_segment:
+
+                # use the last known active segment, considering that it will be re-calculated below
+                self.active_segment[window_id] = self.last_active_segment[window_id]
+
+            return self.active_segment[window_id]
+
         def go_to_selected_time(self, window_id=None, position=None, ignore_selection=False):
 
             window_transcription = self.get_window_transcription(window_id=window_id)
@@ -10703,28 +10735,9 @@ class toolkit_UI():
             self.toolkit_ops_obj.go_to_time(seconds=seconds)
 
             # update the transcription window
-            self.toolkit_UI_obj.update_transcription_window(window_id=window_id)
-
-        def get_active_segment(self, window_id=None, initial_value=0):
-            """
-            This returns the active segment number for the window with the window_id
-            :param window_id:
-            :return:
-            """
-
-            # same as above for the last_active_segment
-            if window_id not in self.last_active_segment:
-                # but start with 0, considering that it will be re-calculated below
-                self.last_active_segment[window_id] = initial_value
-
-            # if there is no active_segment for the window, create one
-            # this will help us keep track of where we are with the cursor
-            if window_id not in self.active_segment:
-
-                # use the last known active segment, considering that it will be re-calculated below
-                self.active_segment[window_id] = self.last_active_segment[window_id]
-
-            return self.active_segment[window_id]
+            # this triggers an endless playhead sync loop if "sync" is on
+            # since it's most likely not needed, we'll comment it out
+            # self.toolkit_UI_obj.update_transcription_window(window_id=window_id)
 
         def get_transcription_window_text_widget(self, window_id=None):
 
@@ -12957,8 +12970,11 @@ class toolkit_UI():
                 toolkit_UI_obj.t_edit_obj.set_active_segment(
                     window_id=window_id, text_widget=text_widget, text_widget_line=text_widget_line)
 
+                # this gets into an endless loop if the transcript_sec is not precise
+                # so we keep them disabled - if it's needed, 
+                # we'll have to trigger go_to_time from caller function
                 # and move the NLE playhead (if any)
-                toolkit_UI_obj.toolkit_ops_obj.go_to_time(seconds=transcript_sec)
+                # toolkit_UI_obj.toolkit_ops_obj.go_to_time(seconds=transcript_sec)
 
                 break
 
@@ -12966,8 +12982,11 @@ class toolkit_UI():
             # don't make any selection, but move the NLE playhead (if any)
             elif float(segment.end) > transcript_sec:
 
+                # this gets into an endless loop if the transcript_sec is not precise
+                # so we keep them disabled - if it's needed, 
+                # we'll have to trigger go_to_time from caller function
                 # just move the NLE playhead (if any)
-                toolkit_UI_obj.toolkit_ops_obj.go_to_time(seconds=transcript_sec)
+                # toolkit_UI_obj.toolkit_ops_obj.go_to_time(seconds=transcript_sec)
 
                 # this notification might be annoying, so maybe remove it
                 # toolkit_UI_obj.notify_via_messagebox(

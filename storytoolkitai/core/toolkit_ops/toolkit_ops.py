@@ -30,7 +30,7 @@ from .search import ToolkitSearch, SearchItem, TextSearch, VideoSearch, cv2
 from .assistant import ToolkitAssistant, AssistantUtils
 from .assistant import DEFAULT_SYSTEM_MESSAGE as ASSISTANT_DEFAULT_SYSTEM_MESSAGE
 from .speaker_diarization import detect_speaker_changes
-from .timecode import sec_to_tc
+from .timecode import sec_to_tc, tc_to_sec
 
 from timecode import Timecode
 

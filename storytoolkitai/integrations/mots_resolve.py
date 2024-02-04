@@ -436,13 +436,6 @@ class MotsResolve:
                 # add the timeline frame rate to return dict
                 resolve_data['currentTimelineFPS'] = currentTimeline.GetSetting('timelineFrameRate')
 
-                #self.logger.debug(currentTimeline.GetSetting('timelineFrameRate'))
-
-                #todo: this is no longer necessary, because Resolve gives 23.976 FPS
-                # - let's remove this and implement it further
-                if resolve_data['currentTimelineFPS'] == '23':
-                    resolve_data['currentTimelineFPS'] = '24'
-
         # in case of any exception, it means that Resolve API is no longer responding
         # so, clear the objects
         except Exception as e:
@@ -464,8 +457,7 @@ class MotsResolve:
 
         """
 
-        # @todo: move this out
-        resolve = self.api = self.get_resolve()
+        resolve = self.api if self.api is not None else self.get_resolve()
 
         if resolve is None or not resolve:
             return False
