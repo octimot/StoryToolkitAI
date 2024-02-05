@@ -399,7 +399,7 @@ class StoryToolkitAI:
 
         # if the api key is not empty
         if self.api_key and self.api_key != '':
-            check_path = 'https://api.storytoolkit.ai/check_token?token={}'.format(self.api_key)
+            check_path = 'https://api.storytoolkit.ai/check_key?key={}'.format(self.api_key)
 
             # check if the API key is valid using the API
             try:
@@ -411,6 +411,11 @@ class StoryToolkitAI:
                     logger.debug('Using valid API key.')
                     self.api_key_valid = True
                     return True
+
+                elif response.status_code == 200 and response.text == 'expired':
+                    logger.debug('User API key is expired.')
+                    self.api_key_valid = False
+                    return False
 
                 else:
                     logger.debug('User API key is not valid.')
