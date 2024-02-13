@@ -18684,6 +18684,8 @@ class toolkit_UI():
                 enhanced_prompt += '{{"type": "{}", "lines": [[start, end, text, speaker], ...]'.\
                                     format(temp_context_type)
                 enhanced_prompt += ', "groups": [[start, end, title, optional_text], ...]'
+                enhanced_prompt += ', "info": "reserved for summaries, ' \
+                                   'or a direct reply to the prompt, but not longer than a paragraph"}}'
                 enhanced_prompt += '}}'
 
                 # don't this query to the chat history since it might be large
@@ -19201,23 +19203,23 @@ class toolkit_UI():
 
             text_widget.insert(ctk.END, response_string)
 
-            # now change the color of the full A > response to supernormal (similar to  _text_window_update())
-            text_widget.tag_add('reply', full_insert_pos, text_widget.index(ctk.INSERT))
-            text_widget.tag_config('reply', foreground=self.theme_colors['supernormal'])
-
-            # use the timestamp to make the tag unique
-            # plus the current line number
-            tag_id = 'assistant_response_{}'.format(str(time.time()) + str(text_widget.index(ctk.INSERT)))
-
-            # change the color of the above text (without A > prefix) so the users know it's of a different kind
-            text_widget.tag_add(tag_id, insert_pos, text_widget.index(ctk.INSERT))
-            text_widget.tag_config(tag_id, foreground=toolkit_UI.theme_colors['blue'])
-
-            # make sure to add the has_context_menu tag so that we don't show the text window context menu
-            text_widget.tag_add('has_context_menu', insert_pos, text_widget.index(ctk.INSERT))
-
             # add the context menu
             if context_menu is not None:
+
+                # now change the color of the full A > response to supernormal (similar to  _text_window_update())
+                text_widget.tag_add('reply', full_insert_pos, text_widget.index(ctk.INSERT))
+                text_widget.tag_config('reply', foreground=self.theme_colors['supernormal'])
+
+                # use the timestamp to make the tag unique
+                # plus the current line number
+                tag_id = 'assistant_response_{}'.format(str(time.time()) + str(text_widget.index(ctk.INSERT)))
+
+                # change the color of the above text (without A > prefix) so the users know it's of a different kind
+                text_widget.tag_add(tag_id, insert_pos, text_widget.index(ctk.INSERT))
+                text_widget.tag_config(tag_id, foreground=toolkit_UI.theme_colors['blue'])
+
+                # make sure to add the has_context_menu tag so that we don't show the text window context menu
+                text_widget.tag_add('has_context_menu', insert_pos, text_widget.index(ctk.INSERT))
 
                 # add right click for context menu
                 text_widget.tag_bind(
@@ -19275,7 +19277,8 @@ class toolkit_UI():
 
         # if the response is a transcription
         if response_type == 'transcription_json' \
-            and 'lines' in assistant_response_dict and isinstance(assistant_response_dict['lines'], list):
+            and 'lines' in assistant_response_dict and isinstance(assistant_response_dict['lines'], list) \
+                and len(assistant_response_dict['lines']) > 0:
 
             logger.debug('Parsing assistant response as transcription.')
 
@@ -19386,7 +19389,8 @@ class toolkit_UI():
             context_transcription_segments = assistant_window.transcription_segments
 
             minify_and_add_response(
-                response_string='Received Transcription',
+                response_string='Received Transcription'
+                if not assistant_response_dict.get('info', '') else assistant_response_dict.get('info', ''),
                 context_menu=transcription_context_menu,
                 transcription_segments=context_transcription_segments
             )
@@ -19395,7 +19399,8 @@ class toolkit_UI():
 
         # if the response is a story
         elif response_type == 'story_json' \
-            and 'lines' in assistant_response_dict and isinstance(assistant_response_dict['lines'], list):
+            and 'lines' in assistant_response_dict and isinstance(assistant_response_dict['lines'], list) \
+                and len(assistant_response_dict['lines']) > 0:
 
             logger.debug('Parsing assistant response as story.')
 
@@ -19505,7 +19510,8 @@ class toolkit_UI():
             context_transcription_segments = assistant_window.transcription_segments
 
             minify_and_add_response(
-                response_string='Received Story',
+                response_string='Received Story'
+                if not assistant_response_dict.get('info', '') else assistant_response_dict.get('info', ''),
                 context_menu=story_context_menu,
                 transcription_segments=context_transcription_segments
             )
@@ -19519,6 +19525,15 @@ class toolkit_UI():
             # print(json.dumps(assistant_response_dict, indent=4))
             parsed = None
 
+        elif response_type in ['transcription_json', 'story_json'] \
+            and 'lines' in assistant_response_dict and 'info' in assistant_response_dict \
+                and assistant_response_dict.get('info', None):
+
+            minify_and_add_response(
+                response_string=assistant_response_dict.get('info', ''),
+                context_menu=None,
+            )
+            parsed = True
         else:
             logger.warning('Cannot parse assistant response. Unknown response type "{}".'.format(response_type))
             parsed = None
