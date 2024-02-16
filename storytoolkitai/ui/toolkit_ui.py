@@ -12248,6 +12248,9 @@ class toolkit_UI():
                                       has_menubar=True
                                       ):
 
+            # reload the transcription object
+            transcription.reload_from_file(save_first=True)
+
             # add the Transcription object to this window
             self.t_edit_obj.set_window_transcription(t_window_id, transcription)
 
@@ -12255,6 +12258,14 @@ class toolkit_UI():
             # UI ELEMENTS
             # THE THREE WINDOW COLUMN FRAMES
             t_window = self.get_window_by_id(t_window_id)
+
+            # if the transcription name is different from the current title, change the title
+            if transcription.name and transcription.name != title:
+                # but only if the transcription name is not empty
+                t_window.title(transcription.name)
+
+                # we should also update the main window since the transcription.name is usually displayed there too
+                self.update_main_window()
 
             # create the left frame
             left_frame = ctk.CTkFrame(t_window, name='left_frame', **self.ctk_frame_transparent)
@@ -16060,6 +16071,17 @@ class toolkit_UI():
 
             # get the window
             window = self.get_window_by_id(window_id)
+
+            # reload the story object from file just to make sure that we have the latest data
+            story.reload_from_file(save_first=True)
+
+            # if the story name is different from the current title, change the title
+            if story.name and story.name != title:
+                # but only if the story name is not empty
+                window.title(story.name)
+
+                # we should also update the main window since the story.name is usually displayed there too
+                self.update_main_window()
 
             # attach the story object to the window
             window.story = story
