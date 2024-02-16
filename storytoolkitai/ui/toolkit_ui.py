@@ -5573,24 +5573,25 @@ class toolkit_UI():
 
             return
 
-    def files_string_to_list(self, path):
+    @staticmethod
+    def files_string_to_list(path):
         """
-        This function takes a string and returns a list of files from it if it's in a valid format
+        This function takes a string and returns a list of files from it if it's in a valid format.
+        The format attempts to be a comma-separated list of files or folders, each optionally enclosed in quotes.
+        It correctly handles commas inside the file paths when enclosed in quotes and falls back to normal comma separation otherwise.
+        Spaces and double quotes at the beginning and end of the paths are removed.
         """
 
-        # are these comma separated files or folders?
-        if ',' in path:
+        # Regular expression to match file paths enclosed in quotes
+        pattern = r'\"(.*?)\"'
+        matches = re.findall(pattern, path)
 
-            # split the paths
-            path = path.split(',')
-
-            # remove the quotes from the beginning and end of each path
-            path = [p.strip(' \'\"') for p in path]
-
-        # if there are no commas in the path, it must be a single file or folder
-        # so if it exists, it's valid
-        elif os.path.isfile(path.strip(' \'\"')) or os.path.isdir(path.strip(' \'\"')):
-            path = [path]
+        if matches:
+            # If paths are enclosed in quotes, extract them without the quotes
+            path = [match for match in matches]
+        else:
+            # Fallback to normal comma separation if there are no quotes, removing spaces and double quotes
+            path = [p.strip(' \"') for p in path.split(',')]
 
         return path
 
@@ -5600,7 +5601,7 @@ class toolkit_UI():
         Validates if the variable contains a valid file or folder paths
 
         :param var: the variable to validate
-        :param entry: the entry to validate
+        :param path:
         :param valid_callback: the callback to execute if the path is valid
         :param invalid_callback: the callback to execute if the path is invalid
         :return: the path if it's valid, None otherwise
@@ -6650,12 +6651,6 @@ class toolkit_UI():
         video_indexing_enabled_input = ctk.CTkSwitch(enable_disable_frame, variable=video_indexing_enabled_var,
                                                    text='', **self.ctk_form_entry_settings)
 
-
-        # Focus: fine details, details, balanced, big picture
-        # Index:  / first frame ... in scene
-        # Index color-block frames: switch
-        # Skip neighbors with similar content
-
         # THE ATTENTION
         attention_type = \
             kwargs.get('video_indexing_attention_type', None) \
@@ -6670,7 +6665,6 @@ class toolkit_UI():
         video_indexing_attention_type_input = ctk.CTkSegmentedButton(
             video_indexing_frame, variable=video_indexing_attention_type_var,
             values=['details', 'balanced'], dynamic_resizing=True)
-            #values=['details', 'balanced', 'big picture'], dynamic_resizing=True)
 
         # THE FRAME SELECTION
         video_indexing_index_candidate = \
@@ -6722,7 +6716,6 @@ class toolkit_UI():
         video_indexing_skip_similar_neighbors_input = \
             ctk.CTkSwitch(video_indexing_frame, variable=video_indexing_skip_similar_neighbors_var,
                                                     text='', **self.ctk_form_entry_settings)
-
 
         # SCENE DETECTION TAB
 
@@ -6781,62 +6774,6 @@ class toolkit_UI():
             validatecommand=(scene_detection_content_analysis_input.register(self.only_allow_integers_non_null), '%P')
         )
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        # THE MODEL DROPDOWN
-        # get the available models from ClipIndex, and the default model from the app settings
-        # model_selected = \
-        #     kwargs.get('clip_model_name', None) \
-        #         if kwargs.get('clip_model_name', None) is not None \
-        #         else self.stAI.get_app_setting('clip_model_name', default_if_none='RN50x4')
-
-        # create the model variable, label and input
-        # form_vars['clip_model_name_var'] = \
-        #     model_name_var = tk.StringVar(video_indexing_frame, value=model_selected)
-        # model_name_label = ctk.CTkLabel(video_indexing_frame, text='Model', **self.ctk_form_label_settings)
-        # model_name_input = ctk.CTkOptionMenu(video_indexing_frame, variable=model_name_var,
-        #                                      values=ClipIndex.get_available_clip_models(),
-        #                                      **self.ctk_form_entry_settings)
-
-        # THE SHOT CHANGE SENSITIVITY
-        # get the available models from ClipIndex, and the default model from the app settings
-        # shot_change_sensitivity = \
-        #     kwargs.get('clip_shot_change_sensitivity', None) \
-        #         if kwargs.get('clip_shot_change_sensitivity', None) is not None \
-        #         else self.stAI.get_app_setting('clip_shot_change_sensitivity', default_if_none=13)
-
-        # convert the sensitivity to a value between 0 and 100
-        # shot_change_sensitivity = 100 - int(shot_change_sensitivity * 100 / 255)
-
-        # create the variable, label and input
-        # form_vars['clip_shot_change_sensitivity_var'] = \
-        #     sensitivity_var = tk.IntVar(video_indexing_frame, value=shot_change_sensitivity)
-        # sensitivity_label \
-        #     = ctk.CTkLabel(video_indexing_frame, text='Shot Change Sensitivity', **self.ctk_form_label_settings)
-
-        # sensitivity_input_frame = ctk.CTkFrame(video_indexing_frame, **self.ctk_frame_transparent)
-
-        # sensitivity_input \
-        #     = ctk.CTkSlider(sensitivity_input_frame, from_=10, to=100, number_of_steps=18, variable=sensitivity_var,
-        #                     **self.ctk_form_entry_settings)
-        # sensitivity_slider_value \
-        #     = ctk.CTkLabel(sensitivity_input_frame, textvariable=sensitivity_var, **self.ctk_form_label_settings)
-
-        # sensitivity_input.pack(side=ctk.LEFT)
-        # sensitivity_slider_value.pack(side=ctk.LEFT, **self.ctk_form_paddings)
-
         # ENABLE/DISABLE function
         def update_video_indexing_enabled(*f_args):
 
@@ -6858,12 +6795,11 @@ class toolkit_UI():
         video_indexing_enabled_var.trace('w', update_video_indexing_enabled)
         update_video_indexing_enabled()
 
-        # Adding all the elemente to the grid
+        # Adding all the elements to the grid
 
         # ENABLE/DISABLE FRAME GRID
         video_indexing_enabled_label.grid(row=0, column=0, sticky="w", **self.ctk_form_paddings)
         video_indexing_enabled_input.grid(row=0, column=1, sticky="w", **self.ctk_form_paddings)
-
 
         # VIDEO INDEXING GRID
         video_indexing_attention_type_label.grid(row=1, column=0, sticky="w", **self.ctk_form_paddings)
@@ -19689,6 +19625,7 @@ class toolkit_UI():
         """
         This function asks the user for files or a folder
         and then updates the variable passed to it with the file path(s)
+        It also adds quotes to the file path if there are spaces or commas in it, or if multiple files are selected.
         """
 
         # default to multiple files if not specified
@@ -19723,6 +19660,10 @@ class toolkit_UI():
             if len(target_path) == 1:
                 # we don't need the quotes
                 target_path = target_path[0]
+
+                # if the file contains commas or spaces, we need to wrap it in quotes
+                if ',' in target_path or ' ' in target_path:
+                    target_path = '"{}"'.format(target_path)
 
             else:
                 # otherwise, we need to wrap each file path in quotes
