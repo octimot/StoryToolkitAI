@@ -391,7 +391,7 @@ class ChatGPT(ToolkitAssistant):
         except Exception as e:
             logger.debug('Error sending query to ChatGPT: ', exc_info=True)
 
-            error = str(e) + "\nI'm sorry, I'm having trouble connecting to OpenAI right now. " \
+            error = str(e) + "There seems to be a problem with the connection to OpenAI. " \
                              "Please check the logs or try again later."
 
             return AssistantResponse(
@@ -566,7 +566,7 @@ class StAssistant(ChatGPT):
         # now send the query to the assistant
         try:
 
-            headers = {'auth-token': self.api_key}
+            headers = {'auth-key': self.api_key}
 
             data = StAssistantRequest(
                 model=self.model_name,
@@ -585,18 +585,25 @@ class StAssistant(ChatGPT):
                 self.api_host + '/assistant', json=data, headers=headers, timeout=settings.get('timeout', 30))
 
             if api_response.status_code == 403:
-                raise Exception('Invalid authentication token.')
+                logger.warning('Invalid Assistant authentication key: {}'.format(api_response.text))
+                raise Exception('Invalid authentication key.')
 
             elif api_response.status_code == 422:
                 raise Exception('Invalid request data.')
+
+            elif api_response.status_code == 429:
+                logger.warning('Reached Assistant credit limit: {}'.format(api_response.text))
+                raise Exception('Not enough credits.')
 
             elif api_response.status_code == 500:
                 raise Exception('Internal server error.')
 
             elif api_response.status_code == 404:
+                logger.warning('Not found Assistant: {}'.format(api_response.text))
                 raise Exception('{}'.format(json.loads(api_response.text).get('detail', 'Not found')))
 
             elif api_response.status_code != 200:
+                logger.warning('Unknown Assistant error: {}'.format(api_response.text))
                 raise Exception('Unknown error.')
 
             # parse the response
@@ -640,8 +647,10 @@ class StAssistant(ChatGPT):
 
         except Exception as e:
             logger.error('Error sending query to storytoolkit.ai: ', exc_info=True)
-            error = str(e) + "\nI'm sorry, I'm having trouble connecting to storytoolkit.ai right now. " \
-                             "Please check the logs or try again later."
+            error = "There seems to be a problem with the connection to storytoolkit.ai. " \
+                    "Please check the logs or try again later."
+
+            error += '\n\nAPI response: {}'.format(e)
 
             return AssistantResponse(
                 error=error
@@ -665,8 +674,36 @@ class AssistantUtils:
 
         try:
 
+            if model_provider not in AssistantUtils.assistant_available_providers():
+                raise KeyError
+
+            # check if the model is in the available models from the provider
+            provider_models = AssistantUtils.assistant_available_models(provider=model_provider)
+
+            # if the model name is not in the available models
+            if model_name not in provider_models:
+
+                logger.warning('Could not find assistant handler for model {} from provider {}.')
+
+                # try to get one that starts with the model name
+                # (for eg. gpt-3.5-turbo-0613 if user asks for gpt-3.5-turbo)
+                for available_model in provider_models:
+                    if available_model.startswith(model_name):
+                        model_name = available_model
+                        logger.warning('Selected model {} from the provider.'.format(model_name))
+                        break
+
+                # if we still couldn't find the model, then just use the first available model from the provider
+                if model_name not in provider_models:
+                    model_name = provider_models[0]
+                    logger.warning('Selected first available model from the provider: {}')
+
             # load the assistant class
-            toolkit_assistant = LLM_AVAILABLE_MODELS[model_provider][model_name]['handler']
+            toolkit_assistant = LLM_AVAILABLE_MODELS[model_provider][model_name].get('handler', None)
+
+            if toolkit_assistant is None:
+                logger.error('Could not find assistant handler for model {} from provider {}.')
+                return None
 
             # instantiate the assistant class and return it
             return toolkit_assistant(toolkit_ops_obj=toolkit_ops_obj,
@@ -765,18 +802,18 @@ LLM_AVAILABLE_MODELS = {
             'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT
         },
-        'gpt-3.5-turbo-1106': {
-            'description': 'GPT-3.5 Turbo 1106',
-            'price': {'input': 0.001, 'output': 0.002, 'currency': 'USD'},
+        'gpt-3.5-turbo-0125': {
+            'description': 'GPT-3.5 Turbo 0125',
+            'price': {'input': 0.0005, 'output': 0.0015, 'currency': 'USD'},
             'token_limit': 16385,
             'training_cutoff': '2021-09',
             'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT
         },
-        'gpt-3.5-turbo': {
-            'description': 'GPT-3.5 Turbo',
+        'gpt-3.5-turbo-1106': {
+            'description': 'GPT-3.5 Turbo 1106',
             'price': {'input': 0.001, 'output': 0.002, 'currency': 'USD'},
-            'token_limit': 4096,
+            'token_limit': 16385,
             'training_cutoff': '2021-09',
             'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT

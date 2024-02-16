@@ -18152,14 +18152,18 @@ class toolkit_UI():
                     model_name=default_model_name
                 )
 
-            initial_info = 'Using {} ({})\n'.format(
-                assistant_window.assistant_item.model_description, assistant_window.assistant_item.model_provider)
+            if not assistant_window.assistant_item:
+                initial_info = 'The selected assistant model cannot be used. Please check your settings.'
 
-            initial_info += 'Your requests might be billed by your AI model provider.\n' + \
-                            'Type [help] to see available commands or just ask a question.'
+            else:
+                initial_info = 'Using {} ({})\n'.format(
+                    assistant_window.assistant_item.model_description, assistant_window.assistant_item.model_provider)
 
-            # also add the assistant settings to the window for future reference
-            assistant_window.assistant_settings = assistant_settings
+                initial_info += 'Your requests might be billed by your AI model provider.\n' + \
+                                'Type [help] to see available commands or just prompt the Assistant to do something.'
+
+                # also add the assistant settings to the window for future reference
+                assistant_window.assistant_settings = assistant_settings
 
             self._text_window_update(assistant_window_id, initial_info)
 
