@@ -3401,10 +3401,11 @@ class ToolkitOps:
                 render_file_paths.append(os.path.join(render_job['TargetDir'], render_job['OutputFilename']))
 
                 # when mots_resolve finishes the render job,
-                # it should also add a .json file with the same name
+                # it should also add a .json file with the same name,
                 # so we'll just monitor to see if the .json file is there
                 # monitoring the rendered file itself not might be a good idea
                 # since it might already exist before the render is done
+                # we will call this file the render.json file
                 monitor_file_path = str(render_job['OutputFilename']) + '.json'
 
                 # delete the file we're monitoring if it's already there
@@ -3516,9 +3517,8 @@ class ToolkitOps:
                     check_times += 1
 
                 if check_times >= 10:
-                    logger.error("CLI subprocess is still running after {} seconds. Assuming render is running."
-                                 "Aborting check function to save resources."
-                                 .format(wait_time * check_times))
+                    logger.info("CLI subprocess is still running after {} seconds. Assuming render is running. "
+                                "Aborting check function to save resources.".format(wait_time * check_times))
 
                 # check one more time if the process is still running
                 exit_code = process.poll()

@@ -7111,20 +7111,15 @@ class toolkit_UI():
         Used to render a timeline in Resolve and add it to the ingest window, once it's rendered
         """
 
-        # get info from resolve
-        # todo: this needs to be done using the NLE object in the future
-        try:
-            resolve_data = self.toolkit_ops_obj.resolve_api.get_resolve_data()
-        # in case of exception still create a dict with an empty resolve object
-        except:
-            resolve_data = {'resolve': None}
+        # get the current NLE timeline if it exists
+        nle_current_timeline_name = NLE.current_timeline.get('name', None) \
+            if NLE and hasattr(NLE, 'current_timeline') else None
 
         # set an empty target directory for future use
         target_dir = ''
+        file_name = None
 
-        if resolve_data is not None and resolve_data['resolve'] != None \
-                and 'currentTimeline' in resolve_data and \
-                resolve_data['currentTimeline'] != '' and resolve_data['currentTimeline'] is not None:
+        if nle_current_timeline_name:
 
             # use the initial dir of the project if we are in one
             initial_target_dir = self.get_project_last_target_dir(self.current_project)
@@ -7133,16 +7128,13 @@ class toolkit_UI():
             if not initial_target_dir:
                 initial_target_dir = self.stAI.initial_target_dir
 
-            # get the current timeline from Resolve
-            currentTimelineName = resolve_data['currentTimeline']['name']
-
             # ask the user where to save the files
             while target_dir == '' or not os.path.exists(os.path.join(target_dir)):
-                logger.info("Prompting user for render path.")
+                logger.debug("Ingesting NLE timeline - Prompting user for render path.")
                 # target_dir = self.ask_for_target_dir(target_dir=last_target_dir)
 
                 target_file = self.ask_for_save_file(target_dir=initial_target_dir,
-                                                     initialfile=currentTimelineName
+                                                     initialfile=nle_current_timeline_name
                                                      )
                 if target_file:
                     # get the file_name
@@ -7157,22 +7149,18 @@ class toolkit_UI():
 
                 # cancel if the user presses cancel
                 if not target_dir:
-                    logger.info("User canceled transcription operation.")
+                    logger.debug("Ingesting NLE timeline stopped - User canceled operation.")
                     return
-
-            # send the timeline name via kwargs
-            kwargs['timeline_name'] = currentTimelineName
-
-            # get the current project name from Resolve
-            if 'currentProject' in resolve_data and resolve_data['currentProject'] is not None:
-                # get the project name from Resolve
-                kwargs['project_name'] = resolve_data['currentProject']
 
             # suspend NLE polling while we're rendering
             NLE.suspend_polling = True
 
             # and wait for a second to make sure that the last poll was executed
             time.sleep(1)
+
+            if not file_name:
+                logger.warning("Ingesting NLE timeline stopped - File name not defined.")
+                return
 
             # generate a unique id to keep track of this file in the queue and transcription log
             if kwargs.get('queue_id', None) is None:
@@ -7197,18 +7185,23 @@ class toolkit_UI():
             self.notify_via_os("Starting Render", "Starting Render in Resolve",
                                "Saving into {} and starting render.".format(target_dir))
 
-            render_monitor, render_file_paths \
-                = self.toolkit_ops_obj.start_resolve_render_and_monitor(
-                target_dir=target_dir, render_preset=render_preset, start_render=False,
-                add_file_suffix=False, add_date=False, add_timestamp=True, file_name=file_name,
-            )
+            render_monitor, render_file_paths = \
+                self.toolkit_ops_obj.start_resolve_render_and_monitor(
+                    target_dir=target_dir, render_preset=render_preset, start_render=False,
+                    add_file_suffix=False, add_date=False, add_timestamp=True, file_name=file_name,
+                )
 
-            # turn the rendered files into a string separated by commas with each element between double quotes
+            # turn the rendered files into a string separated by commas with each element between double quotes,
             # so they fit the files input in the ingest window
             if len(render_file_paths) > 1:
                 render_file_paths = ', '.join(['"{}"'.format(f) for f in render_file_paths])
             else:
-                render_file_paths = '{}'.format(render_file_paths[0])
+                # add double quotes to the file path if it contains spaces or commas
+                if ' ' in render_file_paths[0] or ',' in render_file_paths[0]:
+                    render_file_paths = '"{}"'.format(render_file_paths[0])
+
+                else:
+                    render_file_paths = '{}'.format(render_file_paths[0])
 
             # add the done function to the render monitor
             # - when the monitor reaches the done state, it will call the function button_transcribe
