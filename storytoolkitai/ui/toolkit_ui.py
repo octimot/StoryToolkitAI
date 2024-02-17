@@ -1847,6 +1847,7 @@ class toolkit_UI():
     def focus_window(self, window_id=None, window=None):
         """
         This function focuses a window. Requires either a window_id or a window
+        If the window parameter doesn't represent a window, it tries to get its parent window
         :param window_id: The window id of the window to focus. (must be available in self.windows)
         :param window: The window object to focus.
         """
@@ -1861,6 +1862,12 @@ class toolkit_UI():
             return False
 
         window = self.get_window_by_id(window_id) if window is None else window
+
+        # if the window is not a top level, find the top level window parent
+        if window \
+                and (not isinstance(window, tk.Toplevel) or not isinstance(window, ctk.CTkToplevel))\
+                and hasattr(window, 'winfo_toplevel'):
+            window = window.winfo_toplevel()
 
         # bring the window to the top
         window.lift()
