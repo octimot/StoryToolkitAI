@@ -2593,7 +2593,7 @@ class toolkit_UI():
                 transcription = Transcription(transcription_file_path=transcription_file_path)
 
                 # get the transcription name
-                if transcription.exists:
+                if transcription.exists and transcription.name is not None:
                     transcription_name = transcription.name
 
                 else:
@@ -2623,7 +2623,7 @@ class toolkit_UI():
                 # get the story object
                 story = Story(story_file_path=story_file_path)
 
-                if story.exists:
+                if story.exists and story.name is not None:
                     story_name = story.name
 
                 else:
@@ -2648,7 +2648,7 @@ class toolkit_UI():
                 # get the text file object
                 document_file = Document(document_file_path=document_file_path)
 
-                if document_file.exists:
+                if document_file.exists and document_file.name is not None:
                     document_file_name = document_file.name
 
                 else:
@@ -2968,6 +2968,14 @@ class toolkit_UI():
 
         # add the window observer that will update the main window if the NLE status changes
         def add_main_window_observers():
+
+            # this updates the window when the project was changed
+            # - useful for changes that happened outside of the UI
+            self.add_observer_to_window(
+                window_id='main',
+                action='project_changed',
+                callback=lambda: self.update_main_window()
+            )
 
             # this updates the buttons in the main window
             self.add_observer_to_window(
@@ -5399,7 +5407,7 @@ class toolkit_UI():
                 form_vars['queue_id'] = tk.StringVar(value=queue_id)
 
             # use this variable for the ingest window object for cleaner code
-            ingest_window = self.windows[ingest_window_id]
+            ingest_window = self.get_window_by_id(window_id=ingest_window_id)
 
             # add the ingest_window_id to the kwargs
             kwargs['ingest_window_id'] = ingest_window_id
@@ -5438,6 +5446,7 @@ class toolkit_UI():
             # UI - add the audio and video tabs
             audio_tab = middle_frame.add('Audio')
             video_tab = middle_frame.add('Video')
+            metadata_tab = middle_frame.add('Metadata') if kwargs.get('metadata_tab_enabled', True) else None
             analysis_tab = middle_frame.add('Analysis')
 
             # UI - add a scrollable frame to the audio and video tabs
@@ -5446,6 +5455,10 @@ class toolkit_UI():
 
             video_tab_scrollable_frame = ctk.CTkScrollableFrame(video_tab, **self.ctk_frame_transparent)
             video_tab_scrollable_frame.pack(fill='both', expand=True)
+
+            if metadata_tab:
+                metadata_tab_scrollable_frame = ctk.CTkScrollableFrame(metadata_tab, **self.ctk_frame_transparent)
+                metadata_tab_scrollable_frame.pack(fill='both', expand=True)
 
             # UI - set the visibility on the audio tab
             middle_frame.set('Audio')
@@ -5513,6 +5526,18 @@ class toolkit_UI():
                 self.button_cancel_ingest(window_id=ingest_window_id, queue_id=queue_id, dont_ask=True)
                 return None
 
+            if metadata_tab:
+                # add the metadata options to the metadata tab (in the middle frame)
+                metadata_form_vars = self.add_metadata_form_elements(metadata_tab_scrollable_frame, **kwargs)
+
+                # if something went wrong with the metadata options tab, close the window
+                if metadata_form_vars is None:
+                    logger.error('Something went wrong with the metadata options')
+                    self.button_cancel_ingest(window_id=ingest_window_id, queue_id=queue_id, dont_ask=True)
+                    return None
+            else:
+                metadata_form_vars = {}
+
             # add the analysis options to the analysis tab (in the middle frame)
             analysis_form_vars = self.add_analysis_form_elements(analysis_tab, **kwargs)
 
@@ -5526,6 +5551,7 @@ class toolkit_UI():
             form_vars = {**form_vars, **file_path_var,
                          'audio_form_vars': audio_form_vars,
                          'video_form_vars': video_form_vars,
+                         'metadata_form_vars': metadata_form_vars,
                          'analysis_form_vars': analysis_form_vars}
 
             # UI - start button command
@@ -5554,8 +5580,10 @@ class toolkit_UI():
             bottom_frame.rowconfigure(2, weight=1)
 
             # UI - add a minimum height to the window
-            ingest_window.minsize(500, 700
-            if ingest_window.winfo_screenheight() > 700 else ingest_window.winfo_screenheight())
+            ingest_window.minsize(
+                500,
+                700 if ingest_window.winfo_screenheight() > 700 else ingest_window.winfo_screenheight()
+            )
 
             # UI- add a maximum height to the window (to prevent it from being bigger than the screen)
             ingest_window.maxsize(600, ingest_window.winfo_screenheight())
@@ -5568,9 +5596,10 @@ class toolkit_UI():
 
             # if we're supposed to skip the settings
             if kwargs.get('skip_settings', False):
-                # send all the vars to ingest
+
+                # wait for the whole thing to load and then start ingest
                 # (this will also check if the form is valid)
-                self.button_start_ingest(form_vars=form_vars, **kwargs)
+                ingest_window.after(100, lambda: self.button_start_ingest(form_vars=form_vars, **kwargs))
 
             return
 
@@ -5720,6 +5749,11 @@ class toolkit_UI():
         if parent is None:
             return None
 
+        # get the ingest_window_id
+        ingest_window = None
+        if kwargs.get('ingest_window_id', None):
+            ingest_window = self.get_window_by_id(window_id=kwargs.get('ingest_window_id'))
+
         # create a dict to gather all the form variables
         # so we can return them later
         form_vars = {}
@@ -5730,6 +5764,10 @@ class toolkit_UI():
         form_vars['file_path_var'] = \
             file_path_var = tk.StringVar(parent)
         file_path_entry = ctk.CTkEntry(file_selection_form, width=100, textvariable=file_path_var)
+
+        # add the file_path_var as an attribute the ingest_window too
+        if ingest_window:
+            ingest_window.file_path_var = file_path_var
 
         # create the browse button
         browse_button = ctk.CTkButton(file_selection_form, text='Browse')
@@ -6411,13 +6449,53 @@ class toolkit_UI():
         # return all the gathered form variables
         return form_vars
 
-    @staticmethod
-    def form_to_video_indexing_settings(**kwargs):
+    def form_to_ingest_common_settings(self, metadata_form_vars, **kwargs):
+        """
+        We're using this function to sieve through variables that are common to all ingest types
+        Stuff like: queue_id, timeline_name, project_name, transcription_file_path
+        """
+
+        common_settings = dict()
+
+        common_settings['queue_id'] = kwargs.get('queue_id', None)
+
+        # timeline name
+        timeline_name_var = metadata_form_vars.get('timeline_name_var', None)
+        common_settings['timeline_name'] = timeline_name_var.get() if timeline_name_var else None
+
+        # link or not to a project
+        # use the project name only if we're supposed to add this item to a project after ingesting
+        if metadata_form_vars \
+                and metadata_form_vars.get('ingest_link_to_project_var', None) \
+                and metadata_form_vars.get('ingest_link_to_project_var').get():
+
+            common_settings['project_name'] = self.current_project.name if self.current_project else None
+        else:
+            common_settings['project_name'] = None
+
+        # get the timecode data
+        timeline_start_tc_var = metadata_form_vars.get('timeline_start_tc_var', None)
+        common_settings['timeline_start_tc'] = timeline_start_tc_var.get() if timeline_start_tc_var else None
+        timeline_fps_var = metadata_form_vars.get('timeline_fps_var', None)
+        common_settings['timeline_fps'] = timeline_fps_var.get() if timeline_fps_var else None
+
+        # if we have a transcription_file_path, pass it
+        common_settings['transcription_file_path'] = kwargs.get('transcription_file_path', None)
+
+        # should we delete the render.json file after ingesting?
+        ingest_delete_render_info_file_var = metadata_form_vars.get('ingest_delete_render_info_file_var', None)
+        if ingest_delete_render_info_file_var:
+            common_settings['ingest_delete_render_info_file'] = ingest_delete_render_info_file_var.get()
+
+        return common_settings
+
+    def form_to_video_indexing_settings(self, **kwargs):
         """
         This function takes the form variables and gets them into the video indexing settings
         """
 
         form_vars = kwargs.get('form_vars', None)
+        metadata_form_vars = form_vars.get('metadata_form_vars', {})
         video_form_vars = form_vars.get('video_form_vars', None)
 
         # if video indexing is not enabled, return None
@@ -6425,16 +6503,8 @@ class toolkit_UI():
                 and not video_form_vars.get('video_indexing_enabled_var').get():
             return None
 
-        indexing_settings = dict()
-
         # first, the non-video indexing specific settings
-        indexing_settings['queue_id'] = kwargs.get('queue_id', None)
-        indexing_settings['timeline_name'] = kwargs.get('timeline_name', None)
-        indexing_settings['project_name'] = kwargs.get('project_name', None)
-
-        # if we have a transcription_file_path, pass it
-        # but if we're also transcribing the video, then this will be ignored and that transcription will be used
-        indexing_settings['transcription_file_path'] = kwargs.get('transcription_file_path', None)
+        indexing_settings = self.form_to_ingest_common_settings(metadata_form_vars=metadata_form_vars, **kwargs)
 
         # then, the video indexing specific settings
         indexing_settings['video_file_path'] = kwargs.get('file_path', None)
@@ -6516,21 +6586,16 @@ class toolkit_UI():
         form_vars = kwargs.get('form_vars', None)
 
         audio_form_vars = form_vars.get('audio_form_vars', None)
+        metadata_form_vars = form_vars.get('metadata_form_vars', {})
         analysis_form_vars = form_vars.get('analysis_form_vars', None)
 
         if audio_form_vars.get('transcription_enabled_var', None) \
                 and not audio_form_vars.get('transcription_enabled_var').get():
             return None
 
-        transcription_settings = dict()
-
-        # first, the non-transcription specific settings
-        transcription_settings['queue_id'] = kwargs.get('queue_id', None)
-        transcription_settings['timeline_name'] = kwargs.get('timeline_name', None)
-        transcription_settings['project_name'] = kwargs.get('project_name', None)
-
-        # if we have a transcription_file_path, pass it
-        transcription_settings['transcription_file_path'] = kwargs.get('transcription_file_path', None)
+        # first, take care of settings that are not exclusively for transcribing (for e.g. metadata)
+        transcription_settings = \
+            self.form_to_ingest_common_settings(metadata_form_vars=metadata_form_vars, **kwargs)
 
         # retranscribe or not
         transcription_settings['retranscribe'] = kwargs.get('retranscribe', False)
@@ -6826,6 +6891,338 @@ class toolkit_UI():
 
         return form_vars
 
+    def add_metadata_form_elements(self, parent: tk.Widget, **kwargs) -> dict or None:
+        """
+        This function adds the form elements for the metadata window
+        """
+
+        # get the ingest window id
+        file_path_var = None
+        if kwargs.get('ingest_window_id', None) is not None:
+            ingest_window = self.get_window_by_id(window_id=kwargs.get('ingest_window_id'))
+
+            # get the file_path_var from the ingest window
+            file_path_var = ingest_window.file_path_var if hasattr(ingest_window, 'file_path_var') else None
+
+        # create the frames
+        project_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
+        timeline_timecode_frame = ctk.CTkFrame(parent, **self.ctk_frame_transparent)
+
+        # create the labels for the frames (and style them according to the theme)
+        project_label = ctk.CTkLabel(parent, text='Project', **self.ctk_frame_label_settings)
+        timeline_timecode_label = ctk.CTkLabel(parent, text='Timecode Data', **self.ctk_frame_label_settings)
+
+        # we're going to create the form_vars dict to store all the variables
+        # we will use this dict at the end of the function to gather all the created tk variables
+        form_vars = {}
+
+        # get the last grid row for the parent
+        l_row = parent.grid_size()[1]
+
+        # add the labels and frames to the parent
+        if self.current_project:
+            project_label.grid(row=l_row + 1, column=0, sticky="ew", **self.ctk_frame_paddings)
+            project_frame.grid(row=l_row + 2, column=0, sticky="ew", **self.ctk_frame_paddings)
+        timeline_timecode_label.grid(row=l_row + 3, column=0, sticky="ew", **self.ctk_frame_paddings)
+        timeline_timecode_frame.grid(row=l_row + 4, column=0, sticky="ew", **self.ctk_frame_paddings)
+
+        # make the column expandable
+        parent.columnconfigure(0, weight=1)
+        project_frame.columnconfigure(1, weight=1)
+        timeline_timecode_frame.columnconfigure(1, weight=1)
+
+        # ADD TO PROJECT SWITCH
+        ingest_link_to_project = kwargs.get('ingest_link_to_project', None) \
+            if kwargs.get('ingest_link_to_project', None) is not None \
+            else self.stAI.get_app_setting('ingest_link_to_project', default_if_none=True)
+
+        form_vars['ingest_link_to_project_var'] = \
+            ingest_link_to_project_var = tk.BooleanVar(project_frame, value=ingest_link_to_project)
+        ingest_link_to_project_label = ctk.CTkLabel(
+            project_frame, text='Link with Current Project', **self.ctk_form_label_settings)
+        ingest_link_to_project_input = ctk.CTkSwitch(
+            project_frame, variable=ingest_link_to_project_var, text='', **self.ctk_form_entry_settings)
+
+        # TIMELINE NAME
+        timeline_name = kwargs.get('timeline_name', '')
+
+        form_vars['timeline_name_var'] = \
+            timeline_name_var = tk.StringVar(timeline_timecode_frame, value=timeline_name)
+        timeline_name_label = ctk.CTkLabel(
+            timeline_timecode_frame, text='Timeline Name', **self.ctk_form_label_settings)
+        timeline_name_input = ctk.CTkEntry(
+            timeline_timecode_frame, textvariable=timeline_name_var, **self.ctk_form_entry_settings)
+        
+        # START TIMECODE
+        timeline_start_tc = kwargs.get('timeline_start_tc', '')
+        form_vars['timeline_start_tc_var'] = \
+            timeline_start_tc_var = tk.StringVar(timeline_timecode_frame, value=timeline_start_tc)
+        timeline_start_tc_label = ctk.CTkLabel(
+            timeline_timecode_frame, text='Start Timecode', **self.ctk_form_label_settings)
+        timeline_start_tc_input = ctk.CTkEntry(
+            timeline_timecode_frame, textvariable=timeline_start_tc_var, **self.ctk_form_entry_settings)
+        
+        # FRAME RATE
+        timeline_fps = kwargs.get('timeline_fps', '')
+        form_vars['timeline_fps_var'] = \
+            timeline_fps_var = tk.StringVar(timeline_timecode_frame, value=timeline_fps)
+        timeline_fps_label = ctk.CTkLabel(
+            timeline_timecode_frame, text='Frame Rate', **self.ctk_form_label_settings)
+        timeline_fps_input = ctk.CTkEntry(
+            timeline_timecode_frame, textvariable=timeline_fps_var, **self.ctk_form_entry_settings)
+
+        # USE RENDER INFO FILE SWITCH
+        ingest_use_render_info_file = kwargs.get('ingest_use_render_info_file', None) \
+            if kwargs.get('ingest_use_render_info_file', None) is not None \
+            else self.stAI.get_app_setting('ingest_use_render_info_file', default_if_none=True)
+
+        form_vars['ingest_use_render_info_file_var'] = \
+            ingest_use_render_info_file_var = tk.BooleanVar(
+            timeline_timecode_frame, value=ingest_use_render_info_file)
+        ingest_use_render_info_file_label = ctk.CTkLabel(
+            timeline_timecode_frame, text='Use Render Info File', **self.ctk_form_label_settings)
+        ingest_use_render_info_file_input = ctk.CTkSwitch(
+            timeline_timecode_frame, variable=ingest_use_render_info_file_var, text='',
+            **self.ctk_form_entry_settings
+        )
+
+        # USE SOURCE FILE METADATA SWITCH
+        ingest_use_source_file_metadata = kwargs.get('ingest_use_source_file_metadata', None) \
+            if kwargs.get('ingest_use_source_file_metadata', None) is not None \
+            else self.stAI.get_app_setting('ingest_use_source_file_metadata', default_if_none=True)
+
+        form_vars['ingest_use_source_file_metadata_var'] = \
+            ingest_use_source_file_metadata_var = tk.BooleanVar(
+            timeline_timecode_frame, value=ingest_use_source_file_metadata)
+        ingest_use_source_file_metadata_label = ctk.CTkLabel(
+            timeline_timecode_frame, text='Use Source File Metadata', **self.ctk_form_label_settings)
+        ingest_use_source_file_metadata_input = ctk.CTkSwitch(
+            timeline_timecode_frame, variable=ingest_use_source_file_metadata_var, text='',
+            **self.ctk_form_entry_settings
+        )
+
+        # DELETE RENDER INFO FILE SWITCH
+        ingest_delete_render_info_file = kwargs.get('ingest_delete_render_info_file', None) \
+            if kwargs.get('ingest_delete_render_info_file', None) is not None \
+            else self.stAI.get_app_setting('ingest_delete_render_info_file', default_if_none=True)
+
+        form_vars['ingest_delete_render_info_file_var'] = \
+            ingest_delete_render_info_file_var = tk.BooleanVar(
+            timeline_timecode_frame, value=ingest_delete_render_info_file)
+        ingest_delete_render_info_file_label = ctk.CTkLabel(
+            timeline_timecode_frame, text='Delete Render Info File', **self.ctk_form_label_settings)
+        ingest_delete_render_info_file_input = ctk.CTkSwitch(
+            timeline_timecode_frame, variable=ingest_delete_render_info_file_var, text='',
+            **self.ctk_form_entry_settings
+        )
+
+        # METADATA FRAME GRID
+        ingest_link_to_project_label.grid(row=1, column=0, sticky="w", **self.ctk_form_paddings)
+        ingest_link_to_project_input.grid(row=1, column=1, sticky="w", **self.ctk_form_paddings)
+
+        if not self.current_project:
+            ingest_link_to_project_label.grid_forget()
+            ingest_link_to_project_input.grid_forget()
+
+        # TIMELINE TIMECODE FRAME GRID
+        timeline_name_label.grid(row=1, column=0, sticky="w", **self.ctk_form_paddings)
+        timeline_name_input.grid(row=1, column=1, sticky="w", **self.ctk_form_paddings)
+        timeline_start_tc_label.grid(row=2, column=0, sticky="w", **self.ctk_form_paddings)
+        timeline_start_tc_input.grid(row=2, column=1, sticky="w", **self.ctk_form_paddings)
+        timeline_fps_label.grid(row=3, column=0, sticky="w", **self.ctk_form_paddings)
+        timeline_fps_input.grid(row=3, column=1, sticky="w", **self.ctk_form_paddings)
+        ingest_use_render_info_file_label.grid(row=4, column=0, sticky="w", **self.ctk_form_paddings)
+        ingest_use_render_info_file_input.grid(row=4, column=1, sticky="w", **self.ctk_form_paddings)
+        ingest_use_source_file_metadata_label.grid(row=5, column=0, sticky="w", **self.ctk_form_paddings)
+        ingest_use_source_file_metadata_input.grid(row=5, column=1, sticky="w", **self.ctk_form_paddings)
+        ingest_delete_render_info_file_label.grid(row=6, column=0, sticky="w", **self.ctk_form_paddings)
+        ingest_delete_render_info_file_input.grid(row=6, column=1, sticky="w", **self.ctk_form_paddings)
+
+        def ingesting_multiple_files():
+            """
+            This returns:
+            - False if we're dealing with a single file
+            - True if we're dealing with multiple files
+            - None if there's no file_path_var
+            """
+
+            if file_path_var:
+                # get the file path from the file_path_var
+                file_path_str = file_path_var.get()
+
+                # let's figure out if we're dealing with one or multiple files
+                file_path = self.files_string_to_list(file_path_str)
+
+                return len(file_path) > 1
+
+            return None
+
+        def fill_metadata_fields(f_file_path_var):
+            """
+            This function fills the metadata fields with the data either from the render.json file or the source file
+            """
+
+            file_paths = self.files_string_to_list(f_file_path_var.get())
+
+            # reset the field values
+            source_timeline_name = ''
+            source_timeline_start_tc = ''
+            source_timeline_fps = ''
+
+            if len(file_paths) == 1:
+
+                file_path = file_paths[0].strip(" \"")
+
+                # the render.json file should have the exact same name as the file + .json
+                render_json_data = TranscriptionUtils.read_render_json('{}.json'.format(file_path))
+
+                # wait for a blink
+                time.sleep(0.01)
+
+                # if we have data from the render.json file, use it
+                if ingest_use_render_info_file and isinstance(render_json_data, dict):
+                    source_timeline_name = render_json_data.get('timeline_name', '')
+                    source_timeline_start_tc = render_json_data.get('timeline_start_tc', '')
+                    source_timeline_fps = render_json_data.get('fps', '')
+
+                # otherwise, reset the fields to prevent confusion
+                elif ingest_use_source_file_metadata:
+                    file_stream_data = MediaUtils.get_fps_and_timecode_from_file(file_path=file_path)
+
+                    if isinstance(file_stream_data, dict):
+                        source_timeline_start_tc = file_stream_data.get('timecode', '')
+                        source_timeline_fps = file_stream_data.get('frame_rate', '')
+
+            # remove any trailing zeros from the fps decimals
+            # for e.g. 25.0 becomes 25, but 23.97 stays the same
+            if source_timeline_fps and '.' in str(source_timeline_fps):
+                source_timeline_fps = str(float(source_timeline_fps)).rstrip('0').rstrip('.')
+
+            # set the fields
+            timeline_name_var.set(source_timeline_name)
+            timeline_start_tc_var.set(source_timeline_start_tc)
+            timeline_fps_var.set(source_timeline_fps)
+
+        def toggle_metadata_fields(*_f_args):
+            # if we're ingesting multiple files
+            if ingesting_multiple_files():
+
+                # don't show the timeline name and timecode fields
+                timeline_name_label.grid_remove()
+                timeline_name_input.grid_remove()
+                timeline_start_tc_label.grid_remove()
+                timeline_start_tc_input.grid_remove()
+                timeline_fps_label.grid_remove()
+                timeline_fps_input.grid_remove()
+
+                # show the ingest_use_render_info_file and ingest_use_source_file_metadata switches
+                ingest_use_render_info_file_label.grid()
+                ingest_use_render_info_file_input.grid()
+                ingest_use_source_file_metadata_label.grid()
+                ingest_use_source_file_metadata_input.grid()
+
+            # otherwise
+            else:
+
+                # show the timeline name and timecode fields
+                timeline_name_label.grid()
+                timeline_name_input.grid()
+                timeline_start_tc_label.grid()
+                timeline_start_tc_input.grid()
+                timeline_fps_label.grid()
+                timeline_fps_input.grid()
+
+                # don't show the ingest_use_render_info_file and ingest_use_source_file_metadata switches
+                ingest_use_render_info_file_label.grid_remove()
+                ingest_use_render_info_file_input.grid_remove()
+                ingest_use_source_file_metadata_label.grid_remove()
+                ingest_use_source_file_metadata_input.grid_remove()
+
+        def validate_timecode_fields(*_f_args):
+            """
+            This function validates the timeline_start_tc and timeline_fps fields
+            """
+
+            # set the function_fps to the default so we can validate the timecode below
+            function_fps = 24
+
+            # the timeline_fps should be numeric
+            if timeline_fps_var.get() and timeline_fps_var.get().replace('.', '', 1).isdigit():
+
+                # set as valid
+                self.style_input_as_valid(input_widget=timeline_fps_input, label_widget=timeline_fps_label)
+
+                function_fps = float(timeline_fps_var.get())
+
+            # allow empty values too
+            elif not timeline_fps_var.get():
+                self.style_input_as_valid(input_widget=timeline_fps_input, label_widget=timeline_fps_label)
+                self.remove_form_invalid(window_id=kwargs.get('ingest_window_id'), key='timeline_fps')
+
+            else:
+                # set the timeline_fps to invalid
+                self.style_input_as_invalid(input_widget=timeline_fps_input, label_widget=timeline_fps_label)
+                self.add_form_invalid(window_id=kwargs.get('ingest_window_id'), key='timeline_fps')
+
+            # allow empty timecodes
+            if not timeline_start_tc_var.get():
+                self.style_input_as_valid(input_widget=timeline_start_tc_input, label_widget=timeline_start_tc_label)
+                self.remove_form_invalid(window_id=kwargs.get('ingest_window_id'), key='timeline_start_tc')
+
+            # the timeline_start_tc should be a timecode (hh:mm:ss:ff)
+            elif timeline_start_tc_var.get() and ':' in str(timeline_start_tc_var.get()):
+
+                try:
+                    # try to convert the timecode to a timecode object
+                    Timecode(framerate=function_fps, start_timecode=timeline_start_tc_var.get())
+
+                    # set as valid
+                    self.style_input_as_valid(
+                        input_widget=timeline_start_tc_input, label_widget=timeline_start_tc_label)
+                    self.remove_form_invalid(window_id=kwargs.get('ingest_window_id'), key='timeline_start_tc')
+
+                except ValueError or IndexError:
+                    # set the timeline_start_tc_input and label to invalid
+                    self.style_input_as_invalid(
+                        input_widget=timeline_start_tc_input, label_widget=timeline_start_tc_label)
+                    self.add_form_invalid(window_id=kwargs.get('ingest_window_id'), key='timeline_start_tc')
+
+            else:
+                # set the timeline_start_tc_input and label to invalid
+                self.style_input_as_invalid(input_widget=timeline_start_tc_input, label_widget=timeline_start_tc_label)
+                self.add_form_invalid(window_id=kwargs.get('ingest_window_id'), key='timeline_start_tc')
+
+            # check if the form is valid now
+            self.is_form_valid(window_id=kwargs.get('ingest_window_id'), **kwargs)
+
+        toggle_metadata_fields()
+
+        # if the file_path_var exists
+        if file_path_var:
+
+            # toggle the metadata fields when it changes
+            file_path_var.trace('w', lambda *args: toggle_metadata_fields())
+
+            # and fill in the fields if needed
+            file_path_var.trace(
+                'w',
+                lambda *args, l_file_path_var=file_path_var:
+                fill_metadata_fields(f_file_path_var=l_file_path_var)
+            )
+
+            # fill the initial metadata fields
+            fill_metadata_fields(file_path_var)
+
+        validate_timecode_fields()
+
+        # if the timeline_start_tc_var changes, validate it
+        timeline_start_tc_var.trace('w', lambda *args: validate_timecode_fields())
+
+        # if the timeline_fps_var changes, validate it
+        timeline_fps_var.trace('w', lambda *args: validate_timecode_fields())
+
+        return form_vars
+
     def add_analysis_form_elements(self, parent: tk.Widget, **kwargs) -> dict or None:
         """
         This function adds the form elements for the analysis window
@@ -6905,19 +7302,29 @@ class toolkit_UI():
             return False
 
         # convert the audio form variables to transcription settings
+        # these settings will also establish if we perform the transcription or not
         transcription_settings = self.form_to_transcription_settings(**kwargs)
 
         # convert the video form variables to video indexing settings
+        # these settings will also establish if we perform the video indexing or not
         video_indexing_settings = self.form_to_video_indexing_settings(**kwargs)
+
+        # if we have ingest_delete_render_info_file_var in video_indexing_settings,
+        # remove it from the transcription_settings if it exists
+        # this will ensure that we only delete the render.json file at the end of the ingest
+        if video_indexing_settings \
+            and 'ingest_delete_render_info_file' in video_indexing_settings \
+                and transcription_settings and 'ingest_delete_render_info_file' in transcription_settings:
+
+            transcription_settings['ingest_delete_render_info_file'] = False
 
         if transcription_settings is None and video_indexing_settings is None:
             self.notify_via_messagebox(type='warning',
                                        message='Both transcription and video indexing are disabled. '
                                                'Enable one of them to proceed.',
-                                       message_log='Nothing to send to queue ' \
+                                       message_log='Nothing to send to queue '
                                                    '- both transcription and video indexing are disabled.',
-                                       parent=self.get_window_by_id(ingest_window_id)
-            )
+                                       parent=self.get_window_by_id(ingest_window_id))
             return False
 
         # add the transcription job(s) to the queue
@@ -7005,17 +7412,17 @@ class toolkit_UI():
             except tk.TclError:
                 pass
 
-    def is_form_valid(self, window_id: str, **kwargs):
+    def is_form_valid(self, window_id: str or None, **kwargs):
         """
         This checks the form_invalid attribute of the window and returns True if it's False
         If the window has no form_invalid attribute, it returns True
         """
 
         # if the window doesn't exist, return None
-        if window_id not in self.windows:
+        if not window_id or window_id not in self.windows:
             return None
 
-        # if the window has a form_invalid attribute check and it's not empty, return False
+        # if the window has a form_invalid attribute check, and it's not empty, return False
         if hasattr(self.windows[window_id], 'form_invalid') \
                 and len(self.windows[window_id].form_invalid) > 0:
 
@@ -8940,7 +9347,8 @@ class toolkit_UI():
             self.toolkit_UI_obj.open_ingest_window(
                 transcription_file_path=self.get_window_transcription(window_id=window_id).transcription_file_path,
                 time_intervals=time_intervals, retranscribe=True,
-                video_indexing_enabled=False
+                video_indexing_enabled=False,
+                metadata_tab_enabled=False
             )
 
             # close the transcription window

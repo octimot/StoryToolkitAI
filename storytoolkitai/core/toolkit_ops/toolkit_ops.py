@@ -29,6 +29,7 @@ from .processing_queue import ProcessingQueue
 from .search import ToolkitSearch, SearchItem, TextSearch, VideoSearch, cv2
 from .assistant import ToolkitAssistant, AssistantUtils
 from .assistant import DEFAULT_SYSTEM_MESSAGE as ASSISTANT_DEFAULT_SYSTEM_MESSAGE
+from .media import MediaUtils
 from .speaker_diarization import detect_speaker_changes
 from .timecode import sec_to_tc, tc_to_sec
 
@@ -313,7 +314,7 @@ class ToolkitOps:
         # if the file extension is not valid, return False
         return False
 
-    def add_media_to_queue(self, source_file_paths: str or list=None, queue_id: str=None,
+    def add_media_to_queue(self, source_file_paths: str or list = None, queue_id: str = None,
                            transcription_settings=None, video_indexing_settings=None,
                            **kwargs):
         """
@@ -471,11 +472,11 @@ class ToolkitOps:
         # otherwise return false
         return False
 
-    def add_transcription_to_queue(self, transcription_task=None, audio_file_path: str=None, queue_id: str=None,
+    def add_transcription_to_queue(self, transcription_task=None, audio_file_path: str = None, queue_id: str = None,
                                    **kwargs):
         """
         This adds a transcription item to the transcription queue
-        (it also splits it into two queue items, if it's a transcribe+translate transcription_task)
+        (it also splits it into two queue items, if it's a "transcribe+translate" transcription_task)
 
         Here, we are processing the options that have something to do with the queue processing
         The whisper options are processed by the whisper_transcribe function,
@@ -2125,9 +2126,6 @@ class ToolkitOps:
 
             return None
 
-        # perform speaker diarization if requested
-        # self.speaker_diarization(audio_file_path)
-
         # let the user know that the speech was processed
         notification_msg = "Finished transcription for {} in {} seconds" \
             .format(name, round(time.time() - transcription_start_time))
@@ -2146,68 +2144,21 @@ class ToolkitOps:
         # save the transcription file once here
         transcription.save_soon(sec=0)
 
-        # if we're not retranscribing or not supposed to overwrite an existing transcription file
-        if not other_options.get('retranscribe', False):
+        # take care of the metadata and project related stuff
+        self.process_transcription_metadata(other_options=other_options, transcription=transcription)
 
-            # if a timeline_name was sent, remember it for later
-            timeline_name = other_options.get('timeline_name', None)
+        # delete the render.json file if it exists
+        if other_options.get('source_file_path', None) and other_options.get('ingest_delete_render_info_file', False):
 
-            # add the timeline name to the transcription data, if there is one
-            if timeline_name is not None:
-                transcription.set('timeline_name', timeline_name)
+            source_file_path = other_options.get('source_file_path', None)
+            render_json_file_path = "{}.json".format(source_file_path)
 
-            # if a project_name was sent, remember it for later
-            project_name = other_options.get('project_name', None)
-
-            # add the project name to the transcription data, if there is one
-            if project_name is not None:
-                transcription.set('project_name', project_name)
-
-        # if the transcription data doesn't contain the fps, the timeline name or the start_tc,
-        # try to get them from a render.json file
-        # these files are saved by the render() function in mots_resolve.py
-        if not transcription.timeline_fps or not transcription.timeline_start_tc or not transcription.timeline_name:
-
-            # the render.json file path should be next to the audio file
-            # and will have the same name as the audio file, but with .json at the end
-            render_json_file_path = \
-                os.path.join(os.path.dirname(audio_file_path), os.path.basename(audio_file_path) + '.json')
-
-            # if the render.json file exists, try to get the data from it
-            if os.path.exists(render_json_file_path):
-
-                logger.debug('Trying to get timeline data from render json file: {}'.format(render_json_file_path))
-
-                with open(render_json_file_path, 'r') as render_json_file:
-                    render_data = json.load(render_json_file)
-
-                    if not transcription.timeline_fps and 'fps' in render_data:
-                        transcription.set('timeline_fps', render_data['fps'])
-
-                    if not transcription.timeline_start_tc and 'timeline_start_tc' in render_data:
-                        transcription.set('timeline_start_tc', render_data['timeline_start_tc'])
-
-                    if not transcription.timeline_name and 'timeline_name' in render_data:
-                        transcription.set('timeline_name', render_data['timeline_name'])
-            else:
-                logger.debug('No render json file found at {}'.format(render_json_file_path))
-
-        # save the transcription to file with all the added data
-        transcription.save_soon(sec=0)
+            # delete the render.json file if it exists
+            TranscriptionUtils.delete_render_json(render_json_file_path=render_json_file_path)
 
         # cancel transcription if user requested it
         if self.processing_queue.cancel_if_canceled(queue_id=queue_id):
             return None
-
-        # if there's a project_name and a timeline_name in the transcription
-        # link the transcription to the project and timeline
-        if transcription.project_name is not None and transcription.timeline_name is not None:
-            project = Project(project_name=transcription.project_name)
-
-            project.link_transcription_to_timeline(
-                transcription_file_path=transcription.transcription_file_path,
-                timeline_name=transcription.timeline_name
-            )
 
         # get the queue item again, in case it was updated while we were transcribing
         queue_item = self.processing_queue.get_item(queue_id=queue_id)
@@ -2233,6 +2184,74 @@ class ToolkitOps:
         )
 
         return True if not return_path else transcription.transcription_file_path
+
+    def process_transcription_metadata(self, other_options, transcription: Transcription | str):
+        """
+        We use this usually at the end of whisper_transcribe() and index_video()
+        to set any metadata or project related stuff.
+        This also deletes the render.json file if requested.
+        """
+
+        # if the transcription is none, return
+        if transcription is None:
+            return
+
+        # if the transcription is a string, then it's a file path
+        if isinstance(transcription, str):
+            transcription = Transcription(transcription_file_path=transcription)
+
+        # if we're not re-transcribing or not supposed to overwrite an existing transcription file
+        if not other_options.get('retranscribe', False):
+
+            # if a timeline_name was sent, remember it for later
+            timeline_name = other_options.get('timeline_name', None)
+
+            # add the timeline name to the transcription data, if there is one
+            if timeline_name:
+                transcription.set('timeline_name', timeline_name)
+
+            # if a project_name was sent, remember it for later
+            project_name = other_options.get('project_name', None)
+
+            # add the project name to the transcription data, if there is one
+            if project_name is not None:
+                transcription.set('project_name', project_name)
+
+        # update other stuff, like metadata and project and timeline names
+        # but only use them if they're not empty
+        if 'timeline_fps' in other_options and other_options['timeline_fps']:
+            transcription.set('timeline_fps', other_options['timeline_fps'])
+
+        if 'timeline_start_tc' in other_options and other_options['timeline_start_tc']:
+            transcription.set('timeline_start_tc', other_options['timeline_start_tc'])
+
+        # if there's a project_name and a timeline_name in the transcription
+        # link the transcription to the project and timeline
+        if isinstance(transcription, Transcription) \
+                and transcription.project_name is not None and transcription.timeline_name is not None:
+            project = Project(project_name=transcription.project_name)
+
+            project.link_transcription_to_timeline(
+                transcription_file_path=transcription.transcription_file_path,
+                timeline_name=transcription.timeline_name
+            )
+
+            # notify the observers that the project has changed
+            self.notify_observers('project_changed')
+
+        # if a timeline_name wasn't set, but a project_name was set,
+        # just link the transcription to the project
+        elif isinstance(transcription, Transcription) \
+                and transcription.project_name is not None and transcription.timeline_name is None:
+            project = Project(project_name=transcription.project_name)
+
+            project.link_to_project(object_type='transcription', file_path=transcription.transcription_file_path)
+
+            # notify the observers that the project has changed
+            self.notify_observers('project_changed')
+
+        # save the transcription to file with all the added data
+        transcription.save_soon(sec=0)
 
     # SEARCH/CLASSIFICATION PROCESS METHODS
 
@@ -2659,7 +2678,7 @@ class ToolkitOps:
         if kwargs.get('transcription_file_paths', None) is None:
             transcription = Transcription(transcription_file_path)
 
-        # if we have more transcription_file_paths, we'll deal with them later
+        # if we have more transcription_file_paths in kwargs, we'll deal with them later
         else:
             transcription = None
 
@@ -2750,7 +2769,6 @@ class ToolkitOps:
             self.processing_queue.cancel_item(queue_id=queue_id)
             return None
 
-
         def index_progress(**progress_kwargs):
 
             # calculate the current progress in percent based on where we are in the total number of frames
@@ -2800,29 +2818,51 @@ class ToolkitOps:
         # this is the path to the numpy file which contains the embeddings
         numpy_file_path = embedding_paths[0]
 
-        # if 'transcription_file_paths' exists in kwargs, add the metadata paths to all the transcriptions
+        # if 'transcription_file_paths' exists in kwargs, add the video index paths to all the transcriptions
         # this should be the case if the user transcribed and translated the video before indexing it
         # therefore creating more than one transcription file
         if kwargs.get('transcription_file_paths', None):
-            for transcription_file_path in kwargs.get('transcription_file_paths', None):
+            for transcription_file_path in kwargs.get('transcription_file_paths', []):
 
-                self.add_video_index_paths_to_transcription(transcription_file_path=transcription_file_path,
-                                                            video_index_path=numpy_file_path)
+                # add the video index paths to the transcription and get the transcription object
+                self.add_video_index_paths_to_transcription(
+                    transcription_file_path=transcription_file_path, video_index_path=numpy_file_path
+                )
+
+                # add metadata, but use the path instead of the transcription object
+                self.process_transcription_metadata(other_options=kwargs, transcription=transcription_file_path)
 
         # otherwise, if 'transcription_file_path' exists in the transcription object,
         # add the metadata path to that transcription
         elif transcription is not None and transcription.transcription_file_path is not None:
-            self.add_video_index_paths_to_transcription(transcription_file_path=transcription_file_path,
-                                                        video_index_path=numpy_file_path)
+            transcription = self.add_video_index_paths_to_transcription(
+                transcription_file_path=transcription_file_path, video_index_path=numpy_file_path
+            )
+
+            # add metadata
+            self.process_transcription_metadata(other_options=kwargs, transcription=transcription)
+
+        # delete the render.json file if it exists
+        if kwargs.get('source_file_path', None) and kwargs.get('ingest_delete_render_info_file', False):
+
+            source_file_path = kwargs.get('source_file_path', None)
+            render_json_file_path = "{}.json".format(source_file_path)
+
+            # delete the render.json file if it exists
+            TranscriptionUtils.delete_render_json(render_json_file_path=render_json_file_path)
 
         # update status
         self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='done')
 
         return True
 
-    def add_video_index_paths_to_transcription(self, transcription_file_path, video_index_path):
+    @staticmethod
+    def add_video_index_paths_to_transcription(transcription_file_path, video_index_path):
         """
         This adds the video index path (numpy_file_path) to said transcription file
+        :param transcription_file_path: the path to the transcription file
+        :param video_index_path: the path to the video index file
+        :return: the transcription object
         """
 
         transcription = Transcription(transcription_file_path=transcription_file_path)
@@ -2832,6 +2872,8 @@ class ToolkitOps:
 
         # save the transcription
         transcription.save_soon(sec=0)
+
+        return transcription
 
     def add_index_video_to_queue(self, video_file_path, **other_options):
         """
@@ -2860,6 +2902,13 @@ class ToolkitOps:
         queue_item['device'] = self.torch_device_type_select()
         queue_item['item_type'] = 'index_video'
         queue_item['video_file_path'] = queue_item['source_file_path']
+
+        # metadata stuff
+        queue_item['timeline_name'] = other_options.get('timeline_name', None)
+        queue_item['project_name'] = other_options.get('project_name', None)
+        queue_item['timeline_fps'] = other_options.get('timeline_fps', None)
+        queue_item['timeline_start_tc'] = other_options.get('timeline_start_tc', None)
+        queue_item['ingest_delete_render_info_file'] = other_options.get('ingest_delete_render_info_file', False)
 
         queue_item['indexing_options'] = other_options.get('indexing_options', dict())
         queue_item['detection_options'] = other_options.get('detection_options', dict())
@@ -3371,7 +3420,7 @@ class ToolkitOps:
         """
         return all(os.path.exists(os.path.join(dir, file)) for file in files_present)
 
-    def start_resolve_render_and_monitor(self, monitor_callback: callable=None, **kwargs):
+    def start_resolve_render_and_monitor(self, monitor_callback: callable = None, **kwargs):
         """
         This starts a render in Resolve and then uses a monitor to check if it's done
         :param monitor_callback: a callable that will be called when the render is done

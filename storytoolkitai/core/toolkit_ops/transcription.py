@@ -14,7 +14,7 @@ from threading import Timer
 from timecode import Timecode
 
 from storytoolkitai.core.logger import logger
-from storytoolkitai.core.toolkit_ops.timecode import sec_to_tc, tc_to_sec
+from storytoolkitai.core.toolkit_ops.timecode import sec_to_tc
 
 
 class Transcription:
@@ -164,6 +164,10 @@ class Transcription:
 
     @property
     def is_transcription_file(self):
+
+        # refresh the validity of the transcription file
+        self._is_valid_transcription_data()
+
         return self._is_transcription_file
 
     @property
@@ -528,10 +532,10 @@ class Transcription:
 
         # for transcription data to be valid
         # it needs to have segments which are a list
-        # and either the list needs to be empty or the first item in the list needs to be a valid segment
+        # and either the list needs to be empty or the first item in the list needs to be a valid segment,
         # or
         # it should have a video video_index_path
-        if (isinstance(self._segments, list) \
+        if (isinstance(self._segments, list)
                 and (len(self._segments) == 0
                      or (isinstance(self._segments[0], TranscriptionSegment) and self._segments[0].is_valid)
                      or TranscriptionSegment(self._segments[0]).is_valid))\
@@ -1967,7 +1971,6 @@ class TranscriptionUtils:
             logger.debug('Cannot convert seconds to timecode - something went wrong:', exc_info=True)
             return None
 
-
     @staticmethod
     def write_to_transcription_file(transcription_data, transcription_file_path, backup=False):
 
@@ -2500,3 +2503,51 @@ class TranscriptionUtils:
 
         # return the comp file path
         return comp_file_path
+
+    @staticmethod
+    def read_render_json(render_json_file_path: str):
+        """
+        Read the render info file and return the data
+        """
+
+        # if the render json file doesn't exist, return None
+        if not os.path.exists(render_json_file_path):
+            logger.debug('Cannot read render info file - file "{}" not found.'.format(render_json_file_path))
+            return None
+
+        # read the render json file
+        try:
+            with open(render_json_file_path, 'r', encoding='utf-8') as render_json_file:
+                render_json = json.load(render_json_file)
+
+            return render_json
+
+        except Exception as e:
+            logger.error('Cannot read render info file "{}": {}.'.format(render_json_file_path, e), exc_info=True)
+            return None
+
+    @staticmethod
+    def delete_render_json(render_json_file_path: str = None):
+        """
+        Delete the render info file
+        """
+
+        # if the render json file doesn't exist, return None
+        if not os.path.exists(render_json_file_path):
+            logger.debug('Cannot delete render info file - file "{}" not found.'.format(render_json_file_path))
+            return None
+
+        # make sure we're deleting a file and not a directory
+        if os.path.isdir(render_json_file_path):
+            logger.error('Cannot delete render info file - path "{}" is a directory.'.format(render_json_file_path))
+            return False
+
+        # delete the render json file
+        try:
+            logger.debug('Deleting render info file {}.'.format(render_json_file_path))
+            os.remove(render_json_file_path)
+            return True
+
+        except Exception as e:
+            logger.error('Cannot delete render info file "{}": {}.'.format(render_json_file_path, e), exc_info=True)
+            return False

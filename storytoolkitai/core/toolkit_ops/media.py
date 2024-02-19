@@ -215,3 +215,29 @@ class MediaUtils:
             return float(match.group(1))
         else:
             return None
+
+    @staticmethod
+    def get_fps_and_timecode_from_file(file_path):
+        """
+        This function extracts specific stream information such as frame rate and timecode
+        from a video or audio file using ffmpeg, parsing the stderr output.
+        """
+
+        # try to extract the frame rate and timecode from the file using ffmpeg, but only process the first frame
+        cmd = ["ffmpeg", "-i", file_path, "-vframes", "1", "-f", "null", "-"]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        # Initialize an empty dict to hold our extracted information
+        stream_info = {}
+
+        # Use regular expressions to find frame rate and timecode
+        frame_rate_match = re.search(r", (\d+(?:\.\d+)?) fps,", result.stderr)
+        timecode_match = re.search(r"timecode\s*:\s*([0-9:;.]+)", result.stderr)
+
+        if frame_rate_match:
+            stream_info['frame_rate'] = frame_rate_match.group(1)
+
+        if timecode_match:
+            stream_info['timecode'] = timecode_match.group(1)
+
+        return stream_info
