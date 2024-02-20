@@ -247,6 +247,9 @@ class UImenus:
             # make sure we know which window is focused etc.
             self.update_current_window_references()
 
+            # disable the "Show file in ..." for now
+            self.filemenu.entryconfig("Show file in " + self.file_browser_name, state=DISABLED)
+
             if self.toolkit_UI_obj.current_project is None:
                 self.filemenu.entryconfig('Export current project...', state=DISABLED)
                 self.filemenu.entryconfig('Close current project', state=DISABLED)
@@ -314,7 +317,6 @@ class UImenus:
                 self.filemenu.entryconfig('Export transcript as Fusion Text...', state=DISABLED)
                 self.filemenu.entryconfig(link_transcription_project_index,
                                           label="Link transcription to project", state=DISABLED)
-                self.filemenu.entryconfig("Show file in " + self.file_browser_name, state=DISABLED)
 
             if self.current_window_type == 'story_editor':
 
@@ -360,7 +362,6 @@ class UImenus:
                 self.filemenu.entryconfig('Export story as EDL or FCP7XML...', state=DISABLED)
                 self.filemenu.entryconfig(link_story_project_index,
                                           label='Link story to project', state=DISABLED)
-                self.filemenu.entryconfig("Show file in " + self.file_browser_name, state=DISABLED)
 
         # add a postcommand to the file menu to enable/disable menu items depending on the current window
         self.filemenu.configure(postcommand=toggle_file_menu_items)
