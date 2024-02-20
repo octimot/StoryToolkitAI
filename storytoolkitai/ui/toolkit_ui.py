@@ -247,6 +247,11 @@ class toolkit_UI():
                 analysis_form_vars = self.toolkit_UI_obj.add_analysis_form_elements(
                     ingest_tab_scrollable_frame)
 
+                # add the metadata form elements
+                metadata_form_vars = self.toolkit_UI_obj.add_metadata_form_elements(
+                    ingest_tab_scrollable_frame
+                )
+
                 # add the other ingest form elements
                 other_ingest_form_vars = self.add_other_ingest_prefs(
                     ingest_tab_scrollable_frame)
@@ -266,7 +271,7 @@ class toolkit_UI():
 
                 # create the giant dictionary that contains all the form variables
                 form_vars = {**general_prefs_form_vars,
-                             **audio_form_vars, **video_form_vars, **analysis_form_vars,
+                             **audio_form_vars, **video_form_vars, **analysis_form_vars, **metadata_form_vars,
                              **other_ingest_form_vars, **integrations_form_vars, **search_form_vars,
                              **assistant_form_vars}
 
@@ -1159,20 +1164,11 @@ class toolkit_UI():
             self.stAI.config['transcription_group_questions'] = input_variables['group_questions_var'].get()
             del input_variables['group_questions_var']
 
-
-
             if input_variables['video_indexing_index_candidate_var'].get() == 'the first frame':
                 self.stAI.config['video_indexing_index_candidate'] = 'first'
             else:
                 self.stAI.config['video_indexing_index_candidate'] = 'sharp'
             del input_variables['video_indexing_index_candidate_var']
-
-            # the video sensitivity needs a bit of conversion
-            # sensitivity = input_variables['clip_shot_change_sensitivity_var'].get()
-            # del input_variables['clip_shot_change_sensitivity_var']
-
-            # the sensitivity is between 0 and 100, but the encoder expects a value between 255 (lowest) and 0 (highest)
-            # self.stAI.config['clip_shot_change_sensitivity'] = 255 - int(sensitivity * 255 / 100)
 
             # SAVE THE VARIABLES FROM HERE ON
 
@@ -1197,7 +1193,6 @@ class toolkit_UI():
                                                           message_log='Preferences saved, need restart for full effect',
                                                           parent=self.toolkit_UI_obj.get_window_by_id('preferences'))
 
-
                 # close the window
                 self.toolkit_UI_obj.destroy_window_(window_id='preferences')
                 return True
@@ -1213,13 +1208,13 @@ class toolkit_UI():
 
         def open_about_window(self):
             """
-            Open the about window
+            Open the "about window"
             :return:
             """
 
-            # open the about window
+            # open the "about" window"
 
-            # create a window for the about window if one doesn't already exist
+            # create a window for the "about window" if one doesn't already exist
             if about_window := self.toolkit_UI_obj.create_or_open_window(parent_element=self.root,
                                                                          window_id='about',
                                                                          title='About StoryToolkitAI', resizable=False,
@@ -1227,7 +1222,7 @@ class toolkit_UI():
                 # the text justify
                 justify = {'justify': ctk.LEFT}
 
-                # create a frame for the about window
+                # create a frame for the "about window"
                 about_frame = ctk.CTkFrame(about_window, **toolkit_UI.ctk_frame_transparent)
                 about_frame.pack(**toolkit_UI.ctk_full_window_frame_paddings)
 
@@ -7020,7 +7015,7 @@ class toolkit_UI():
         ingest_link_to_project_label.grid(row=1, column=0, sticky="w", **self.ctk_form_paddings)
         ingest_link_to_project_input.grid(row=1, column=1, sticky="w", **self.ctk_form_paddings)
 
-        if not self.current_project:
+        if not self.current_project and kwargs.get('ingest_window_id', None):
             ingest_link_to_project_label.grid_forget()
             ingest_link_to_project_input.grid_forget()
 
@@ -7045,6 +7040,10 @@ class toolkit_UI():
             - True if we're dealing with multiple files
             - None if there's no file_path_var
             """
+
+            # we're not doing this if we don't have an ingest_window_id
+            if not kwargs.get('ingest_window_id', None):
+                return True
 
             if file_path_var:
                 # get the file path from the file_path_var
