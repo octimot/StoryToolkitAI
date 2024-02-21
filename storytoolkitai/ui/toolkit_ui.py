@@ -8535,6 +8535,10 @@ class toolkit_UI():
 
             # CMD+A key (select/deselect all)
             if event.keysym == 'a' and special_key == 'cmd' and transcript_focused:
+
+                # remove any 'sel' tag to avoid confusion
+                text_element.tag_remove('sel', '1.0', 'end')
+
                 return self.button_select_deselect_all(window_id, text_element)
 
             # Shift+A key (select between current and last active segment)
