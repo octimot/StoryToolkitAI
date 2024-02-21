@@ -802,8 +802,6 @@ class toolkit_UI():
             temperature_slider.pack(side=ctk.LEFT)
             temperature_entry.pack(side=ctk.LEFT, **toolkit_UI.ctk_form_paddings)
 
-
-
             # MAXIMUM LENGTH
             max_length = \
                 kwargs.get('assistant_max_length', None) \
@@ -899,8 +897,6 @@ class toolkit_UI():
             presence_penalty_slider.pack(side=ctk.LEFT)
             presence_penalty_entry.pack(side=ctk.LEFT, **toolkit_UI.ctk_form_paddings)
 
-
-
             # ADD ELEMENTS TO ASSISTANT GRID
             assistant_provider_label.grid(row=0, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
             assistant_provider_input.grid(row=0, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
@@ -943,7 +939,6 @@ class toolkit_UI():
                 # ADD ELEMENTS TO OPENAI GRID
                 openai_api_key_label.grid(row=1, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
                 openai_api_key_input.grid(row=1, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-
 
             return form_vars
 
@@ -6946,7 +6941,7 @@ class toolkit_UI():
         timeline_name_label = ctk.CTkLabel(
             timeline_timecode_frame, text='Timeline Name', **self.ctk_form_label_settings)
         timeline_name_input = ctk.CTkEntry(
-            timeline_timecode_frame, textvariable=timeline_name_var, **self.ctk_form_entry_settings)
+            timeline_timecode_frame, textvariable=timeline_name_var, **self.ctk_form_entry_settings_double)
         
         # START TIMECODE
         timeline_start_tc = kwargs.get('timeline_start_tc', '')
@@ -6964,7 +6959,7 @@ class toolkit_UI():
         timeline_fps_label = ctk.CTkLabel(
             timeline_timecode_frame, text='Frame Rate', **self.ctk_form_label_settings)
         timeline_fps_input = ctk.CTkEntry(
-            timeline_timecode_frame, textvariable=timeline_fps_var, **self.ctk_form_entry_settings)
+            timeline_timecode_frame, textvariable=timeline_fps_var, **self.ctk_form_entry_settings_half)
 
         # USE RENDER INFO FILE SWITCH
         ingest_use_render_info_file = kwargs.get('ingest_use_render_info_file', None) \
@@ -7180,7 +7175,7 @@ class toolkit_UI():
                         input_widget=timeline_start_tc_input, label_widget=timeline_start_tc_label)
                     self.remove_form_invalid(window_id=kwargs.get('ingest_window_id'), key='timeline_start_tc')
 
-                except ValueError or IndexError:
+                except (ValueError, IndexError, TypeError):
                     # set the timeline_start_tc_input and label to invalid
                     self.style_input_as_invalid(
                         input_widget=timeline_start_tc_input, label_widget=timeline_start_tc_label)
@@ -7430,6 +7425,11 @@ class toolkit_UI():
                 start_button = kwargs.get('start_button')
                 start_button.configure(state='disabled')
 
+            # deactivate the save button if it exists
+            if kwargs.get('save_button') is not None:
+                save_button = kwargs.get('save_button')
+                save_button.configure(state='disabled')
+
             return False
 
         # otherwise, it means the form is valid
@@ -7438,6 +7438,11 @@ class toolkit_UI():
         if kwargs.get('start_button') is not None:
             start_button = kwargs.get('start_button')
             start_button.configure(state='normal')
+
+        # deactivate the save button if it exists
+        if kwargs.get('save_button') is not None:
+            save_button = kwargs.get('save_button')
+            save_button.configure(state='normal')
 
         return True
 
@@ -14525,6 +14530,344 @@ class toolkit_UI():
 
             return visible_range[0] <= label_range[0] and visible_range[1] >= label_range[1]
 
+    # TRANSCRIPTION SETTINGS WINDOW
+
+    def add_transcription_settings(self, parent: ctk.CTkFrame | ctk.CTkScrollableFrame, **kwargs):
+        """
+        This function adds the transcription settings items
+        :param parent: the parent widget
+        :param kwargs: additional arguments
+        """
+
+        # create the frames
+        transcription_settings_frame = ctk.CTkFrame(parent, **toolkit_UI.ctk_frame_transparent)
+        transcription_timecode_data_frame = ctk.CTkFrame(parent, **toolkit_UI.ctk_frame_transparent)
+
+        # create labels for the frames (and style them according to the theme)
+        transcription_settings_label = \
+            ctk.CTkLabel(parent, text='Transcription Info', **toolkit_UI.ctk_frame_label_settings)
+        transcription_timecode_data_label = \
+            ctk.CTkLabel(parent, text='Timecode Data', **toolkit_UI.ctk_frame_label_settings)
+
+        # we're going to create the form_vars dict to store all the variables
+        # we will use this dict at the end of the function to gather all the created tk variables
+        form_vars = {}
+
+        # get the last grid row for the parent
+        l_row = parent.grid_size()[1]
+
+        # add the labels and frames to the parent
+        transcription_settings_label.grid(row=l_row + 1, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+        transcription_settings_frame.grid(row=l_row + 2, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+        transcription_timecode_data_label.grid(row=l_row + 3, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+        transcription_timecode_data_frame.grid(row=l_row + 4, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+
+        # make the column expandable
+        parent.columnconfigure(0, weight=1)
+
+        # NAME
+        transcription_name = kwargs.get('transcription_name', '')
+
+        # create the model variable, label and input
+        form_vars['transcription_name_var'] = \
+            transcription_name_var = tk.StringVar(
+            transcription_settings_frame, value=transcription_name if transcription_name else '')
+        transcription_name_label = ctk.CTkLabel(
+            transcription_settings_frame, text='Name', **toolkit_UI.ctk_form_label_settings)
+        transcription_name_input = ctk.CTkEntry(
+            transcription_settings_frame, textvariable=transcription_name_var,
+            **toolkit_UI.ctk_form_entry_settings_double)
+
+        # START TIMECODE
+        transcription_timeline_start_tc = kwargs.get('transcription_timeline_start_tc', '')
+
+        # create the model variable, label and input
+        form_vars['transcription_timeline_start_tc_var'] = \
+            transcription_timeline_start_tc_var = tk.StringVar(
+            transcription_timecode_data_frame,
+            value=transcription_timeline_start_tc if transcription_timeline_start_tc else '')
+        transcription_timeline_start_tc_label = ctk.CTkLabel(
+            transcription_timecode_data_frame, text='Start Timecode', **toolkit_UI.ctk_form_label_settings)
+        transcription_timeline_start_tc_input = ctk.CTkEntry(
+            transcription_timecode_data_frame, textvariable=transcription_timeline_start_tc_var,
+            **toolkit_UI.ctk_form_entry_settings)
+
+        # FPS
+        transcription_timeline_fps = kwargs.get('transcription_timeline_fps', '')
+
+        # create the model variable, label and input
+        form_vars['transcription_timeline_fps_var'] = \
+            transcription_timeline_fps_var = tk.StringVar(
+            transcription_timecode_data_frame, value=transcription_timeline_fps if transcription_timeline_fps else '')
+        transcription_timeline_fps_label = ctk.CTkLabel(
+            transcription_timecode_data_frame, text='Frame Rate', **toolkit_UI.ctk_form_label_settings)
+        transcription_timeline_fps_input = ctk.CTkEntry(
+            transcription_timecode_data_frame, textvariable=transcription_timeline_fps_var,
+            **toolkit_UI.ctk_form_entry_settings_half)
+
+        def validate_timecode_fields(*_f_args):
+            """
+            This function validates the timeline_start_tc and timeline_fps fields
+            """
+
+            # set the function_fps to the default, so we can validate the timecode below
+            function_fps = 24
+
+            # the timeline_fps should be numeric
+            if transcription_timeline_fps_var.get() \
+                    and transcription_timeline_fps_var.get().replace('.', '', 1).isdigit():
+
+                # set as valid
+                self.style_input_as_valid(
+                    input_widget=transcription_timeline_fps_input,
+                    label_widget=transcription_timeline_fps_label
+                )
+
+                function_fps = float(transcription_timeline_fps_var.get())
+
+            # allow empty values too
+            elif not transcription_timeline_fps_var.get():
+                self.style_input_as_valid(
+                    input_widget=transcription_timeline_fps_input, label_widget=transcription_timeline_fps_label)
+                self.remove_form_invalid(
+                    window_id=kwargs.get('window_id'), key='transcription_timeline_fps',
+                    save_button=kwargs.get('save_button')
+                )
+
+            else:
+                # set the timeline_fps to invalid
+                self.style_input_as_invalid(
+                    input_widget=transcription_timeline_fps_input, label_widget=transcription_timeline_fps_label)
+                self.add_form_invalid(
+                    window_id=kwargs.get('window_id'), key='transcription_timeline_fps')
+
+            # allow empty timecodes
+            if not transcription_timeline_start_tc_var.get():
+                self.style_input_as_valid(
+                    input_widget=transcription_timeline_fps_input, label_widget=transcription_timeline_start_tc_label)
+                self.remove_form_invalid(
+                    window_id=kwargs.get('window_id'), key='transcription_timeline_start_tc',
+                    save_button=kwargs.get('save_button')
+                )
+
+            # the timeline_start_tc should be a timecode (hh:mm:ss:ff)
+            elif transcription_timeline_start_tc_var.get() and ':' in str(transcription_timeline_start_tc_var.get()):
+
+                try:
+                    # try to convert the timecode to a timecode object
+                    Timecode(framerate=function_fps, start_timecode=transcription_timeline_start_tc_var.get())
+
+                    # set as valid
+                    self.style_input_as_valid(
+                        input_widget=transcription_timeline_start_tc_input,
+                        label_widget=transcription_timeline_start_tc_label)
+                    self.remove_form_invalid(
+                        window_id=kwargs.get('window_id'), key='transcription_timeline_start_tc',
+                        save_button=kwargs.get('save_button')
+                    )
+
+                except (ValueError, TypeError, IndexError):
+                    # set the transcription_timeline_start_tc_input and label to invalid
+                    self.style_input_as_invalid(
+                        input_widget=transcription_timeline_start_tc_input,
+                        label_widget=transcription_timeline_start_tc_label
+                    )
+                    self.add_form_invalid(
+                        window_id=kwargs.get('window_id'), key='transcription_timeline_start_tc',
+                        save_button=kwargs.get('save_button')
+                    )
+
+            else:
+                # set the timeline_start_tc_input and label to invalid
+                self.style_input_as_invalid(
+                    input_widget=transcription_timeline_start_tc_input,
+                    label_widget=transcription_timeline_start_tc_label
+                )
+                self.add_form_invalid(
+                    window_id=kwargs.get('window_id'), key='transcription_timeline_start_tc',
+                    save_button=kwargs.get('save_button')
+                )
+
+        validate_timecode_fields()
+
+        # if the timeline_start_tc_var changes, validate it
+        transcription_timeline_start_tc_var.trace('w', lambda *args: validate_timecode_fields())
+
+        # if the timeline_fps_var changes, validate it
+        transcription_timeline_fps_var.trace('w', lambda *args: validate_timecode_fields())
+
+        # ADD ELEMENTS TO SETTINGS GRID
+        transcription_name_label.grid(row=0, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+        transcription_name_input.grid(row=0, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+        transcription_timeline_start_tc_label.grid(row=1, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+        transcription_timeline_start_tc_input.grid(row=1, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+        transcription_timeline_fps_label.grid(row=2, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+        transcription_timeline_fps_input.grid(row=2, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+
+        return form_vars
+
+    def open_transcription_settings(self, transcription: Transcription | str = None, parent_window_id: str = None, 
+                                    **kwargs):
+        """
+        Open a window with the transcription settings.
+        """
+
+        # get the transcription object either directly from the argument or from the transcription file path
+        if isinstance(transcription, str):
+            transcription = Transcription(transcription_file_path=transcription)
+
+        # use the parent window as the parent element, or none if not provided
+        parent_window = None
+        if parent_window_id:
+            parent_window = self.get_window_by_id(parent_window_id)
+            
+        # if we don't have a transcription, but we do have a parent window
+        if transcription is None and parent_window is not None:
+            
+            # do a last attempt at getting a transcription from the parent window
+            if not (transcription := self.t_edit_obj.get_window_transcription(parent_window_id)):
+                logger.error('Cannot open transcription settings. No transcription found for window id: {}')
+                return False
+
+        # use the transcription path id for the window id
+        t_settings_window_id = 't_settings_window_{}'.format(transcription.transcription_path_id)
+
+        transcription_settings = dict()
+        transcription_settings['transcription_name'] = transcription.name
+        transcription_settings['transcription_timeline_fps'] = transcription.timeline_fps
+        transcription_settings['transcription_timeline_start_tc'] = transcription.timeline_start_tc
+
+        # create a window if one doesn't already exist
+        if t_settings_window_id := self.create_or_open_window(
+                parent_element=parent_window, window_id=t_settings_window_id,
+                title='Transcription Settings', resizable=(False, True),
+                type='assistant_window_settings'):
+
+            # get the window
+            settings_window = self.get_window_by_id(t_settings_window_id)
+
+            # add the transcription to the window
+            settings_window.transcription = transcription
+
+            # UI - create the middle frame
+            middle_frame = ctk.CTkScrollableFrame(settings_window, **toolkit_UI.ctk_frame_transparent)
+
+            # UI - create the bottom frame
+            bottom_frame = ctk.CTkFrame(settings_window, **toolkit_UI.ctk_frame_transparent)
+
+            # UI - middle and bottom frames
+            middle_frame.grid(row=1, column=0, sticky="nsew", **toolkit_UI.ctk_frame_paddings)
+            bottom_frame.grid(row=2, column=0, sticky="ew", **toolkit_UI.ctk_frame_paddings)
+
+            # UI - grid configure the middle frame so that it expands with the window
+            settings_window.grid_rowconfigure(1, weight=1)
+
+            # UI - the columns should expand with the window
+            settings_window.grid_columnconfigure(0, weight=1, minsize=500)
+
+            # UI - set the visibility on the General tab
+            middle_frame.columnconfigure(0, weight=1)
+
+            # UI - create another frame for the buttons
+            buttons_frame = ctk.CTkFrame(bottom_frame, **toolkit_UI.ctk_frame_transparent)
+
+            # UI - create the start button
+            save_button = ctk.CTkButton(buttons_frame, text='Save')
+
+            # UI - create the cancel button
+            cancel_button = ctk.CTkButton(buttons_frame, text='Cancel')
+
+            # UI - add the start button, the cancel button
+            buttons_frame.grid(row=0, column=0, sticky="w", **toolkit_UI.ctk_frame_paddings)
+
+            # UI - the buttons should be next to each other, so we'll use a pack layout
+            save_button.pack(side='left', **toolkit_UI.ctk_footer_button_paddings)
+            cancel_button.pack(side='left', **toolkit_UI.ctk_footer_button_paddings)
+
+            # add the buttons to the kwargs so we can pass them to future functions
+            kwargs['save_button'] = save_button
+            kwargs['cancel_button'] = cancel_button
+
+            # TRANSCRIPTION SETTINGS FORM
+            transcription_form_vars = self.add_transcription_settings(
+                parent=middle_frame, window_id=t_settings_window_id, **transcription_settings, **kwargs)
+
+            form_vars = {**transcription_form_vars}
+
+            # UI - start button command
+            # at this point, the kwargs should also contain the ingest_window_id
+            save_button.configure(
+                command=lambda l_transcription_settings_window_id=t_settings_window_id:
+                self.save_transcription_settings(
+                    window_id=l_transcription_settings_window_id,
+                    input_variables=form_vars
+                )
+            )
+
+            # UI - cancel button command
+            cancel_button.configure(
+                command=lambda l_transcription_settings_window_id=t_settings_window_id:
+                self.destroy_window_(window_id=l_transcription_settings_window_id)
+            )
+
+            # UI - configure the bottom columns and rows so that the elements expand with the window
+            bottom_frame.columnconfigure(0, weight=1)
+            bottom_frame.columnconfigure(1, weight=1)
+            bottom_frame.rowconfigure(1, weight=1)
+            bottom_frame.rowconfigure(2, weight=1)
+
+            # UI - add a minimum height to the window
+            settings_window.minsize(
+                500,
+                700 if settings_window.winfo_screenheight() > 700 else settings_window.winfo_screenheight()
+            )
+
+            # UI- add a maximum height to the window (to prevent it from being bigger than the screen)
+            settings_window.maxsize(600, settings_window.winfo_screenheight())
+
+    def save_transcription_settings(self, window_id: str, input_variables: dict):
+
+        # remove _var from all the input variables and get their values into a new dict
+        transcription_settings = {}
+        for key, form_var in input_variables.items():
+            if key.endswith('_var'):
+                transcription_settings[key[:-4]] = form_var.get()
+            else:
+                transcription_settings[key] = form_var.get()
+
+        # get the settings window
+        t_settings_window = self.get_window_by_id(window_id)
+
+        # validate the timecode fields - we should already validate them in the form, but just in case
+        try:
+            Timecode(framerate=float(transcription_settings.get('transcription_timeline_fps', '24')),
+                     start_timecode=transcription_settings.get('transcription_timeline_start_tc', '00:00:00:00'))
+        except (ValueError, TypeError, IndexError):
+            return False
+
+        # get the transcription object
+        transcription = t_settings_window.transcription
+        
+        # take note if the name will change
+        if transcription_settings.get('transcription_name', '') != transcription.name:
+            transcription_name_changed = True
+        else:
+            transcription_name_changed = False
+
+        # set the new settings
+        transcription.set('name', transcription_settings.get('transcription_name', ''))
+        transcription.set('timeline_fps', transcription_settings.get('transcription_timeline_fps', ''))
+        transcription.set('timeline_start_tc', transcription_settings.get('transcription_timeline_start_tc', ''))
+
+        # save the transcription
+        transcription.save_soon(sec=0)
+
+        # destroy the settings window after 100ms
+        t_settings_window.after(100, lambda: self.destroy_window_(window_id=window_id))
+
+        # if the name changed trigger notify the observers that the project has changed
+        self.toolkit_ops_obj.notify_observers('project_changed')
+
     # STORY EDITOR WINDOW FUNCTIONS
 
     class StoryEdit:
@@ -18643,8 +18986,10 @@ class toolkit_UI():
             bottom_frame.rowconfigure(2, weight=1)
 
             # UI - add a minimum height to the window
-            settings_window.minsize(500, 700
-            if settings_window.winfo_screenheight() > 700 else settings_window.winfo_screenheight())
+            settings_window.minsize(
+                500,
+                700 if settings_window.winfo_screenheight() > 700 else settings_window.winfo_screenheight()
+            )
 
             # UI- add a maximum height to the window (to prevent it from being bigger than the screen)
             settings_window.maxsize(600, settings_window.winfo_screenheight())
@@ -18668,7 +19013,7 @@ class toolkit_UI():
         # set a new model provider and model name (only if they are different from the current ones)
         if assistant_settings.get('assistant_provider', None) and assistant_settings.get('assistant_model', None) \
             and (assistant_settings.get('assistant_provider', None) != assistant_item.model_provider
-                or assistant_settings.get('assistant_model', None) != assistant_item.model_name):
+                 or assistant_settings.get('assistant_model', None) != assistant_item.model_name):
 
             # reset the assistant item
             new_assistant_item = AssistantUtils.assistant_handler(
