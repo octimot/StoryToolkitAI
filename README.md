@@ -2,11 +2,12 @@
 
 ## Description
 
-**StoryToolkitAI is a film editing tool that tries to understand your footage and helps you edit more efficiently with 
-the assistance of AI.**
+**StoryToolkitAI is a film editing tool that tries to understand your footage and helps you edit more efficiently with the assistance of AI.**
 
-The tool works locally on your machine, independent of any other editing software, but it also integrates with DaVinci 
-Resolve Studio 18.
+It transcribes, indexes scenes, helps you search through your footage, automatically selects and creates stories using large language models, like OpenAI GPT-4,
+which you can then import into your editing software via EDL or XML.
+
+The tool works locally on your machine, independent of any other editing software, but it also integrates with DaVinci Resolve Studio 18.
 
 <img alt="StoryToolkitAI Interface" src="help/storytoolkitai_v0.19.0.png" width="750">
 
@@ -20,6 +21,7 @@ Resolve Studio 18.
 - [X] **Translate transcripts** to other languages using OpenAI GPT (v. 0.22.0+)
 - [X] **Ask AI to create Stories and Selections** based on your footage using OpenAI GPT (v. 0.22.0+)
 - [X] **Automatic Speaker Detection** in transcripts (v. 0.23.0+)
+- [X] **Project File Management** for more intuitive workflows and easier search
 - [X] Automatic Question detection in transcripts
 - [X] Transcript Groups - group transcript lines into whatever you need to find them easier
 - [x] Multi-format export of transcripts, including SRT, TXT, AVID DS and as Fusion Text node
@@ -33,8 +35,8 @@ Resolve Studio 18.
 - [x] Direct import of subtitles into Resolve bin
 
 ### Planned Features
-- [ ] **Project File Management** for more intuitive workflows and easier search
 - [ ] **Automatic Topic Classification** to help you discover ideas in your transcripts
+- [ ] **Use of local/custom LLM models**
 - [ ] **Integration with other AI tools**
 - [ ] **Integration with other software / standalone players**
 - [X] Plus more flashy features as clickbait to unrealistically raise expectations and destroy competition
@@ -48,21 +50,21 @@ For detailed features info, go [here](https://github.com/octimot/StoryToolkitAI/
 
 To download the latest standalone release, see [the releases page](https://github.com/octimot/StoryToolkitAI/releases).
 
-However, the standalone releases will most likely always be behind the git version, so, if you're comfortable with 
-using the terminal / command line and want to always have access to the newest features, we recommend that you try to 
-install the tool from source.
+However, the standalone releases will most likely always be behind the git version, 
+so, if you're comfortable with the terminal / command line and want to always have access to the newest features, 
+we recommend that you try to install the tool from source.
 
 For detailed installation instructions
 [go here](https://github.com/octimot/StoryToolkitAI/blob/main/INSTALLATION.md).
 
 ## Is it really free?
-Yes, the tool runs locally and there's no need for any additional account to transcribe or search. These features will
-always be free as long as your machine supports them without external services. 
+Yes, the tool runs locally and there's no need for any additional account to transcribe, index video or search.
+These features will always be free as long as your machine supports them without external services. 
 
-The only feature that now requires external services is the Assistant feature which relies on OpenAI ChatGPT.
+The only feature that now requires external services is the Assistant which relies on OpenAI API or storytoolkit.ai API.
 
-**Some features are released earlier only to our Patreon Patrons.** If you want to support the development, 
-check out our [Patreon page](https://www.patreon.com/StoryToolkitAI) and get some cool perks. 
+We rely on the support of our [Patreon members](https://www.patreon.com/StoryToolkitAI)!
+If you want to support development and get access to new features earlier, check out our [Patreon page](https://www.patreon.com/StoryToolkitAI).
 
 ---
 
@@ -73,7 +75,7 @@ translate your audio.
 
 Currently, the only features that send data from your machine to the Internet are:
 - The StoryToolkitAI API Key check to storytoolkit.ai (only when entered in the Settings Window)
-- The Assistant to OpenAI or storytoolkit.ai (only contexts and messages that you select and send).
+- The Assistant, to OpenAI or storytoolkit.ai (only contexts and messages that you select and send).
 
 The tool also checks for updates on every start.
 
@@ -97,6 +99,10 @@ The tool would be useless without using the following open source projects:
 - [spaCy](https://spacy.io/)
 - [CustomTkinter](https://customtkinter.tomschimansky.com/)
 - and many other packages listed in [requirements.txt](https://github.com/octimot/StoryToolkitAI/blob/main/requirements.txt)
+
+## Code contributions are welcome!
+
+Please open an issue with what you're trying to solve first and let's discuss it there.
 
 ---
 

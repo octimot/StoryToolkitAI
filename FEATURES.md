@@ -4,6 +4,31 @@
 
 ###  This page might contain references that might be outdated. Let us know if you notice them!
 
+## Projects
+
+Starting with version 0.24.0, the tool allows you to create and manage projects which can contain transcriptions, stories and other files.
+
+### Creating a new project and linking files
+
+To create a new project, click on File -> New Project... and then enter the name of the project. 
+Once the project is created, you should see it in the projects list in the main window when you open the tool.
+
+By clicking on any of the projects in the list, you'll open it and see all the files that are linked to it.
+
+Files that are linked but not accessible, will be shown in red in the main window. You can right-click on any of these files and Re-link, if you know where the file is located.
+
+To link a file to a project, simply open the file and then click on File -> Link to Project... and then select the project you want to link the file to.
+You can also automatically link new transcriptions to the current project during ingest - see the Metadata tab in the Ingest Window
+
+Besides seeing all the files linked to a project in the main window, the main advantage of adding files to a project is that you can search through all of them in the same time by clicking the Search button in the main window or via Search -> Advanced Search in current project... in the main menu.
+
+### Exporting and importing projects
+
+To share projects with other users, you can export them either by clicking on the project in the projects list, 
+or, when inside a project by clicking on File -> Export Project... in the main menu. This will create a .zip file containing the project info files (but not the files linked to the project).
+
+To import, click on File -> Import Project... in the main menu and then select the .zip file you want to import. Once the project is imported, you'll see all the files that need to be Re-linked in red in the main window. Right-click on any of these files and Re-link, if you know where the file is located.
+
 ## Transcriptions
 
 ### Transcription Results
@@ -216,6 +241,39 @@ but for now, this is a fast way to populate the transcript with speaker segments
 
 The **Speaker Detection Threshold** allows you to tweak the speaker detection threshold between 0 and 1, 
 where 1 means no speaker change detection and 0 means that all segments will be assigned a different speaker.
+
+### Ingest Metadata
+
+Starting with version 0.24.0, we can add specific metadata that will be saved in the transcription file post-ingestion.
+These main metadata fields are:
+
+**Timeline Name** - useful when you want to reference the original timeline or sequence name in the NLE you used to render the source file.
+This will also be used when Exporting Stories to EDL or XML that reference the file you're ingesting.
+
+**Start Timecode** - the start timecode we use to calculate timecodes in the transcription.
+
+**Frame Rate** - the frame rate we use to calculate timecodes in the transcription.
+
+When ingesting multiple files at once, these metadata fields will be filled in either using the **Render Info File**,
+or, if that's not available, the tool will try to read the metadata from the file itself.
+
+Also from the Metadata tab in the Ingest Window: you can choose to **Delete Render Info File** after ingestion.
+
+Just to understand how the render info file works, first it's important that it has the exact name of the file you're ingesting with the extension .json. 
+Then, the file should contain the following fields:
+
+```
+{
+    "project_name": "PROJECT NAME",
+    "timeline_name": "SOURCE TIMELINE NAME",
+    "timeline_start_tc": "HH:MM:SS:FF",
+    "fps": 24
+}
+```
+When transcribing/ingesting from Resolve using StoryToolkitAI, the tool will create the Render Info File automatically,
+but you can also create this programmatically or manually yourself when ingesting files from other NLEs.
+
+If you know of similar files produced by other NLEs, please let us know so we can add support for them.
 
 ### Transcript Word Find
 Once a transcript is loaded, a basic find function (CMD/CTRL+F) will let you find words in the transcript and show you 

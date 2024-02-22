@@ -3,6 +3,29 @@ import os.path
 from storytoolkitai.core.logger import logger
 import packaging
 import time
+import subprocess
+import sys
+
+
+def reinstall_requirements():
+
+    try:
+        # get the absolute path to requirements.txt,
+        # considering it should be relative to the current file
+        requirements_file_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), '..', '..', 'requirements.txt'
+        )
+
+        # don't use cache dir
+        subprocess.check_call(
+            [sys.executable, '-m', 'pip', 'install', '-r', requirements_file_path, '--no-cache-dir'])
+    except Exception as e:
+        logger.error('Failed to install requirements.txt: {}'.format(e))
+        logger.warning('Please install the requirements.txt manually.')
+
+        return False
+
+    return True
 
 
 def post_update(current_version, last_version, is_standalone=False):
@@ -11,7 +34,8 @@ def post_update(current_version, last_version, is_standalone=False):
     """
 
     if last_version is None:
-        last_version = '0.0.0'
+        logger.debug('The last version value was not passed. Skipping post-update tasks.')
+        return False
 
     # use packaging to compare the versions
     if packaging.version.parse(current_version) <= packaging.version.parse(last_version):
@@ -51,9 +75,6 @@ def post_update_0_20_1(is_standalone=False):
     # not needed if we are running in standalone mode
     if is_standalone:
         return True
-
-    import sys
-    import subprocess
 
     # uninstall openai-whisper package
     try:
@@ -129,15 +150,11 @@ def post_update_0_23_0(is_standalone=False):
     if is_standalone:
         return True
 
-    import sys
-    import subprocess
-
-    # uninstall openai-whisper package
     try:
         # uninstall packages so we can re-install them
         subprocess.check_call(
             [sys.executable, '-m', 'pip', 'uninstall', '-y', 'transformers', 'urllib3', 'opencv-python'])
-        logger.info('Uninstalled openai-whisper package to re-install relevant version on restart.')
+        logger.info('Uninstalled transformers, urllib3, opencv-python to re-install relevant versions.')
 
     except Exception as e:
         logger.error('Failed to uninstall packages. {}'.format(e))
@@ -147,30 +164,125 @@ def post_update_0_23_0(is_standalone=False):
         return False
 
     # force a requirements.txt check and install
-    try:
-        # get the absolute path to requirements.txt,
-        # considering it should be relative to the current file
-        requirements_file_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), '..', '..', 'requirements.txt'
-        )
+    return reinstall_requirements()
 
-        # don't use cache dir
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', requirements_file_path, '--no-cache-dir'])
-    except Exception as e:
-        logger.error('Failed to install requirements.txt: {}'.format(e))
-        logger.warning('Please install the requirements.txt manually.')
 
-        return False
+def post_update_0_24_0(is_standalone=False):
+    """
+    This re-writes the project.json files found for the projects in PROJECTS_PATH
+    to make sure that the transcriptions are also mentioned a separate list from the timelines
 
-    return True
+    and
+
+    Upgrades octimot/CustomTkinter to commit a2a8c37dd8dac1dee30133476596a5128adb0530 to support scrolling to y
+    """
+
+    from storytoolkitai.core.toolkit_ops.projects import Project, PROJECTS_PATH
+    import json
+
+    # if we don't have a PROJECTS_PATH, this update is not needed
+    if not os.path.isdir(PROJECTS_PATH):
+        return True
+
+    # get the list of projects in the projects path
+    projects = [f for f in os.listdir(PROJECTS_PATH) if Project(project_name=f).exists]
+
+    if not projects:
+        return True
+
+    # sort by last modified
+    projects.sort(key=lambda x: os.path.getmtime(os.path.join(PROJECTS_PATH, x, 'project.json')))
+
+    # take each project
+    for project_name in projects:
+
+        project = Project(project_name=project_name)
+
+        # skip if this is not a valid project
+        if not project or not project.exists:
+            continue
+
+        # we're not going to use the Project class to make the update,
+        # considering that it might change in the future, so let's work with the raw project.json file
+
+        # first, get the path to the project.json file from the project
+        project_json_path = os.path.join(project.project_path, 'project.json')
+
+        # if the project.json file doesn't exist, skip it
+        if not os.path.isfile(project_json_path):
+            continue
+
+        # read the project.json file
+        with open(project_json_path, 'r') as f:
+            project_json = json.load(f)
+
+        # skip if there are no transcriptions
+        if 'timelines' not in project_json:
+            # but touch the file to update the modified time so we preserve the order
+            os.utime(project_json_path, None)
+            continue
+
+        # take all timelines and see if there are transcription_files
+        # if there are, copy them to a separate list but keep them in the timelines as well
+
+        project_transcriptions = []
+
+        for timeline in project_json['timelines']:
+
+            # if for whatever reason, this is not a dictionary, skip it
+            if not isinstance(project_json['timelines'][timeline], dict):
+                continue
+
+            # does this timeline have a transcription_files key?
+            if 'transcription_files' not in project_json['timelines'][timeline]:
+                continue
+
+            transcription_files = project_json['timelines'][timeline]['transcription_files']
+
+            # if it's not a list, or it's empty, skip it
+            if not transcription_files or not isinstance(transcription_files, list):
+                continue
+
+            # take all the transcription files
+            for transcription_file_path in transcription_files:
+
+                # add them to the transcriptions_dict
+                # if the transcription_file_path is not in the dict, add it
+                if transcription_file_path not in project_transcriptions:
+                    project_transcriptions.append(transcription_file_path)
+
+        # add the transcriptions_dict to the project_json
+        project_json['transcriptions'] = project_transcriptions
+
+        # save the project_json
+        with open(project_json_path, 'w') as f:
+            json.dump(project_json, f, indent=4)
+
+        # now let's take care of the CustomTkinter update
+        try:
+            # uninstall packages so we can re-install them
+            subprocess.check_call(
+                [sys.executable, '-m', 'pip', 'uninstall', '-y', 'customtkinter'])
+            logger.info('Uninstalled customtkinter package to re-install relevant version.')
+
+        except Exception as e:
+            logger.error('Failed to uninstall customtkinter. {}'.format(e))
+            logger.warning('Please uninstall and re-install customtkinter manually.')
+            time.sleep(3)
+
+            return False
+
+        # force a requirements.txt check and install
+        return reinstall_requirements()
+
 
 # this is a dictionary of all the post_update functions
 # make sure to keep them in order
-# but remove update functions from the past which uninstall and install requirements.txt
-# (for eg. 0.19.4 was uninstalling openai-whisper and reinstalling requirements.txt)
+# but clean update functions from the past
+# which perform the same operations mentioned in further updates (for e.g. upgrading required packages)
 post_update_functions = {
     '0.20.1': post_update_0_20_1,
     '0.22.0': post_update_0_22_0,
     '0.23.0': post_update_0_23_0,
+    '0.24.0': post_update_0_24_0,
 }
-

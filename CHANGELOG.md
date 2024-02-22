@@ -2,6 +2,48 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.24.0] - 2024-02-22
+
+Project Management: create projects, then link transcriptions, stories and text files to access them easier or perform project-wide searches faster.
+
+Please back up your StoryToolkitAI configuration folder before updating to this version! The project management feature will restructure the project.json files irreversibly.
+
+
+### Added
+- Project Management - create and manage projects with multiple transcripts and stories
+- Project Files List - view all the transcriptions, stories and other files linked to a project
+- Ability to link transcriptions, stories and other files to Projects
+- Ability to open transcriptions, stories and other files from the Project Files List
+- Ability to find transcriptions, stories and other files by typing directly in the Project Files List
+- Ability to search through all project files and synchronized NLE timeline markers using Search -> Advanced Search in current project...
+- Ability to search transcriptions from the Project Files List context menu (right click on transcription)
+- Ability to send full transcriptions to the Assistant from the Project Files List context menu (right click on transcription)
+- Ability to copy and paste from transcription to story and from story to another story
+- Ability to change transcription name and timecode data using Transcription Settings window (Edit -> Transcription Settings...)
+- Metadata tab in Ingest window that allows setting timecode, frame rate, timeline/sequence name and others during ingest
+- Improved navigation to project files from the Project Files List context menu (right click on file)
+
+### Changes
+- Ability to save projects independent of their NLE (e.g. Resolve) counterparts
+- Removed Resolve-related buttons from main window (still available in Main Menu -> Integrations)
+- Transcription SRT and TXT are no longer saved automatically when saving transcriptions
+- Segments in transcriptions need to be selected to see the relevant right-click context menu for them
+- Removed key 't' shortcut from main window to avoid conflicts with the find function
+
+### Fixes
+- Fixed a bug that was preventing the tool from opening transcriptions that were initially not accessible
+- Added contrast to text window cursors to improve readability for light themes on macOS
+- Optimized Resolve updates using observer patterns 
+- Fixed a bug that was opening the same text file in multiple windows
+- Fixed a bug that was pointing to the wrong result in text files when multiple similar results were found in Search
+- Fixed a bug that was triggering a shot removal error during video indexing
+- Updates check no longer locks the app if no internet connection is available
+- Fixed a bug that was causing the playhead to endlessly move backwards when syncing transcription windows with Resolve
+- Transcriptions and Stories are now reloaded from disk when opened in a new window, instead of reusing them from memory
+- Improved file list validation in Ingest window
+- Improved Resolve render and ingest
+- Other bug fixes and optimizations
+
 ## [0.23.2] - 2024-01-26
 
 ### Changes
