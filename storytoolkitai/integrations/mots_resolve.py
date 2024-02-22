@@ -890,10 +890,6 @@ class MotsResolve:
                     # get the timeline FPS
                     current_fps = currentTimeline.GetSetting('timelineFrameRate')
 
-                    # round up for the non-dropframe 23.976fps - this is a hack, since resolve rounds up due to bug
-                    if int(current_fps) >= 23.97 and int(current_fps) <= 24:
-                        current_fps = "24"
-
                     render_jobs_markers[render_job_id] = {'project_name': project.GetName(),
                                                           'timeline_name': currentTimeline.GetName(),
                                                           'timeline_start_tc': currentTimeline.GetStartTimecode(),
@@ -1124,7 +1120,7 @@ class MotsResolve:
                                           'render_name': renderSettings["CustomName"],
                                           'in_offset': 0,
                                           'duration': int(renderSettings["MarkOut"]) - int(renderSettings["MarkIn"]),
-                                          'fps': 24 if 23.97 <= int(current_fps) <= 24 else current_fps,
+                                          'fps': current_fps,
                                           'render_timestamp': render_timestamp
                                           }
 
