@@ -29,6 +29,11 @@ or, when inside a project by clicking on File -> Export Project... in the main m
 
 To import, click on File -> Import Project... in the main menu and then select the .zip file you want to import. Once the project is imported, you'll see all the files that need to be Re-linked in red in the main window. Right-click on any of these files and Re-link, if you know where the file is located.
 
+### Syncing Resolve markers with the project
+
+If a project is open in the tool while working with Resolve, the tool will automatically sync the markers from the currently opened timeline in Resolve with the project.
+So, when performing searches in the tool, the tool will also look into the markers and return them in the search results if they're relevant.
+
 ## Transcriptions
 
 ### Transcription Results
