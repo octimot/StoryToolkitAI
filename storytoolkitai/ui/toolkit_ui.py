@@ -2739,7 +2739,6 @@ class toolkit_UI():
 
                     has_video.grid(row=0, column=3, sticky='e', **self.ctk_small_label_paddings)
 
-
                 # add on_click event
                 file_frame.bind(
                     '<Button-1>',
@@ -2780,12 +2779,19 @@ class toolkit_UI():
                     self._project_file_context_menu(e, l_item)
                 )
 
+                # add a reference to the label for easier access
+                setattr(file_frame, 'label', file_name)
+
                 # add the project to the grid
                 file_frame.grid(row=row_num, column=0, sticky='ew', **self.ctk_form_paddings)
 
                 file_frame.grid_columnconfigure(0, weight=1)
 
-            # expand project frames on the x axis
+                # add the find_name to the file_frame as an attribute
+                # - this will help us find files by their name
+                setattr(file_frame, 'find_name', file_name_var.get())
+
+            # expand project frames on the x-axis
             main_window.middle_frame.grid_columnconfigure(0, weight=1)
 
             # show the middle frame
@@ -2797,6 +2803,26 @@ class toolkit_UI():
 
             # make window resizable
             self.root.resizable(True, True)
+
+            def memorize_file_frame_positions():
+
+                # ensure the layout is updated
+                main_window.update_idletasks()
+
+                main_window.find_file_frame_positions = {}
+
+                # iterate through all children of main_window.middle_frame
+                for child in main_window.middle_frame.winfo_children():
+
+                    # assuming all children are placed using the grid manager
+                    child_x = child.winfo_x()
+                    child_y = child.winfo_y()
+
+                    # memorize the position of the child
+                    main_window.find_file_frame_positions[child.find_name] = (child_x, child_y, child)
+
+            # schedule the report_file_frame_positions function to execute 50ms after the window is shown
+            main_window.after(50, memorize_file_frame_positions)
 
         else:
             # hide the middle frame
@@ -3043,9 +3069,12 @@ class toolkit_UI():
         main_window.bind("<Button-2>", lambda event: self._focused_window('main'))
         main_window.bind("<Button-3>", lambda event: self._focused_window('main'))
 
-        # add key bindings to the main window
-        # key t for the transcription window
-        main_window.bind("t", lambda event: self.button_ingest())
+        # capture any single key with the find_file_or_project feature
+        main_window.bind("<Key>", lambda event: self.find_file_or_project(event))
+
+        # we use these for the find function in the main window
+        main_window._search_string = ''
+        main_window._last_key_press = None
 
         # load menubar items
         self.main_menu.load_menubar()
@@ -3054,6 +3083,50 @@ class toolkit_UI():
         self.root.mainloop()
 
         return
+
+    def find_file_or_project(self, event):
+        """
+        This function is called when a key is pressed in the main window.
+        """
+
+        # we need the main window
+        main_window = self.windows['main']
+
+        # abort if the main window doesn't have the find_file_frame_positions attribute
+        if not hasattr(main_window, 'find_file_frame_positions'):
+            return
+
+        # if the key is a letter or a number, add it to the search string
+        if not event.char.isalnum() and event.char not in ['.', ' ']:
+
+            # reset the search string
+            main_window._last_key_press = None
+            main_window._search_string = ''
+            return
+
+        # if the last key press was less than 0.8 seconds ago, add the key to the search string
+        if main_window._last_key_press is not None and time.time() - main_window._last_key_press < 0.8:
+            main_window._search_string += event.char
+
+        # otherwise reset the search string
+        else:
+            main_window._search_string = event.char
+
+        # set the last key press time
+        main_window._last_key_press = time.time()
+
+        # get the first item on the main window that starts with the search string
+        # use main_window.find_file_frame_positions to find the closest item to the search string
+        for name in main_window.find_file_frame_positions:
+
+            if main_window._search_string.lower() in name.lower().strip():
+
+                # get the position of the frame
+                x, y, child = main_window.find_file_frame_positions[name]
+
+                main_window.middle_frame.scroll_to_y(y_pos=y)
+                
+                break
 
     def create_new_project(self, project_name=None):
         """

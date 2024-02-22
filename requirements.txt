@@ -35,7 +35,7 @@ clip @ git+https://github.com/openai/CLIP.git@a9b1bf5920416aaeaec965c25dd9e8f98c
 opencv-python
 patchify
 darkdetect
-customtkinter @ git+https://github.com/octimot/CustomTkinter.git@32dacb3200534656a755ec8218b2725fa01b699f
+customtkinter @ git+https://github.com/octimot/CustomTkinter.git@a2a8c37dd8dac1dee30133476596a5128adb0530
 ftfy
 moviepy
 scikit-image
