@@ -15,7 +15,7 @@ The tool works locally on your machine, independent of any other editing softwar
 - [x] **Full video indexing and search** ([How-To](https://www.youtube.com/watch?v=UDwOvBqS1X8))
 - [x] **Free Automatic Transcriptions** on your local machine
 - [x] **Free Automatic Translation** to English on your local machine
-- [x] **OpenAI GPT integration** - talk to AI about your content, or generate new ideas
+- [x] **OpenAI GPT and ollama compatibility** - talk to AI about your content, or generate new ideas
 - [x] **Search Content** intuitively without having to type in exact words
 - [X] **Story Editor** - write screenplays containing your transcripts and export them for editing (EDL/XML/Fountain) (v. 0.20.1+)
 - [X] **Translate transcripts** to other languages using OpenAI GPT (v. 0.22.0+)

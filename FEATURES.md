@@ -470,6 +470,44 @@ and we are not affiliated with OpenAI in any way.
 We're slowly rolling out our own API for the Assistant, which is now in private beta.
 So if you want to try it out, just get in touch.
 
+#### Adding additional LLM models
+
+Starting with version 0.24.1, you can add additional LLM models to the Assistant.
+For this, you need to add each model in the additional_llm_models.json file in your configuration folder.
+
+Here's a model example for the additional_llm_models.json file:
+```
+{
+    "ollama": {
+        "llama2": {
+            "description": "Local llama2",
+            "price": {
+                "input": 0,
+                "output": 0,
+                "currency": "USD"
+            },
+            "token_limit": 4000,
+            "training_cutoff": "2023-01",
+            "pricing_info": "none",
+            "handler": "ChatGPT",
+            "api_key": "ollama",
+            "base_url": "http://localhost:11434/v1/",
+            "system_message": "You're a comedian always making jokes pretending to be a film editor."
+        }
+    }
+}
+```
+As you can see, the model needs a `handler` which is the class that will handle the communication with the model.
+You can also specify a `base_url` which is the URL where the model is hosted and a `system_message`.
+
+If you enter an `api_key`, this will override any other API key you have set in the Preferences window for this particular model.
+
+For now, you can only add models that are compatible with the ChatGPT or StAssistant handlers (more on this soon).
+
+Make sure to add each model under the respective provider. In the above example, we're adding a model called "llama2", with the provider called "ollama".
+
+If you want to install local models using ollama, see https://ollama.com/ for more info.
+
 ### Usage and billing
 
 To find out how many tokens you've used within the Assistant window, just type `[usage]` in the Assistant window
