@@ -4,12 +4,14 @@ import hashlib
 import time
 from openai import OpenAI
 import json
+import os
 import copy
 import requests
 from pydantic import BaseModel, root_validator
 from typing import Optional
 
 from storytoolkitai.core.logger import logger
+from storytoolkitai import USER_DATA_PATH
 
 
 class ToolkitAssistant:
@@ -114,9 +116,11 @@ class ChatGPT(ToolkitAssistant):
             # add the context to the chat history
             self.add_context(self.context)
 
-        # get the API key from the config
+        # get the API key from the kwargs or config
         self.api_key \
-            = self.stAI.get_app_setting(setting_name='openai_api_key', default_if_none=None)
+            = kwargs.get('api_key', self.stAI.get_app_setting(setting_name='openai_api_key', default_if_none=None))
+
+        self.base_url = kwargs.get('base_url', None)
 
     def reset(self):
         """
@@ -341,7 +345,7 @@ class ChatGPT(ToolkitAssistant):
         # now send the query to the assistant
         try:
 
-            client = OpenAI(api_key=self.api_key)
+            client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
             response = client.chat.completions.create(
                 model=self.model_name,
@@ -379,7 +383,8 @@ class ChatGPT(ToolkitAssistant):
 
         except openai.AuthenticationError as e:
 
-            error = 'OpenAI API key is invalid. Please check your key in the preferences window.'
+            error = 'OpenAI API key is invalid. Please check your key in the preferences window ' \
+                    'or in the additional_llm_models.json file.'
 
             logger.error(error)
 
@@ -538,11 +543,12 @@ class StAssistant(ChatGPT):
 
         super().__init__(model_provider=model_provider, model_name=model_name, **kwargs)
 
-        # get the API key from the config
+        # get the API key from the kwargs or the config
         self.api_key \
-            = self.stAI.get_app_setting(setting_name='stai_api_key', default_if_none=None)
+            = kwargs.get('api_key', self.stAI.get_app_setting(setting_name='stai_api_key', default_if_none=None))
 
-        self.api_host = 'https://api.storytoolkit.ai'
+        # use the base_url from the config if it exists or the default one
+        self.base_url = kwargs.get('base_url', 'https://api.storytoolkit.ai')
 
     def calculate_history_tokens(self, messages=None, model=None):
 
@@ -582,7 +588,7 @@ class StAssistant(ChatGPT):
             ).dict()
 
             api_response = requests.post(
-                self.api_host + '/assistant', json=data, headers=headers, timeout=settings.get('timeout', 30))
+                self.base_url + '/assistant', json=data, headers=headers, timeout=settings.get('timeout', 30))
 
             if api_response.status_code == 403:
                 logger.warning('Invalid Assistant authentication key: {}'.format(api_response.text))
@@ -701,8 +707,25 @@ class AssistantUtils:
             # load the assistant class
             toolkit_assistant = LLM_AVAILABLE_MODELS[model_provider][model_name].get('handler', None)
 
+            # use the base_url from the config if it exists
+            if LLM_AVAILABLE_MODELS[model_provider][model_name].get('base_url', None):
+                kwargs['base_url'] = LLM_AVAILABLE_MODELS[model_provider][model_name]['base_url']
+
+            # use the api_key from the config if it exists
+            if LLM_AVAILABLE_MODELS[model_provider][model_name].get('api_key', None):
+                kwargs['api_key'] = LLM_AVAILABLE_MODELS[model_provider][model_name]['api_key']
+
+            # use the system_message from the config if it exists
+            if LLM_AVAILABLE_MODELS[model_provider][model_name].get('system_message', None):
+                kwargs['system_message'] = LLM_AVAILABLE_MODELS[model_provider][model_name]['system_message']
+
+            if isinstance(toolkit_assistant, str):
+                # if the handler is a string, try to use it as a class name
+                toolkit_assistant = globals().get(toolkit_assistant, None)
+
             if toolkit_assistant is None:
-                logger.error('Could not find assistant handler for model {} from provider {}.')
+                logger.error('Could not find assistant handler for model {} from provider {}.'
+                             .format(model_name, model_provider))
                 return None
 
             # instantiate the assistant class and return it
@@ -846,3 +869,23 @@ LLM_AVAILABLE_MODELS = {
         },
     }
 }
+
+
+# load additional LLM models from the llm_models.json file in USER_DATA_PATH
+# if it exists
+llm_models_file = os.path.join(USER_DATA_PATH, 'additional_llm_models.json')
+
+if os.path.exists(llm_models_file):
+    with open(llm_models_file, 'r') as f:
+        llm_models = json.load(f)
+
+    # add the additional models to the LLM_AVAILABLE_MODELS
+    # take each provider and add the models to the existing ones
+    # or add them to a new provider if it doesn't exist
+    for provider, models in llm_models.items():
+        if provider in LLM_AVAILABLE_MODELS:
+            LLM_AVAILABLE_MODELS[provider].update(models)
+        else:
+            LLM_AVAILABLE_MODELS[provider] = models
+
+    logger.debug('Loaded additional LLM models from {}'.format(llm_models_file))
