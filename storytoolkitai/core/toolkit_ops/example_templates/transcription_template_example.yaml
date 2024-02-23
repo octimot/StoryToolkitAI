@@ -1,0 +1,64 @@
+# This file is an example of a custom transcription export template
+# Keep in mind that it might be outdated, so please refer to the latest documentation
+# Also, we don't recommend using this file directly, since it might be overwritten by the application on future updates
+# Since this is a YAML file, make sure you don't change the indentation or the structure of the file
+# If any errors occur during export, use a YAML validator to check the file for errors
+name: Custom Example
+
+# The file extension to use for the exported file
+extension: txt
+
+# This is the header of the file
+# Variables are defined using {variable_name} - see the curly braces
+# Below you can see the variables that are currently available.
+# You can also use these variables in the segment template below
+header: |
+  This should appear in the header of the file
+  You can use any of these variables:
+  
+  Transcription name: {transcription_name}
+  Transcription path: {transcription_file_path}
+  Source file path: {source_file_path}
+  Timeline name: {transcription_timeline_name}
+  Timeline frame rate: {transcription_timeline_fps}
+  Timeline start timecode: {transcription_start_tc}
+  Main language: {transcription_language}
+  Transcription Last modified: {transcription_last_save_time}
+
+# This is the segment template
+# For each segment in the transcription, the tool will use this template to export it in the final file
+# Variables are defined using {variable_name} - see the curly braces
+# Below you can see the variables that are currently available for segments
+# In addition, you can also use any of the variables from the header
+segment_template: |
+  Segment index: {segment_index}
+  Segment times: {segment_start} --> {segment_end}
+  Segment times in timecode: {segment_start_tc} --> {segment_end_tc}
+  Segment time in frames: {segment_start_frame} --> {segment_end_frame}
+  Segment text: {segment_text}
+  Segment speaker: {segment_speaker_name}
+
+# The segment separator is used to separate each segment in the final file
+# You can use any of the variables from the header and the segment template
+segment_separator: "\n\n"
+
+# You can define multiple conditions to filter out segments
+# You can use any of the segment variables mentioned above in the condition and the export function will evaluate it
+# For e.g. if you want to filter out segments that have a specific speaker,
+# you can write: '{segment_speaker_name}' == 'Speaker 1'
+#  - this will only export segments that have 'Speaker 1' as the speaker
+#  (make sure you use the single quotes around the variable and the value)
+#
+# Or, if you don't want to export meta segments, you can write: not {segment_meta}
+# Below is an example of how this might work
+segment_condition: |
+  not {segment_meta}
+  not {segment_meta_speaker}
+  not {segment_meta_other}
+  '{segment_speaker_name}' == 'Speaker 1'
+
+# The footer is the last part of the file
+# You can use any of the variables from the header as well
+footer: |
+  This should appear in the footer of the file
+  Transcription Last modified: {transcription_last_save_time}

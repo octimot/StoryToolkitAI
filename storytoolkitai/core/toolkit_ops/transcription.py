@@ -9,12 +9,15 @@ import shutil
 import time
 from datetime import datetime
 import re
+import yaml
 from threading import Timer
 
 from timecode import Timecode
 
 from storytoolkitai.core.logger import logger
 from storytoolkitai.core.toolkit_ops.timecode import sec_to_tc
+
+from storytoolkitai import USER_DATA_PATH
 
 
 class Transcription:
@@ -1853,6 +1856,28 @@ class TranscriptionSegment:
             del self
 
 
+# make sure we have the custom export templates directories:
+# for transcriptions
+TRANSCRIPTION_EXPORT_TEMPLATES_PATH = os.path.join(USER_DATA_PATH, 'templates', 'transcription_export')
+
+# create the directory if it doesn't exist
+if not os.path.exists(TRANSCRIPTION_EXPORT_TEMPLATES_PATH):
+    os.makedirs(TRANSCRIPTION_EXPORT_TEMPLATES_PATH)
+    logger.debug('Created directory for transcription export templates: {}'
+                 .format(TRANSCRIPTION_EXPORT_TEMPLATES_PATH))
+
+# copy the default export templates to the user data directory if it doesn't exist
+original_example_template_path = \
+    os.path.join(os.path.dirname(__file__), 'example_templates', 'transcription_template_example.yaml')
+
+example_template_path = os.path.join(TRANSCRIPTION_EXPORT_TEMPLATES_PATH, 'transcription_template_example.yaml')
+
+if not os.path.exists(example_template_path):
+    shutil.copy(original_example_template_path, os.path.dirname(example_template_path))
+    logger.debug('Copied example transcription export template to {}'
+                 .format(example_template_path))
+
+
 class TranscriptionUtils:
 
     @staticmethod
@@ -2505,6 +2530,198 @@ class TranscriptionUtils:
         return comp_file_path
 
     @staticmethod
+    def read_custom_template(custom_template_file_path: str = None, custom_template_basename: str = None):
+
+        # if a basename was passed, add the .yaml extension and the full path
+        # and overwrite the custom_template_file_path
+        if custom_template_basename:
+            custom_template_file_path = \
+                os.path.join(TRANSCRIPTION_EXPORT_TEMPLATES_PATH, custom_template_basename + '.yaml')
+
+        if not os.path.exists(custom_template_file_path):
+            logger.warning("Custom transcription template file \"{}\" doesn't exist."
+                           .format(custom_template_file_path))
+            return None
+
+        with open(custom_template_file_path, "r", encoding="utf-8") as custom_template_file:
+
+            # load the custom template
+            try:
+                return yaml.safe_load(custom_template_file.read())
+            except Exception as e:
+                logger.error('Cannot load custom transcription template file "{}": {}'
+                             .format(custom_template_file_path, e), exc_info=True)
+                return None
+
+    @staticmethod
+    def write_custom_template(export_file_path,
+                              custom_template_file_path: str = None, custom_template_basename: str = None,
+                              transcript_segments: list = None, transcription=None, filter_meta=False):
+        """
+        Write the transcript segments to a file using a custom template.
+        :param export_file_path: The path to the file to export to
+        :param custom_template_file_path: The full path to the custom template file
+        :param custom_template_basename: The basename of the custom template file (without the .yaml extension or path)
+        :param transcript_segments: The transcript segments to export
+                                    (if none, it will use the transcription's segments)
+        :param transcription: The transcription object
+        :param filter_meta: If True, it will filter out meta segments
+        """
+
+        # if a basename was passed, add the .yaml extension and the full path
+        # and overwrite the custom_template_file_path
+        if custom_template_basename:
+            custom_template_file_path = \
+                os.path.join(TRANSCRIPTION_EXPORT_TEMPLATES_PATH, custom_template_basename + '.yaml')
+
+        # is the custom template a file path?
+        custom_template = TranscriptionUtils.read_custom_template(custom_template_file_path)
+
+        if not custom_template:
+            return None
+
+        # get the header from the custom template
+        header = custom_template.get('header', '')
+
+        # get the segment template from the custom template
+        segment_template = custom_template.get('segment_template', '')
+
+        # get the segment separator from the custom template
+        segment_separator = custom_template.get('segment_separator', '\n')
+
+        # get all the possible variables in case we need to replace them in the header and segment template
+        template_variables = {
+            'transcription_name': transcription.name,
+            'transcription_file_path': transcription.transcription_file_path,
+            'source_file_path': transcription.audio_file_path,
+            'transcription_timeline_name': transcription.timeline_name,
+            'transcription_timeline_fps': transcription.timeline_fps,
+            'transcription_start_tc': transcription.timeline_start_tc,
+            'transcription_language': transcription.language,
+            'transcription_last_save_time': transcription.last_save_time
+        }
+
+        # replace the variables in the header template
+        for variable, value in template_variables.items():
+
+            header = header.replace('{' + variable + '}', str(value))
+
+        # write the header to the export file
+        with open(export_file_path, "w", encoding="utf-8") as export_file:
+            print(
+                f'{header}',
+                file=export_file,
+                flush=True
+            )
+
+        # get the segment condition from the custom template
+        segment_condition = custom_template.get('segment_condition', '')
+
+        # split all the conditions by newline
+        segment_conditions = segment_condition.split('\n')
+
+        # if transcript_segments is None, get the segments from the transcription
+        if transcript_segments is None:
+            transcript_segments = transcription.segments
+
+        for segment_index, segment in enumerate(transcript_segments):
+
+            # if the segment is a meta segment and we're filtering meta segments, skip it
+            if filter_meta and segment.meta:
+                continue
+
+            segment_variables = {
+                'segment_index':
+                    segment_index,
+                'segment_start':
+                    segment.start,
+                'segment_end':
+                    segment.end,
+                'segment_start_tc':
+                    TranscriptionUtils.seconds_to_timecode(segment.start, transcription.timeline_fps),
+                'segment_end_tc':
+                    TranscriptionUtils.seconds_to_timecode(segment.end, transcription.timeline_fps),
+                'segment_start_frame':
+                    TranscriptionUtils.seconds_to_timecode(segment.start, transcription.timeline_fps).frames,
+                'segment_end_frame':
+                    TranscriptionUtils.seconds_to_timecode(segment.end, transcription.timeline_fps).frames,
+                'segment_text':
+                    segment.text.strip(),
+                'segment_speaker_name':
+                    segment.get_segment_speaker_name().strip(),
+                'segment_meta':
+                    segment.meta,
+                'segment_meta_speaker':
+                    segment.category == 'speaker',
+                'segment_meta_other':
+                    segment.category == 'other'
+            }
+
+            # take all the conditions and turn them into workable code
+            skip = False
+            for condition in segment_conditions:
+
+                # if the condition is empty, skip it
+                if condition == '':
+                    continue
+
+                # replace the variables in the condition
+                for variable, value in segment_variables.items():
+
+                    condition = condition.replace('{' + variable + '}', str(value))
+
+                try:
+
+                    # evaluate the segment condition
+                    if not eval(condition):
+                        skip = True
+                        break
+
+                except Exception as e:
+                    logger.error(
+                        'Cannot evaluate segment condition "{}": {}'.format(segment_condition, e), exc_info=True)
+                    skip = True
+                    break
+
+            if skip:
+                continue
+
+            # replace the variables in the segment template
+            filled_segment_template = segment_template
+            for variable, value in segment_variables.items():
+
+                filled_segment_template = filled_segment_template.replace('{' + variable + '}', str(value))
+
+            # write the segment to the export file
+            with open(export_file_path, "a", encoding="utf-8") as export_file:
+                print(
+                    f'{filled_segment_template}',
+                    file=export_file,
+                    flush=True,
+                    end=segment_separator
+                )
+
+        # lastly, get the footer from the custom template
+        footer = custom_template.get('footer', '')
+
+        # replace the variables in the footer template
+        for variable, value in template_variables.items():
+            footer = footer.replace('{' + variable + '}', str(value))
+
+        # write the footer to the export file
+        with open(export_file_path, "a", encoding="utf-8") as export_file:
+            print(
+                f'{footer}',
+                file=export_file,
+                flush=True
+            )
+
+        logger.debug('Exported transcription using custom template "{}" to {}'
+                     .format(os.path.basename(custom_template_file_path), custom_template_file_path))
+
+        return export_file_path
+
+    @staticmethod
     def read_render_json(render_json_file_path: str):
         """
         Read the render info file and return the data
@@ -2551,3 +2768,19 @@ class TranscriptionUtils:
         except Exception as e:
             logger.error('Cannot delete render info file "{}": {}.'.format(render_json_file_path, e), exc_info=True)
             return False
+
+    @staticmethod
+    def get_export_templates_list(export_templates_path: str = TRANSCRIPTION_EXPORT_TEMPLATES_PATH) -> list:
+        """
+        Get a list of all the export templates in the export templates directory
+        """
+
+        # if the export templates directory doesn't exist, return None
+        if not os.path.exists(export_templates_path):
+            logger.debug('Cannot get export templates list - directory "{}" not found.'.format(export_templates_path))
+            return []
+
+        # get all the yaml files in the directory
+        export_templates_list = [f for f in os.listdir(export_templates_path) if f.endswith('.yaml')]
+
+        return export_templates_list

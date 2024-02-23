@@ -214,6 +214,8 @@ class UImenus:
         self.filemenu.add_command(label="Export transcript as AVID DS...", state=DISABLED)
         self.filemenu.add_command(label="Export transcript as Fusion Text...", state=DISABLED)
 
+        self.filemenu.add_command(label="Export transcript using template...", state=DISABLED)
+
         # FILE MENU - project linking
         self.filemenu.add_separator()
 
@@ -278,6 +280,12 @@ class UImenus:
                                               self.current_window_id)
                                           )
 
+                self.filemenu.entryconfig('Export transcript using template...', state=NORMAL,
+                                          command=lambda:
+                                          self.toolkit_UI_obj.t_edit_obj.button_export_using_custom_template(
+                                              window_id=self.current_window_id)
+                                          )
+
                 transcription_file_path = \
                     self.toolkit_UI_obj.t_edit_obj.get_window_transcription(self.current_window_id) \
                         .transcription_file_path
@@ -315,6 +323,7 @@ class UImenus:
                 self.filemenu.entryconfig('Export transcript as SRT or text...', state=DISABLED)
                 self.filemenu.entryconfig('Export transcript as AVID DS...', state=DISABLED)
                 self.filemenu.entryconfig('Export transcript as Fusion Text...', state=DISABLED)
+                self.filemenu.entryconfig('Export transcript using template...', state=DISABLED)
                 self.filemenu.entryconfig(link_transcription_project_index,
                                           label="Link transcription to project", state=DISABLED)
 

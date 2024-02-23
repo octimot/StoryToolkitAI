@@ -1,5 +1,3 @@
-import json
-
 from storytoolkitai.core.toolkit_ops.toolkit_ops import *
 
 import copy
@@ -10042,6 +10040,134 @@ class toolkit_UI():
 
                 return False
 
+        def button_export_using_custom_template(self, window_id, export_file_path=None):
+            """
+            Exports the transcript to a file using a custom template
+            """
+
+            parent_window = self.toolkit_UI_obj.get_window_by_id(window_id)
+
+            # get the window transcription
+            window_transcription = self.get_window_transcription(window_id)
+
+            # get the transcription file path from the window
+            transcription_file_path = window_transcription.transcription_file_path
+
+            # if we still don't have a transcription file path, return
+            if transcription_file_path is None:
+                logger.debug('No transcription file path found.')
+
+                return False
+
+            # get all export templates, but remove the .yaml extension
+            export_templates = [f.replace('.yaml', '') for f in TranscriptionUtils.get_export_templates_list()]
+
+            # if there are no export templates, let the user know and return
+            if not export_templates:
+                self.toolkit_UI_obj.notify_via_messagebox(
+                    title='No export templates found',
+                    message='No export templates found in the user data directory.',
+                    type='warning',
+                    parent=parent_window
+                )
+
+                return False
+
+            # let the user choose the export template using a dropdown in a dialog
+            user_input = toolkit_UI.AskDialog(
+                title='Choose Export Template',
+                input_widgets=[
+                    {'name': 'export_file_basename', 'label': 'Export Template:', 'type': 'option_menu',
+                        'options': export_templates}],
+                parent=parent_window,
+                toolkit_UI_obj=self.toolkit_UI_obj,
+                cancel_return=False,
+                ).value()
+
+            if not user_input:
+                return False
+
+            # get the export template
+            export_template = TranscriptionUtils.read_custom_template(
+                custom_template_basename=str(user_input['export_file_basename']))
+
+            # we need to have the string version of the export template to check if it contains timecode data
+            export_template_str = yaml.dump(export_template)
+
+            # if there's any mention of these in the template, we need to ask the user for the timecode data
+            if 'segment_start_tc' in export_template_str \
+                or 'segment_end_tc' in export_template_str \
+                or 'segment_start_frame' in export_template_str \
+                or 'segment_end_frame' in export_template_str \
+                or 'transcription_timeline_fps' in export_template_str \
+                    or 'transcription_timeline_start_tc' in export_template_str:
+
+                # get the timecode data
+                timecode_data = self.get_timecode_data_from_transcription(window_id=window_id)
+
+                while not timecode_data or not isinstance(timecode_data, tuple) or len(timecode_data) != 2:
+                    if messagebox.askokcancel("Error", "The export template needs timecodes, "
+                                                       "but we can't determine the framerate "
+                                                       "or the start timecode of the media file.\n"
+                                                       "Please enter these and try again."):
+
+                        timecode_data = self.ask_for_transcription_timecode_data(
+                            window_id=parent_window,
+                            transcription=window_transcription
+                        )
+
+                    # if user cancels, return None
+                    else:
+                        return None
+
+            # try to get the extension from the export template
+            export_extension = export_template.get('extension', '*')
+
+            # if we don't have a save file path, ask the user for it
+            if export_file_path is None:
+                # ask the user where to save the file
+                export_file_path = filedialog.asksaveasfilename(title='Export as...',
+                                                                initialdir=os.path.dirname(transcription_file_path),
+                                                                initialfile=os.path.basename(transcription_file_path)
+                                                                .replace('.transcription.json', ''),
+                                                                filetypes=[
+                                                                    ('{} files'.format(export_extension),
+                                                                     '*.{}'.format(export_extension)
+                                                                     )
+                                                                ],
+                                                                defaultextension='.{}'.format(export_extension))
+
+                # if the user pressed cancel, return
+                if export_file_path is None or export_file_path == '':
+                    logger.debug('User canceled Export As process.')
+                    return False
+
+            result = TranscriptionUtils.write_custom_template(
+                transcription=window_transcription,
+                custom_template_basename=str(user_input['export_file_basename']),
+                export_file_path=export_file_path
+            )
+
+            if result:
+                # notify the user
+                self.toolkit_UI_obj.notify_via_messagebox(
+                    title='Export using custom template',
+                    message='The file was exported successfully.',
+                    type='info',
+                    parent=parent_window
+                )
+
+                return True
+
+            else:
+                # notify the user
+                self.toolkit_UI_obj.notify_via_messagebox(
+                    title='Export using custom template',
+                    message='The file was not exported successfully.',
+                    type='error',
+                    parent=parent_window
+                )
+
         def button_detect_speakers(self, window_id, transcription_file_path=None, ignore_selection=False):
             """
             Detects the speakers in a given transcription
@@ -10590,6 +10716,7 @@ class toolkit_UI():
             :param window_id: the window id
             :param default_start_tc: the default start timecode
             :param default_fps: the default framerate
+            :param transcription: the transcription object
             :return: timeline_fps, timeline_start_tc or None, None
             """
 
@@ -10637,8 +10764,8 @@ class toolkit_UI():
                     # if the user clicked cancel, stop the loop
                     if user_input is None:
                         return None, None
-                except:
-                    logger.error('Error while asking for timecode data.', exc_info=True)
+                except Exception as e:
+                    logger.error('Error while asking for timecode data: {}'.format(e), exc_info=True)
                     return None, None
 
                 # validate the user input
@@ -10657,12 +10784,12 @@ class toolkit_UI():
                     # if we reached this point, return the fps and start_tc
                     return user_input['timeline_fps'], user_input['timeline_start_tc']
 
-                except:
+                except Exception as e:
 
-                    logger.warning('Invalid Timecode or Frame Rate: {} @ {}'
-                                   .format(user_input['timeline_start_tc'], user_input['timeline_fps']),
-                                   exc_info=True
-                                   )
+                    logger.warning(
+                        'Invalid Timecode or Frame Rate: {} @ {} ({}).'
+                        .format(user_input['timeline_start_tc'], user_input['timeline_fps'], e)
+                    )
 
                     # notify user
                     self.toolkit_UI_obj.notify_via_messagebox(title='Timecode or Frame Rate error',

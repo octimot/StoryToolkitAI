@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import json
+import yaml
 import subprocess
 
 from threading import Thread
@@ -20,6 +21,8 @@ import tqdm
 from storytoolkitai.core.logger import logger
 
 from storytoolkitai.integrations.mots_resolve import MotsResolve
+
+from storytoolkitai import USER_DATA_PATH
 
 from .projects import Project, get_projects_from_path, ProjectUtils
 from .transcription import Transcription, TranscriptionSegment, TranscriptionUtils

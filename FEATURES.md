@@ -320,6 +320,23 @@ If you click on "Open Transcript" and select an SRT file, the tool will automati
 file and open it in the transcription window. This is useful if you want to use transcripts made by other apps in the
 tool, for e.g. to search through them, navigate and mark timelines in Resolve etc.
 
+### Exporting using Custom Transcription Export Templates
+Starting with version 0.24.1, you have the option to export transcriptions using custom templates.
+
+You can choose what to have in the header and the footer of the exported file, and how to format each segment of the transcription.
+
+See the [transcription_template_example.yaml](https://github.com/octimot/StoryToolkitAI/blob/main/storytoolkitai/example_templates/transcription_template_example.yaml.yaml) file as an example of how to create a custom template.
+There, you'll also see all the available variables that you can use in the template.
+
+How to use custom templates:
+1. Create the custom template file and save it to the "templates/transcription_export" folder in the configuration folder of the tool
+2. Open a transcription
+3. Go to File -> Export using template... (in the main menu)
+4. A dialog will pop-up asking you to select the template you want to use
+5. Hit OK and that's it!
+
+If any error occurs, make sure you check the logs. A good practice is to validate the template file using a YAML validator available online.
+
 ### Exporting transcripts as Fusion Text
 Starting from version 0.18.3, you can export the transcription lines into a Fusion Text node.
 
