@@ -328,7 +328,7 @@ Starting with version 0.24.1, you have the option to export transcriptions using
 
 You can choose what to have in the header and the footer of the exported file, and how to format each segment of the transcription.
 
-See the [transcription_template_example.yaml](https://github.com/octimot/StoryToolkitAI/blob/main/storytoolkitai/example_templates/transcription_template_example.yaml.yaml) file as an example of how to create a custom template.
+See the [transcription_template_example.yaml](https://github.com/octimot/StoryToolkitAI/blob/main/storytoolkitai/core/toolkit_ops/example_templates/transcription_template_example.yaml) file as an example of how to create a custom template.
 There, you'll also see all the available variables that you can use in the template.
 
 How to use custom templates:
