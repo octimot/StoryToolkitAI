@@ -41,4 +41,5 @@ moviepy
 scikit-image
 scipy
 pydantic==1.10.8
+speechbrain==0.5.16
 pyannote.audio>=2.0.1
