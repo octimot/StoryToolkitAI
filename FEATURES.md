@@ -116,7 +116,10 @@ average, don't despair, it's better to be prepared than sorry._
 ---
 
 ### Transcription Settings
-Before starting the transcription process, you can tweak different options, including selecting the source language of
+
+Note: this section is a bit outdated - we'll update it soon.
+
+Before starting the ingestion process, you can tweak different options, including selecting the source language of
 the footage, choosing between different Whisper models, the processing device, etc. For faster and better results,
 we recommend at least selecting the source language.
 

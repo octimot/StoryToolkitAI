@@ -2,12 +2,20 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.24.1] - 2024-02-29
+
+Custom Large Language Models for the Assistant and Custom Transcription Export Templates
+
+### Added
+- Ability to add additional llm models, using additional_llm_models.json - see instructions [here](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#adding-additional-llm-models)
+- Compatibility with ollama via additional_llm_models.json and ChatGPT handler
+- Ability to use custom transcription export templates - see instructions [here](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#exporting-using-custom-transcription-export-templates)
+
 ## [0.24.0] - 2024-02-22
 
 Project Management: create projects, then link transcriptions, stories and text files to access them easier or perform project-wide searches faster.
 
 Please back up your StoryToolkitAI configuration folder before updating to this version! The project management feature will restructure the project.json files irreversibly.
-
 
 ### Added
 - Project Management - create and manage projects with multiple transcripts and stories
