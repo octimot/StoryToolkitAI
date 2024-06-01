@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.24.2] - 2024-06-01
+
+### Added
+- Support for GPT-4o and other OpenAI models
+
 ## [0.24.1] - 2024-02-29
 
 Custom Large Language Models for the Assistant and Custom Transcription Export Templates

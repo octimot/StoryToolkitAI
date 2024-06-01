@@ -526,7 +526,8 @@ For now, you can only add models that are compatible with the ChatGPT or StAssis
 
 Make sure to add each model under the respective provider. In the above example, we're adding a model called "llama2", with the provider called "ollama".
 
-If you want to install local models using ollama, see https://ollama.com/ for more info.
+If you want to install local models using ollama, see https://ollama.com/ for more info. 
+Similarly, LM Studio can also be used to host models locally, see https://lmstudio.ai/ for more info.
 
 ### Usage and billing
 
