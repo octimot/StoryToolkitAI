@@ -809,10 +809,38 @@ DEFAULT_SYSTEM_MESSAGE = ('You are an assistant film editor.\n'
 
 LLM_AVAILABLE_MODELS = {
     'OpenAI': {
+        'gpt-4o-2024-05-13': {
+            'description': 'GPT-4o',
+            'price': {'input': 0.005, 'output': 0.015, 'currency': 'USD'},
+            'token_limit': 4096,
+            'context_window': 128000,
+            'training_cutoff': '2023-10',
+            'pricing_info': 'https://openai.com/pricing/',
+            'handler': ChatGPT
+        },
+        'gpt-4-turbo-2024-04-09': {
+            'description': 'GPT-4 Turbo with Vision',
+            'price': {'input': 0.01, 'output': 0.03, 'currency': 'USD'},
+            'token_limit': 4096,
+            'context_window': 128000,
+            'training_cutoff': '2023-12',
+            'pricing_info': 'https://openai.com/pricing/',
+            'handler': ChatGPT
+        },
+        'gpt-4-0125-preview': {
+            'description': 'GPT-4 Turbo (0125 preview)',
+            'price': {'input': 0.01, 'output': 0.03, 'currency': 'USD'},
+            'token_limit': 4096,
+            'context_window': 128000,
+            'training_cutoff': '2023-12',
+            'pricing_info': 'https://openai.com/pricing/',
+            'handler': ChatGPT
+        },
         'gpt-4-1106-preview': {
             'description': 'GPT-4 Turbo (1106 preview)',
             'price': {'input': 0.01, 'output': 0.03, 'currency': 'USD'},
             'token_limit': 4096,
+            'context_window': 128000,
             'training_cutoff': '2023-04',
             'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT
@@ -821,22 +849,43 @@ LLM_AVAILABLE_MODELS = {
             'description': 'GPT-4',
             'price': {'input': 0.03, 'output': 0.06, 'currency': 'USD'},
             'token_limit': 8192,
+            'context_window': 8192,
+            'training_cutoff': '2021-09',
+            'pricing_info': 'https://openai.com/pricing/',
+            'handler': ChatGPT
+        },
+        'gpt-4-32k': {
+            'description': 'GPT-4 32k',
+            'price': {'input': 0.06, 'output': 0.12, 'currency': 'USD'},
+            'token_limit': 32768,
+            'context_window': 32768,
             'training_cutoff': '2021-09',
             'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT
         },
         'gpt-3.5-turbo-0125': {
-            'description': 'GPT-3.5 Turbo 0125',
+            'description': 'GPT-3.5 Turbo (0125)',
             'price': {'input': 0.0005, 'output': 0.0015, 'currency': 'USD'},
-            'token_limit': 16385,
+            'token_limit': 4096,
+            'context_window': 16385,
             'training_cutoff': '2021-09',
             'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT
         },
         'gpt-3.5-turbo-1106': {
-            'description': 'GPT-3.5 Turbo 1106',
+            'description': 'GPT-3.5 Turbo (1106)',
             'price': {'input': 0.001, 'output': 0.002, 'currency': 'USD'},
+            'token_limit': 4096,
+            'context_window': 16385,
+            'training_cutoff': '2021-09',
+            'pricing_info': 'https://openai.com/pricing/',
+            'handler': ChatGPT
+        },
+        'gpt-3.5-turbo-16k-0613': {
+            'description': 'GPT-3.5 Turbo 16k (0613)',
+            'price': {'input': 0.0030, 'output': 0.0040, 'currency': 'USD'},
             'token_limit': 16385,
+            'context_window': 16385,
             'training_cutoff': '2021-09',
             'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT

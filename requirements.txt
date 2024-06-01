@@ -28,7 +28,7 @@ urllib3
 openai-whisper @ git+https://github.com/openai/whisper.git@ba3f3cd54b0e5b8ce1ab3de13e32122d0d5f98ab
 dtw-python
 resampy
-openai>=1.6.0
+openai>=1.8.0
 spacy>=3.0.0
 spacy-langdetect
 clip @ git+https://github.com/openai/CLIP.git@a9b1bf5920416aaeaec965c25dd9e8f98c864f16
