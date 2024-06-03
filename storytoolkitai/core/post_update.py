@@ -7,21 +7,68 @@ import subprocess
 import sys
 
 
-def reinstall_requirements():
-
+def cuda_is_available():
     try:
-        # get the absolute path to requirements.txt,
-        # considering it should be relative to the current file
-        requirements_file_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), '..', '..', 'requirements.txt'
-        )
+        # check if nvcc (NVIDIA's CUDA compiler) is installed
+        subprocess.check_output(['nvcc', '--version'])
+        return True
+    except subprocess.CalledProcessError:
+        return False
+    except FileNotFoundError:
+        return False
+
+
+def reinstall_requirements():
+    # get the absolute path to requirements.txt,
+    # considering it should be relative to the current file
+    requirements_file_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), '..', '..', 'requirements.txt'
+    )
+
+    logger.info('Re-installing requirements.txt...')
+    logger.info('This may take a few minutes.')
+    try:
+
+        # but before we reinstall, detect if we have CUDA available:
+        if cuda_is_available():
+
+            logger.info('CUDA is available on this system. '
+                        'Trying to install CUDA compatible versions of torch, torchaudio, and torchvision.')
+
+            # if we do, we will use torch 2.0.0+cu117, torchaudio 2.0.1+cu117, and torchvision 0.15.1+cu117
+            # so we need to replace the torch, torchaudio, and torchvision lines in the requirements.txt file
+            # copy the requirements.txt file to a temporary file
+            with open(requirements_file_path, 'r') as f:
+                requirements = f.readlines()
+                original_requirements = requirements.copy()
+
+            # replace the torch, torchaudio, and torchvision lines
+            for i, line in enumerate(requirements):
+                if 'torchaudio' in line:
+                    requirements[i] = \
+                        'torchaudio==2.0.1+cu117 --extra-index-url https://download.pytorch.org/whl/cu117\n'
+                elif 'torch' in line:
+                    requirements[i] = \
+                        'torch==2.0.0+cu117 --extra-index-url https://download.pytorch.org/whl/cu117\n'
+
+            # write the requirements back to the file
+            with open(requirements_file_path, 'w') as f:
+                f.writelines(requirements)
 
         # don't use cache dir
         subprocess.check_call(
             [sys.executable, '-m', 'pip', 'install', '-r', requirements_file_path, '--no-cache-dir'])
+
+        # restore the original requirements
+        with open(requirements_file_path, 'w') as f:
+            f.writelines(original_requirements)
     except Exception as e:
         logger.error('Failed to install requirements.txt: {}'.format(e))
         logger.warning('Please install the requirements.txt manually.')
+
+        # restore the original requirements
+        with open(requirements_file_path, 'w') as f:
+            f.writelines(original_requirements)
 
         return False
 
@@ -286,3 +333,5 @@ post_update_functions = {
     '0.23.0': post_update_0_23_0,
     '0.24.0': post_update_0_24_0,
 }
+
+reinstall_requirements()
