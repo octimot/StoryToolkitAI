@@ -25,6 +25,8 @@ def reinstall_requirements():
         os.path.dirname(os.path.abspath(__file__)), '..', '..', 'requirements.txt'
     )
 
+    original_requirements = None
+
     logger.info('Re-installing requirements.txt...')
     logger.info('This may take a few minutes.')
     try:
@@ -60,8 +62,9 @@ def reinstall_requirements():
             [sys.executable, '-m', 'pip', 'install', '-r', requirements_file_path, '--no-cache-dir'])
 
         # restore the original requirements
-        with open(requirements_file_path, 'w') as f:
-            f.writelines(original_requirements)
+        if original_requirements:
+            with open(requirements_file_path, 'w') as f:
+                f.writelines(original_requirements)
     except Exception as e:
         logger.error('Failed to install requirements.txt: {}'.format(e))
         logger.warning('Please install the requirements.txt manually.')
