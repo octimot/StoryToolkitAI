@@ -333,5 +333,3 @@ post_update_functions = {
     '0.23.0': post_update_0_23_0,
     '0.24.0': post_update_0_24_0,
 }
-
-reinstall_requirements()
