@@ -31,11 +31,11 @@ scenario, some stuff might not work at all on your computer, and you'll need pro
 
 #### Requirements
 
-Our installations are on MacOS 12.6+ running on M1 and Windows 10 machines in our editing room, 
+Our installations are on MacOS 12.6+, MacOS 14.4.1+ running on M1, and Windows 10 machines in our editing room, 
 but the scripts should run fine on other CPUs and GPUs. 
-For both production and development we're currently using Python 3.10.11. 
+For both production and development we're mostly using Python 3.10.11, but slowly migrating to 3.11.
 
-_Note: The tool worked fine on Python 3.9, but some packages are now optimized for Python 3.10. 
+_Note: The tool worked fine on Python 3.9, but some packages are now optimized for Python 3.10 and Python 3.11 
 Python 3.9 support will no longer be possible in the very near future._
 
 **The Resolve API integration only works on Resolve Studio 18 (not on the free version, and certainly not earlier 
@@ -73,6 +73,9 @@ So, install that using `xcode-select --install`.
     brew install git
     brew install ffmpeg
     brew install rust
+
+_Note: we're slowly migrating to Python 3.11, so please keep an eye on the requirements in the future. 
+If you're feeling brave, you can try installing Python 3.11 instead of 3.10 by modifying the above and below commands._
 
 #### 3. Download StoryToolkitAI:
 
@@ -128,6 +131,9 @@ Download the latest Python 3.10 version from [the official Python website](https
 
 _Note: Do not use the Python installers available from the Windows Store. Only use other Python installers / versions
 if you know what you're doing._
+
+_Note 2: we're slowly migrating to Python 3.11, so please keep an eye on the requirements in the future. 
+If you're feeling brave, you can try use 3.11 instead of 3.10 below._
 
 Then simply install it on your machine using the default settings.
 

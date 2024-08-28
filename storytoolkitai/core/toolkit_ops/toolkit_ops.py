@@ -4,6 +4,7 @@ import time
 import json
 import yaml
 import subprocess
+import platform
 
 from threading import Thread
 
@@ -43,6 +44,10 @@ import numpy as np
 from .monitor import Monitor
 from .videoanalysis import ClipIndex
 from .media import MediaItem, VideoFileClip, AudioFileClip
+
+
+def is_arm64_mac():
+    return platform.system() == 'Darwin' and platform.machine() == 'arm64'
 
 
 class NLE:
@@ -2260,7 +2265,7 @@ class ToolkitOps:
 
     def classify_segments(self, segments: list, labels: list,
                           min_confidence: int or list = 0.55, multi_label_pass: list = None, **kwargs):
-        '''
+        """
         Classifies segments into different types using the transformers zero-shot-classification pipeline
         :param segments: the segments to classify
         :param labels: the labels to use for classification, if a list of lists is provided,
@@ -2269,7 +2274,7 @@ class ToolkitOps:
                                 if a list is provided, then the confidence is calculated for multi_label_pass label group
         :param multi_label_pass: a list of groups of labels that need to be passed together,
                                 so that the segment stays in the result
-        '''
+        """
 
         if segments is None or len(segments) == 0:
             logger.debug('No segments to classify.')
@@ -2301,10 +2306,16 @@ class ToolkitOps:
         model_name = self.stAI.get_app_setting('text_classifier_model', default_if_none='facebook/bart-large-mnli')
 
         logger.debug('Loading text classifier model: {}'.format(model_name))
+
         # get the zero-shot-classification pipeline
-        classifier = pipeline('zero-shot-classification',
-                              model=model_name,
-                              )
+        # if this is an arm64 mac use mps as device
+        if is_arm64_mac():
+            classifier = pipeline('zero-shot-classification', model=model_name, device='mps',)
+        elif torch.cuda.is_available():
+            logger.debug('Using GPU for classification.')
+            classifier = pipeline('zero-shot-classification', model=model_name, device='cuda')
+        else:
+            classifier = pipeline('zero-shot-classification', model=model_name)
 
         logger.debug('Classifying segments using the following labels: {}'.format(labels))
 

@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.24.3] - 2024-08-28
+This version improves compatibility with Python 3.11 and fixes a few package-related issues.
+We're slowly moving towards Python 3.11 as the default version for the tool.
+
+### Fixes
+- Improved compatibility with Python 3.11
+- Fixed a bug that was removing CUDA support when the tool was checking if the required packages were installed
+- Other package-related bug fixes
+
 ## [0.24.2] - 2024-06-01
 
 ### Added

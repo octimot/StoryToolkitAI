@@ -1,10 +1,27 @@
-
 import sys
 import argparse
 import platform
 import time
 import subprocess
 import os
+import ctypes
+import ctypes.util
+
+
+def is_windows():
+    return platform.system() == "Windows"
+
+
+def is_cuda_available():
+    if not is_windows():
+        return False
+
+    try:
+        cuda = ctypes.CDLL(ctypes.util.find_library("nvcuda") or "nvcuda.dll")
+        cuda.cuInit(0)
+        return True
+    except:
+        return False
 
 # add content root to sys.path
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
@@ -14,21 +31,19 @@ from storytoolkitai.core.logger import *
 # signal the start of the session in the log by adding some info about the machine
 logger.debug('\n--------------\n'
              'Platform: {} {}\n Platform version: {}\n OS: {} \n running Python {}'
-             '\n--------------'.format(
-    platform.system(), platform.release(),
-    platform.version(),
-    ' '.join(map(str, platform.win32_ver() + platform.mac_ver())),
-    '.'.join(map(str, sys.version_info))))
+             '\n--------------'
+             .format(platform.system(), platform.release(), platform.version(),
+                     ' '.join(map(str, platform.win32_ver() + platform.mac_ver())),
+                     '.'.join(map(str, sys.version_info))))
 
 # check if the user is running any version of Python 3.10
-if sys.version_info.major != 3 or sys.version_info.minor != 10:
+if sys.version_info.major != 3 or (sys.version_info.minor != 10 and sys.version_info.minor != 11):
 
     logger.warning('You are running Python {}.{}.{}.\n'.format(*sys.version_info) +
-                   'StoryToolkitAI is now optimized to run on Python 3.10.\n' +
-                   'Please download and install the latest version of Python 3.10 '
-                   'from: https://www.python.org/downloads/\nand then re-install the '
-                   'tool with a new environment.\n '
-                   'More info: https://github.com/octimot/StoryToolkitAI/blob/main/INSTALLATION.mdn\n')
+                   'StoryToolkitAI is now optimized to run on Python 3.10 and runs well on Python 3.11.\n' +
+                   'Please download and install the latest version of Python 3.10 or 3.11 '
+                   'from: https://www.python.org/downloads/\nand then re-install the tool with a new environment.\n '
+                   'More info: https://github.com/octimot/StoryToolkitAI/blob/main/INSTALLATION.md\n')
 
     # keep this message in the console for a bit
     time.sleep(5)
@@ -75,18 +90,74 @@ if not getattr(sys, 'frozen', False):
         logger.warning("Packages missing from the installation: {}".format(e))
         requirements_failed = True
 
-    except:
+    except Exception as e:
         # log the error and show the warning
-        logger.warning("There's something wrong with the packages installed in your Python environment:", exc_info=True)
+        logger.warning("There's something wrong with the packages installed in your Python environment: {}".format(e),
+                       exc_info=True)
         requirements_failed = True
 
-    # no matter what, we need to check if the user has the correct version of Python installed
+    # if the requirements are not met, we need to install them
     if requirements_failed:
 
         logger.warning('Some of the packages required to run StoryToolkitAI are missing from your Python environment.')
 
         # try to install the requirements automatically
         logger.warning('Attempting to automatically install the missing packages...')
+
+        # if we are on Windows and CUDA is available, we need to make sure we're using the correct PyTorch version
+        if is_windows() and is_cuda_available():
+
+            import shutil
+
+            # create the path for the new requirements file
+            windows_requirements_file_path = \
+                os.path.abspath(os.path.join(os.path.dirname(file_path), '..', 'requirements_windows_cuda.txt'))
+
+            # copy the original file
+            shutil.copy2(requirements_file_path, windows_requirements_file_path)
+
+            # read the contents of the new file
+            with open(windows_requirements_file_path, 'r') as f:
+                lines = f.readlines()
+
+            # modify the PyTorch related lines
+            pytorch_packages = ['torch', 'torchvision', 'torchaudio']
+            modified_lines = []
+            for line in lines:
+
+                # if it's either torch, torchvision or torchaudio
+                if line.startswith('torchaudio'):
+                    # modify the line to include the correct version
+                    line = 'torchaudio==2.0.1+cu118\n'
+                    modified_lines.append(line)
+
+                elif line.startswith('torchvision'):
+                    # modify the line to include the correct version
+                    line = 'torchvision==0.15.1+cu118\n'
+                    modified_lines.append(line)
+
+                elif line.startswith('torch'):
+                    # modify the line to include the correct version
+                    line = 'torch==2.0.0+cu118\n'
+                    modified_lines.append(line)
+
+                # otherwise, just add the line as is
+                else:
+                    modified_lines.append(line)
+
+            # add this to the beginning of the file
+            modified_lines.insert(0, '--find-links https://download.pytorch.org/whl/torch_stable.html\n')
+
+            # write the modified contents back to the file
+            with open(windows_requirements_file_path, 'w') as f:
+                f.writelines(modified_lines)
+
+            logger.debug(f"Created Windows CUDA requirements file: {windows_requirements_file_path}")
+
+            requirements_file_path = windows_requirements_file_path
+
+        else:
+            windows_requirements_file_path = None
 
         # get the relative path to the requirements file
         requirements_file_path_abs = os.path.abspath(requirements_file_path)
@@ -103,9 +174,9 @@ if not getattr(sys, 'frozen', False):
             try:
                 # restart the app while passing all the arguments
                 os.execl(sys.executable, sys.executable, *sys.argv)
-            except:
-                logger.error('Could not restart StoryToolkitAI. Please restart the app manually.')
-
+            except Exception as e:
+                logger.error('Could not restart StoryToolkitAI: {}'.format(e))
+                logger.error('Please restart the tool manually.')
 
         else:
             # let the user know that the automatic installation failed
@@ -121,6 +192,22 @@ if not getattr(sys, 'frozen', False):
         # keep this message in the console for a bit
         time.sleep(2)
 
+        # if we created a windows requirements file, we can delete it until next time
+        if windows_requirements_file_path:
+            try:
+                # Ensure all file handles are closed
+                import gc
+
+                gc.collect()
+
+                # Try to remove the file
+                os.remove(windows_requirements_file_path)
+                logger.debug(f"Successfully removed temporary file: {windows_requirements_file_path}")
+            except PermissionError:
+                logger.warning(f"Could not remove temporary file: {windows_requirements_file_path}. It may be in use.")
+            except Exception as e:
+                logger.warning(f"An error occurred while trying to remove {windows_requirements_file_path}: {str(e)}")
+
 from storytoolkitai.core.storytoolkitai import StoryToolkitAI
 
 StoryToolkitAI.check_ffmpeg()
@@ -129,6 +216,7 @@ from storytoolkitai.core.toolkit_ops.toolkit_ops import ToolkitOps
 
 from storytoolkitai.ui.toolkit_ui import run_gui
 from storytoolkitai.ui.toolkit_cli import run_cli
+
 
 def main():
 
