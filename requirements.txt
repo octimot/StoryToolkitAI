@@ -6,9 +6,11 @@ filelock==3.8.0
 future==0.18.3
 huggingface-hub>=0.10.0
 idna==3.4
-librosa>=0.9.1
+scikit-learn
+librosa==0.10.1
 more-itertools>=8.14.0
 numpy
+numba>=0.59.1
 packaging==21.3
 pyparsing==3.0.9
 PyYAML==6.0
@@ -33,14 +35,16 @@ openai>=1.8.0
 spacy>=3.0.0
 spacy-langdetect
 clip @ git+https://github.com/openai/CLIP.git@a9b1bf5920416aaeaec965c25dd9e8f98c864f16
-opencv-python
-patchify
+opencv-python>=4.9.0.80
+patchify==0.2.3
 darkdetect
 customtkinter @ git+https://github.com/octimot/CustomTkinter.git@a2a8c37dd8dac1dee30133476596a5128adb0530
 ftfy
-moviepy
-scikit-image
-scipy
+moviepy>=1.0.3
+scikit-image>=0.22.0
+imageio>=2.33.1
+scipy>=1.13
+soxr>=0.3.7
 pydantic==1.10.8
 speechbrain==0.5.16
 pyannote.audio>=2.0.1
