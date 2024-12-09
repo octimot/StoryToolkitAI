@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.24.4] - 2024-12-09
+
+### Added
+- Ability to specify auto-export formats for transcriptions during ingest and while editing - see instructions [here](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#Auto-saving-in-additional-formats-when-saving-a-transcription)
+
+### Fixes
+- Improved handling of errors related to additional_llm_models.json
+- Other bug fixes and optimizations
+
 ## [0.24.3] - 2024-08-28
 This version improves compatibility with Python 3.11 and fixes a few package-related issues.
 We're slowly moving towards Python 3.11 as the default version for the tool.
