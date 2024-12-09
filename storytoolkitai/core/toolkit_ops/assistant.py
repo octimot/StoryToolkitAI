@@ -394,10 +394,15 @@ class ChatGPT(ToolkitAssistant):
             ), chat_history
 
         except Exception as e:
-            logger.debug('Error sending query to ChatGPT: ', exc_info=True)
+            logger.debug('Error sending query to the Assistant model: ', exc_info=True)
 
-            error = str(e) + "There seems to be a problem with the connection to OpenAI. " \
-                             "Please check the logs or try again later."
+            error = str(e)
+
+            if len(error) > 0:
+                error += '\n'
+
+            error += "There seems to be a problem with the connection to the model provider. " \
+                     "Please check the logs or try again later."
 
             return AssistantResponse(
                 error=error
@@ -925,16 +930,21 @@ LLM_AVAILABLE_MODELS = {
 llm_models_file = os.path.join(USER_DATA_PATH, 'additional_llm_models.json')
 
 if os.path.exists(llm_models_file):
-    with open(llm_models_file, 'r') as f:
-        llm_models = json.load(f)
+    try:
+        with open(llm_models_file, 'r') as f:
+            llm_models = json.load(f)
 
-    # add the additional models to the LLM_AVAILABLE_MODELS
-    # take each provider and add the models to the existing ones
-    # or add them to a new provider if it doesn't exist
-    for provider, models in llm_models.items():
-        if provider in LLM_AVAILABLE_MODELS:
-            LLM_AVAILABLE_MODELS[provider].update(models)
-        else:
-            LLM_AVAILABLE_MODELS[provider] = models
+        # add the additional models to the LLM_AVAILABLE_MODELS
+        # take each provider and add the models to the existing ones
+        # or add them to a new provider if it doesn't exist
+        for provider, models in llm_models.items():
+            if provider in LLM_AVAILABLE_MODELS:
+                LLM_AVAILABLE_MODELS[provider].update(models)
+            else:
+                LLM_AVAILABLE_MODELS[provider] = models
 
-    logger.debug('Loaded additional LLM models from {}'.format(llm_models_file))
+        logger.debug('Loaded additional LLM models from {}'.format(llm_models_file))
+
+    except Exception as e:
+        logger.error('Error loading additional LLM models from {}: {}'.format(llm_models_file, e))
+        logger.debug('Error loading additional LLM models:', exc_info=True)

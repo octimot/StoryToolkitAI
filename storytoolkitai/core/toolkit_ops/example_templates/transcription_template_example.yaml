@@ -5,7 +5,7 @@
 # If any errors occur during export, use a YAML validator to check the file for errors
 name: Custom Example
 
-# The file extension to use for the exported file
+# The file extension to use for the exported file (used when auto-exporting)
 extension: txt
 
 # This is the header of the file

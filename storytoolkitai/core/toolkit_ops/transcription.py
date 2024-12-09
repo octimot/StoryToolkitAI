@@ -964,7 +964,7 @@ class Transcription:
                 self._save_timer.cancel()
                 self._save_timer = None
 
-            return self._save(backup=backup)
+            return self._save(backup=backup, **kwargs)
 
         # if we're calling this function again before the last save was done
         # it means that we're calling this function more often so many changes might follow in our Transcript,
@@ -1026,6 +1026,86 @@ class Transcription:
 
             # reset the dirty flag back to False
             self.set_dirty(False)
+
+            # save auxiliaries if mentioned
+            # the auxiliaries key should point to a list,
+            # for e.g.: ['srt', 'txt', 'avid_ds', 'custom::custom_template' etc.]
+            if kwargs and 'auxiliaries' in kwargs and kwargs.get('auxiliaries', None) \
+                    and isinstance(kwargs.get('auxiliaries'), list):
+
+                # for the filename use the basename of the transcription file,
+                # without the .transcription.json extension
+                if self.__transcription_file_path.endswith(".transcription.json"):
+                    file_path = self.__transcription_file_path[:-len(".transcription.json")]
+
+                # if the transcription file extension is different (it shouldn't...),
+                # remove the extension after the last dot using os splitext
+                else:
+                    file_path = os.path.splitext(self.__transcription_file_path)[0]
+
+                for auxiliary_format in kwargs.get('auxiliaries', []):
+
+                    try:
+                        if auxiliary_format == 'srt':
+
+                            srt_file_path = file_path + '.srt'
+
+                            # write the transcript segments to srt
+                            TranscriptionUtils.write_srt(self.segments, srt_file_path=srt_file_path)
+
+                        elif auxiliary_format == 'txt':
+
+                            txt_file_path = file_path + '.txt'
+                            TranscriptionUtils.write_txt(self.segments, txt_file_path=txt_file_path)
+
+                        elif auxiliary_format == 'avid_ds':
+
+                            # if the transcription has no timecode data, skip this
+                            if not self.timeline_fps and not self.timeline_start_tc:
+                                logger.warning('Skipping avid ds export - Transcription {} has no timecode data.'
+                                               .format(self.transcription_file_path))
+                                continue
+
+                            avid_ds_file_path = file_path + '.avid_ds.txt'
+                            TranscriptionUtils.write_avid_ds(
+                                self.segments, avid_ds_file_path=avid_ds_file_path,
+                                timeline_fps=self.timeline_fps, timeline_start_tc=self.timeline_start_tc)
+
+                        elif auxiliary_format == 'fusion_text_comp':
+
+                            # if the transcription has no timecode data, skip this
+                            if not self.timeline_fps and not self.timeline_start_tc:
+                                logger.warning('Skipping fusion comp export - Transcription {} has no timecode data.'
+                                               .format(self.transcription_file_path))
+                                continue
+
+                            fusion_text_comp_path = file_path + '.comp'
+                            TranscriptionUtils.write_fusion_text_comp(
+                                self.segments, comp_file_path=fusion_text_comp_path,
+                                timeline_fps=self.timeline_fps)
+
+                        # if it starts with 'custom::', it means that it's a custom format
+                        elif auxiliary_format.startswith('custom::'):
+
+                            # extract the custom template name, by removing the tag 'custom::'
+                            custom_template_basename = auxiliary_format[len('custom::'):]
+
+                            export_file_path = file_path
+
+                            # this will export using the custom template and return None if the template doesn't exist
+                            TranscriptionUtils.write_custom_template(
+                                transcription=self,
+                                custom_template_basename=custom_template_basename,
+                                export_file_path=export_file_path,
+                                use_extension=True
+                            )
+
+                    # if any exception was triggered while saving the auxiliary format, log it
+                    except Exception as e:
+                        logger.error('Error saving "{}" format for transcription {}: {}.'
+                                     .format(auxiliary_format, self.transcription_file_path, e))
+                        logger.debug('', exc_info=True)
+                        continue
 
         # if we're supposed to call a function when the transcription is saved
         if save_result and if_successful is not None:
@@ -2301,6 +2381,8 @@ class TranscriptionUtils:
                 )
                 i += 1
 
+        logger.debug(f"Exported to SRT file {srt_file_path}")
+
     @staticmethod
     def write_txt(transcript_segments: list, txt_file_path: str, filter_meta=True):
         """
@@ -2321,6 +2403,8 @@ class TranscriptionUtils:
                     file=txt_file,
                     flush=True,
                 )
+
+        logger.debug(f"Exported to TXT file {txt_file_path}")
 
     @staticmethod
     def write_avid_ds(
@@ -2394,6 +2478,8 @@ class TranscriptionUtils:
                 file=avid_ds_file,
                 flush=True
             )
+
+        logger.debug(f"Exported to Avid DS file {avid_ds_file_path}")
 
     @staticmethod
     def write_fusion_text_comp(transcript_segments: list, comp_file_path: str, timeline_fps, filter_meta=True):
@@ -2526,6 +2612,8 @@ class TranscriptionUtils:
                 flush=True
             )
 
+        logger.debug("Exported to Fusion Text+ comp file {}".format(comp_file_path))
+
         # return the comp file path
         return comp_file_path
 
@@ -2556,7 +2644,8 @@ class TranscriptionUtils:
     @staticmethod
     def write_custom_template(export_file_path,
                               custom_template_file_path: str = None, custom_template_basename: str = None,
-                              transcript_segments: list = None, transcription=None, filter_meta=False):
+                              transcript_segments: list = None, transcription=None, filter_meta=False,
+                              use_extension=False):
         """
         Write the transcript segments to a file using a custom template.
         :param export_file_path: The path to the file to export to
@@ -2566,6 +2655,8 @@ class TranscriptionUtils:
                                     (if none, it will use the transcription's segments)
         :param transcription: The transcription object
         :param filter_meta: If True, it will filter out meta segments
+        :param use_extension: By default, we're not using the extension from the custom template yaml file, but
+                              if this is True, we'll add the extension to the export file path
         """
 
         # if a basename was passed, add the .yaml extension and the full path
@@ -2605,6 +2696,15 @@ class TranscriptionUtils:
         for variable, value in template_variables.items():
 
             header = header.replace('{' + variable + '}', str(value))
+
+        # if we're adding the extension from the custom template yaml file
+        if use_extension and custom_template.get('extension', None):
+
+            # make sure we have a dot at the beginning of the extension
+            if not custom_template.get('extension', '').startswith('.'):
+                export_file_path = str(export_file_path) + '.' + custom_template.get('extension', '')
+            else:
+                export_file_path = str(export_file_path) + custom_template.get('extension', '')
 
         # write the header to the export file
         with open(export_file_path, "w", encoding="utf-8") as export_file:

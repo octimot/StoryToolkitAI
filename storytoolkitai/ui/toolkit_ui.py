@@ -497,11 +497,46 @@ class toolkit_UI():
                 validatecommand=(ingest_file_limit_input.register(self.toolkit_UI_obj.only_allow_integers), '%P')
             )
 
+            # TRANSCRIPTION AUXILIARY FILES AUTO-SAVE
+            # get the transcription_auto_save_aux setting from the app settings
+            transcription_auto_save_aux = \
+                kwargs.get('transcription_auto_save_aux', None) \
+                    if kwargs.get('transcription_auto_save_aux', None) is not None \
+                    else self.stAI.get_app_setting('transcription_auto_save_aux',
+                                                   default_if_none="")
+
+            # convert the list into a string, where each element is on a new line
+            try:
+                if isinstance(transcription_auto_save_aux, list):
+                    transcription_auto_save_aux = '\n'.join(transcription_auto_save_aux)
+            except Exception as e:
+                logger.error(f'There seems to be a problem with the formatting '
+                             f'of the Additional Formats in the config file: {e}')
+                transcription_auto_save_aux = None
+
+            # create the transcription_auto_save_aux variable, label and input
+            form_vars['transcription_auto_save_aux_var'] = \
+                transcription_auto_save_aux_var = tk.StringVar(
+                other_ingest_prefs_frame, value=transcription_auto_save_aux)
+            transcription_auto_save_aux_label = ctk.CTkLabel(
+                other_ingest_prefs_frame, text='Auto-Save Additional Formats', **toolkit_UI.ctk_form_label_settings)
+            transcription_auto_save_aux_input = ctk.CTkTextbox(
+                other_ingest_prefs_frame, **toolkit_UI.ctk_form_textbox)
+            transcription_auto_save_aux_input.insert(tk.END, transcription_auto_save_aux)
+
+            # if the transcription_auto_save_aux input changes, update the transcription_auto_save_aux variable
+            def update_transcription_auto_save_aux(*args):
+                transcription_auto_save_aux_var.set(transcription_auto_save_aux_input.get('1.0', tk.END))
+
+            transcription_auto_save_aux_input.bind('<KeyRelease>', update_transcription_auto_save_aux)
+
             # ADD ELEMENTS TO GRID
             ingest_skip_settings_label.grid(row=1, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
             ingest_skip_settings_input.grid(row=1, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
             ingest_file_limit_label.grid(row=2, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
             ingest_file_limit_frame.grid(row=2, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            transcription_auto_save_aux_label.grid(row=3, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            transcription_auto_save_aux_input.grid(row=3, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
 
             return form_vars
 
@@ -773,7 +808,7 @@ class toolkit_UI():
             system_prompt_input = ctk.CTkTextbox(advanced_prefs_frame, wrap=tk.WORD, **toolkit_UI.ctk_form_textbox)
             system_prompt_input.insert(tk.END, system_prompt)
 
-            # if the initial prompt input changes, update the initial prompt variable
+            # if the system prompt input changes, update the system prompt variable
             def update_system_prompt(*args):
                 system_prompt_var.set(system_prompt_input.get('1.0', tk.END))
 
@@ -1139,7 +1174,7 @@ class toolkit_UI():
             self.stAI.config['transcription_word_timestamps'] = input_variables['word_timestamps_var'].get()
             del input_variables['word_timestamps_var']
 
-            # pre_detect_speech becomes initial_prompt_var
+            # initial_prompt becomes initial_prompt_var
             self.stAI.config['transcription_initial_prompt'] = input_variables['initial_prompt_var'].get()
             del input_variables['initial_prompt_var']
 
@@ -1162,6 +1197,19 @@ class toolkit_UI():
             else:
                 self.stAI.config['video_indexing_index_candidate'] = 'sharp'
             del input_variables['video_indexing_index_candidate_var']
+
+            # transcription_auto_save_aux_var
+            self.stAI.config['transcription_auto_save_aux'] = \
+                input_variables['transcription_auto_save_aux_var'].get().split('\n')
+
+            # remove any empty strings
+            clean_transcription_auto_save_aux = []
+            for aux in self.stAI.config['transcription_auto_save_aux']:
+                if aux.strip() != '':
+                    clean_transcription_auto_save_aux.append(aux.strip())
+
+            self.stAI.config['transcription_auto_save_aux'] = clean_transcription_auto_save_aux
+            del input_variables['transcription_auto_save_aux_var']
 
             # SAVE THE VARIABLES FROM HERE ON
 
@@ -12462,13 +12510,17 @@ class toolkit_UI():
                              'no transcription object found for window {}.'.format(window_id))
                 return False
 
+            # save auxiliaries if they're specified in the config file
+            auxiliaries = self.stAI.get_app_setting('transcription_auto_save_aux', default_if_none=None)
+
             # send the save command to the transcription object
             return window_transcription.save_soon(
                 backup=self.stAI.transcript_backup_interval,
                 force=force,
                 if_successful=lambda: self.update_status_label_after_save(window_id, True),
                 if_failed=lambda: self.update_status_label_after_save(window_id, 'fail'),
-                if_none=lambda: self.update_status_label_after_save(window_id)
+                if_none=lambda: self.update_status_label_after_save(window_id),
+                auxiliaries=auxiliaries
             )
 
         def set_window_transcription(self, window_id: str, transcription: Transcription):

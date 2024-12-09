@@ -567,9 +567,9 @@ def transcribe(
                 # let's consider that the total duration of the audio is total_duration
                 # and the current segment is part of a bigger audio segment which duration's is audio_segment_duration
                 # so the total progress is:
-                total_progress = previous_progress + int(progress * (audio_segment_duration / total_duration))
+                total_progress = int(previous_progress) + int(progress * (audio_segment_duration / total_duration))
 
-                progress = total_progress
+                progress = int(total_progress)
 
             # update the progress in the app
             if queue_id is not None:

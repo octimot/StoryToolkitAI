@@ -2155,6 +2155,15 @@ class ToolkitOps:
         # take care of the metadata and project related stuff
         self.process_transcription_metadata(other_options=other_options, transcription=transcription)
 
+        # save one more time and process the auxiliaries if needed
+        auxiliaries = other_options.get(
+            'transcription_auxiliaries',
+            self.stAI.get_app_setting('transcription_auto_save_aux', default_if_none=None)
+        )
+
+        if auxiliaries:
+            transcription.save_soon(sec=0, force=True, auxiliaries=auxiliaries)
+
         # delete the render.json file if it exists
         if other_options.get('source_file_path', None) and other_options.get('ingest_delete_render_info_file', False):
 
