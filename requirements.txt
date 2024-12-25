@@ -40,7 +40,7 @@ patchify==0.2.3
 darkdetect
 customtkinter @ git+https://github.com/octimot/CustomTkinter.git@a2a8c37dd8dac1dee30133476596a5128adb0530
 ftfy
-moviepy>=1.0.3
+moviepy==1.0.3
 scikit-image>=0.22.0
 imageio>=2.33.1
 scipy>=1.13
