@@ -84,9 +84,14 @@ class StoryToolkitAI:
         else:
             logger.debug("Skipping update check due to command line argument.")
 
+        # if this is not a standalone version, get the git commit hash
+        if not self.standalone:
+            self.git_commit = self.get_git_commit()
+
         logger.info(loggerStyle.BOLD + loggerStyle.UNDERLINE + "Running StoryToolkitAI{} version {} {}"
                     .format(' SERVER' if server else '',
-                            self.__version__,
+                            self.__version__ + '_{}'.format(self.git_commit)
+                            if not self.standalone and self.git_commit else self.__version__,
                             '(standalone)' if self.standalone else ''))
 
         # we keep the backup intervals here in case we use them in both UI and ops
@@ -97,6 +102,14 @@ class StoryToolkitAI:
         # get the backup_story_saves_every_n_hours setting
         self.story_backup_interval = \
             self.get_app_setting(setting_name='backup_story_saves_every_n_hours', default_if_none=1)
+
+    @staticmethod
+    def get_git_commit():
+        try:
+            commit_hash = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('utf-8').strip()
+            return commit_hash
+        except Exception as e:
+            return None
 
     def update_via_git(self):
         """
