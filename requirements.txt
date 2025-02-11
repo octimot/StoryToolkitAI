@@ -45,6 +45,6 @@ scikit-image>=0.22.0
 imageio>=2.33.1
 scipy>=1.13
 soxr>=0.3.7
-pydantic==1.10.8
+pydantic>=2.10.6
 speechbrain==0.5.16
 pyannote.audio>=2.0.1

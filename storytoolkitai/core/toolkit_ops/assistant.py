@@ -3,15 +3,17 @@ import tiktoken
 import hashlib
 import time
 from openai import OpenAI
+from openai.types import CompletionUsage
 import json
 import os
 import copy
 import requests
-from pydantic import BaseModel, root_validator
+from pydantic import BaseModel, model_validator
 from typing import Optional
 
 from storytoolkitai.core.logger import logger
 from storytoolkitai import USER_DATA_PATH
+from storytoolkitai.core.storytoolkitai import StoryToolkitAI
 
 
 class ToolkitAssistant:
@@ -42,26 +44,20 @@ class ToolkitAssistant:
         assistant_to.chat_history = copy.deepcopy(assistant_from.chat_history)
 
 
-class UsageInfo(BaseModel):
-    prompt_tokens: int
-    completion_tokens: int
-
-
 class AssistantResponse(BaseModel):
     completion: Optional[str] = None
-    usage: Optional[UsageInfo] = None
+    usage: Optional[CompletionUsage] = None
     error: Optional[str] = None
     error_code: Optional[int] = None
 
-    @root_validator
-    def check_completion_or_error(cls, values):
+    @model_validator(mode='after')
+    def check_completion_or_error(self):
         """
         This makes sure that we either have a completion or an error
         """
-        completion, error = values.get('completion'), values.get('error')
-        if not completion and not error:
+        if not self.completion and not self.error:
             raise ValueError('Either completion or error must be provided')
-        return values
+        return self
 
 
 class ChatGPT(ToolkitAssistant):

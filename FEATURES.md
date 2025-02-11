@@ -341,12 +341,10 @@ How to use custom templates:
 If any error occurs, make sure you check the logs. A good practice is to validate the template file using a YAML validator available online.
 
 ### Auto-saving in additional formats when saving a transcription:
-Since a lot of users are using different formats for their transcripts, we've added the option to auto-save to one or 
-multiple templates when saving a transcription (starting with version 0.24.4). 
-This is useful if you want to have the same transcript saved in different  formats, for e.g. SRT, TXT, 
-or even custom formats that you define.
+Starting with version 0.24.4, you can now auto-save transcriptions in multiple formats, like SRT, TXT, or custom templates, 
+making it easier to save the same transcript in different styles.
 
-To do this, go to Preferences -> Ingest, and look for the "Auto-Save Additional Formats field".
+To do this, go to Preferences -> Ingest, and look for the "Auto-Save Additional Formats" field.
 There, you can enter the auxiliary formats you want to save the transcript in (one per line). For, e.g.:
 ```
 srt
