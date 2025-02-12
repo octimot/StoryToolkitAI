@@ -10,6 +10,7 @@ import copy
 import requests
 from pydantic import BaseModel, model_validator
 from typing import Optional
+import re
 
 from storytoolkitai.core.logger import logger
 from storytoolkitai import USER_DATA_PATH
@@ -48,6 +49,7 @@ class ToolkitAssistant:
 
 class AssistantResponse(BaseModel):
     completion: Optional[str] = None
+    reasoning: Optional[str] = None
     usage: Optional[CompletionUsage] = None
     error: Optional[str] = None
     error_code: Optional[int] = None
@@ -388,10 +390,15 @@ class ChatGPT(ToolkitAssistant):
             # add the usage
             self.add_usage(tokens_in=response.usage.completion_tokens, tokens_out=response.usage.prompt_tokens)
 
+            # split the reasoning from the actual response
+            # the function will return None for reasoning if it's not a reasoning model
+            result_reasoning, result_response = AssistantUtils.split_reasoning_from_response(result)
+
             # wrap the response in an AssistantResponse object
             # so we can process it correctly
             return AssistantResponse(
-                completion=result,
+                completion=result_response,
+                reasoning=result_reasoning,
                 usage=response.usage,
                 error=None,
                 error_code=None
@@ -544,6 +551,23 @@ class ChatGPT(ToolkitAssistant):
 
 
 class AssistantUtils:
+
+    @staticmethod
+    def split_reasoning_from_response(response):
+        """
+        This function is used to split the reasoning from the response for reasoning models such as Deepseek, etc.
+        :param response: the response from the assistant
+        :return: tuple, the reasoning, the final response
+        """
+        match = re.search(r"<think>(.*?)</think>\s*(.*)", response, re.DOTALL)
+
+        if match:
+            reasoning = match.group(1)  # Extract text inside <think>...</think>
+            final_response = match.group(2)  # Extract text after </think>
+            return reasoning, final_response
+
+        # If no match was found, return None for reasoning and the response as is
+        return None, response
 
     @staticmethod
     def assistant_handler(toolkit_ops_obj, model_provider, model_name, **kwargs):
