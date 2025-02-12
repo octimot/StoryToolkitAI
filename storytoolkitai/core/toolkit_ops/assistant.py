@@ -379,7 +379,7 @@ class ChatGPT(ToolkitAssistant):
 
         except openai.AuthenticationError as e:
 
-            error = 'OpenAI API key is invalid. Please check your key in the preferences window ' \
+            error = 'LLM API key is invalid. Please check your key in the preferences window ' \
                     'or in the additional_llm_models.json file.'
 
             logger.error(error)
@@ -520,7 +520,26 @@ class ChatGPT(ToolkitAssistant):
 
     @property
     def available_models(self):
+        """
+        This lists all the available models, irrespective of their provider.
+        """
         return LLM_AVAILABLE_MODELS
+
+    def get_models(self):
+        """
+        This lists all the available models by querying the API using the api_key and base_url
+        """
+
+        # create an OpenAI client and try to pull the model list from the given base_url
+        try:
+            client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+            response = client.models.list()
+
+            return response.data
+
+        except Exception as e:
+            logger.error('Error getting the list of models from the provider: {}'.format(e))
+            return None
 
 
 class AssistantUtils:
@@ -568,6 +587,10 @@ class AssistantUtils:
             # load the assistant class
             toolkit_assistant = LLM_AVAILABLE_MODELS[model_provider][model_name].get('handler', None)
 
+            # if the assistant class is a string, try to use it as a class name
+            if isinstance(toolkit_assistant, str):
+                toolkit_assistant = globals().get(toolkit_assistant, None)
+
             # use the base_url from the config if it exists
             if LLM_AVAILABLE_MODELS[model_provider][model_name].get('base_url', None):
                 kwargs['base_url'] = LLM_AVAILABLE_MODELS[model_provider][model_name]['base_url']
@@ -590,6 +613,7 @@ class AssistantUtils:
                 # if the handler is 'ChatGPT' and the base_url starts with 'https://api.storytoolkit.ai/'
                 # then we assume that the provider is storytoolkit.ai, so we use the stai_api_key from the settings
                 if (toolkit_assistant == ChatGPT
+                        and kwargs.get('base_url', None) is not None
                         and kwargs.get('base_url', '').startswith('https://api.storytoolkit.ai')):
                     kwargs['api_key'] = toolkit_ops_obj.stAI.get_app_setting(
                         setting_name='stai_api_key', default_if_none=None)
@@ -627,7 +651,7 @@ class AssistantUtils:
             return None
 
     @staticmethod
-    def assistant_available_models(provider=None):
+    def assistant_available_models(provider=None, toolkit_ops_obj=None):
         """
         This function returns the available assistant models for a given provider
         """
@@ -637,6 +661,76 @@ class AssistantUtils:
             # select the first provider if the provider is not in the available models
             if provider not in LLM_AVAILABLE_MODELS:
                 provider = list(LLM_AVAILABLE_MODELS.keys())[0]
+
+
+            if toolkit_ops_obj:
+
+                logger.debug('Getting available models from provider {} using the provider handler.'.format(provider))
+
+                # let's try to use the provider handler to get the available models
+                # this means that the list embedded in the code might be overridden
+                # however, the embedded list is still useful for pricing data and other info
+                provider_handler = None
+                base_url, api_key, model_name = None, None, None
+
+                # look through the provider's models and get it's handler
+                for model in LLM_AVAILABLE_MODELS[provider]:
+
+                    # were assuming that one provider usually has the same handler for all models
+                    # so once we found one, we can stop looking
+                    if LLM_AVAILABLE_MODELS[provider][model].get('handler', None) is not None:
+                        provider_handler = LLM_AVAILABLE_MODELS[provider][model]['handler']
+
+                        # we will also use the base_url and the api_key from the model config
+                        base_url = LLM_AVAILABLE_MODELS[provider][model].get('base_url', None)
+                        api_key = LLM_AVAILABLE_MODELS[provider][model].get('api_key', None)
+                        model_name = model
+
+                # now try to instantiate a class using the handler, the base_url and the api_key
+                if provider_handler is not None:
+
+                    try:
+                        models_assistant = AssistantUtils.assistant_handler(
+                            toolkit_ops_obj=toolkit_ops_obj,
+                            model_provider=provider,
+                            model_name=model_name,
+                            api_key=api_key,
+                            base_url=base_url
+                        )
+                        provider_models = models_assistant.get_models()
+                        if provider_models:
+                            processed_models = []
+                            new_available_models = {}
+                            for model in provider_models:
+
+                                # only update models that are not already in the list
+                                if model.id not in LLM_AVAILABLE_MODELS[provider]:
+                                    new_available_models[str(model.id)] = dict(
+                                        description=model.id,
+                                        handler=provider_handler,
+                                        api_key=api_key,
+                                        base_url=base_url
+                                    )
+
+                                processed_models.append(model.id)
+
+                            # update the available models with the new ones
+                            LLM_AVAILABLE_MODELS[provider] = new_available_models
+
+                            # remove the models that are not in the list anymore
+                            # (not efficient, but useful)
+                            new_available_models = {}
+                            for model in LLM_AVAILABLE_MODELS[provider]:
+                                if model in processed_models:
+                                    new_available_models[model] = LLM_AVAILABLE_MODELS[provider][model]
+
+                            LLM_AVAILABLE_MODELS[provider] = new_available_models
+
+                            # sort the list alphabetically by the model id
+                            LLM_AVAILABLE_MODELS[provider] = dict(sorted(LLM_AVAILABLE_MODELS[provider].items()))
+
+                    except Exception as e:
+                        logger.error('Failed to get available models from provider {}: {}'.format(provider, e))
 
             return list(LLM_AVAILABLE_MODELS[provider].keys())
         else:

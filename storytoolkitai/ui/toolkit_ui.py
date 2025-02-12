@@ -80,6 +80,7 @@ class toolkit_UI():
     }
 
     ctk_main_button_size = {'width': 100, 'height': 45}
+    ctk_secondary_button_size = {'width': 90}
 
     ctk_list_item = {'fg_color': ctk.ThemeManager.theme["CTkScrollableFrame"]["label_fg_color"]}
 
@@ -768,19 +769,28 @@ class toolkit_UI():
                                                       values=assistant_model_list,
                                                       **toolkit_UI.ctk_form_entry_settings)
 
+            # add a refresh button to update the model list
+            assistant_model_refresh_button = ctk.CTkButton(
+                assistant_prefs_frame, **toolkit_UI.ctk_secondary_button_size, text='Reload'
+            )
+
             # store the initial provider value
             # so we can update the model list when the provider changes
             assistant_provider_var.previous_provider = assistant_provider_var.get()
 
-            def update_assistant_model_options(*args):
+            def update_assistant_model_options(*args, **f_kwargs):
 
                 # Get the current provider
                 current_provider = assistant_provider_var.get()
 
                 # Check if the provider has actually changed
-                if current_provider != assistant_provider_var.previous_provider:
+                if current_provider != assistant_provider_var.previous_provider or f_kwargs.get('online', False):
                     # Update the model list based on the current provider
-                    new_model_list = AssistantUtils.assistant_available_models(current_provider)
+                    if f_kwargs.get('online', False):
+                        new_model_list = AssistantUtils.assistant_available_models(
+                            current_provider, toolkit_ops_obj=self.toolkit_ops_obj)
+                    else:
+                        new_model_list = AssistantUtils.assistant_available_models(current_provider)
 
                     # Update the OptionMenu with new models
                     assistant_model_input.configure(values=new_model_list)
@@ -793,6 +803,10 @@ class toolkit_UI():
 
             # Trace the 'assistant_provider_var' to call the update function whenever it changes
             assistant_provider_var.trace('w', update_assistant_model_options)
+
+            assistant_model_refresh_button.configure(
+                command=lambda: update_assistant_model_options(online=True)
+            )
 
             # System Prompt (Text)
             system_prompt = \
@@ -936,21 +950,24 @@ class toolkit_UI():
             assistant_model_label.grid(row=1, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
             assistant_model_input.grid(row=1, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
 
+            # the refresh button doesn't need a label
+            assistant_model_refresh_button.grid(row=2, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+
             # ADD ELEMENTS TO THE ADVANCED GRID
-            system_prompt_label.grid(row=2, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            system_prompt_input.grid(row=2, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-            temperature_label.grid(row=3, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            temperature_slider_frame.grid(row=3, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-            max_length_label.grid(row=4, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            max_length_slider_frame.grid(row=4, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-            # stop_sequences_label.grid(row=5, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            # stop_sequences_input.grid(row=5, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-            top_p_label.grid(row=6, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            top_p_slider_frame.grid(row=6, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-            frequency_penalty_label.grid(row=7, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            frequency_penalty_slider_frame.grid(row=7, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-            presence_penalty_label.grid(row=8, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            presence_penalty_slider_frame.grid(row=8, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            system_prompt_label.grid(row=3, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            system_prompt_input.grid(row=3, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            temperature_label.grid(row=4, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            temperature_slider_frame.grid(row=4, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            max_length_label.grid(row=5, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            max_length_slider_frame.grid(row=5, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            # stop_sequences_label.grid(row=6, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            # stop_sequences_input.grid(row=6, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            top_p_label.grid(row=7, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            top_p_slider_frame.grid(row=7, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            frequency_penalty_label.grid(row=8, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            frequency_penalty_slider_frame.grid(row=8, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            presence_penalty_label.grid(row=9, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            presence_penalty_slider_frame.grid(row=9, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
 
             if not skip_general:
                 # OPENAI KEY

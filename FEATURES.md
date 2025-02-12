@@ -540,12 +540,23 @@ You can also specify a `base_url` which is the URL where the model is hosted and
 
 If you enter an `api_key`, this will override any other API key you have set in the Preferences window for this particular model.
 
-For now, you can only add models that are compatible with the ChatGPT or StAssistant handlers (more on this soon).
+For now, you can only add models that are compatible with the OpenAI API schema (OpenAI, ollama, LMStudio and some others), but we're working on adding more soon. 
+The handler for these is called "ChatGPT".
 
 Make sure to add each model under the respective provider. In the above example, we're adding a model called "llama2", with the provider called "ollama".
 
 If you want to install local models using ollama, see https://ollama.com/ for more info. 
 Similarly, LM Studio can also be used to host models locally, see https://lmstudio.ai/ for more info.
+
+#### Reloading the models list
+
+Recently, a Reload button was added under the models list (in both the Assistant and Preferences windows).
+This allows the reloading of the models of a specified provider. 
+By pressing the button the tool makes an API call to the `base_url` of the provider, and will get all the available models. 
+The list is however not saved in the configuration file, but will only be available until the window is closed.
+
+_Important Note: Not all models listed in the models list might be compatible for the Assistant. 
+For e.g. OpenAI also lists models that are not LLMs, like Dall-E, text-embedding models, etc._
 
 ### Usage and billing
 
