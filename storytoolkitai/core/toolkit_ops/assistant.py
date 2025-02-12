@@ -282,7 +282,7 @@ class ChatGPT(ToolkitAssistant):
             logger.warning("Calculating tokens assuming gpt-3.5-turbo-0613, but gpt-3.5-turbo may update over time. ")
             return self.calculate_history_tokens(messages, model="gpt-3.5-turbo-0613")
 
-        elif "gpt-4" in model:
+        elif "gpt-4" in model or model.startswith("o1") or model.startswith("o3"):
             logger.warning("Calculating tokens assuming gpt-4-0613, but gpt-4 may update over time. ")
             return self.calculate_history_tokens(messages, model="gpt-4-0613")
 
@@ -346,15 +346,32 @@ class ChatGPT(ToolkitAssistant):
 
             client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
+            # some model_based tweaking since OpenAI is unable to keep things consistent
+            request_kwargs = dict()
+
+            # o1 and o3 models do not support the max_tokens parameter, so we need to use max_completion_tokens
+            if (self.model_name.startswith("o1") or self.model_name.startswith("o3")):
+                request_kwargs['max_completion_tokens'] = settings.get('max_completion_tokens', 1024)
+
+            else:
+                request_kwargs['max_tokens'] = settings.get('max_length', 1024)
+
+            # the o1-mini models don't support the system role
+            # so we need to remove it from the chat history
+            chat_history_copy = copy.deepcopy(chat_history)
+            # go through the chat history and remove the system messages
+            if self.model_name.startswith("o1-mini"):
+                chat_history_copy[:] = [msg for msg in chat_history_copy if msg.get('role') != 'system']
+
             response = client.chat.completions.create(
                 model=self.model_name,
-                messages=chat_history,
+                messages=chat_history_copy,
                 temperature=settings.get('temperature', 1),
-                max_tokens=settings.get('max_length', 256),
                 top_p=settings.get('top_p', 1),
                 frequency_penalty=settings.get('frequency_penalty', 0),
                 presence_penalty=settings.get('presence_penalty', 0),
                 timeout=settings.get('timeout', 30),
+                **request_kwargs
             )
 
             result = ''

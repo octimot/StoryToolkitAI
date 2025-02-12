@@ -860,13 +860,32 @@ class toolkit_UI():
             max_length_label = ctk.CTkLabel(advanced_prefs_frame, text='Maximum Length',
                                             **toolkit_UI.ctk_form_label_settings)
             max_length_slider_frame = ctk.CTkFrame(advanced_prefs_frame, **toolkit_UI.ctk_frame_transparent)
-            max_length_slider = ctk.CTkSlider(max_length_slider_frame, from_=1, to=4095, variable=max_length_var,
+            max_length_slider = ctk.CTkSlider(max_length_slider_frame, from_=1, to=16384, variable=max_length_var,
                                               **toolkit_UI.ctk_form_entry_settings)
             max_length_entry = ctk.CTkEntry(max_length_slider_frame, width=50)
             max_length_entry.insert(0, str(max_length))
-            toolkit_UI.bind_sync_functions(max_length_entry, max_length_slider, 1, 4095, round_val=0)
+            toolkit_UI.bind_sync_functions(max_length_entry, max_length_slider, 1, 16384, round_val=0)
             max_length_slider.pack(side=ctk.LEFT)
             max_length_entry.pack(side=ctk.LEFT, **toolkit_UI.ctk_form_paddings)
+
+            # MAXIMUM COMPLETION LENGTH
+            max_completion_length = \
+                kwargs.get('assistant_max_completion_length', None) \
+                    if kwargs.get('assistant_max_completion_length', None) is not None \
+                    else self.toolkit_UI_obj.stAI.get_app_setting('assistant_max_completion_length', default_if_none=512)
+
+            form_vars['assistant_max_completion_length_var'] = \
+                max_completion_length_var = tk.IntVar(advanced_prefs_frame, value=max_completion_length)
+            max_completion_length_label = ctk.CTkLabel(advanced_prefs_frame, text='Maximum Length',
+                                            **toolkit_UI.ctk_form_label_settings)
+            max_completion_length_slider_frame = ctk.CTkFrame(advanced_prefs_frame, **toolkit_UI.ctk_frame_transparent)
+            max_completion_length_slider = ctk.CTkSlider(max_completion_length_slider_frame, from_=1, to=16384, variable=max_completion_length_var,
+                                              **toolkit_UI.ctk_form_entry_settings)
+            max_completion_length_entry = ctk.CTkEntry(max_completion_length_slider_frame, width=50)
+            max_completion_length_entry.insert(0, str(max_completion_length))
+            toolkit_UI.bind_sync_functions(max_completion_length_entry, max_completion_length_slider, 1, 16384, round_val=0)
+            max_completion_length_slider.pack(side=ctk.LEFT)
+            max_completion_length_entry.pack(side=ctk.LEFT, **toolkit_UI.ctk_form_paddings)
 
             # STOP SEQUENCES
             # - this is a bit more difficult to implement since it would need a separator
@@ -960,14 +979,16 @@ class toolkit_UI():
             temperature_slider_frame.grid(row=4, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
             max_length_label.grid(row=5, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
             max_length_slider_frame.grid(row=5, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-            # stop_sequences_label.grid(row=6, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            # stop_sequences_input.grid(row=6, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-            top_p_label.grid(row=7, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            top_p_slider_frame.grid(row=7, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-            frequency_penalty_label.grid(row=8, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            frequency_penalty_slider_frame.grid(row=8, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
-            presence_penalty_label.grid(row=9, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
-            presence_penalty_slider_frame.grid(row=9, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            max_completion_length_label.grid(row=6, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            max_completion_length_slider_frame.grid(row=6, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            # stop_sequences_label.grid(row=7, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            # stop_sequences_input.grid(row=7, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            top_p_label.grid(row=8, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            top_p_slider_frame.grid(row=8, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            frequency_penalty_label.grid(row=9, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            frequency_penalty_slider_frame.grid(row=9, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
+            presence_penalty_label.grid(row=10, column=0, sticky="w", **toolkit_UI.ctk_form_paddings)
+            presence_penalty_slider_frame.grid(row=10, column=1, sticky="w", **toolkit_UI.ctk_form_paddings)
 
             if not skip_general:
                 # OPENAI KEY
@@ -19058,6 +19079,7 @@ class toolkit_UI():
                 'assistant_system_prompt', default_if_none=ASSISTANT_DEFAULT_SYSTEM_MESSAGE),
             "temperature": self.stAI.get_app_setting('assistant_temperature', default_if_none=1),
             "max_length": self.stAI.get_app_setting('assistant_max_length', default_if_none=512),
+            "max_completion_length": self.stAI.get_app_setting('assistant_max_completion_length', default_if_none=512),
             "top_p": self.stAI.get_app_setting('assistant_top_p', default_if_none=1),
             "frequency_penalty": self.stAI.get_app_setting('assistant_frequency_penalty', default_if_none=0.0),
             "presence_penalty": self.stAI.get_app_setting('assistant_presence_penalty', default_if_none=0.0)
@@ -19306,12 +19328,6 @@ class toolkit_UI():
             model_reply = "Model changed to {} {}.\n" \
                             .format(assistant_item.model_provider, assistant_item.model_description)
 
-            if new_assistant_item.info is not None and 'pricing_info' in new_assistant_item.info:
-                model_reply += "See {} for more reliable pricing." \
-                                .format(assistant_item.info.get('pricing_info'))
-
-            model_reply += "\nUsage for this window has been reset to 0 due to model change."
-
             # when updating the text window
             self._text_window_update(assistant_window_id, model_reply)
 
@@ -19382,10 +19398,6 @@ class toolkit_UI():
 
                 help_reply = ("You are using {} ({}).\n"
                               .format(assistant_item.model_description, assistant_item.model_provider))
-
-                if assistant_item.info is not None and 'pricing_info' in assistant_item.info:
-                    help_reply += "See {} for more reliable pricing. \n" \
-                                   .format(assistant_item.info.get('pricing_info'))
 
                 help_reply += "\n"
 
@@ -19458,12 +19470,6 @@ class toolkit_UI():
                 # update the assistant window
                 model_reply = "Model changed to {} {}.\n" \
                               .format(assistant_item.model_provider, assistant_item.model_description)
-
-                if assistant_item.info is not None and 'pricing_info' in assistant_item.info:
-                    model_reply += "See {} for more reliable pricing. \n" \
-                        .format(assistant_item.info.get('pricing_info'))
-
-                model_reply += "\nUsage for this window has been reset to 0 due to model change.\n"
 
                 # get the current text_widget prompt kwargs
                 prompt_callback_kwargs = text_widget.prompt_callback_kwargs
