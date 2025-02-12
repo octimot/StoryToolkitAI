@@ -519,14 +519,6 @@ Here's a model example for the additional_llm_models.json file:
     "ollama": {
         "llama2": {
             "description": "Local llama2",
-            "price": {
-                "input": 0,
-                "output": 0,
-                "currency": "USD"
-            },
-            "token_limit": 4000,
-            "training_cutoff": "2023-01",
-            "pricing_info": "none",
             "handler": "ChatGPT",
             "api_key": "ollama",
             "base_url": "http://localhost:11434/v1/",
@@ -561,8 +553,11 @@ For e.g. OpenAI also lists models that are not LLMs, like Dall-E, text-embedding
 ### Usage and billing
 
 To find out how many tokens you've used within the Assistant window, just type `[usage]` in the Assistant window
-and you'll get a cost estimate. Again, this is just an estimate, so you should check with your model provider
-to see the actual cost.
+and you'll get an estimate. 
+
+The latest versions of the tool no longer includes pricing information for models since these fluctuate and its almost
+impossible to keep them up to date. Please check with your model provider for exact pricing info since this is the
+most accurate way to know how much you're going to be charged.
 
 ### Assistant window
 

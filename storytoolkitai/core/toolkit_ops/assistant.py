@@ -33,7 +33,7 @@ class ToolkitAssistant:
     @staticmethod
     def copy_context_and_chat(assistant_from, assistant_to):
         """
-        This function is used to copy the context and chat history from one assistant to another
+        This function is used to copy the context, chat history and the tokens usage from one assistant to another
         """
 
         # first, copy the context
@@ -41,6 +41,9 @@ class ToolkitAssistant:
 
         # then copy the chat history
         assistant_to.chat_history = copy.deepcopy(assistant_from.chat_history)
+
+        # also copy the usage
+        assistant_to._tokens_used = copy.deepcopy(assistant_from._tokens_used)
 
 
 class AssistantResponse(BaseModel):
@@ -80,13 +83,9 @@ class ChatGPT(ToolkitAssistant):
         self._assistant_id = hashlib.md5((str(self.model_name) + str(time.time)).encode('utf-8')).hexdigest()
 
         # store the number of tokens used for the assistant
-        # this is a list containing the in and out tokens [in, out]
-        self._tokens_used = [0, 0]
-
-        # the price per 1000 tokens
-        # this should be a list containing the price for in and out tokens and the currency
-        # for eg: [0.01, 0.03, 'USD']
-        self._model_price = self.model_price
+        # this is a dictionary containing the in and out tokens per model [model][in, out]
+        self._tokens_used = dict()
+        self._tokens_used[self.model_name] = [0, 0]
 
         # start the chat history, if none was passed, then start with an empty list
         self.chat_history = list() if kwargs.get('chat_history', None) is None else kwargs.get('chat_history', None)
@@ -261,7 +260,7 @@ class ChatGPT(ToolkitAssistant):
         try:
             encoding = tiktoken.encoding_for_model(model)
         except KeyError:
-            logger.warning("Model name not found when calculating tokens. Using cl100k_base encoding.")
+            logger.debug("Model name not found when calculating tokens. Using cl100k_base encoding.")
             encoding = tiktoken.get_encoding("cl100k_base")
 
         if model in {
@@ -310,9 +309,13 @@ class ChatGPT(ToolkitAssistant):
         :param tokens_out: the number of tokens used for the completion (or output tokens)
         """
 
+        # if the model name is not in the tokens used dictionary, add it
+        if self.model_name not in self._tokens_used:
+            self._tokens_used[self.model_name] = [0, 0]
+
         # add the usage for the current assistant item
-        self._tokens_used[0] += tokens_in
-        self._tokens_used[1] += tokens_out
+        self._tokens_used[self.model_name][0] += tokens_in
+        self._tokens_used[self.model_name][1] += tokens_out
 
         # but also keep track of the total usage of this model since the tool was started
         # we use the assistant id but also the model name and provider
@@ -321,13 +324,13 @@ class ChatGPT(ToolkitAssistant):
         # tokens in
         self.stAI.update_statistics(
             'assistant_usage__{}__{}_in'.format(self.model_provider, self.model_name),
-            self._tokens_used[0]
+            self._tokens_used[self.model_name][0]
         )
 
         # tokens out
         self.stAI.update_statistics(
             'assistant_usage__{}__{}_out'.format(self.model_provider, self.model_name),
-            self._tokens_used[1]
+            self._tokens_used[self.model_name][1]
         )
 
         # print(self.stAI.statistics)
@@ -479,28 +482,9 @@ class ChatGPT(ToolkitAssistant):
             return '{} (unknown model)'.format(self.model_name)
 
     @property
-    def model_price(self):
-
-        try:
-            price = self.info['price']
-
-            # the price should be a dict with input, output and currency
-            self._model_price = price['input'], price['output'], price['currency']
-            return self._model_price
-
-        except TypeError:
-            # if the price is not a dict, then it's probably None
-            # and it's probably already been logged in the info function
-            return None
-
-        except KeyError:
-            logger.warning('Price for model {} unavailable or incomplete.'.format(self.model_name))
-            return None
-
-    @property
     def tokens_used(self):
         """
-        This will return a list containing [tokens_in, tokens_out]
+        This will return a dictionary containing [model][tokens_in, tokens_out] (for each model)
         in = input = prompt tokens
         out = output = completion tokens
         """
@@ -796,111 +780,54 @@ LLM_AVAILABLE_MODELS = {
     'OpenAI': {
         'gpt-4o-2024-05-13': {
             'description': 'GPT-4o',
-            'price': {'input': 0.005, 'output': 0.015, 'currency': 'USD'},
-            'token_limit': 4096,
-            'context_window': 128000,
-            'training_cutoff': '2023-10',
-            'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT
         },
         'gpt-4-turbo-2024-04-09': {
             'description': 'GPT-4 Turbo with Vision',
-            'price': {'input': 0.01, 'output': 0.03, 'currency': 'USD'},
-            'token_limit': 4096,
-            'context_window': 128000,
-            'training_cutoff': '2023-12',
-            'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT
         },
         'gpt-4-0125-preview': {
             'description': 'GPT-4 Turbo (0125 preview)',
-            'price': {'input': 0.01, 'output': 0.03, 'currency': 'USD'},
-            'token_limit': 4096,
-            'context_window': 128000,
-            'training_cutoff': '2023-12',
-            'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT
         },
         'gpt-4-1106-preview': {
             'description': 'GPT-4 Turbo (1106 preview)',
-            'price': {'input': 0.01, 'output': 0.03, 'currency': 'USD'},
-            'token_limit': 4096,
-            'context_window': 128000,
-            'training_cutoff': '2023-04',
-            'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT
         },
         'gpt-4': {
             'description': 'GPT-4',
-            'price': {'input': 0.03, 'output': 0.06, 'currency': 'USD'},
-            'token_limit': 8192,
-            'context_window': 8192,
-            'training_cutoff': '2021-09',
-            'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT
         },
         'gpt-4-32k': {
             'description': 'GPT-4 32k',
-            'price': {'input': 0.06, 'output': 0.12, 'currency': 'USD'},
-            'token_limit': 32768,
-            'context_window': 32768,
-            'training_cutoff': '2021-09',
-            'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT
         },
         'gpt-3.5-turbo-0125': {
             'description': 'GPT-3.5 Turbo (0125)',
-            'price': {'input': 0.0005, 'output': 0.0015, 'currency': 'USD'},
-            'token_limit': 4096,
-            'context_window': 16385,
-            'training_cutoff': '2021-09',
-            'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT
         },
         'gpt-3.5-turbo-1106': {
             'description': 'GPT-3.5 Turbo (1106)',
-            'price': {'input': 0.001, 'output': 0.002, 'currency': 'USD'},
-            'token_limit': 4096,
-            'context_window': 16385,
-            'training_cutoff': '2021-09',
-            'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT
         },
         'gpt-3.5-turbo-16k-0613': {
             'description': 'GPT-3.5 Turbo 16k (0613)',
-            'price': {'input': 0.0030, 'output': 0.0040, 'currency': 'USD'},
-            'token_limit': 16385,
-            'context_window': 16385,
-            'training_cutoff': '2021-09',
-            'pricing_info': 'https://openai.com/pricing/',
             'handler': ChatGPT
         },
     },
     'storytoolkit.ai': {
         'roy-4t': {
             'description': 'Roy-4t',
-            'price': {'input': None, 'output': None, 'currency': 'credits'},
-            'token_limit': 16385,
-            'training_cutoff': '2021-09',
-            'pricing_info': 'https://storytoolkit.ai/',
             'handler': ChatGPT,
             "base_url": "https://api.storytoolkit.ai/assistant/v1"
         },
         'george-4': {
             'description': 'George-4',
-            'price': {'input': None, 'output': None, 'currency': 'credits'},
-            'token_limit': 16385,
-            'training_cutoff': '2023-04',
-            'pricing_info': 'https://storytoolkit.ai/',
             'handler': ChatGPT,
             "base_url": "https://api.storytoolkit.ai/assistant/v1"
         },
         'sergei-3.5': {
             'description': 'Sergei-3.5',
-            'price': {'input': None, 'output': None, 'currency': 'credits'},
-            'token_limit': 16385,
-            'training_cutoff': '2023-04',
-            'pricing_info': 'https://storytoolkit.ai/',
             'handler': ChatGPT,
             "base_url": "https://api.storytoolkit.ai/assistant/v1"
         },

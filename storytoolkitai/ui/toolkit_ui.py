@@ -19394,7 +19394,6 @@ class toolkit_UI():
                               "The longer the conversation, the more tokens you are using on each request.\n\n" \
                               "Use [usage] to keep track of your usage in this Assistant window.\n" \
                               "Use [calc] to get the minimum number of tokens you're sending with each request.\n" \
-                              "Use [price] to see how much the model costs.\n\n" \
                               "Use [reset] to reset the conversation, while preserving any contexts.\n" \
                               "Use [resetall] to reset the conversation and the initial context.\n" \
                               "Resetting will reduce the tokens you're sending out.\n\n" \
@@ -19497,38 +19496,8 @@ class toolkit_UI():
                 model_reply = "You are using {} ({}).\n" \
                               .format(assistant_item.model_description, assistant_item.model_provider)
 
-                if assistant_item.info is not None and 'pricing_info' in assistant_item.info:
-                    model_reply += "See {} for more reliable pricing. \n" \
-                                   .format(assistant_item.info.get('pricing_info'))
-
                 model_reply += '\nUse [model:MODEL_PROVIDER:MODEL_NAME] to change the model used in this window.\n'
                 self._text_window_update(assistant_window_id, model_reply)
-                return
-
-            elif prompt.lower() == '[price]':
-
-                price_reply = ("You are using {} ({}).\n"
-                               .format(assistant_item.model_description, assistant_item.model_provider))
-
-                if isinstance(assistant_item.model_price, tuple) and len(assistant_item.model_price) == 3:
-                    price_reply += "According to our info, the model costs:\n"
-                    price_reply += ("{} {} per 1000 tokens sent.\n"
-                                    .format(assistant_item.model_price[0], assistant_item.model_price[2]))
-                    price_reply += ("{} {} per 1000 tokens received.\n\n"
-                                    .format(assistant_item.model_price[1], assistant_item.model_price[2]))
-
-                    price_reply += "This information might not be up to date!\n"
-
-                else:
-                    price_reply += "We don't have enough pricing information for this model.\n"
-
-                if assistant_item.info is not None and 'pricing_info' in assistant_item.info:
-                    price_reply += "See {} for more reliable model pricing info. \n" \
-                                   .format(assistant_item.info.get('pricing_info'))
-
-                # use this to make sure we have a new prompt prefix for the next search
-                self._text_window_update(assistant_window_id, price_reply)
-
                 return
 
             # if the user is asking for usage
@@ -19547,38 +19516,22 @@ class toolkit_UI():
 
                     self._text_window_update(assistant_window_id, calc_reply)
 
-                used_tokens_in = int(assistant_item.tokens_used[0])
-                used_tokens_out = int(assistant_item.tokens_used[1])
-                used_tokens_total = used_tokens_in + used_tokens_out
+                # take each model used with this assistant item, and list the used tokens:
+                usage_reply = "Approximate token usage in this Assistant window\n"
+                for used_model_name in assistant_item.tokens_used:
 
-                total_price = None
-                if isinstance(assistant_item.model_price, tuple) and len(assistant_item.model_price) == 3\
-                        and assistant_item.model_price[0] is not None and assistant_item.model_price[1] is not None:
-                    price_in = assistant_item.model_price[0] * used_tokens_in / 1000
-                    price_out = assistant_item.model_price[1] * used_tokens_out / 1000
-                    total_price = price_in + price_out
-                else:
-                    logger.warning('Cannot calculate price for model {} {}. Pricing schema not valid.'.format(
-                        assistant_item.model_provider, assistant_item.model_name
-                    ))
+                    used_tokens_in = int(assistant_item.tokens_used[used_model_name][0])
+                    used_tokens_out = int(assistant_item.tokens_used[used_model_name][1])
+                    used_tokens_total = used_tokens_in + used_tokens_out
 
-                header = "Approximate token usage in this Assistant window:"
-                tokens_data = [
-                    ("Sent:", used_tokens_out, ' tokens'),
-                    ("Received:", used_tokens_in, ' tokens'),
-                    ("Total:", used_tokens_total, ' tokens')
-                ]
+                    header = f"\n{used_model_name}:"
+                    tokens_data = [
+                        ("Sent:", used_tokens_out, ' tokens'),
+                        ("Received:", used_tokens_in, ' tokens'),
+                        ("Total:", used_tokens_total, ' tokens')
+                    ]
 
-                usage_reply = self.text_table(tokens_data, header)
-
-                if total_price is not None:
-                    usage_reply += "\n"
-                    usage_reply += "Total price: cca. {:.6f} {}.\n" \
-                                   .format(total_price, assistant_item.model_price[2])
-
-                    if assistant_item.info is not None and 'pricing_info' in assistant_item.info:
-                        usage_reply += "\nSee {} for more accurate model pricing info. \n" \
-                            .format(assistant_item.info.get('pricing_info'))
+                    usage_reply += self.text_table(tokens_data, header)
 
                 usage_reply += "\nImportant: this calculation might not be accurate!"
 
