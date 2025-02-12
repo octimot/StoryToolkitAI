@@ -13,7 +13,6 @@ from typing import Optional
 
 from storytoolkitai.core.logger import logger
 from storytoolkitai import USER_DATA_PATH
-from storytoolkitai.core.storytoolkitai import StoryToolkitAI
 
 
 class ToolkitAssistant:
@@ -112,9 +111,10 @@ class ChatGPT(ToolkitAssistant):
             # add the context to the chat history
             self.add_context(self.context)
 
-        # get the API key from the kwargs or config
+        # get the API key from the kwargs or leave it empty
+        # the handler is responsible with passing the API key from the model config
         self.api_key \
-            = kwargs.get('api_key', self.stAI.get_app_setting(setting_name='openai_api_key', default_if_none=None))
+            = kwargs.get('api_key', None)
 
         self.base_url = kwargs.get('base_url', None)
 
@@ -523,147 +523,6 @@ class ChatGPT(ToolkitAssistant):
         return LLM_AVAILABLE_MODELS
 
 
-class StModelSettings(BaseModel):
-    temperature: int = 1
-    max_length: int = 256
-    top_p: int = 1
-    frequency_penalty: int = 0
-    presence_penalty: int = 0
-    timeout: int = 30
-
-
-class StAssistantRequest(BaseModel):
-    messages: list
-    model: str
-    settings: StModelSettings
-
-
-class StAssistant(ChatGPT):
-
-    def __init__(self, model_provider, model_name, **kwargs):
-
-        super().__init__(model_provider=model_provider, model_name=model_name, **kwargs)
-
-        # get the API key from the kwargs or the config
-        self.api_key \
-            = kwargs.get('api_key', self.stAI.get_app_setting(setting_name='stai_api_key', default_if_none=None))
-
-        # use the base_url from the config if it exists or the default one
-        self.base_url = kwargs.get('base_url', 'https://api.storytoolkit.ai')
-
-    def calculate_history_tokens(self, messages=None, model=None):
-
-        if model is None:
-            model = self.model_name
-
-        # map the storytoolkit.ai models to their OpenAI counterparts for the token calculation
-        model_map = {
-            'roy-4t': 'gpt-4-1106-preview',
-            'george-4': 'gpt-4',
-            'sergei-3.5': 'gpt-3.5-turbo-1106'
-        }
-
-        # get the mapped model or just use the model name if there is no mapping
-        mapped_model = model_map.get(model, None) or model
-
-        return super().calculate_history_tokens(messages=messages, model=mapped_model)
-
-    def _request(self, chat_history, settings=None, **kwargs):
-
-        # now send the query to the assistant
-        try:
-
-            headers = {'auth-key': self.api_key}
-
-            data = StAssistantRequest(
-                model=self.model_name,
-                messages=chat_history,
-                settings=StModelSettings(
-                    temperature=settings.get('temperature', 1),
-                    max_length=settings.get('max_length', 256),
-                    top_p=settings.get('top_p', 1),
-                    frequency_penalty=settings.get('frequency_penalty', 0),
-                    presence_penalty=settings.get('presence_penalty', 0),
-                    timeout=settings.get('timeout', 30),
-                )
-            ).dict()
-
-            api_response = requests.post(
-                self.base_url + '/assistant', json=data, headers=headers, timeout=settings.get('timeout', 30))
-
-            if api_response.status_code == 403:
-                logger.warning('Invalid Assistant authentication key: {}'.format(api_response.text))
-                raise Exception('Invalid authentication key.')
-
-            elif api_response.status_code == 422:
-                raise Exception('Invalid request data.')
-
-            elif api_response.status_code == 429:
-                logger.warning('Reached Assistant credit limit: {}'.format(api_response.text))
-                raise Exception('Not enough credits.')
-
-            elif api_response.status_code == 500:
-                raise Exception('Internal server error.')
-
-            elif api_response.status_code == 404:
-                logger.warning('Not found Assistant: {}'.format(api_response.text))
-                raise Exception('{}'.format(json.loads(api_response.text).get('detail', 'Not found')))
-
-            elif api_response.status_code != 200:
-                logger.warning('Unknown Assistant error: {}'.format(api_response.text))
-                raise Exception('Unknown error.')
-
-            # parse the response
-            response = AssistantResponse.parse_obj((api_response.json()))
-
-            if kwargs.get('save_to_history', True):
-
-                self.chat_history.append({"role": "assistant", "content": response.completion})
-
-                # keep track of the index of the last assistant message
-                self._last_assistant_message_idx = len(self.chat_history) - 1
-
-            # add the result to the chat history
-            self.add_usage(tokens_in=response.usage.completion_tokens, tokens_out=response.usage.prompt_tokens)
-
-            # wrap the response in an AssistantResponse object
-            # so we can process it correctly
-            return AssistantResponse(
-                completion=response.completion,
-                usage=response.usage
-            ), chat_history
-
-        except requests.exceptions.Timeout:
-            error = 'Request to storytoolkit.ai timed out.'
-            logger.error(error)
-            return AssistantResponse(
-                completion=None,
-                usage=None,
-                error=error,
-                error_code=500
-            ), chat_history
-
-        except requests.exceptions.ConnectionError:
-            error = 'Connection error. Could not connect to storytoolkit.ai.'
-            logger.error(error, exc_info=True)
-            return AssistantResponse(
-                completion=None,
-                usage=None,
-                error=error
-            ), chat_history
-
-        except Exception as e:
-            logger.error('Error sending query to storytoolkit.ai: ', exc_info=True)
-            error = "There seems to be a problem with the connection to storytoolkit.ai. " \
-                    "Please check the logs or try again later."
-
-            error += '\n\nAPI response: {}'.format(e)
-
-            return AssistantResponse(
-                error=error
-            ), chat_history
-
-
 class AssistantUtils:
 
     @staticmethod
@@ -671,6 +530,7 @@ class AssistantUtils:
         """
         This is the handler function for the assistant class and is used to instantiate the correct assistant class
         depending on the model provider and model name
+        For now, we only have "ChatGPT" which uses the OpenAI module and API schema
         """
 
         # do not allow empty model provider or model name
@@ -715,6 +575,32 @@ class AssistantUtils:
             # use the api_key from the config if it exists
             if LLM_AVAILABLE_MODELS[model_provider][model_name].get('api_key', None):
                 kwargs['api_key'] = LLM_AVAILABLE_MODELS[model_provider][model_name]['api_key']
+
+            # if no api_key was passed,
+            # check if we can't use the OpenAI API or the storytoolkit.ai API key from the config
+            if not kwargs.get('api_key', None):
+
+                # if the handler is 'ChatGPT' and we have no base_url, we assume that the provider is OpenAI
+                # so try to use the OpenAI API key from the settings
+                if (toolkit_assistant == ChatGPT
+                        and not kwargs.get('base_url', None)):
+                    kwargs['api_key'] = toolkit_ops_obj.stAI.get_app_setting(
+                        setting_name='openai_api_key', default_if_none=None)
+
+                # if the handler is 'ChatGPT' and the base_url starts with 'https://api.storytoolkit.ai/'
+                # then we assume that the provider is storytoolkit.ai, so we use the stai_api_key from the settings
+                if (toolkit_assistant == ChatGPT
+                        and kwargs.get('base_url', '').startswith('https://api.storytoolkit.ai')):
+                    kwargs['api_key'] = toolkit_ops_obj.stAI.get_app_setting(
+                        setting_name='stai_api_key', default_if_none=None)
+
+            # if we still don't have an api_key, use an empty string
+            # this makes sure that models running on ollama or locally that don't require an api_key will work
+            # but only when the base_url is not empty or don't start with storytoolkit.ai
+            if not kwargs.get('api_key', None) and (
+                    kwargs.get('base_url', None) is not None
+                    or not kwargs.get('base_url', '').startswith('https://api.storytoolkit.ai')):
+                kwargs['api_key'] = 'no_key'
 
             # use the system_message from the config if it exists
             if LLM_AVAILABLE_MODELS[model_provider][model_name].get('system_message', None):
@@ -808,6 +694,10 @@ DEFAULT_SYSTEM_MESSAGE = ('You are an assistant film editor.\n'
                           'and "not on the information provided".'
                           )
 
+# for OpenAI or storytoolkit.ai provided models, leave the base_url as None (or don't define it)
+# also, the api key for these models will be picked up from the config.json (unless it's specified below)
+
+# for any other models that require an API key or a base_url, add the "api_key" and "base_url" below
 LLM_AVAILABLE_MODELS = {
     'OpenAI': {
         'gpt-4o-2024-05-13': {
@@ -899,7 +789,8 @@ LLM_AVAILABLE_MODELS = {
             'token_limit': 16385,
             'training_cutoff': '2021-09',
             'pricing_info': 'https://storytoolkit.ai/',
-            'handler': StAssistant
+            'handler': ChatGPT,
+            "base_url": "https://api.storytoolkit.ai/assistant/v1"
         },
         'george-4': {
             'description': 'George-4',
@@ -907,7 +798,8 @@ LLM_AVAILABLE_MODELS = {
             'token_limit': 16385,
             'training_cutoff': '2023-04',
             'pricing_info': 'https://storytoolkit.ai/',
-            'handler': StAssistant
+            'handler': ChatGPT,
+            "base_url": "https://api.storytoolkit.ai/assistant/v1"
         },
         'sergei-3.5': {
             'description': 'Sergei-3.5',
@@ -915,11 +807,11 @@ LLM_AVAILABLE_MODELS = {
             'token_limit': 16385,
             'training_cutoff': '2023-04',
             'pricing_info': 'https://storytoolkit.ai/',
-            'handler': StAssistant
+            'handler': ChatGPT,
+            "base_url": "https://api.storytoolkit.ai/assistant/v1"
         },
     }
 }
-
 
 # load additional LLM models from the llm_models.json file in USER_DATA_PATH
 # if it exists
