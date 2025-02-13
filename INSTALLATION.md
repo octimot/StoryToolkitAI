@@ -33,18 +33,13 @@ scenario, some stuff might not work at all on your computer, and you'll need pro
 
 Our installations are on MacOS 12.6+, MacOS 14.4.1+ running on M1, and Windows 10 machines in our editing room, 
 but the scripts should run fine on other CPUs and GPUs. 
-For both production and development we're mostly using Python 3.10.11, but slowly migrating to 3.11.
+For both production and development we're mostly using 3.11.
 
-_Note: The tool worked fine on Python 3.9, but some packages are now optimized for Python 3.10 and Python 3.11 
+_Note: The tool worked fine on Python 3.9 and 3.10, but some packages are now optimized for Python 3.11 
 Python 3.9 support will no longer be possible in the very near future._
 
-**The Resolve API integration only works on Resolve Studio 18 (not on the free version, and certainly not earlier 
+**The Resolve API integration only works on Resolve Studio 18 or later (not on the free version, and certainly not earlier 
 versions).**
-
-#### For Patrons 
-
-_If you have access to the early-updates private repo and don't know how to clone or pull from it, 
-message us on Patreon and we'll help you make it work._
 
 ## Mac OS
 
@@ -66,16 +61,15 @@ In case Homebrew installation fails, please check [this page](https://docs.brew.
 The most common reason why brew installations fail is because Xcode Command Line Tools isn't installed. 
 So, install that using `xcode-select --install`.
 
-#### 2. You'll need Python 3.10, Python Tkinter, Git, FFMPEG and Rust:
+#### 2. You'll need Python 3.11, Python Tkinter, Git, FFMPEG and Rust:
 
-    brew install python@3.10
-    brew install python-tk@3.10
+    brew install python@3.11
+    brew install python-tk@3.11
     brew install git
     brew install ffmpeg
     brew install rust
 
-_Note: we're slowly migrating to Python 3.11, so please keep an eye on the requirements in the future. 
-If you're feeling brave, you can try installing Python 3.11 instead of 3.10 by modifying the above and below commands._
+_Note: we've recently migrated from Python 3.10 to Python 3.11. Python 3.10 should still work fine, but expect features to stop working at some point_
 
 #### 3. Download StoryToolkitAI:
 
@@ -88,7 +82,7 @@ This should download the app in the folder that you chose.
 #### 4. Set up a virtual environment
 Create a virtual environment to install all the packages the tool needs in isolation from the rest of your system:
 
-    python3.10 -m venv venv
+    python3.11 -m venv venv
 
 Right now, your installation folder should contain 2 other folders, and the tree should look like this:
 
@@ -127,13 +121,12 @@ type in `cmd` in the location bar above then press Enter, and your Command Promp
 installation folder.
 
 #### 1. Download and install Python
-Download the latest Python 3.10 version from [the official Python website](https://www.python.org/downloads/).
+Download the latest Python 3.11 version from [the official Python website](https://www.python.org/downloads/).
 
 _Note: Do not use the Python installers available from the Windows Store. Only use other Python installers / versions
 if you know what you're doing._
 
-_Note 2: we're slowly migrating to Python 3.11, so please keep an eye on the requirements in the future. 
-If you're feeling brave, you can try use 3.11 instead of 3.10 below._
+_Note 2: we've recently migrated from Python 3.10 to Python 3.11. Python 3.10 should still work fine, but expect features to stop working at some point_
 
 Then simply install it on your machine using the default settings.
 
@@ -141,13 +134,13 @@ To check if you installed the right version, open the Command Prompt and run:
 
     py --version
 
-Something like `Python 3.10.11` should appear. Anything else besides 3.10.X means that you're in uncharted
+Something like `Python 3.11` should appear. Anything else besides 3.11.X means that you're in uncharted
 territories! If that is the case, we recommend uninstalling all Python versions (if you don't need them of course)
-and reinstalling Python 3.10.
+and reinstalling Python 3.11.
 
 Make sure you have `virtualenv` installed by running:
 
-    py -3.10 -m pip install virtualenv
+    py -3.11 -m pip install virtualenv
 
 #### 2. Download and install GIT for Windows
 
@@ -176,7 +169,7 @@ Open the Command Prompt and navigate to the folder where you want to install Sto
 #### 5. Set up a virtual environment
 Create a virtual environment to install all the packages the tool needs in isolation from the rest of your system:
 
-    py -3.10 -m virtualenv venv
+    py -3.11 -m virtualenv venv
 
 Right now, your installation folder should contain 2 other folders, and the tree should look like this:
     

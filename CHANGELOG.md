@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.25.0] - 2025-02-13
+
+### Added
+- Added support for OpenAI Whisper turbo models
+- Ability to reload Assistant models - see details [here](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#Reloading-the-models-list)
+- Token usage calculation now keeps track of used models in Assistant window
+- Support for OpenAI o1, o1-mini and o3-mini models
+- Improved support for open source reasoning models (like DeepSeek-r1)
+
+### Changes
+- storytoolkit.ai models now run through OpenAI API compatible schemas
+- Removed pricing calculation from the Assistant due to impossibility to keep track of the cost of each model
+
+### Fixes
+- Improved handling of Assistants
+
 ## [0.24.4] - 2024-12-09
 
 ### Added

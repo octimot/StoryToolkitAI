@@ -4,10 +4,10 @@
 
 **StoryToolkitAI is a film editing tool that tries to understand your footage and helps you edit more efficiently with the assistance of AI.**
 
-It transcribes, indexes scenes, helps you search through your footage, automatically selects and creates stories using large language models, like OpenAI GPT-4,
+It transcribes, indexes scenes, helps you search through your footage, automatically selects and creates stories using large language models (OpenAI GPT-4, llama, DeepSeek etc.),
 which you can then import into your editing software via EDL or XML.
 
-The tool works locally on your machine, independent of any other editing software, but it also integrates with DaVinci Resolve Studio 18.
+The tool works locally on your machine, independent of any other editing software, but it also integrates with DaVinci Resolve Studio 18+.
 
 <img alt="StoryToolkitAI Interface" src="help/storytoolkitai_v0.19.0.png" width="750">
 
@@ -15,7 +15,7 @@ The tool works locally on your machine, independent of any other editing softwar
 - [x] **Full video indexing and search** ([How-To](https://www.youtube.com/watch?v=UDwOvBqS1X8))
 - [x] **Free Automatic Transcriptions** on your local machine
 - [x] **Free Automatic Translation** to English on your local machine
-- [x] **OpenAI GPT and ollama compatibility** - talk to AI about your content, or generate new ideas
+- [x] **Compatible with OpenAI, [ollama](https://ollama.com/), vLLM, LM Studio etc.** - chat to AI about your content, or generate new ideas
 - [x] **Search Content** intuitively without having to type in exact words
 - [X] **Story Editor** - write screenplays containing your transcripts and export them for editing (EDL/XML/Fountain) (v. 0.20.1+)
 - [X] **Translate transcripts** to other languages using OpenAI GPT (v. 0.22.0+)
@@ -36,7 +36,6 @@ The tool works locally on your machine, independent of any other editing softwar
 
 ### Planned Features
 - [ ] **Automatic Topic Classification** to help you discover ideas in your transcripts
-- [ ] **Use of local/custom LLM models**
 - [ ] **Integration with other AI tools**
 - [ ] **Integration with other software / standalone players**
 - [X] Plus more flashy features as clickbait to unrealistically raise expectations and destroy competition
@@ -61,7 +60,8 @@ For detailed installation instructions
 Yes, the tool runs locally and there's no need for any additional account to transcribe, index video or search.
 These features will always be free as long as your machine supports them without external services. 
 
-The only feature that now requires external services is the Assistant which relies on OpenAI API or storytoolkit.ai API.
+The only feature that now requires external services is the Assistant when you want to use on external LLM providers (OpenAI etc.).
+However, you can run local LLMs too!
 
 We rely on the support of our [Patreon members](https://www.patreon.com/StoryToolkitAI)!
 If you want to support development and get access to new features earlier, check out our [Patreon page](https://www.patreon.com/StoryToolkitAI).
@@ -75,7 +75,7 @@ translate your audio.
 
 Currently, the only features that send data from your machine to the Internet are:
 - The StoryToolkitAI API Key check to storytoolkit.ai (only when entered in the Settings Window)
-- The Assistant, to OpenAI or storytoolkit.ai (only contexts and messages that you select and send).
+- The Assistant, to OpenAI, storytoolkit.ai or other external providers (only contexts and messages that you select and send).
 
 The tool also checks for updates on every start.
 
@@ -93,7 +93,6 @@ Feel free to get in touch with criticism, or weird ideas for new features.
 The tool would be useless without using the following open source projects:
 - [OpenAI Whisper](https://openai.com/blog/whisper/)
 - [Sentence Transformers](https://www.sbert.net/)
-- [OpenAI ChatGPT](https://openai.com/blog/chat-gpt/)
 - [pyannote.audio](https://github.com/pyannote/pyannote-audio/)
 - [speechbrain](https://github.com/speechbrain/speechbrain)
 - [spaCy](https://spacy.io/)
