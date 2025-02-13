@@ -70,6 +70,7 @@ def transcribe(
     no_speech_threshold: Optional[float] = 0.6,
     condition_on_previous_text: bool = True,
     initial_prompt: Optional[str] = None,
+    carry_initial_prompt: bool = False,
     word_timestamps: bool = False,
     prepend_punctuations: str = "\"'“¿([{-",
     append_punctuations: str = "\"'.。,，!！?？:：”)]}、",
@@ -134,6 +135,11 @@ def transcribe(
         Optional text to provide as a prompt for the first window. This can be used to provide, or
         "prompt-engineer" a context for transcription, e.g. custom vocabularies or proper nouns
         to make it more likely to predict those word correctly.
+
+    carry_initial_prompt: bool
+        If carry_initial_prompt is True, `initial_prompt` is prepended to the prompt of each internal
+        `decode()` call. If there is not enough context space at the start of the prompt, it is
+        left-sliced to make space.
 
     decode_options: dict
         Keyword arguments to construct `DecodingOptions` instances
@@ -256,6 +262,8 @@ def transcribe(
             if (
                 no_speech_threshold is not None
                 and decode_result.no_speech_prob > no_speech_threshold
+                and logprob_threshold is not None
+                and decode_result.avg_logprob < logprob_threshold
             ):
                 needs_fallback = False  # silence
             if not needs_fallback:
@@ -275,9 +283,11 @@ def transcribe(
     all_segments = []
     prompt_reset_since = 0
 
+    remaining_prompt_length = model.dims.n_text_ctx // 2 - 1
     if initial_prompt is not None:
         initial_prompt_tokens = tokenizer.encode(" " + initial_prompt.strip())
         all_tokens.extend(initial_prompt_tokens)
+        remaining_prompt_length -= len(initial_prompt_tokens)
     else:
         initial_prompt_tokens = []
 
@@ -335,7 +345,13 @@ def transcribe(
             segment_duration = segment_size * HOP_LENGTH / SAMPLE_RATE
             mel_segment = pad_or_trim(mel_segment, N_FRAMES).to(model.device).to(dtype)
 
-            decode_options["prompt"] = all_tokens[prompt_reset_since:]
+            if carry_initial_prompt:
+                nignored = max(len(initial_prompt_tokens), prompt_reset_since)
+                remaining_prompt = all_tokens[nignored:][-remaining_prompt_length:]
+                decode_options["prompt"] = initial_prompt_tokens + remaining_prompt
+            else:
+                decode_options["prompt"] = all_tokens[prompt_reset_since:]
+
             result: DecodingResult = decode_with_fallback(mel_segment)
             tokens = torch.tensor(result.tokens)
 

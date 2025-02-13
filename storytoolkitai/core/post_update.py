@@ -117,43 +117,6 @@ def post_update(current_version, last_version, is_standalone=False):
     return True
 
 
-def post_update_0_20_1(is_standalone=False):
-    """
-    This re-installs Whisper to make sure we have the right commit
-    """
-
-    # not needed if we are running in standalone mode
-    if is_standalone:
-        return True
-
-    # uninstall openai-whisper package
-    try:
-        # uninstall openai-whisper package so we can re-install it and make sure we have the correct commit
-        subprocess.check_call([sys.executable, '-m', 'pip', 'uninstall', '-y', 'openai-whisper'])
-        logger.info('Uninstalled openai-whisper package to re-install relevant version.')
-
-    except Exception as e:
-        logger.error('Failed to uninstall openai-whisper package: {}'.format(e))
-        logger.warning('Please uninstall and re-install the openai-whisper package manually.')
-        time.sleep(3)
-
-        return False
-
-    # install the needed openai-whisper commit
-    try:
-        # don't use cache dir
-        subprocess.check_call(
-            [sys.executable, '-m', 'pip', 'install', '--upgrade', '--no-cache-dir',
-             'openai-whisper@git+https://github.com/openai/whisper.git@ba3f3cd54b0e5b8ce1ab3de13e32122d0d5f98ab'])
-    except Exception as e:
-        logger.error('Failed to install requirements.txt: {}'.format(e))
-        logger.warning('Please install the requirements.txt manually.')
-
-        return False
-
-    return True
-
-
 def post_update_0_22_0(is_standalone=False):
     """
     This converts the "API Token" reference in the config file to "API Key".
@@ -325,14 +288,50 @@ def post_update_0_24_0(is_standalone=False):
         # force a requirements.txt check and install
         return reinstall_requirements()
 
+def post_update_0_25_0(is_standalone=False):
+    """
+    This re-installs Whisper to make sure we have the commit 517a43ecd132a2089d85f4ebc044728a71d49f6e
+    """
+
+    # not needed if we are running in standalone mode
+    if is_standalone:
+        return True
+
+    # uninstall openai-whisper package
+    try:
+        # uninstall openai-whisper package so we can re-install it and make sure we have the correct commit
+        subprocess.check_call([sys.executable, '-m', 'pip', 'uninstall', '-y', 'openai-whisper'])
+        logger.info('Uninstalled openai-whisper package to re-install relevant version.')
+
+    except Exception as e:
+        logger.error('Failed to uninstall openai-whisper package: {}'.format(e))
+        logger.warning('Please uninstall and re-install the openai-whisper package manually.')
+        time.sleep(3)
+
+        return False
+
+    # install the needed openai-whisper commit
+    try:
+        # don't use cache dir
+        subprocess.check_call(
+            [sys.executable, '-m', 'pip', 'install', '--upgrade', '--no-cache-dir',
+             'openai-whisper@git+https://github.com/openai/whisper.git@517a43ecd132a2089d85f4ebc044728a71d49f6e'])
+    except Exception as e:
+        logger.error('Failed to install requirements.txt: {}'.format(e))
+        logger.warning('Please install the requirements.txt manually.')
+
+        return False
+
+    return True
+
 
 # this is a dictionary of all the post_update functions
 # make sure to keep them in order
 # but clean update functions from the past
 # which perform the same operations mentioned in further updates (for e.g. upgrading required packages)
 post_update_functions = {
-    '0.20.1': post_update_0_20_1,
     '0.22.0': post_update_0_22_0,
     '0.23.0': post_update_0_23_0,
     '0.24.0': post_update_0_24_0,
+    '0.25.0': post_update_0_25_0,
 }
