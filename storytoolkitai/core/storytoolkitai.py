@@ -454,6 +454,8 @@ class StoryToolkitAI:
         # get the latest release from GitHub if release is True
         if self.standalone:
 
+            logger.debug('Checking for latest standalone release.')
+
             try:
                 # get the latest release from GitHub
                 latest_release = (
@@ -472,6 +474,9 @@ class StoryToolkitAI:
 
         # otherwise get the latest version from the api.storytoolkit.ai/version file
         else:
+
+            logger.debug('Checking for latest version on api.storytoolkit.ai.')
+
             version_request = "https://api.storytoolkit.ai/version"
 
             # retrieve the latest version number from github
