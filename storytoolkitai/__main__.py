@@ -36,12 +36,12 @@ logger.debug('\n--------------\n'
                      ' '.join(map(str, platform.win32_ver() + platform.mac_ver())),
                      '.'.join(map(str, sys.version_info))))
 
-# check if the user is running any version of Python 3.10
+# check if the user is running any version of Python 3.10 or 3.11
 if sys.version_info.major != 3 or (sys.version_info.minor != 10 and sys.version_info.minor != 11):
 
     logger.warning('You are running Python {}.{}.{}.\n'.format(*sys.version_info) +
-                   'StoryToolkitAI is now optimized to run on Python 3.10 and runs well on Python 3.11.\n' +
-                   'Please download and install the latest version of Python 3.10 or 3.11 '
+                   'StoryToolkitAI is now optimized to run on Python 3.11.\n' +
+                   'Please download and install the latest version of Python 3.11 '
                    'from: https://www.python.org/downloads/\nand then re-install the tool with a new environment.\n '
                    'More info: https://github.com/octimot/StoryToolkitAI/blob/main/INSTALLATION.md\n')
 
@@ -63,32 +63,41 @@ if not getattr(sys, 'frozen', False):
     # check to see if all the requirements are met
     requirements_failed = False
 
+    logger.debug('Checking package requirements from {}'.format(requirements_file_path))
+
     try:
+
+        # read requirements file contents
+        with open(requirements_file_path, 'r') as f:
+            req_lines = f.readlines()
 
         # check if all the requirements are met
         # important: this does not check if the correct versions of the packages are installed
         # so if a specific version if required, we need to deal with it in the post_update() function
-        import pkg_resources
+        from packaging.requirements import Requirement
+        import importlib.metadata
 
-        pkg_resources.require(open(requirements_file_path, mode='r'))
+        for req_line in req_lines:
+            req_line = req_line.strip()
+            if not req_line or req_line.startswith('#'):
+                continue  # skip empty lines and comments
 
-        logger.debug('All package requirements met.')
+            req = Requirement(req_line)
+            try:
+                installed_version = importlib.metadata.version(req.name)
+            except importlib.metadata.PackageNotFoundError as e:
+                logger.debug("Distribution not found for package:", exc_info=True)
+                logger.warning("Packages missing from the installation: {}".format(req.name))
+                requirements_failed = True
+                continue
 
-    except FileNotFoundError:
-        logger.error("Could not find {} to check the required packages" .format(requirements_file_path))
-        sys.exit()
-
-    except pkg_resources.VersionConflict as e:
-        # log the error and show the warning
-        logger.debug("Version conflict in package:", exc_info=True)
-        logger.warning("Version conflict in package: {}".format(e))
-        requirements_failed = True
-
-    except pkg_resources.DistributionNotFound as e:
-        # log the error and show the warning
-        logger.debug("Distribution not found for package:", exc_info=True)
-        logger.warning("Packages missing from the installation: {}".format(e))
-        requirements_failed = True
+            # if a version specifier is provided, check that the installed version satisfies it
+            if req.specifier and not req.specifier.contains(installed_version, prereleases=True):
+                logger.debug("Version conflict in package: {}. Installed: {}, Required: {}".format(
+                    req.name, installed_version, req.specifier))
+                logger.warning("Version conflict in package: {} (installed: {}, required: {})".format(
+                    req.name, installed_version, req.specifier))
+                requirements_failed = True
 
     except Exception as e:
         # log the error and show the warning
