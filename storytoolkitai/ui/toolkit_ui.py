@@ -17849,7 +17849,7 @@ class toolkit_UI():
         if not search_window_id:
             return
 
-        help_console_info = "Type [help] to see all available commands.\n\n"
+        help_console_info = "Type /help to see all available commands.\n\n"
 
         def ready_for_search():
             """
