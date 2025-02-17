@@ -18266,19 +18266,34 @@ class toolkit_UI():
         # are we supposed to clear the window before each reply?
         clear_before_reply = self.stAI.get_app_setting('search_clear_before_results', default_if_none=True)
 
+        # the search_prompt is what we actually send to the model
+        # and it might be different than the full prompt the user is sending
+        search_prompt = prompt
+
+        # throw a depreciation warning if we detect square brackets
+        if prompt.lower().startswith(('[help]', '[model', '[exit', '[list', '[clear')) \
+            or re.match(r'^\[\d+\]', prompt.strip()):
+            self._text_window_update(
+                search_window_id,
+                toolkit_UI.sq_brackets_depreciation(prompt, ''),
+                clear=clear_before_reply
+            )
+            # reset this variable to see whatever comes next
+            clear_before_reply = False
+
         # is the user asking for help?
-        if prompt.lower() == '[help]':
+        if prompt.lower() == '[help]' or prompt.lower() == '/help':
 
             help_reply = 'Simply enter a search term and press enter.\n' \
                          'For eg.: about life events\n\n' \
                          'If you want to restrict the number of results, ' \
-                         'just add [n] to the beginning of the query.\n' \
-                         'For eg.: [10] about life events\n\n' \
+                         'just add /n to the beginning of the query, where n is the maximum number of results.\n' \
+                         'For eg.: /10 about life events\n\n' \
                          'If you want to perform multiple searches in the same time, ' \
                          'use the | character to split the search terms\n' \
                          'For eg.: about life events | about family\n\n' \
-                         'If you want to change the model, use [model:<model_name>]\n' \
-                         'For eg.: [model:distiluse-base-multilingual-cased-v1]\n\n' \
+                         'If you want to change the model, use /model:<model_name>\n' \
+                         'For eg.: /model:distiluse-base-multilingual-cased-v1\n\n' \
                          'See list of models here: https://www.sbert.net/docs/pretrained_models.html\n'
 
             # use this to make sure we have a new prompt prefix for the next search
@@ -18286,14 +18301,19 @@ class toolkit_UI():
             return
 
         # if the user sent either [model] or [model:<model_name>] as the prompt
-        elif prompt.lower().startswith('[model') and prompt.lower().endswith(']'):
+        elif (prompt.lower().startswith('[model') and prompt.lower().endswith(']')) \
+                or prompt.lower().startswith('/model'):
 
             # if the model contains a colon, it means that the user wants to load a new model
-            if prompt.lower() != '[model]' and ':' in prompt.lower():
+            if prompt.lower().startswith('[model:') or prompt.lower().startswith('/model:'):
 
                 # if a model was passed (eg.: [model:en_core_web_sm]), load it
                 # using regex to extract the model name
-                model_name = re.search(r'\[model:(.*?)\]', prompt.lower()).group(1)
+                if prompt.lower().startswith('[model:'):
+                    model_name = re.search(r'\[model:(.*?)\]', prompt.lower()).group(1)
+
+                else:
+                    model_name = re.search(r'/model:([^\s]+)', prompt.lower()).group(1)
 
                 if model_name.strip() != '':
 
@@ -18323,17 +18343,26 @@ class toolkit_UI():
             return
 
         # this clears the search window
-        elif prompt.lower() == '[clear]':
+        elif prompt.lower() == '[clear]' or prompt.lower() == '/clear':
             self._text_window_update(search_window_id, '', clear=clear_before_reply)
             return
 
-        elif prompt.lower() == '[listfiles]' or prompt.lower() == '[list files]':
+        elif prompt.lower() == '[listfiles]' or prompt.lower() == '[list files]' or prompt.lower() == '/listfiles':
             self._advanced_search_list_files_in_window(search_window_id, text_search_item, clear=clear_before_reply)
             return
 
         # is the user trying to quit?
-        elif prompt.lower() == '[quit]':
+        elif prompt.lower() == '[quit]' or prompt.lower() == '/quit':
             self.destroy_advanced_search_window(search_window_id)
+            return
+
+        # is the user sending a prompt that starts with a slash, followed by a number and a space?
+        elif prompt.lower().startswith('/') and re.match(r'^/\d+ ', prompt.strip()):
+            # rewrite the prompt as [number][rest]
+            search_prompt = '[' + prompt[1:].split(' ', 1)[0] + '] ' + prompt[1:].split(' ', 1)[1]
+
+        elif prompt.lower().startswith('/'):
+            self._text_window_update(search_window_id, 'Unknown command. Use /help for a list of commands.')
             return
 
         # if we reached this point, we're sending the prompt to the search item
@@ -18354,7 +18383,7 @@ class toolkit_UI():
                 and search_window.search_text_switch_var.get() is True:
 
             self.advanced_search_text(
-                text_search_item=text_search_item, search_window_id=search_window_id, prompt=prompt,
+                text_search_item=text_search_item, search_window_id=search_window_id, prompt=search_prompt,
                 clear_before_reply=clear_before_reply)
 
             # set this to false so that the video search doesn't clear the window
@@ -18376,7 +18405,7 @@ class toolkit_UI():
             #     results_text_element.insert(ctk.END, "\n")
 
             self.advanced_search_video(
-                video_search_item=video_search_item, search_window_id=search_window_id, prompt=prompt,
+                video_search_item=video_search_item, search_window_id=search_window_id, prompt=search_prompt,
                 clear_before_reply=clear_before_reply)
 
         else:
@@ -18418,6 +18447,11 @@ class toolkit_UI():
 
         # how long did the search take?
         # total_search_time = time.time() - start_search_time
+
+        # if we have anything between square brackets at the beginning of the prompt,
+        # replace the square brackets with slash
+        if prompt.startswith('[') and re.match(r'^\[\d+\]', prompt.strip()):
+            prompt = '/' + prompt[1:prompt.find(']')] + prompt[prompt.find(']')+1:]
 
         # clear the search window if we're supposed to
         if clear_before_reply:
@@ -18886,7 +18920,15 @@ class toolkit_UI():
 
         # clear the search window if we're supposed to
         if clear_before_reply:
+            # if we have anything between square brackets at the beginning of the prompt,
+            # replace the square brackets with slash
+            if prompt.startswith('[') and re.match(r'^\[\d+\]', prompt.strip()):
+                prompt = '/' + prompt[1:prompt.find(']')] + prompt[prompt.find(']') + 1:]
+
             self._text_window_update(search_window_id, '', clear=clear_before_reply)
+
+            # but add back the search term before the results
+            results_text_element.insert(ctk.END, prompt + "\n\n")
 
         if len(results) > 0:
 
