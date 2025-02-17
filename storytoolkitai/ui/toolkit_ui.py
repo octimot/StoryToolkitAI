@@ -19141,7 +19141,7 @@ class toolkit_UI():
                     assistant_window.assistant_item.model_description, assistant_window.assistant_item.model_provider)
 
                 initial_info += 'Your requests might be billed by your AI model provider.\n' + \
-                                'Type [help] to see available commands or just prompt the Assistant to do something.'
+                                'Type /help to see available commands or just prompt the Assistant to do something.'
 
                 # also add the assistant settings to the window for future reference
                 assistant_window.assistant_settings = assistant_settings
@@ -19357,6 +19357,27 @@ class toolkit_UI():
         # destroy the settings window after 100ms
         assistant_window.after(100, lambda: self.destroy_window_(window_id=assistant_window_id+'_settings'))
 
+    @staticmethod
+    def sq_brackets_depreciation(f_prompt, f_reply=""):
+        """
+        This prepends the reply with a depreciation warning for square bracket commands
+        """
+
+        # if the command starts with a square bracket
+        if f_prompt.strip().startswith('['):
+
+            # replace the first square bracket with a slash:
+            expected_prompt = '/' + f_prompt[1:]
+
+            # and find the first closing square bracket and take it out
+            expected_prompt = expected_prompt[:expected_prompt.find(']')] + expected_prompt[expected_prompt.find(']')+1:]
+
+            f_reply = ('Warning: prompts using square brackets will be removed in a future version.\n'
+                       'Try "{}" next time.\n'
+                       'Or use /help for a list of available commands.\n' + f_reply).format(expected_prompt)
+
+        return f_reply
+
     def assistant_query(self, prompt, assistant_window_id: str, assistant_item=None):
 
         # get this window object
@@ -19394,8 +19415,18 @@ class toolkit_UI():
 
         # try to run the assistant query
         try:
+
+            # throw a depreciation warning if we detect square brackets
+            if prompt.lower().startswith(
+                    ('[t]', '[st]', '[help]', '[model', '[calc]', '[usage]', '[reset', '[context', '[exit')
+            ):
+                self._text_window_update(
+                    assistant_window_id,
+                    toolkit_UI.sq_brackets_depreciation(prompt, '')
+                )
+
             # is the user asking for help?
-            if prompt.lower() == '[help]':
+            if prompt.lower() == '[help]' or prompt.lower().startswith('/help'):
 
                 help_reply = ("You are using {} ({}).\n"
                               .format(assistant_item.model_description, assistant_item.model_provider))
@@ -19405,20 +19436,20 @@ class toolkit_UI():
                 help_reply += "Every time you ask something, you may send out the entire conversation " \
                               "and the initial context.\n" \
                               "The longer the conversation, the more tokens you are using on each request.\n\n" \
-                              "Use [usage] to keep track of your usage in this Assistant window.\n" \
-                              "Use [calc] to get the minimum number of tokens you're sending with each request.\n" \
-                              "Use [reset] to reset the conversation, while preserving any contexts.\n" \
-                              "Use [resetall] to reset the conversation and the initial context.\n" \
+                              "Use /usage to keep track of your usage in this Assistant window.\n" \
+                              "Use /calc to get the minimum number of tokens you're sending with each request.\n" \
+                              "Use /reset to reset the conversation, while preserving any contexts.\n" \
+                              "Use /resetall to reset the conversation and the initial context.\n" \
                               "Resetting will reduce the tokens you're sending out.\n\n" \
-                              "Use [context] to see the initial context text that is sent out with each prompt.\n\n" \
-                              "Use [model] to see the model used in this window.\n" \
-                              "Use [model:MODEL_PROVIDER:MODEL_NAME] to change the model used in this window.\n" \
-                              "Use [models] to see the available models.\n\n" \
-                              "Use [exit] to exit the Assistant.\n\n" \
-                              "Use [t] or [st] before the prompt, to send a transcription or story focused prompt.\n" \
+                              "Use /context to see the initial context text that is sent out with each prompt.\n\n" \
+                              "Use /model to see the model used in this window.\n" \
+                              "Use /model:MODEL_PROVIDER:MODEL_NAME to change the model used in this window.\n" \
+                              "Use /models to see the available models.\n\n" \
+                              "Use /exit to exit the Assistant.\n\n" \
+                              "Use /t or /st before the prompt, to send a transcription or story focused prompt.\n" \
                               "These will make the assistant aware of the transcription and story content " \
                               "and try to influence a relevant response. " \
-                              "Note: when using [t] or [st], " \
+                              "Note: when using /t or /st, " \
                               "the prompt and response will not be saved to the chat history " \
                               "unless you add it afterwards."
 
@@ -19426,20 +19457,27 @@ class toolkit_UI():
                 self._text_window_update(assistant_window_id, help_reply)
                 return
 
-            elif prompt.lower().startswith('[model:') and prompt.lower().endswith(']'):
+            elif (prompt.lower().startswith('[model:') and prompt.lower().endswith(']')
+                  or prompt.lower().startswith('/model:')):
 
-                # make sure that the correct syntax is used - [model:MODEL_PROVIDER:MODEL_NAME]
-                model_and_provider_name = prompt[7:-1]
+                # make sure that the correct syntax is used - /model:MODEL_PROVIDER:MODEL_NAME
+                if prompt.lower().endswith(']'):
+                    model_and_provider_name = prompt[7:-1]
+                else:
+                    model_and_provider_name = prompt[7:]
 
                 if ':' not in model_and_provider_name:
                     self._text_window_update(assistant_window_id, 'Invalid model and provider name.\n'
-                                                                  'Use [model:MODEL_PROVIDER:MODEL_NAME]. '
-                                                                  'For eg.: [model:OpenAI:gpt-4]')
+                                                                  'Use /model:MODEL_PROVIDER:MODEL_NAME.\n'
+                                                                  'For e.g..: /model:OpenAI:gpt-4')
                     return
 
                 model_and_provider_name = model_and_provider_name.split(':')
                 model_provider = model_and_provider_name[0]
-                model_name = model_and_provider_name[1]
+
+                # the model name is everything after the second :, not just the first list item
+                # this is so that we can also include models with : in their names (e.g. phi3:mini)
+                model_name = ':'.join(model_and_provider_name[1:])
 
                 # if the model provider and names are the same as the current ones, do nothing
                 if model_provider == assistant_item.model_provider and model_name == assistant_item.model_name:
@@ -19485,7 +19523,7 @@ class toolkit_UI():
 
                 return
 
-            elif prompt.lower() == '[models]':
+            elif prompt.lower() == '[models]' or prompt.lower() == '/models':
 
                 # list all the available models in assistant_item.LLM_AVAILABLE_MODELS
                 models_reply = "Available models:\n"
@@ -19500,19 +19538,20 @@ class toolkit_UI():
                 self._text_window_update(assistant_window_id, models_reply)
                 return
 
-            elif prompt.lower() == '[model]':
+            elif prompt.lower() == '[model]' or prompt.lower() == '/model':
 
                 model_reply = "You are using {} ({}).\n" \
                               .format(assistant_item.model_description, assistant_item.model_provider)
 
-                model_reply += '\nUse [model:MODEL_PROVIDER:MODEL_NAME] to change the model used in this window.\n'
+                model_reply += '\nUse /model:MODEL_PROVIDER:MODEL_NAME to change the model used in this window.\n'
                 self._text_window_update(assistant_window_id, model_reply)
                 return
 
             # if the user is asking for usage
-            elif prompt.lower() == '[usage]' or prompt.lower() == '[calc]':
+            elif prompt.lower() == '[usage]' or prompt.lower() == '[calc]' \
+                or prompt.lower() == '/usage' or prompt.lower() == '/calc':
 
-                if prompt.lower() == '[calc]':
+                if prompt.lower() == '[calc]' or prompt.lower == '/calc':
                     num_tokens = assistant_item.calculate_history_tokens()
                     if num_tokens is not None:
                         calc_reply = "The context plus conversation uses {} tokens/request\n\n".format(num_tokens)
@@ -19547,7 +19586,8 @@ class toolkit_UI():
                 self._text_window_update(assistant_window_id, usage_reply)
                 return
 
-            elif prompt.lower() == '[reset]' or prompt.lower() == '[resetall]':
+            elif prompt.lower() == '[reset]' or prompt.lower() == '[resetall]' \
+                or prompt.lower() == '/reset' or prompt.lower() == '/resetall':
                 assistant_item.reset()
 
                 # remove all references to the assistant item from the chat history
@@ -19565,11 +19605,14 @@ class toolkit_UI():
                     self._text_window_update(assistant_window_id, 'Conversation reset, but context preserved.')
                 return
 
-            elif prompt.lower() == '[clear]':
-                self._text_window_update(assistant_window_id, '', clear=True)
+            elif prompt.lower() == '[clear]' or prompt.lower() == '/clear':
+                self._text_window_update(
+                    assistant_window_id, 'Conversation reset and context removed.',
+                    clear=True
+                )
                 return
 
-            elif prompt.lower() == '[context]':
+            elif prompt.lower() == '[context]' or prompt.lower() == '/context':
 
                 if assistant_item.context is None:
                     self._text_window_update(assistant_window_id, 'No context used for this conversation.')
@@ -19585,22 +19628,30 @@ class toolkit_UI():
                 return
 
             # is the user trying to quit?
-            elif prompt.lower() == '[quit]':
+            elif prompt.lower() == '[quit]' or prompt.lower() == '/quit':
                 self.destroy_assistant_window(assistant_window_id)
                 return
 
-            elif prompt.lower() == '[settings]':
+            elif prompt.lower() == '[settings]' or prompt.lower() == '/settings':
 
                 # open the assistant settings window
                 self.open_assistant_window_settings(assistant_window_id=assistant_window_id)
                 self._text_window_update(assistant_window_id, '')
                 return
 
-            elif prompt.lower().startswith(('[t]', '[st]')):
+            elif prompt.lower().startswith(('[t]', '[st]', '/t ', '/st ')):
 
                 # Extracting the content inside the first square brackets
-                match = re.match(r'\[([^\]]+)\]', prompt)
-                requested_format = match.group(1) if match else None
+                if prompt.lower().startswith(('[t]', '[st]')):
+                    match = re.match(r'\[([^\]]+)\]', prompt)
+                    requested_format = match.group(1) if match else None
+
+                # or find out if there's an s or a t after the slash (and a blank space after)
+                elif prompt.lower().startswith('/t '):
+                    requested_format = 't'
+
+                elif prompt.lower().startswith('/st '):
+                    requested_format = 'st'
 
                 temp_context_type = 'transcription_json'
 
@@ -19625,6 +19676,9 @@ class toolkit_UI():
                 # use replace to remove the requested_format keyword when sending the prompt to the model
                 enhanced_prompt = enhanced_prompt.replace('[{}]'.format(requested_format), '', 1)
 
+                # same for /t or /st
+                enhanced_prompt = enhanced_prompt.replace('/{}'.format(requested_format), '', 1)
+
                 # strip the prompt again
                 enhanced_prompt = enhanced_prompt.strip()
 
@@ -19639,6 +19693,11 @@ class toolkit_UI():
 
                 # don't this query to the chat history since it might be large
                 save_to_history = False
+
+            elif prompt.lower().startswith('/'):
+                self._text_window_update(
+                    assistant_window_id, 'Invalid command. Use /help for a list of available commands.')
+                return
 
                 # get the settings from the window again
             assistant_settings = assistant_window.assistant_settings

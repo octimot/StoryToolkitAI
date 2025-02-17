@@ -436,11 +436,13 @@ machine understands, but after the first search is completed, all other searches
 
 ## Assistant
 
+_Note: The keywords mentioned below start with slashes, however if your using a version older than 0.25.1, you should use square brackets instead. For e.g. instead of `/help` use `[help]` and so on._
+
 The Assistant window is an interface that allows you to ask questions to Large Language Model such as OpenAI's GPT-3.5 
 or GPT-4. Currently, you need an `OpenAI API Key` or `storytoolkit.ai API Key` to use this feature, 
 but we're working on adding other models too.
 
-A simple `[help]` prompt in the window will show you the available commands and how to use them in the Assistant window.
+A simple `/help` (or `[help]` in older versions) prompt in the window will show you the available commands and how to use them in the Assistant window.
 
 ### Context and Conversations
 As a basic principle, each session in the Assistant window is a series of messages between you and the AI.
@@ -462,10 +464,10 @@ with a lighter background color. You can also choose to disable them from the co
 "Disable from conversation". Again, you're sending all of these messages to AI each time you send a new prompt, plus
 a variation of the Initial Context.
 
-You can reset the conversation at any point by typing `[reset]` in the Assistant window. 
+You can reset the conversation at any point by typing `/reset` (or `[reset]` in older versions) in the Assistant window. 
 This will not remove the Initial Context.
 
-You can reset the entire Chat History by typing `[resetall]` in the Assistant window. This will remove both the
+You can reset the entire Chat History by typing `/resetall` (or `[resetall]` in older versions) in the Assistant window. This will remove both the
 Initial Context and the Conversation.
 
 You should make use of these reset functions as often as you can, for e.g. when an answer from AI will not improve
@@ -552,7 +554,7 @@ For e.g. OpenAI also lists models that are not LLMs, like Dall-E, text-embedding
 
 ### Usage and billing
 
-To find out how many tokens you've used within the Assistant window, just type `[usage]` in the Assistant window
+To find out how many tokens you've used within the Assistant window, just type `/usage` (or `[usage]` in older versions) in the Assistant window
 and you'll get an estimate. 
 
 The latest versions of the tool no longer includes pricing information for models since these fluctuate and its almost
@@ -570,29 +572,31 @@ If you want to use a certain portion of the transcript as context for the Assist
 times or timecodes together with the lines to the Assistant.
 4. The Assistant window will open, and you can start typing your questions.
 
-More info on the Assistant can be found by typing `[help]` in the Assistant window.
+More info on the Assistant can be found by typing `/help` (or `[help]` in older versions) in the Assistant window.
 
 ### Transcriptions and Story responses
+
+_Note: The keywords mentioned below start with slashes, however if your using a version older than 0.25.1, you should use square brackets instead. For e.g. instead of `/t` use `[t]` and so on._
 
 Starting with version 0.22.0, the Assistant knows how to use transcription lines either to generate other
 Transcriptions or other Stories. 
 
-Simply use the keyword `[t]` (for transcription) or `[st]` (for story) in front of your usual prompt to tell the 
+Simply use the keyword `/t` (for transcription) or `/st` (for story) in front of your usual prompt to tell the 
 Assistant what you're trying to receive as a response.
 
 For e.g.: if you want to ask AI to **translate a transcription to Spanish**:
 1. Open the transcription
 2. Select the lines that you want to send to the Assistant using the 'v' key
 3. Press Key O (not zero) to send the selected lines to the Assistant.
-4. In the Assistant window, type `[t] translate to Spanish` and press ENTER
+4. In the Assistant window, type `/t translate to Spanish` and press ENTER
 5. Instead of the full response, you should get the keyword "Transcription" in blue.
 6. Right-click on it and choose what to do with the response (for e.g. you can Add it to a new transcription)
 
 #### Useful prompts
 Here are only some prompts that we've seen working with transcript lines:
-- `[t] translate to Spanish` (replace "Spanish" with any other language of your choice, GPT supports many languages)
-- `[st] select interesting lines` (replace interesting with anything else: "funny", "emotional" etc.)
-- `[t] summarize lines based on topic and timings. merge timings if needed, but then use groups and return an empty lines list` (add these lines to an existing transcription, and you'll see groups for each topic)
+- `/t translate to Spanish` (replace "Spanish" with any other language of your choice, GPT supports many languages)
+- `/st select interesting lines` (replace interesting with anything else: "funny", "emotional" etc.)
+- `/t summarize lines based on topic and timings. merge timings if needed, but then use groups and return an empty lines list` (add these lines to an existing transcription, and you'll see groups for each topic)
 
 #### Other tips for using the Assistant
 
@@ -606,10 +610,10 @@ You can use the Assistant to:
 - Get ideas about possible outlines (try typing `outline the plot described in the transcript, each line should be a scene`)
 - Get ideas about possible storylines (try typing `what is the main storyline?`)
 - Even get you a .srt subtitle file (after sending transcript lines with times (SHIFT+O) try typing `subtitle this in .srt format`)
-- Ask about the deepest black hole in the universe (try typing `what is the meaning of life?`)
+- Ask about your biggest worries (try typing `what is the meaning of life?`)
 - Anything else you can think of!...
 
-Also remember to use `[reset]` as often as you can, so that you don't send the whole conversation to the Assistant 
+Also remember to use `/reset` as often as you can, so that you don't send the whole conversation to the Assistant 
 over and over again, unless you're trying to follow something relevant from the previous messages.
 
 ## Story Editor
