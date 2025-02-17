@@ -19310,7 +19310,8 @@ class toolkit_UI():
             new_assistant_item = AssistantUtils.assistant_handler(
                 toolkit_ops_obj=self.toolkit_ops_obj,
                 model_provider=assistant_settings.get('assistant_provider'),
-                model_name=assistant_settings.get('assistant_model')
+                model_name=assistant_settings.get('assistant_model'),
+                strict=True
             )
 
             if new_assistant_item is None:
@@ -19449,7 +19450,9 @@ class toolkit_UI():
                     return
 
                 new_assistant_item = AssistantUtils.assistant_handler(
-                    toolkit_ops_obj=self.toolkit_ops_obj, model_provider=model_provider, model_name=model_name)
+                    toolkit_ops_obj=self.toolkit_ops_obj, model_provider=model_provider, model_name=model_name,
+                    strict=True
+                )
 
                 if new_assistant_item is None:
 

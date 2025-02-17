@@ -358,12 +358,17 @@ class ChatGPT(ToolkitAssistant):
             else:
                 request_kwargs['max_tokens'] = settings.get('max_length', 1024)
 
-            # the o1-mini models don't support the system role
-            # so we need to remove it from the chat history
             chat_history_copy = copy.deepcopy(chat_history)
-            # go through the chat history and remove the system messages
+            # remove the system role from the chat history if the model is o1-mini
             if self.model_name.startswith("o1-mini"):
                 chat_history_copy[:] = [msg for msg in chat_history_copy if msg.get('role') != 'system']
+
+            # some o1 and o3 models support the system role, but they do support the 'developer' role
+            # go through the chat history and replace the role with 'developer' if it's 'system'
+            elif self.model_name.startswith("o1") or self.model_name.startswith("o3"):
+                for message in chat_history_copy:
+                    if message.get('role', None) == 'system':
+                        message['role'] = 'developer'
 
             response = client.chat.completions.create(
                 model=self.model_name,
@@ -579,13 +584,14 @@ class AssistantUtils:
 
         # do not allow empty model provider or model name
         if model_provider is None or model_name is None or model_provider.strip() == '' or model_name.strip() == '':
-            logger.error('Could not find assistant handler for model "{}" from provider "{}".'
+            logger.error('Cannot create assistant using model name "{}" and provider "{}".'
                          .format(model_name, model_provider))
             return None
 
         try:
 
             if model_provider not in AssistantUtils.assistant_available_providers():
+                logger.error('Cannot find provider "{}".'.format(model_provider))
                 raise KeyError
 
             # check if the model is in the available models from the provider
@@ -593,21 +599,26 @@ class AssistantUtils:
 
             # if the model name is not in the available models
             if model_name not in provider_models:
+                logger.warning('Could not find model "{}" from provider "{}". Provider models: {}'
+                               .format(model_name, model_provider,  ", ".join(provider_models)))
 
-                logger.warning('Could not find assistant handler for model {} from provider {}.')
+                # if there's a strict requirement for the model, raise an error
+                if kwargs.get('strict', False):
+                    raise KeyError
 
                 # try to get one that starts with the model name
                 # (for eg. gpt-3.5-turbo-0613 if user asks for gpt-3.5-turbo)
                 for available_model in provider_models:
                     if available_model.startswith(model_name):
                         model_name = available_model
-                        logger.warning('Selected model {} from the provider.'.format(model_name))
+                        logger.warning('Selected model "{}" from the provider.'.format(model_name))
                         break
 
                 # if we still couldn't find the model, then just use the first available model from the provider
                 if model_name not in provider_models:
                     model_name = provider_models[0]
-                    logger.warning('Selected first available model from the provider: {}')
+                    logger.warning('Selected first available model from the provider {}: "{}"'
+                                   .format(model_provider, model_name))
 
             # load the assistant class
             toolkit_assistant = LLM_AVAILABLE_MODELS[model_provider][model_name].get('handler', None)
@@ -660,7 +671,7 @@ class AssistantUtils:
                 toolkit_assistant = globals().get(toolkit_assistant, None)
 
             if toolkit_assistant is None:
-                logger.error('Could not find assistant handler for model {} from provider {}.'
+                logger.error('Could not create assistant handler for model {} from provider {}.'
                              .format(model_name, model_provider))
                 return None
 
@@ -671,7 +682,7 @@ class AssistantUtils:
                                      **kwargs)
 
         except KeyError:
-            logger.error('Could not find assistant handler for model {} from provider {}.'
+            logger.error('Model {} from provider {} not found.'
                          .format(model_name, model_provider))
             return None
 
@@ -725,8 +736,12 @@ class AssistantUtils:
                         provider_models = models_assistant.get_models()
                         if provider_models:
                             processed_models = []
-                            new_available_models = {}
+                            new_available_models = LLM_AVAILABLE_MODELS[provider].copy()
                             for model in provider_models:
+
+                                # skip models that are in the exclusion list for this provider
+                                if model.id.startswith(tuple(LLM_EXCLUDED_MODELS.get(provider, []))):
+                                    continue
 
                                 # only update models that are not already in the list
                                 if model.id not in LLM_AVAILABLE_MODELS[provider]:
@@ -744,10 +759,10 @@ class AssistantUtils:
 
                             # remove the models that are not in the list anymore
                             # (not efficient, but useful)
-                            new_available_models = {}
-                            for model in LLM_AVAILABLE_MODELS[provider]:
-                                if model in processed_models:
-                                    new_available_models[model] = LLM_AVAILABLE_MODELS[provider][model]
+                            # new_available_models = {}
+                            # for model in LLM_AVAILABLE_MODELS[provider]:
+                            #     if model in processed_models:
+                            #         new_available_models[model] = LLM_AVAILABLE_MODELS[provider][model]
 
                             LLM_AVAILABLE_MODELS[provider] = new_available_models
 
@@ -813,6 +828,15 @@ DEFAULT_SYSTEM_MESSAGE = ('You are an assistant film editor.\n'
                           'and "not on the information provided".'
                           )
 
+# we use this list to ignore models that are not suitable for the assistant
+# the exclusion is done using a prefix match (if the model id starts with any of the prefixes in the list)
+LLM_EXCLUDED_MODELS = {
+    "OpenAI": [
+        "babbage", "chatgpt", "dall-e", "omni-moderation", "text-embedding", "tts", "whisper",
+        "davinci", "curie", "ada"
+    ]
+}
+
 # for OpenAI or storytoolkit.ai provided models, leave the base_url as None (or don't define it)
 # also, the api key for these models will be picked up from the config.json (unless it's specified below)
 
@@ -820,6 +844,14 @@ DEFAULT_SYSTEM_MESSAGE = ('You are an assistant film editor.\n'
 LLM_AVAILABLE_MODELS = {
     'OpenAI': {
         'gpt-4o-2024-05-13': {
+            'description': 'GPT-4o',
+            'handler': ChatGPT
+        },
+        'gpt-4o-mini': {
+            'description': 'GPT-4o Mini',
+            'handler': ChatGPT
+        },
+        'gpt-4o': {
             'description': 'GPT-4o',
             'handler': ChatGPT
         },
