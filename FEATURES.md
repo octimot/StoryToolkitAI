@@ -407,8 +407,8 @@ You can also pass multiple search terms, using the | (pipe) character to separat
 search for "about life events" or "about sports", you can enter `about life events | about sports` in the search field. 
 The tool will then search for each term separately and return separate results for each term in the same search window.
 
-If you want to tell the tool how many results you want to see, just use `[max_results]` at the beginning of the search,
-for e.g.: `[20] about life events | about sports`. This will return the top 20 results for each term.
+If you want to tell the tool how many results you want to see, just use `/max_results` (or `[max results]` in older versions) at the beginning of the search,
+for e.g.: `/20 about life events | about sports`. This will return the top 20 results for each term.
 
 For now, the search relies on punctuation in the transcripts/files to separate phrases and feed them to the algorithm, 
 but this will be improved in a future update by allowing AI to look deeper into the text.
@@ -423,13 +423,13 @@ give you some decent results** if you prompt it right - remember it's a neural n
 Feel free to be as descriptive as you want in your search, and try to tweak the search terms until you get the results
 you're looking for.
 
-More info about the commands you can use in the Advanced Search window can be found with the `[help]` command.
+More info about the commands you can use in the Advanced Search window can be found with the `/help` (or `[help]` in older versions) command.
 
 _Important Note: **The first time you use this feature**, it will take a bit longer to start the process because the 
 tool needs to download the model file (around 500MB) to your local cache. But, after the model is saved on your
 machine, the search should work almost in real time._
 
-_About search speed: the search is pretty fast, but it will depend on the size of the files you're searching. 
+_About search speed: the search is usually fast, but it will depend on the size of the files you're searching. 
 Using a lot of them will make the search slower, so a smaller transform model is recommended (more on that later). 
 The first time you open a window and search something, it will take a while to turn the data  into something that the 
 machine understands, but after the first search is completed, all other searches should work fast._
@@ -548,8 +548,10 @@ Recently, a Reload button was added under the models list (in both the Assistant
 This allows the reloading of the models of a specified provider. 
 By pressing the button the tool makes an API call to the `base_url` of the provider, and will get all the available models. 
 The list is however not saved in the configuration file, but will only be available until the window is closed.
+After the reload, the list will both the recently pulled models, but also the models that are either hard-coded in the tool or in the additional_llm_models.json file.
 
-_Important Note: Not all models listed in the models list might be compatible for the Assistant. 
+_Important Note: Not all models listed in the models list might be compatible for the Assistant, 
+and the provider might bill you for using them, even if you don't get any results.
 For e.g. OpenAI also lists models that are not LLMs, like Dall-E, text-embedding models, etc._
 
 ### Usage and billing

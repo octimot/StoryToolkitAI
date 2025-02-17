@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [0.25.1] - 2025-02-17
+
+### Changes
+- Slashes instead of square brackets for keyword prompts in Assistant and Advanced Search windows (use /help for more info)
+
+### Fixes
+- Fixed the pkg_resources DepreciationWarning
+- Other bug fixes and optimizations
+
 ## [0.25.0] - 2025-02-13
 
 ### Added
