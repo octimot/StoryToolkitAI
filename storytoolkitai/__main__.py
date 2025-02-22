@@ -235,6 +235,7 @@ def main():
     parser.add_argument("--noresolve", action='store_true', help="Disable Resolve API")
     parser.add_argument("--skip-python-check", action='store_true', help="Skips the Python version check")
     parser.add_argument("--skip-update-check", action='store_true', help="Does not check for updates")
+    parser.add_argument("--force-update-check", action='store_true', help="Forces an update check")
 
     # cli args
     parser.add_argument("--output-dir", default=os.getcwd(), help="Target directory for the output files")
