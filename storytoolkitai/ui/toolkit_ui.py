@@ -19482,6 +19482,7 @@ class toolkit_UI():
                               "Use /calc to get the minimum number of tokens you're sending with each request.\n" \
                               "Use /reset to reset the conversation, while preserving any contexts.\n" \
                               "Use /resetall to reset the conversation and the initial context.\n" \
+                              "Use /clear to reset the conversation, the initial context, and clear the window.\n" \
                               "Resetting will reduce the tokens you're sending out.\n\n" \
                               "Use /context to see the initial context text that is sent out with each prompt.\n\n" \
                               "Use /model to see the model used in this window.\n" \
@@ -19639,7 +19640,7 @@ class toolkit_UI():
 
                         self.assistant_toggle_history_item_color(tag_id=key, text_widget=text_widget, active=False)
 
-                if prompt.lower() == '[resetall]':
+                if prompt.lower() == '[resetall]' or prompt.lower == '/resetall':
                     assistant_item.add_context(context='')
                     assistant_window.transcription_segments = None
                     self._text_window_update(assistant_window_id, 'Conversation reset and context removed.')
