@@ -73,16 +73,18 @@ class StoryToolkitAI:
         self.update_available = None
         self.online_version = None
 
-        # check if a new version of the app exists on GitHub
-        # but use either the release version number or version.py,
-        # depending on standalone is True or False
-        if not self.cli_args or not self.cli_args.mode == 'cli' or not self.cli_args.skip_update_check:
+        # check if a new version of the app exists
+        # but only if the user is not running the CLI or has disabled the check
+        if (self.cli_args
+                and (self.cli_args.mode == 'cli' or self.cli_args.skip_update_check)
+                and not self.cli_args.force_update_check
+        ):
+            logger.debug("Skipping update check due to command line argument.")
+        else:
             def check_update_wrapper():
                 self.update_available, self.online_version = self.check_update()
 
             Thread(target=check_update_wrapper).start()
-        else:
-            logger.debug("Skipping update check due to command line argument.")
 
         # if this is not a standalone version, get the git commit hash
         if not self.standalone:
