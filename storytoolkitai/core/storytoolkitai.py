@@ -7,7 +7,7 @@ import time
 
 from threading import Thread
 
-from storytoolkitai import USER_DATA_PATH, APP_CONFIG_FILE_PATH, initial_target_dir
+from storytoolkitai import USER_DATA_PATH, APP_CONFIG_FILE_PATH, initial_target_dir, APP_INSTALLATION_DIR
 from storytoolkitai.core.logger import logger
 from storytoolkitai.core.logger import Style as loggerStyle
 from storytoolkitai.core.post_update import post_update
@@ -106,7 +106,10 @@ class StoryToolkitAI:
     @staticmethod
     def get_git_commit():
         try:
-            commit_hash = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('utf-8').strip()
+            commit_hash = subprocess.check_output(
+                ['git', 'rev-parse', '--short', 'HEAD'],
+                cwd=APP_INSTALLATION_DIR
+            ).decode('utf-8').strip()
             return commit_hash
         except Exception as e:
             return None
@@ -119,12 +122,10 @@ class StoryToolkitAI:
         # pull the latest version from GitHub via git pull
         try:
 
-            # get the current working directory
-            cwd = os.getcwd()
-
             # make sure that we're executing the git command in the right directory (../../ from this file)
             os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 
+            # get the current working directory
             cwd = os.getcwd()
             logger.debug('Running git pull in {}'.format(cwd))
 

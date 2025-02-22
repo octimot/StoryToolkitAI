@@ -22,4 +22,4 @@ APP_CONFIG_FILE_PATH = os.path.join(USER_DATA_PATH, 'config.json')
 # the location of the log file
 APP_LOG_FILE = os.path.join(USER_DATA_PATH, 'app.log')
 
-
+APP_INSTALLATION_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
