@@ -1952,9 +1952,13 @@ original_example_template_path = \
 
 example_template_path = os.path.join(TRANSCRIPTION_EXPORT_TEMPLATES_PATH, 'transcription_template_example.yaml')
 
-if not os.path.exists(example_template_path):
+if not os.path.exists(example_template_path) and os.path.exists(original_example_template_path):
     shutil.copy(original_example_template_path, os.path.dirname(example_template_path))
     logger.debug('Copied example transcription export template to {}'
+                 .format(example_template_path))
+
+elif not os.path.exists(original_example_template_path):
+    logger.error('Cannot copy example transcription export template to {} because it doesn\'t exist.'
                  .format(example_template_path))
 
 
