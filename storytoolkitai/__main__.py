@@ -224,7 +224,7 @@ from storytoolkitai.core.toolkit_ops.toolkit_ops import ToolkitOps
 
 from storytoolkitai.ui.toolkit_ui import run_gui
 from storytoolkitai.ui.toolkit_cli import run_cli
-from storytoolkitai.parser import create_parser
+from storytoolkitai.core.parser import create_parser
 
 
 def main():
