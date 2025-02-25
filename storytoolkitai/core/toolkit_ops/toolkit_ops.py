@@ -19,6 +19,9 @@ import soundfile
 
 import tqdm
 
+from pydantic import BaseModel
+from typing import Optional
+
 from storytoolkitai.core.logger import logger
 
 from storytoolkitai.integrations.mots_resolve import MotsResolve
@@ -110,6 +113,139 @@ class Observer:
     def update(self, subject):
         pass
 
+
+class NotificationMessage(BaseModel):
+    # what gets logged
+    message: str
+
+    # what gets displayed
+    display_message: str
+
+    # the log level
+    level: str
+
+    # whether to include the exception info in the log or not
+    exc_info: Optional[bool] = None
+
+class NotificationService:
+    """
+    This takes care that any notification received gets dispatched to the right place on the UI
+
+    Syntax example:
+    To batch and send two notifications at once, use:
+    NotificationService("message1", level="warning").add("message2", level="info").push()
+
+    By default, the NotificationService pushes the messages to the logger.
+
+    To push the notification to a specific receiver, use:
+    NotificationService("message1", level="warning").to("window", window_object).push()
+
+    To push a different message to the frontend, compared to what is logged, use:
+    NotificationService("message1", display_message="message to display", level="warning").push()
+
+    This is useful if you want to push notifications from the backend (model, controller, adapter etc.) to the frontend.
+
+    """
+
+    # use here to define the known receiver types
+    RECEIVER_TYPES = ['window']
+
+    def __init__(self, message=None, *, display_message=None, level="info", exc_info=None):
+
+        # initialize the batch
+        self.batch = []
+
+        # if there's a message, add it to the batch
+        if message:
+            self.add_message(message, display_message=display_message, level=level, exc_info=exc_info)
+
+        # but we can't have a formatted_message without a message
+        elif display_message:
+            raise ValueError('display_message passed to NotificationService without a message.')
+
+        self.receivers = {}
+
+    def add_message(self, message, *, display_message=None, level="info", exc_info=None) -> 'NotificationService':
+
+        # add the message to the batch
+        # if no formatted message was passed, use the message to display
+        self.batch.append(
+            NotificationMessage(
+                message=message,
+                display_message=display_message or message,
+                level=level,
+                exc_info=exc_info
+            )
+        )
+
+        return self
+
+    def to(self, receiver_type, receiver_reference) -> 'NotificationService':
+        """
+        This adds a recipient to the notification service (for e.g. a specific UI window)
+        """
+
+        if receiver_type not in self.RECEIVER_TYPES:
+            raise ValueError('Notification receiver type: {} not in list of known types: {}'
+                             .format(receiver_type, self.RECEIVER_TYPES))
+
+        if receiver_type not in self.receivers:
+            self.receivers[receiver_type] = []
+
+        # add the receiver reference
+        # this should be an actual object that has a receive_notification() method!
+        self.receivers[receiver_type].append(receiver_reference)
+
+        return self
+
+    def _process_message(self, notification_message: NotificationMessage) -> bool:
+        """
+        Processes a single notification message
+        """
+
+        # by processing we mean, first logging the message and then dispatching it to all the receiver
+        try:
+            if notification_message.level == 'error':
+                logger.error(notification_message.message, exc_info=notification_message.exc_info)
+
+            elif notification_message.level == 'warning':
+                logger.warning(notification_message.message, exc_info=notification_message.exc_info)
+
+            elif notification_message.level == 'debug':
+                logger.debug(notification_message.message, exc_info=notification_message.exc_info)
+
+            else:
+                logger.info(notification_message.message, exc_info=notification_message.exc_info)
+
+            # important: the receivers should be actual objects that have a receive_notification() method!
+            # for e.g., if the receiver is a window object, it should have a window.receive_notification() method
+            for receiver_type, receiver_list in self.receivers.items():
+                for receiver in receiver_list:
+
+                    # here, we send the full NotificationMessage object to the receiver
+                    # the receiver has to decide which part of the message to use
+                    receiver.receive_notification(notification_message)
+
+        except Exception as e:
+            logger.error('Error processing notification message: {}'.format(e))
+            logger.debug("Error:", exc_info=True)
+
+            return False
+
+        return True
+
+    def push(self) -> 'NotificationService':
+        """
+        Processes all the notification messages in order
+        """
+        try:
+            for notification_message in self.batch:
+                self._process_message(notification_message)
+        except Exception as e:
+            logger.error('Error processing notification messages: {}'.format(e))
+            logger.debug("Error:", exc_info=True)
+
+        return self
 
 class ToolkitOps:
 

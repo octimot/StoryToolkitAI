@@ -27,6 +27,34 @@ from whisper import available_models as whisper_available_models
 
 from .menu import UImenus
 
+class CTkToplevelExt(ctk.CTkToplevel):
+    """
+    We use this to extend the CTkToplevel object (that creates windows),
+    with functions specific for StoryToolkitAI (for e.g. notification methods etc.)
+    """
+
+    def receive_notification(self, message: NotificationMessage, **kwargs):
+        """
+        This takes notifications pushed by the NotificationService and turns them into alerts etc.
+        """
+
+        # don't fire the messagebox if exc_info=True
+        if kwargs.get('exc_info', None):
+            return self
+
+        # show the messagebox attached to the window (the self object)
+        # we're assuming that this comes from the NotificationService
+        # which always logs the messages on push, so we kee message_log False,
+        # to avoid doubling the log entries, however, if the message_log is passed in the kwargs, we use that
+        toolkit_UI.notify_via_messagebox(
+            level=message.level,
+            message=message.display_message,
+            message_log=kwargs.get('message_log', False),
+            parent=self
+        )
+
+        return self
+
 
 class toolkit_UI():
     """
@@ -1939,7 +1967,7 @@ class toolkit_UI():
 
         # if the window is not a top level, find the top level window parent
         if window \
-                and (not isinstance(window, tk.Toplevel) or not isinstance(window, ctk.CTkToplevel))\
+                and (not isinstance(window, tk.Toplevel) or not isinstance(window, CTkToplevelExt))\
                 and hasattr(window, 'winfo_toplevel'):
             window = window.winfo_toplevel()
 
@@ -2038,13 +2066,13 @@ class toolkit_UI():
                 parent_element = self.root
 
             # add the window to the toolkit UI windows dictionary
-            self.windows[window_id] = ctk.CTkToplevel(parent_element)
+            self.windows[window_id] = CTkToplevelExt(parent_element)
 
             # set bar icon for windows
             self.UI_set_icon(self.windows[window_id])
 
             # open the window on the same screen as the parent_element
-            if isinstance(parent_element, ctk.CTkToplevel) or isinstance(parent_element, tk.Tk):
+            if isinstance(parent_element, CTkToplevelExt) or isinstance(parent_element, tk.Tk):
 
                 # if the parent is root, position the window under it + 20 px
                 if parent_element == self.root:
@@ -5106,7 +5134,7 @@ class toolkit_UI():
             # visually tag the results
             self._tag_find_results(text_widget, text_index, window_id)
 
-    class AskDialog(ctk.CTkToplevel):
+    class AskDialog(CTkToplevelExt):
         """
         This is a simple dialogue window that asks the user for input before continuing with the task
         But it also halts the execution of the main window until the user closes the dialogue window
