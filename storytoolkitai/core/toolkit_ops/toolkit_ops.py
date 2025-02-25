@@ -40,6 +40,8 @@ from .media import MediaUtils
 from .speaker_diarization import detect_speaker_changes
 from .timecode import sec_to_tc, tc_to_sec
 
+from .ingest import IngestSettings, TranscriptionSettings, VideoIndexingSettings
+
 from timecode import Timecode
 
 import numpy as np
@@ -458,13 +460,18 @@ class ToolkitOps:
         # if the file extension is not valid, return False
         return False
 
-    def add_media_to_queue(self, source_file_paths: str or list = None, queue_id: str = None,
-                           transcription_settings=None, video_indexing_settings=None,
-                           **kwargs):
+    def add_media_to_queue(self, ingest_settings: IngestSettings = None, **kwargs):
         """
         This adds one media item to the ingest queue
         (the task however might split into multiple queue items, for eg. transcription and video indexing)
         """
+
+        # extract the settings from the IngestSettings object
+        if ingest_settings is None or not isinstance(ingest_settings, IngestSettings):
+            return False
+
+        source_file_paths = ingest_settings.source_file_paths
+        queue_id = ingest_settings.queue_id
 
         # if no source file path was passed, return False
         if not source_file_paths:
@@ -540,7 +547,13 @@ class ToolkitOps:
             video_indexing_queue_ids = []
 
             # create a transcription job only if we have transcription settings
-            if has_audio and transcription_settings is not None and isinstance(transcription_settings, dict):
+            if (has_audio \
+                    and ingest_settings.transcription_settings is not None
+                    and isinstance(ingest_settings.transcription_settings, TranscriptionSettings)):
+
+                transcription_settings = ingest_settings.transcription_settings.model_dump()
+                transcription_settings['retranscribe'] = ingest_settings.retranscribe
+                transcription_settings['transcription_file_path'] = ingest_settings.transcription_file_path
 
                 transcription_settings['name'] = os.path.basename(source_file_path)
 
@@ -569,7 +582,13 @@ class ToolkitOps:
                 time.sleep(0.05)
 
             # create a video indexing job only if we have video indexing settings
-            if has_video and video_indexing_settings is not None and isinstance(video_indexing_settings, dict):
+            if (has_video
+                    and ingest_settings.video_indexing_settings is not None
+                    and isinstance(ingest_settings.video_indexing_settings, VideoIndexingSettings)):
+
+                video_indexing_settings = ingest_settings.video_indexing_settings.model_dump()
+                video_indexing_settings['retranscribe'] = ingest_settings.retranscribe
+                video_indexing_settings['transcription_file_path'] = ingest_settings.transcription_file_path
 
                 video_indexing_settings['name'] = os.path.basename(source_file_path)
 

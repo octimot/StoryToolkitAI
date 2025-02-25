@@ -21,10 +21,13 @@ import tkinter as tk
 import customtkinter as ctk
 from PIL import Image, ImageTk
 
+from pydantic import ValidationError
+
 from tkinter import filedialog, simpledialog, messagebox, font
 
 from whisper import available_models as whisper_available_models
 
+from ..core.toolkit_ops.ingest import MetadataSettings, TranscriptionSettings, VideoIndexingSettings, IngestSettings
 from .menu import UImenus
 
 class CTkToplevelExt(ctk.CTkToplevel):
@@ -5729,6 +5732,10 @@ class toolkit_UI():
                          'metadata_form_vars': metadata_form_vars,
                          'analysis_form_vars': analysis_form_vars}
 
+            # lastly, make sure the ingest_window is included in the kwargs
+            # this is important for the NotificationService
+            kwargs['ingest_window'] = ingest_window
+
             # UI - start button command
             # at this point, the kwargs should also contain the ingest_window_id
             start_button.configure(
@@ -6624,15 +6631,19 @@ class toolkit_UI():
         # return all the gathered form variables
         return form_vars
 
-    def form_to_ingest_common_settings(self, metadata_form_vars, **kwargs):
+    def form_to_ingest_metadata_settings(self, metadata_form_vars: dict, **kwargs) -> MetadataSettings or None:
         """
-        We're using this function to sieve through variables that are common to all ingest types
-        Stuff like: queue_id, timeline_name, project_name, transcription_file_path
+        This is the common_settings adaptor from tkinter UI to the ingest functions.
+        We're using this function to sieve through metadata variables
+        Stuff like: queue_id, timeline_name, project_name
+
+        :param metadata_form_vars: the form variables from the metadata form
+        :param kwargs: additional keyword arguments
+        :return: a MetadataSettings object or None if the validation fails
         """
 
+        # first, we go through all the common settings and get them from the form variables into a dict
         common_settings = dict()
-
-        common_settings['queue_id'] = kwargs.get('queue_id', None)
 
         # timeline name
         timeline_name_var = metadata_form_vars.get('timeline_name_var', None)
@@ -6654,15 +6665,25 @@ class toolkit_UI():
         timeline_fps_var = metadata_form_vars.get('timeline_fps_var', None)
         common_settings['timeline_fps'] = timeline_fps_var.get() if timeline_fps_var else None
 
-        # if we have a transcription_file_path, pass it
-        common_settings['transcription_file_path'] = kwargs.get('transcription_file_path', None)
+        # try to create the MetadataSettings object
+        # this will also validate the data
+        try:
+            metadata_settings = MetadataSettings(**common_settings)
+        except ValidationError as e:
 
-        # should we delete the render.json file after ingesting?
-        ingest_delete_render_info_file_var = metadata_form_vars.get('ingest_delete_render_info_file_var', None)
-        if ingest_delete_render_info_file_var:
-            common_settings['ingest_delete_render_info_file'] = ingest_delete_render_info_file_var.get()
+            # if there's a validation error, use the notification service to push the error to the UI
+            NotificationService(
+                "Metadata settings validation failed: {}".format(e),
+                display_message="Metadata settings validation failed. Check logs for more info.",
+                level="error"
+            ) \
+                .add_message("Error", level='debug', exc_info=True) \
+                .to('window', kwargs.get('ingest_window', None)) \
+                .push()
 
-        return common_settings
+            return None
+
+        return metadata_settings
 
     def form_to_video_indexing_settings(self, **kwargs):
         """
@@ -6670,7 +6691,6 @@ class toolkit_UI():
         """
 
         form_vars = kwargs.get('form_vars', None)
-        metadata_form_vars = form_vars.get('metadata_form_vars', {})
         video_form_vars = form_vars.get('video_form_vars', None)
 
         # if video indexing is not enabled, return None
@@ -6678,8 +6698,7 @@ class toolkit_UI():
                 and not video_form_vars.get('video_indexing_enabled_var').get():
             return None
 
-        # first, the non-video indexing specific settings
-        indexing_settings = self.form_to_ingest_common_settings(metadata_form_vars=metadata_form_vars, **kwargs)
+        indexing_settings = dict()
 
         # then, the video indexing specific settings
         indexing_settings['video_file_path'] = kwargs.get('file_path', None)
@@ -6748,6 +6767,23 @@ class toolkit_UI():
         else:
             indexing_settings['detection_options']['jump_every_frames'] = 20
 
+        # try to create the VideoIndexingSettings object
+        # this will also validate the data
+        try:
+            indexing_settings = VideoIndexingSettings(**indexing_settings)
+        except ValidationError as e:
+
+            # if there's a validation error, use the notification service to push the error to the UI
+            NotificationService(
+                message="Video indexing settings validation failed: {}".format(e),
+                display_message="Video indexing settings validation failed. See logs for more info.",
+                level="error") \
+                .add_message("Error", level='debug', exc_info=True) \
+                .to('window', kwargs.get('ingest_window', None)) \
+                .push()
+
+            return None
+
         return indexing_settings
 
     def form_to_transcription_settings(self, **kwargs):
@@ -6761,18 +6797,14 @@ class toolkit_UI():
         form_vars = kwargs.get('form_vars', None)
 
         audio_form_vars = form_vars.get('audio_form_vars', None)
-        metadata_form_vars = form_vars.get('metadata_form_vars', {})
         analysis_form_vars = form_vars.get('analysis_form_vars', None)
 
         if audio_form_vars.get('transcription_enabled_var', None) \
                 and not audio_form_vars.get('transcription_enabled_var').get():
             return None
 
-        # first, take care of settings that are not exclusively for transcribing (for e.g. metadata)
-        transcription_settings = \
-            self.form_to_ingest_common_settings(metadata_form_vars=metadata_form_vars, **kwargs)
-
         # retranscribe or not
+        transcription_settings = dict()
         transcription_settings['retranscribe'] = kwargs.get('retranscribe', False)
 
         # then, the transcription specific settings
@@ -6805,13 +6837,16 @@ class toolkit_UI():
                 transcription_speaker_detection_threshold
 
         # choose between max words or characters per line
+        # but send None if no value was entered
         if audio_form_vars['max_per_line_unit_var'].get() == 'words':
-            transcription_settings['max_words_per_segment'] = audio_form_vars['max_per_line_var'].get()
+            transcription_settings['max_words_per_segment'] = audio_form_vars['max_per_line_var'].get() or None
+            transcription_settings['max_chars_per_segment'] = None
         else:
-            transcription_settings['max_chars_per_segment'] = audio_form_vars['max_per_line_var'].get()
+            transcription_settings['max_chars_per_segment'] = audio_form_vars['max_per_line_var'].get() or None
+            transcription_settings['max_words_per_segment'] = None
 
         transcription_settings['split_on_punctuation_marks'] = audio_form_vars['split_on_punctuation_var'].get()
-        transcription_settings['prevent_short_gaps'] = audio_form_vars['prevent_gaps_shorter_than_var'].get()
+        transcription_settings['prevent_short_gaps'] = audio_form_vars['prevent_gaps_shorter_than_var'].get() or None
         transcription_settings['time_intervals'] = audio_form_vars['time_intervals_var'].get()
         transcription_settings['excluded_time_intervals'] = audio_form_vars['excluded_time_intervals_var'].get()
 
@@ -6825,7 +6860,10 @@ class toolkit_UI():
                                                 )
 
         if not transcription_settings['time_intervals']:
-            return False
+            return None
+
+        if transcription_settings['time_intervals'] is True:
+            transcription_settings['time_intervals'] = None
 
         # validate the excluded time intervals
         transcription_settings['excluded_time_intervals'] = \
@@ -6837,9 +6875,12 @@ class toolkit_UI():
                                                 )
 
         if not transcription_settings['excluded_time_intervals']:
-            return False
+            return None
 
-        transcription_settings['keep_whisper_debug_info'] = audio_form_vars['keep_whisper_debug_info_var'].get()
+        if transcription_settings['excluded_time_intervals'] is True:
+            transcription_settings['excluded_time_intervals'] = None
+
+        transcription_settings['keep_whisper_debug_info'] = audio_form_vars['keep_whisper_debug_info_var'].get() or None
 
         # the whisper options
         transcription_settings['whisper_options'] = dict()
@@ -6848,7 +6889,24 @@ class toolkit_UI():
         transcription_settings['whisper_options']['word_timestamps'] = audio_form_vars['word_timestamps_var'].get()
 
         # some options from the analysis form that
-        transcription_settings['transcription_group_questions'] = analysis_form_vars['group_questions_var'].get()
+        transcription_settings['group_questions'] = analysis_form_vars['group_questions_var'].get()
+
+        # try to create the TranscriptionSettings object
+        # this will also validate the data
+        try:
+            transcription_settings = TranscriptionSettings(**transcription_settings)
+        except ValidationError as e:
+
+            # if there's a validation error, use the notification service to push the error to the UI
+            NotificationService(
+                message="Transcription settings validation failed: {}".format(e),
+                display_message="Transcription settings validation failed. See logs for more info.",
+                level="error") \
+                .add_message("Error", level='debug', exc_info=True) \
+                .to('window', kwargs.get('ingest_window', None)) \
+                .push()
+
+            return None
 
         return transcription_settings
 
@@ -7457,11 +7515,19 @@ class toolkit_UI():
         """
         This function is called when the user clicks the start ingest button
         and basically takes all the form variables and passes it to the ingest function
+
+        The kwargs parameter should also contain:
+         - the form_vars dict that contains all the form variables from the ingest window
+         - the queue_id (if its known)
+         - the ingest_window_id so we can use the NotifyService to send messages to the ingest window if needed
+
         """
 
         ingest_window_id = kwargs.get('ingest_window_id', None)
         form_vars = kwargs.get('form_vars', None)
         queue_id = kwargs.get('queue_id', None)
+        ingest_delete_render_info_file = form_vars['ingest_delete_render_info_file_var'].get() \
+                if 'ingest_delete_render_info_file_var' in form_vars else None
 
         # check if the form is valid before proceeding
         if not self.is_form_valid(window_id=ingest_window_id):
@@ -7480,6 +7546,10 @@ class toolkit_UI():
             logger.error('No file paths found in the ingest call. Aborting ingest.')
             return False
 
+        # first, take care of settings that are not exclusively for transcribing, indexing etc. (e.g. metadata)
+        metadata_settings = \
+            self.form_to_ingest_metadata_settings(metadata_form_vars=form_vars.get('metadata_form_vars', {}), **kwargs)
+
         # convert the audio form variables to transcription settings
         # these settings will also establish if we perform the transcription or not
         transcription_settings = self.form_to_transcription_settings(**kwargs)
@@ -7497,19 +7567,43 @@ class toolkit_UI():
 
             transcription_settings['ingest_delete_render_info_file'] = False
 
+        # the validator below is also checking for this, but here we have better control on the display message
         if transcription_settings is None and video_indexing_settings is None:
-            self.notify_via_messagebox(type='warning',
-                                       message='Both transcription and video indexing are disabled. '
-                                               'Enable one of them to proceed.',
-                                       message_log='Nothing to send to queue '
-                                                   '- both transcription and video indexing are disabled.',
-                                       parent=self.get_window_by_id(ingest_window_id))
+            NotificationService(
+                message="Both transcription and video indexing are disabled.",
+                display_message="Both transcription and video indexing are disabled. Enable one of them to proceed.",
+                level='warning') \
+                .to('window', kwargs.get('ingest_window')) \
+                .push()
             return False
 
-        # add the transcription job(s) to the queue
-        if self.toolkit_ops_obj.add_media_to_queue(source_file_paths=file_paths, queue_id=queue_id,
-                                                   video_indexing_settings=video_indexing_settings,
-                                                   transcription_settings=transcription_settings):
+        try:
+            ingest_settings = IngestSettings(
+                metadata=metadata_settings,
+                transcription_settings=transcription_settings,
+                video_indexing_settings=video_indexing_settings,
+                queue_id=queue_id,
+                source_file_paths=file_paths,
+                retranscribe=kwargs.get('retranscribe', False),
+                transcription_file_path=kwargs.get('transcription_file_path', None),
+                ingest_delete_render_info_file=ingest_delete_render_info_file
+            )
+
+        # if the validation failed here, notify the user
+        except Exception as e:
+            NotificationService(
+                message="An error occurred while creating the ingest settings: {}".format(str(e)),
+                display_message="An error occurred while creating the ingest settings. Check logs for more info.",
+                level='error'
+            ) \
+                .add_message('Error', level='debug', exc_info=True) \
+                .to('window', kwargs.get('ingest_window')) \
+                .push()
+
+            return None
+
+        # add the ingest job(s) to the queue
+        if self.toolkit_ops_obj.add_media_to_queue(ingest_settings):
 
             # if we reached this point safely, just open the queue window
             self.open_queue_window()
@@ -7900,7 +7994,11 @@ class toolkit_UI():
 
         # pop an error message if we need to
         if pop_error:
-            messagebox.showerror(title="Error", message="Invalid time interval: " + time_interval_str)
+            messagebox.showerror(
+                title="Error",
+                message="Invalid time interval: " + time_interval_str,
+                parent=pop_error if isinstance(pop_error, tk.Tk) else None
+            )
 
         # return false if the time interval is invalid
         return False
@@ -20263,8 +20361,6 @@ class toolkit_UI():
         except:
             logger.error('Cannot parse assistant response.', exc_info=True)
 
-        # print(json.dumps(assistant_response_dict, indent=4))
-
         # get the text widget prompt prefix
         def minify_and_add_response(response_string, context_menu=None, **context_menu_kwargs):
             """
@@ -20603,7 +20699,6 @@ class toolkit_UI():
             logger.warning(
                 'Cannot parse assistant response as "{}". Lines not found in response dict.'.format(response_type))
 
-            # print(json.dumps(assistant_response_dict, indent=4))
             parsed = None
 
         elif response_type in ['transcription_json', 'story_json'] \
