@@ -3431,7 +3431,7 @@ class ToolkitOps:
         if resolve_data['currentTimeline'] is None:
             toolkit_UI_obj.notify_via_messagebox(
                 message='Timeline not available. Make sure that you\'ve opened a Timeline in Resolve.',
-                type='warning')
+                level='warning')
             return False
 
         else:
@@ -3646,7 +3646,7 @@ class ToolkitOps:
                 toolkit_UI_obj.notify_via_messagebox(
                     message='Bin clips not available. Make sure that a bin is opened in Resolve.\n\n'
                             'This doesn\'t work if multiple bins or smart bins are selected due to API.',
-                    type='warning')
+                    level='warning')
                 return False
 
             # execute operation without asking for any prompts
@@ -3710,7 +3710,7 @@ class ToolkitOps:
                 toolkit_UI_obj.notify_via_messagebox(title='Unavailable marker color',
                                                      message='The marker color you\'ve entered doesn\'t exist on the timeline.',
                                                      message_log="Aborting. User entered a marker color that doesn't exist on the timeline.",
-                                                     type='error'
+                                                     level='error'
                                                      )
 
                 return False

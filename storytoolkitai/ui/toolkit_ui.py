@@ -1125,13 +1125,13 @@ class toolkit_UI():
                     and input_variables['stai_api_key_var'].get() != self.stAI.config.get('stai_api_key', None):
 
                 if not self.stAI.check_api_key(input_variables['stai_api_key_var'].get()):
-                    self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Error', message='Invalid API key.')
+                    self.toolkit_UI_obj.notify_via_messagebox(level='error', title='Error', message='Invalid API key.')
                     return False
 
             # only allow values between 0 and 1 for transcription_speaker_detection_threshold
             if input_variables['transcription_speaker_detection_var'].get()\
             and not 0 < float(input_variables['transcription_speaker_detection_threshold_var'].get()) <= 1:
-                self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Error',
+                self.toolkit_UI_obj.notify_via_messagebox(level='error', title='Error',
                                                           message='Speaker detection threshold '
                                                                   'must be greater than 0, but maximum 1.')
                 return False
@@ -1154,7 +1154,7 @@ class toolkit_UI():
                 # only single, non-empty strings are allowed
                 for punctuation_mark in transcription_custom_punctuation_marks:
                     if len(punctuation_mark) != 1:
-                        self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Error',
+                        self.toolkit_UI_obj.notify_via_messagebox(level='error', title='Error',
                                                                   message='Invalid punctuation mark: {}\n'
                                                                           'Please use only single characters '
                                                                           'divided by an empty space.'
@@ -1265,7 +1265,7 @@ class toolkit_UI():
             if self.stAI.save_config():
 
                 # let the user know it worked
-                self.toolkit_UI_obj.notify_via_messagebox(type='info', title='Preferences Saved',
+                self.toolkit_UI_obj.notify_via_messagebox(level='info', title='Preferences Saved',
                                                           message='Preferences saved successfully.\n\n'
                                                                   'Please restart StoryToolkitAI for the new settings '
                                                                   'to take full effect.',
@@ -1277,7 +1277,7 @@ class toolkit_UI():
                 return True
 
             else:
-                self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Error',
+                self.toolkit_UI_obj.notify_via_messagebox(level='error', title='Error',
                                                           message='Preferences could not be saved.\n'
                                                                   'Check log for details.',
                                                           message_log='Preferences could not be saved',
@@ -1413,7 +1413,7 @@ class toolkit_UI():
                                        message='FFMPEG was not found on this machine.\n'
                                                'Please follow the installation instructions or StoryToolkitAI will '
                                                'not work correctly.',
-                                       type='error'
+                                       level='error'
                                        )
 
         # show welcome message, if it wasn't muted via configs
@@ -1647,7 +1647,7 @@ class toolkit_UI():
                 if not self.stAI.update_via_git():
                     # if the update failed, show an error message
                     self.notify_via_messagebox(
-                        type='error',
+                        level='error',
                         title='Unable to update',
                         message='Something went wrong with the automatic update process.\n\n'
                                 'Please check logs and try to update manually by running `git pull` '
@@ -3327,7 +3327,7 @@ class toolkit_UI():
                     title='Project rename failed',
                     message='Another project has the same name. Try again.'.format(project_name),
                     message_log='The project {} was not renamed.'.format(project_name),
-                    type='error',
+                    level='error',
                     parent=self.root
                 )
                 return False
@@ -3337,7 +3337,7 @@ class toolkit_UI():
                 title='Project rename failed',
                 message='Another project has the same name. Try again.'.format(project_name),
                 message_log='The project {} was not renamed.'.format(project_name),
-                type='error',
+                level='error',
                 parent=self.root
             )
             return False
@@ -3374,7 +3374,7 @@ class toolkit_UI():
                 title='Project deleted',
                 message='The project {} was deleted successfully.'.format(project_name),
                 message_log='The project {} was deleted successfully.'.format(project_name),
-                type='info',
+                level='info',
                 parent=self.root
             )
 
@@ -3392,7 +3392,7 @@ class toolkit_UI():
                 title='Project deletion failed',
                 message='The project {} was not deleted successfully. See logs for more info.'.format(project_name),
                 message_log='The project {} was not deleted successfully.'.format(project_name),
-                type='error',
+                level='error',
                 parent=self.root
             )
 
@@ -3452,7 +3452,7 @@ class toolkit_UI():
                 title='Project export',
                 message='The project {} was exported successfully.'.format(project_name),
                 message_log='The project was exported successfully to {}.'.format(project_name, export_path),
-                type='info',
+                level='info',
                 parent=self.root
             )
 
@@ -3464,7 +3464,7 @@ class toolkit_UI():
                 title='Project export failed',
                 message='The project {} was not exported successfully.'.format(project_name),
                 message_log='The project was not exported to {}.'.format(project_name, export_path),
-                type='error',
+                level='error',
                 parent=self.root
             )
 
@@ -3545,7 +3545,7 @@ class toolkit_UI():
             title='Project import failed',
             message='The project was not imported successfully.',
             message_log='The project was not imported from {}.'.format(import_path),
-            type='error',
+            level='error',
             parent=self.root
         )
 
@@ -7491,7 +7491,7 @@ class toolkit_UI():
 
         # if this returns false, it means that there are no files to ingest
         else:
-            self.notify_via_messagebox(type='warning',
+            self.notify_via_messagebox(level='warning',
                                        message='Cannot start ingest. See log for more details. ',
                                        parent=self.get_window_by_id(ingest_window_id)
                                        )
@@ -7950,7 +7950,7 @@ class toolkit_UI():
                                                            'Please try again.'.format(time_str),
                                                    message_log="Invalid Timecode or Frame Rate.",
                                                    parent=window,
-                                                   type='warning')
+                                                   level='warning')
                         return None
 
                 # if the time isn't a float or an int, it means that the timecode couldn't be converted to seconds
@@ -8176,7 +8176,7 @@ class toolkit_UI():
                 if full_srt_file_path is None or not os.path.isfile(full_srt_file_path):
                     self.toolkit_UI_obj.notify_via_messagebox(
                         title="Cannot find SRT file",
-                        type="error",
+                        level="error",
                         message='No SRT file seems to be linked to this transcription. Cannot import to bin.',
                     )
                     return
@@ -9618,7 +9618,7 @@ class toolkit_UI():
                     title='No project found',
                     message_log="No project is currently open.",
                     message='No project found. Please open a project first.',
-                    type='warning',
+                    level='warning',
                     parent=self.toolkit_UI_obj.get_window_by_id(window_id=window_id)
                 )
                 return
@@ -9741,7 +9741,7 @@ class toolkit_UI():
                         if marker_duration_tc.frames <= 1:
                             self.toolkit_UI_obj.notify_via_messagebox(title='Cannot add marker',
                                                                       message='Not enough space to add marker on timeline.',
-                                                                      type='warning',
+                                                                      level='warning',
                                                                       parent=self.toolkit_UI_obj.windows[window_id]
                                                                       )
                             return False
@@ -9831,7 +9831,7 @@ class toolkit_UI():
                 self.toolkit_UI_obj.notify_via_messagebox(title='Not supported',
                                                           message='Export as {} is not supported.'
                                                           .format(export_file_path.split('.')[-1]),
-                                                          type='warning'
+                                                          level='warning'
                                                           )
                 return False
 
@@ -9882,7 +9882,7 @@ class toolkit_UI():
                                                           message='The SRT file was exported successfully.',
                                                           message_log='The SRT file was exported successfully to {}.'
                                                             .format(export_file_path),
-                                                          type='info',
+                                                          level='info',
                                                           parent=window
                                                           )
 
@@ -9895,7 +9895,7 @@ class toolkit_UI():
                 # notify the user
                 self.toolkit_UI_obj.notify_via_messagebox(title='No segments to export',
                                                           message='No segments found in this transcription.',
-                                                          type='warning',
+                                                          level='warning',
                                                           parent=window
                                                           )
 
@@ -9947,7 +9947,7 @@ class toolkit_UI():
                 # notify the user
                 self.toolkit_UI_obj.notify_via_messagebox(title='Text file export',
                                                           message='The text file was exported successfully.',
-                                                          type='info'
+                                                          level='info'
                                                           )
 
                 # focus back on the window
@@ -9959,7 +9959,7 @@ class toolkit_UI():
                 # notify the user
                 self.toolkit_UI_obj.notify_via_messagebox(title='No transcription data',
                                                           message='No transcription data was found.',
-                                                          type='warning'
+                                                          level='warning'
                                                           )
 
                 # focus back on the window
@@ -10007,7 +10007,7 @@ class toolkit_UI():
                     title='No timecode data',
                     message='No timecode data was found for this transcription.\n\nAborting AVID DS export.',
                     message_log='No timecode data was found for this transcription. Aborting AVID DS export.',
-                    type='error',
+                    level='error',
                     parent=self.toolkit_UI_obj.get_window_by_id(window_id)
                 )
 
@@ -10027,7 +10027,7 @@ class toolkit_UI():
                 # notify the user
                 self.toolkit_UI_obj.notify_via_messagebox(title='AVID DS file export',
                                                           message='The AVID DS file was exported successfully.',
-                                                          type='info',
+                                                          level='info',
                                                           parent=self.toolkit_UI_obj.get_window_by_id(window_id)
                                                           )
 
@@ -10040,7 +10040,7 @@ class toolkit_UI():
                 # notify the user
                 self.toolkit_UI_obj.notify_via_messagebox(title='No transcription data',
                                                           message='No transcription data was found.',
-                                                          type='warning',
+                                                          level='warning',
                                                           parent=self.toolkit_UI_obj.get_window_by_id(window_id)
                                                           )
 
@@ -10088,7 +10088,7 @@ class toolkit_UI():
                     title='No timecode data found',
                     message='No timecode data was found for this transcription.\n\nAborting Fusion Comp export.',
                     message_log='No timecode data was found for this transcription. Aborting Fusion Comp export.',
-                    type='error'
+                    level='error'
                 )
                 return False
 
@@ -10106,7 +10106,7 @@ class toolkit_UI():
                 # notify the user
                 self.toolkit_UI_obj.notify_via_messagebox(title='Fusion Comp file export',
                                                           message='The Fusion Comp file was exported successfully.',
-                                                          type='info'
+                                                          level='info'
                                                           )
 
                 # focus back on the window
@@ -10118,7 +10118,7 @@ class toolkit_UI():
                 # notify the user
                 self.toolkit_UI_obj.notify_via_messagebox(title='No transcription data',
                                                           message='No transcription data was found.',
-                                                          type='warning'
+                                                          level='warning'
                                                           )
 
                 # focus back on the window
@@ -10153,7 +10153,7 @@ class toolkit_UI():
                 self.toolkit_UI_obj.notify_via_messagebox(
                     title='No export templates found',
                     message='No export templates found in the user data directory.',
-                    type='warning',
+                    level='warning',
                     parent=parent_window
                 )
 
@@ -10239,7 +10239,7 @@ class toolkit_UI():
                 self.toolkit_UI_obj.notify_via_messagebox(
                     title='Export using custom template',
                     message='The file was exported successfully.',
-                    type='info',
+                    level='info',
                     parent=parent_window
                 )
 
@@ -10250,7 +10250,7 @@ class toolkit_UI():
                 self.toolkit_UI_obj.notify_via_messagebox(
                     title='Export using custom template',
                     message='The file was not exported successfully.',
-                    type='error',
+                    level='error',
                     parent=parent_window
                 )
 
@@ -10345,7 +10345,7 @@ class toolkit_UI():
                 or user_input['transcription_speaker_detection_threshold'] == '' \
                 or not 0 < float(user_input['transcription_speaker_detection_threshold']) <= 1:
 
-                    self.toolkit_UI_obj.notify_via_messagebox(type='error', title='Invalid Threshold',
+                    self.toolkit_UI_obj.notify_via_messagebox(level='error', title='Invalid Threshold',
                                                               message='Speaker detection threshold '
                                                                       'must be greater than 0, but maximum 1.',
                                                               parent=window)
@@ -10624,7 +10624,7 @@ class toolkit_UI():
                 self.toolkit_UI_obj.notify_via_messagebox(title='Cannot align line to playhead',
                                                           message='Cannot align to playhead: '
                                                                   'Resolve playhead timecode not available.',
-                                                          type='error')
+                                                          level='error')
                 return False
 
             # convert line_index to segment_index (not segment_id!)
@@ -10659,7 +10659,7 @@ class toolkit_UI():
                 self.toolkit_UI_obj.notify_via_messagebox(title='Cannot align line to playhead',
                                                           message='Cannot align to playhead: '
                                                                   'Start time is after end time.',
-                                                          type='error')
+                                                          level='error')
                 return False
 
             # check if the start time is before the previous segment end time
@@ -10669,7 +10669,7 @@ class toolkit_UI():
                     self.toolkit_UI_obj.notify_via_messagebox(title='Cannot align line to playhead',
                                                               message='Cannot align to playhead: '
                                                                       'Start time is before previous segment\'s end time.',
-                                                              type='error')
+                                                              level='error')
                     return False
 
             # check if the end time is after the next segment start time
@@ -10679,7 +10679,7 @@ class toolkit_UI():
                     self.toolkit_UI_obj.notify_via_messagebox(title='Cannot align line to playhead',
                                                               message='Cannot align to playhead: '
                                                                       'End time is after next segment\'s start time.',
-                                                              type='error')
+                                                              level='error')
                     return False
 
             # mark the transcript as modified
@@ -10787,7 +10787,7 @@ class toolkit_UI():
                                                                   .format(user_input['goto_timecode']),
                                                                   message_log='Invalid Timecode "{}".'
                                                                   .format(user_input['goto_timecode']),
-                                                                  type='warning',
+                                                                  level='warning',
                                                                   parent=window
                                                                   )
 
@@ -10883,7 +10883,7 @@ class toolkit_UI():
                                                                       "you entered is invalid. Please try again.",
                                                               message_log="Invalid Timecode or Frame Rate.",
                                                               parent=window,
-                                                              type='warning')
+                                                              level='warning')
 
         def get_timecode_data_from_transcription(self, window_id, notify_if_fail=False, ask_again=False):
             """
@@ -10908,7 +10908,7 @@ class toolkit_UI():
                                                                   'Transcription data invalid or not found',
                                                           message_log='Transcription data invalid or not found.',
                                                           parent=window,
-                                                          type='error')
+                                                          level='error')
                 return None, None
 
             timecode_data = window_transcription.get_timecode_data()
@@ -10945,7 +10945,7 @@ class toolkit_UI():
             if notify_if_fail:
                 self.toolkit_UI_obj.notify_via_messagebox(
                     title='No timecode data',
-                    type="warning",
+                    level="warning",
                     message='No timecode data found in transcription.\n\nUsing seconds as time units.',
                     message_log='No timecode data found in transcription {}. Using seconds as time units.'
                     .format(window_transcription.transcription_file_path),
@@ -11858,7 +11858,7 @@ class toolkit_UI():
                                         "the segment you're splitting.\n\n"
                                         "You can only split a segment between its start and end times.",
                                 parent=window,
-                                type='error')
+                                level='error')
                             continue
 
                         elif float(split_time_seconds) <= float(split_time_seconds_min):
@@ -11868,14 +11868,14 @@ class toolkit_UI():
                                         "the segment you're splitting.\n\n"
                                         "You can only split a segment between its start and end times.",
                                 parent=window,
-                                type='error')
+                                level='error')
                             continue
 
                     except ValueError:
                         self.toolkit_UI_obj.notify_via_messagebox(
                             title='Time Value Error',
                             message='Invalid time value entered. Try again.'.format(split_time_seconds),
-                            type='error')
+                            level='error')
                         continue
 
                     except:
@@ -12708,7 +12708,7 @@ class toolkit_UI():
                                        message='The file \n{}\nis not a transcription file.'
                                        .format(os.path.basename(transcription_json_file_path)),
                                        message_log='The file {} is not a transcription file.',
-                                       type='error')
+                                       level='error')
             return False
 
         # open the transcript in a transcript window
@@ -12844,7 +12844,7 @@ class toolkit_UI():
 
                 self.notify_via_messagebox(
                     title='Not found',
-                    type='error',
+                    level='error',
                     message='The transcription file {} cannot be found.'
                     .format(transcription.transcription_file_path)
                 )
@@ -12853,7 +12853,7 @@ class toolkit_UI():
         if not transcription.is_transcription_file:
             self.notify_via_messagebox(
                 title='Invalid Transcription',
-                type='error',
+                level='error',
                 message='The file {} is not a valid transcription file.'
                 .format(transcription.transcription_file_path)
             )
@@ -12864,7 +12864,7 @@ class toolkit_UI():
         if transcription.incomplete:
             self.notify_via_messagebox(
                 title="Incomplete Transcription",
-                type="warning",
+                level="warning",
                 message="This transcription looks incomplete.\n\n" \
                         "Which means that it's either still being processed, or that something went wrong.\n\n"
                         "To fix this, you can simply press retranscribe "
@@ -13251,7 +13251,7 @@ class toolkit_UI():
 
             #     self.notify_via_messagebox(title='No segments',
             #                                message=no_segments_message,
-            #                                type='warning'
+            #                                level='warning'
             #                                )
             #     self.destroy_window_(window_id=t_window_id)
 
@@ -13839,7 +13839,7 @@ class toolkit_UI():
                     title="Cannot link file",
                     message="The file {} is not a valid transcription file.".format(
                         os.path.basename(new_file_path)),
-                    type='warning',
+                    level='warning',
                     parent=self.root
                 )
 
@@ -13858,7 +13858,7 @@ class toolkit_UI():
                     title="Cannot link file",
                     message="The file {} is not a valid story file.".format(
                         os.path.basename(new_file_path)),
-                    type='warning',
+                    level='warning',
                     parent=self.root
                 )
 
@@ -13877,7 +13877,7 @@ class toolkit_UI():
                 message="The file {} cannot be linked to the project.".format(
                     os.path.basename(new_file_path)),
 
-                type='warning',
+                level='warning',
                 parent=self.root
             )
 
@@ -13942,7 +13942,7 @@ class toolkit_UI():
                 title='Already Linked',
                 message='The file {} is already linked in the project. Try again.'.format(
                     os.path.basename(new_file_path), object_type),
-                type='warning',
+                level='warning',
                 parent=self.root
             )
             return False
@@ -16569,7 +16569,7 @@ class toolkit_UI():
                         message_log="Unable to check timecode data - transcription not found: {} "
                             .format(source_transcription_file_path),
                         parent=window,
-                        type='warning'
+                        level='warning'
                     )
 
                     # don't mention this transcription again
@@ -16604,7 +16604,7 @@ class toolkit_UI():
                             message_log="Timecode data not available for: {} "
                             .format(source_transcription_file_path),
                             parent=window,
-                            type='warning'
+                            level='warning'
                         )
 
                         # don't ask again
@@ -16636,7 +16636,7 @@ class toolkit_UI():
                             .format(source_transcription.transcription_file_path),
                             message_log="Source media not found for transcription: {} ",
                             parent=window,
-                            type='warning'
+                            level='warning'
                         )
 
                         not_found_source_media.append(source_transcription_file_path)
@@ -16653,7 +16653,7 @@ class toolkit_UI():
                                 .format(source_transcription.transcription_file_path,
                                         source_transcription.audio_file_path),
                             parent=window,
-                            type='warning'
+                            level='warning'
                         )
 
                         not_found_source_media.append(source_transcription_file_path)
@@ -16716,7 +16716,7 @@ class toolkit_UI():
                 # notify the user
                 toolkit_UI_obj.notify_via_messagebox(title='Text file export',
                                                      message='The text file was exported successfully.',
-                                                     type='info',
+                                                     level='info',
                                                      parent=window
                                                      )
 
@@ -16729,7 +16729,7 @@ class toolkit_UI():
                 # notify the user
                 toolkit_UI_obj.notify_via_messagebox(title='No story data',
                                                      message='No story data was found.',
-                                                     type='warning',
+                                                     level='warning',
                                                      parent=window
                                                      )
 
@@ -16849,7 +16849,7 @@ class toolkit_UI():
                                                                  "you entered is invalid. Please try again.",
                                                          message_log="Invalid Timecode or Frame Rate.",
                                                          parent=window,
-                                                         type='warning')
+                                                         level='warning')
 
             # THE SAVE PATH
             # if we don't have a save file path, ask the user for it
@@ -16923,7 +16923,7 @@ class toolkit_UI():
                     toolkit_UI_obj.notify_via_messagebox(title='File export',
                                                          message="The file {} was exported successfully."
                                                          .format(os.path.basename(export_file_path)),
-                                                         type='info',
+                                                         level='info',
                                                          parent=window
                                                          )
                 else:
@@ -16935,7 +16935,7 @@ class toolkit_UI():
                         message_log="File export failed: {}"
                         .format(export_file_path),
                         parent=window,
-                        type='error'
+                        level='error'
                     )
 
                 # focus back on the window
@@ -16947,7 +16947,7 @@ class toolkit_UI():
                 # notify the user
                 toolkit_UI_obj.notify_via_messagebox(title='No story data',
                                                      message='No story data was found.',
-                                                     type='warning',
+                                                     level='warning',
                                                      parent=window
                                                      )
 
@@ -17024,7 +17024,7 @@ class toolkit_UI():
         if not story.exists:
             self.notify_via_messagebox(
                 title='Not found',
-                type='error',
+                level='error',
                 message='The story file {} cannot be found.'
                 .format(story.story_file_path)
             )
@@ -17033,7 +17033,7 @@ class toolkit_UI():
         if not story.is_story_file:
             self.notify_via_messagebox(
                 title='Invalid Story file',
-                type='error',
+                level='error',
                 message='The file {} is not a valid story file.'
                 .format(story.story_file_path)
             )
@@ -17722,7 +17722,9 @@ class toolkit_UI():
         # abort if we don't have any search file paths (but don't show the message if the user aborted - none)
         if search_file_paths is not None and not search_file_paths:
            self.notify_via_messagebox(
-               type='info', message='No valid files found for search.', parent=self.get_window_by_id('main'))
+               level='info',
+               message='No valid files found for search.',
+               parent=self.get_window_by_id('main'))
            return None
 
         if not search_file_paths:
@@ -17980,7 +17982,7 @@ class toolkit_UI():
                                 message="The indexing was either canceled or it failed for this search. \n"
                                         "Please re-open this window if you want to try again."
                                 .format(search_window_title),
-                                type='error',
+                                level='error',
                                 parent=search_window,
                                 message_log="Indexing failed for search window {}.".format(search_window_title)
                             )
@@ -20900,27 +20902,50 @@ class toolkit_UI():
         except:
             logger.error("Cannot notify user via OS", exc_info=True)
 
-    def notify_via_messagebox(self, type='info', message_log=None, message=None, **options):
+    @staticmethod
+    def notify_via_messagebox(level='info', message_log=None, message=None, **options):
+        """
+        This opens up a message box on the ui and adds the message to the log.
+
+        If the message_log is None, the message is used for the logger
+        If the message_log is False, the message is not added to the logger
+
+        :param level: str, the level of the message (error, warning, info, debug);
+                      if None is specified, we'll assume it's a debug message
+        :param message_log: str, the message to sent to logger;
+                            if this is None, the message will be user;
+                            if it's False, we don't log
+        :param message: str, the message to show to the user using messagebox
+        :param options: dict, the options to pass to the messagebox (for e.g. the parent window object)
+
+        """
 
         if message_log is None:
             message_log = message
 
         # alert the user using the messagebox according to the type
         # and log the message
-        if type == 'error':
+        if level == 'error':
             messagebox.showerror(message=message, **options)
-            logger.error(message_log)
 
-        elif type == 'info':
+            if message_log is not False:
+                logger.error(message_log)
+
+        elif level == 'info':
             messagebox.showinfo(message=message, **options)
-            logger.info(message_log)
 
-        elif type == 'warning':
+            if message_log is not False:
+                logger.info(message_log)
+
+        elif level == 'warning':
             messagebox.showwarning(message=message, **options)
-            logger.warning(message_log)
 
-        # if no type was passed, just log the message
-        else:
+            if message_log is not False:
+                logger.warning(message_log)
+
+        # if no level was passed and the message_log is not False,
+        # just log the message
+        elif message_log is not False:
             logger.debug(message_log)
 
     @staticmethod
