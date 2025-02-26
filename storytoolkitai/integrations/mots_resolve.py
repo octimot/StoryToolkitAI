@@ -187,8 +187,8 @@ class MotsResolve:
                 elif platform.system() == 'Linux':
                     default_resolve_dir = '/opt/resolve/'
 
-                    # @todo find out the executable name for Davinci Resolve on Linux
-                    executable = '/bin/resolve'
+                    # Confirmed working on Fedora 40 with KDE Plasma 6 (Wayland)
+                    executable = 'bin/resolve'
 
                 else:
                     # check if the default path has it...
@@ -223,7 +223,8 @@ class MotsResolve:
                     expectedPath = os.getenv(
                         'PROGRAMDATA') + "\\Blackmagic Design\\DaVinci Resolve\\Support\\Developer\\Scripting\\Modules\\"
                 elif sys.platform.startswith("linux"):
-                    expectedPath = "/opt/resolve/libs/Fusion/Modules/"
+                    # Confirmed working on Fedora 40 with KDE lasma 6 (Wayland).
+                    expectedPath = "/opt/resolve/Developer/Scripting/Modules/"
 
                 # check if the default path has it...
                 self.logger.debug("Unable to find module DaVinciResolveScript from PYTHONPATH "
