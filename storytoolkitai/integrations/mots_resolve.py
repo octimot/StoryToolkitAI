@@ -11,6 +11,7 @@ import os
 import platform
 import json
 from threading import Timer
+import re
 
 from timecode import Timecode
 
@@ -73,61 +74,54 @@ class MotsResolve:
             self.api_module_available = False
 
     def python_check(self):
-        '''
-        Checks if the default Python version is the same as the one used by the current running script
-        If this is not the case, the API will not work properly on Windows machines.
-        '''
-
-        # there seems to be a problem on MacOS too
-        #if sys.platform == 'win32':
+        """
+        Checks if the default Python version is the same as the one used by the current running script.
+        If not, the API may not work properly on Windows machines.
+        """
 
         from packaging import version
 
-        # get the current Python major and minor version numbers
+        if platform.system() != 'Windows':
+            self.logger.debug("Skipping Python version check on non-Windows system.")
+            return True
+
+        # Get the current Python version.
         current_python_version = platform.python_version()
 
-        # get the list of all Python versions installed on this machine using py -0
+        # Run the 'py -0' command to list installed Python versions.
         try:
             result = subprocess.run(['py', '-0'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             output_str = result.stdout.decode('utf-8').strip()
-
-        # if py is not found, assume the Python version is fine - the latest python versions should come with py
         except FileNotFoundError:
             self.logger.debug("py not found on this machine. Skipping Python version check.")
             return True
 
-        output_str = output_str.split('\n')
+        # Compile a regex to find version numbers (e.g. "3.11" or "3.10.5")
+        version_regex = re.compile(r'(\d+\.\d+(?:\.\d+)?)')
 
-        # take all the lines that start with a dash
+        output_lines = output_str.split('\n')
         higher_python_versions = []
         all_python_versions = []
-        for line in output_str:
 
-            if line.strip().startswith('-'):
-                # get the version number
-                found_python_version = line.strip()
+        for line in output_lines:
+            # Process lines that likely contain a version number.
 
-                # remove the dash in front of the version number
-                found_python_version = found_python_version[1:]
+            if line.strip().startswith('-') or line.strip().upper().startswith('V:'):
+                # Search for a version number in the line.
+                match = version_regex.search(line)
+                if match:
+                    found_version = match.group(1)
+                    # Add to the complete list of detected versions.
+                    all_python_versions.append(found_version)
+                    # Compare to the current Python version.
+                    if version.parse(found_version) > version.parse(current_python_version):
+                        higher_python_versions.append(found_version)
+                else:
+                    self.logger.debug(f"No version number found in line: {line}")
 
-                # remove the -64 suffix if it's there
-                found_python_version = found_python_version.replace('-64', '')
-
-                # get the major and minor version numbers
-                #found_python_version = '.'.join(found_python_version.split('.')[:2])
-
-                # add the version to the list of versions
-                # (only if it's higher than the current version)
-                if version.parse(found_python_version) > version.parse(current_python_version):
-                    higher_python_versions.append(found_python_version)
-
-                # add the version to the list of all versions
-                all_python_versions.append(found_python_version)
-
-        # check if more than one Python version was found
+        # Warn if there are other installed versions higher than the current one.
         if len(higher_python_versions) > 1 or \
                 (len(higher_python_versions) == 1 and current_python_version not in higher_python_versions):
-
             self.logger.warning("Found the following Python versions on this machine: {}"
                                 .format(", ".join(all_python_versions)))
             self.logger.warning("Current installation runs on Python version {}."
@@ -135,11 +129,9 @@ class MotsResolve:
             self.logger.warning("DaVinci Resolve API on Windows might not work if this is the case.")
             self.logger.warning("Please uninstall the following Python versions: {}"
                                 .format(", ".join(higher_python_versions)))
-
             self.logger.warning("You can use --skip-python-check to skip this check, but the tool might not start.")
             self.logger.warning("Or, install the tool using git into a virtual environment with the highest Python "
                                 "version available on your machine on your own risk.")
-
             return False
 
         return True
