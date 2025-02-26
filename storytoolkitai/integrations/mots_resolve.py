@@ -63,7 +63,7 @@ class MotsResolve:
 
         # only initialize the Resolve API if the Python version check is successful
         # (if the user did not pass --skip-python-check via the command line)
-        if self.python_check() or '--skip-python-check' in sys.argv:
+        if '--skip-python-check' in sys.argv or self.python_check():
 
             # initialize the Resolve API
             self.api = self.get_resolve()
