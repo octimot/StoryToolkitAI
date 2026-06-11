@@ -837,6 +837,69 @@ LLM_EXCLUDED_MODELS = {
     ]
 }
 
+class ChatLiteLLM(ChatGPT):
+    """LiteLLM-backed assistant for 100+ LLM providers via litellm SDK."""
+
+    def _request(self, chat_history, settings=None, **kwargs):
+        if settings is None:
+            settings = dict()
+
+        try:
+            import litellm
+
+            request_kwargs = {
+                'max_tokens': settings.get('max_length', 1024),
+            }
+
+            chat_history_copy = copy.deepcopy(chat_history)
+
+            call_kwargs = {
+                'model': self.model_name,
+                'messages': chat_history_copy,
+                'temperature': settings.get('temperature', 1),
+                'top_p': settings.get('top_p', 1),
+                'timeout': settings.get('timeout', 30),
+                'drop_params': True,
+                **request_kwargs,
+            }
+            if self.api_key:
+                call_kwargs['api_key'] = self.api_key
+
+            response = litellm.completion(**call_kwargs)
+
+            result = ''
+            for choice in response.choices:
+                result += choice.message.content
+
+                if kwargs.get('save_to_history', True):
+                    self.chat_history.append({"role": "assistant", "content": result})
+                    self._last_assistant_message_idx = len(self.chat_history) - 1
+
+            self.add_usage(
+                tokens_in=response.usage.completion_tokens,
+                tokens_out=response.usage.prompt_tokens,
+            )
+
+            result_reasoning, result_response = AssistantUtils.split_reasoning_from_response(result)
+
+            return AssistantResponse(
+                completion=result_response,
+                reasoning=result_reasoning,
+                usage=response.usage,
+            ), chat_history
+
+        except Exception as e:
+            logger.debug('Error sending query to LiteLLM: ', exc_info=True)
+
+            error = str(e)
+            if len(error) > 0:
+                error += '\n'
+            error += "There seems to be a problem with the LiteLLM connection. " \
+                     "Please check your API keys and model name."
+
+            return AssistantResponse(error=error), chat_history
+
+
 # for OpenAI or storytoolkit.ai provided models, leave the base_url as None (or don't define it)
 # also, the api key for these models will be picked up from the config.json (unless it's specified below)
 
@@ -903,6 +966,28 @@ LLM_AVAILABLE_MODELS = {
             'description': 'Sergei-3.5',
             'handler': ChatGPT,
             "base_url": "https://api.storytoolkit.ai/assistant/v1"
+        },
+    },
+    'LiteLLM': {
+        'anthropic/claude-sonnet-4-6': {
+            'description': 'Claude Sonnet 4.6 (via LiteLLM)',
+            'handler': ChatLiteLLM,
+        },
+        'openai/gpt-4o': {
+            'description': 'GPT-4o (via LiteLLM)',
+            'handler': ChatLiteLLM,
+        },
+        'openai/gpt-4o-mini': {
+            'description': 'GPT-4o Mini (via LiteLLM)',
+            'handler': ChatLiteLLM,
+        },
+        'deepseek/deepseek-chat': {
+            'description': 'DeepSeek Chat (via LiteLLM)',
+            'handler': ChatLiteLLM,
+        },
+        'groq/llama-3.3-70b-versatile': {
+            'description': 'Llama 3.3 70B via Groq (via LiteLLM)',
+            'handler': ChatLiteLLM,
         },
     }
 }
