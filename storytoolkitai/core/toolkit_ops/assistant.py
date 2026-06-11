@@ -857,11 +857,12 @@ class ChatLiteLLM(ChatGPT):
                 'model': self.model_name,
                 'messages': chat_history_copy,
                 'temperature': settings.get('temperature', 1),
-                'top_p': settings.get('top_p', 1),
                 'timeout': settings.get('timeout', 30),
                 'drop_params': True,
                 **request_kwargs,
             }
+            if 'top_p' in settings:
+                call_kwargs['top_p'] = settings['top_p']
             if self.api_key:
                 call_kwargs['api_key'] = self.api_key
 
