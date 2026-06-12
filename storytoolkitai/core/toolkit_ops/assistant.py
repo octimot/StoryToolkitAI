@@ -594,6 +594,13 @@ class AssistantUtils:
                 logger.error('Cannot find provider "{}".'.format(model_provider))
                 raise KeyError
 
+            # LiteLLM accepts any model string dynamically - auto-register if not already present
+            if model_provider == 'LiteLLM' and model_name not in LLM_AVAILABLE_MODELS.get('LiteLLM', {}):
+                LLM_AVAILABLE_MODELS.setdefault('LiteLLM', {})[model_name] = {
+                    'description': model_name,
+                    'handler': ChatLiteLLM,
+                }
+
             # check if the model is in the available models from the provider
             provider_models = AssistantUtils.assistant_available_models(provider=model_provider)
 
@@ -969,28 +976,7 @@ LLM_AVAILABLE_MODELS = {
             "base_url": "https://api.storytoolkit.ai/assistant/v1"
         },
     },
-    'LiteLLM': {
-        'anthropic/claude-sonnet-4-6': {
-            'description': 'Claude Sonnet 4.6 (via LiteLLM)',
-            'handler': ChatLiteLLM,
-        },
-        'openai/gpt-4o': {
-            'description': 'GPT-4o (via LiteLLM)',
-            'handler': ChatLiteLLM,
-        },
-        'openai/gpt-4o-mini': {
-            'description': 'GPT-4o Mini (via LiteLLM)',
-            'handler': ChatLiteLLM,
-        },
-        'deepseek/deepseek-chat': {
-            'description': 'DeepSeek Chat (via LiteLLM)',
-            'handler': ChatLiteLLM,
-        },
-        'groq/llama-3.3-70b-versatile': {
-            'description': 'Llama 3.3 70B via Groq (via LiteLLM)',
-            'handler': ChatLiteLLM,
-        },
-    }
+    'LiteLLM': {}
 }
 
 # load additional LLM models from the llm_models.json file in USER_DATA_PATH
