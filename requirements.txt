@@ -48,3 +48,7 @@ soxr>=0.3.7
 pydantic>=2.10.6
 speechbrain==0.5.16
 pyannote.audio>=2.0.1
+
+# optional - only needed for the TwelveLabs backend (Marengo search / Pegasus analysis)
+# install with: pip install twelvelabs
+# twelvelabs>=1.2.8
