@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [Unreleased]
+
+### Added
+- Optional TwelveLabs backend for semantic footage search (Marengo) and content understanding (Pegasus) - opt-in via a `twelvelabs_api_key` setting, local indexing remains the default ([details](https://github.com/octimot/StoryToolkitAI/blob/main/FEATURES.md#twelvelabs-backend-optional))
+
 ## [0.25.1] - 2025-02-17
 
 ### Changes

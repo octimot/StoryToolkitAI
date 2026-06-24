@@ -403,6 +403,25 @@ so you can actually feed it multiple transcription from different directories.
 
 This is basically like having a search engine on your machine.
 
+## TwelveLabs Backend (optional)
+
+The local video indexing and search always work fully offline and remain the default. As an optional, opt-in
+alternative, the tool can also use [TwelveLabs](https://twelvelabs.io) video foundation models:
+
+- **Marengo** for semantic footage search over a TwelveLabs index
+- **Pegasus** for content understanding (describe, summarise or answer questions about a clip)
+
+This is useful when you've already uploaded your footage to TwelveLabs and want to search or analyse it without
+indexing locally first. It is completely off unless you enable it.
+
+To use it:
+
+1. Install the optional dependency: `pip install twelvelabs`
+2. Add a `twelvelabs_api_key` setting to your app config (or set the `TWELVELABS_API_KEY` environment variable).
+
+You can grab a free API key at https://twelvelabs.io - there's a generous free tier. With no key set, nothing changes
+and the local backend is used as before.
+
 You can also pass multiple search terms, using the | (pipe) character to separate them. For example, if you want to
 search for "about life events" or "about sports", you can enter `about life events | about sports` in the search field. 
 The tool will then search for each term separately and return separate results for each term in the same search window.
