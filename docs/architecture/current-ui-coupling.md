@@ -798,10 +798,10 @@ Step 3 can be marked complete when:
 - [x] Assistant UI/global-state coupling has been inventoried.
 - [x] Startup/runtime-mode coupling has been inventoried.
 - [x] Shared live model usage has been classified rather than prematurely redesigned.
-- [ ] Run `audit_ui_coupling.sh` in the local `dev` checkout and review any additional matches.
-- [ ] Run `test_ui_import_boundary.py` in the local test suite.
-- [ ] Add any newly discovered coupling as another `Cxx` entry.
-- [ ] Commit the inventory and import guard.
+- [x] Run `audit_ui_coupling.sh` in the local `dev` checkout and review any additional matches.
+- [x] Run `test_ui_import_boundary.py` in the local test suite.
+- [x] Add any newly discovered coupling as another `Cxx` entry.
+- [x] Commit the inventory and import guard.
 
 Suggested commit:
 

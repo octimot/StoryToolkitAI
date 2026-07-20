@@ -49,11 +49,21 @@ run_search() {
   echo "Commit: $(git rev-parse HEAD 2>/dev/null || echo unknown)"
 } >"$REPORT"
 
+# Search only processing-owned packages here. UI files naturally contain these
+# names and would otherwise obscure the processing-to-UI dependencies.
 run_search \
   "Processing references to UI concepts" \
   -n --glob '*.py' \
   'toolkit_UI_obj|notify_via_os|notify_via_messagebox|AskDialog|ask_for_target_dir|receive_notification' \
-  storytoolkitai
+  storytoolkitai/core storytoolkitai/integrations
+
+# Record the places where the Tk application injects itself into processing or
+# passes itself to a processing operation.
+run_search \
+  "UI injects itself into processing" \
+  -n --glob '*.py' \
+  'toolkit_ops_obj\.toolkit_UI_obj|execute_resolve_operation\([^)]*self|resolve_check_timeline\([^)]*self' \
+  storytoolkitai/ui
 
 run_search \
   "Observer and callback coupling" \
