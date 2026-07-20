@@ -10,7 +10,18 @@ initial_target_dir = user_home_dir
 # on Mac, this is usually /Users/[username]/StoryToolkitAI
 # on Windows, it's normally C:\Users\[username]\StoryToolkitAI
 # on Linux, it's probably /home/[username]/StoryToolkitAI
-USER_DATA_PATH = os.path.join(user_home_dir, 'StoryToolkitAI')
+default_user_data_path = os.path.join(user_home_dir, 'StoryToolkitAI')
+
+# tests and future embedded deployments may override this location.
+# normal application behaviour remains unchanged when the variable is absent
+USER_DATA_PATH = os.path.abspath(
+    os.path.expanduser(
+        os.environ.get(
+            "STORYTOOLKITAI_USER_DATA_PATH",
+            default_user_data_path,
+        )
+    )
+)
 
 # create user data path if it doesn't exist
 if not os.path.exists(USER_DATA_PATH):
