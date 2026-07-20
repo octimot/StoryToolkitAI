@@ -11,7 +11,9 @@ from storytoolkitai import USER_DATA_PATH, APP_CONFIG_FILE_PATH, initial_target_
 from storytoolkitai.core.logger import logger
 from storytoolkitai.core.logger import Style as loggerStyle
 from storytoolkitai.core.post_update import post_update
+from storytoolkitai.core.versioning import is_update_available, parse_version
 
+from packaging.version import InvalidVersion
 from requests import get
 
 
@@ -464,8 +466,14 @@ class StoryToolkitAI:
                 latest_release = (
                     get('https://api.github.com/repos/octimot/storytoolkitai/releases/latest', timeout=5).json())
 
-                # remove the 'v' from the release version (tag)
-                online_version_raw = latest_release['tag_name'].replace('v', '')
+                # GitHub release tags commonly start with "v", for example "v1.0.0".
+                # Remove only that leading prefix.
+                # Using replace("v", "") would corrupt
+                # development version such as "v1.0.0.dev0".
+                online_version_raw = latest_release['tag_name'].strip()
+
+                if online_version_raw[:1].lower() == 'v':
+                    online_version_raw = online_version_raw[1:]
 
             # show exception if it fails, but don't crash
             except Exception as e:
@@ -497,56 +505,106 @@ class StoryToolkitAI:
                 # return False - no update available and None instead of an online version number
                 return False, None
 
-        # get the numbers in the version string
-        local_version = self.__version__.split(".")
-        online_version = online_version_raw.split(".")
+        # Parse versions using PEP 440 rules (e.g. X.X.X.dev0)
+        try:
+            local_version = parse_version(self.__version__)
+            online_version = parse_version(online_version_raw)
 
-        # did the use choose to ignore the update?
-        ignore_update = self.get_app_setting(setting_name='ignore_update', default_if_none=False)
+        except InvalidVersion as exc:
+            logger.warning(
+                'Unable to compare StoryToolkitAI versions. '
+                'Local version: "{}"; online version: "{}". Error: {}'.format(
+                    self.__version__,
+                    online_version_raw,
+                    exc,
+                )
+            )
 
-        # if they did, is the online version the same as the one they ignored?
-        if ignore_update and ignore_update.split(".") == online_version:
-            logger.info('Ignoring the new update (version {}) due to app settings.'.format(ignore_update))
+            return False, online_version_raw
 
-            # return False - no update available and the local version number instead of what's online
-            return False, self.__version__
+        # The normal update channel only offers newer published releases.
+        # Development versions are installed manually and are never presented
+        # as updates to stable users.
+        if not is_update_available(
+            local_value=self.__version__,
+            online_value=online_version_raw,
+        ):
+            if online_version.is_devrelease:
+                logger.debug(
+                    'Ignoring online development version {}.'.format(
+                        online_version_raw
+                    )
+                )
 
-        # take each number in the version string and compare it with the local numbers
-        for n in range(len(online_version)):
+            return False, online_version_raw
 
-            # only test for the first 3 numbers in the version string
-            if n < 3:
-                # if there's a number larger online, return true
-                if int(online_version[n]) > int(local_version[n]):
+        # Check whether the user chose to ignore this exact online release.
+        # Parse the saved value as well so equivalent forms such as "v1.0.0"
+        # and "1.0.0" compare correctly.
+        ignore_update = self.get_app_setting(
+            setting_name='ignore_update',
+            default_if_none=False,
+        )
 
-                    # if we're checking for a standalone release
-                    if self.standalone and 'latest_release' in locals() and 'assets' in latest_release:
+        if ignore_update:
+            try:
+                ignored_version = parse_version(str(ignore_update))
 
-                        release_files = latest_release['assets']
-                        if len(release_files) == 0:
-                            return False, online_version_raw
+            except InvalidVersion:
+                # Do not let an old or malformed config value prevent normal
+                # update checking. It can simply be ignored.
+                logger.warning(
+                    'Ignoring invalid ignore_update version value: {}'.format(
+                        ignore_update
+                    )
+                )
 
-                        # is there a release file for mac, given the current architecture?
-                        if platform.system() == 'Darwin':
-                            # check if there is a file that contains the current machine's architecture
-                            release_file = [f for f in release_files if platform.machine() in f['name'].lower()]
-                            return len(release_file) > 0, online_version_raw
+            else:
+                if ignored_version == online_version:
+                    logger.info(
+                        'Ignoring the new update (version {}) due to app '
+                        'settings.'.format(ignore_update)
+                    )
 
-                        # if we're on windows, check if there is a file that contains 'win'
-                        elif platform.system() == 'Windows':
-                            release_file = [f for f in release_files if 'win' in f['name'].lower()]
-                            return len(release_file) > 0, online_version_raw
+                    return False, online_version_raw
 
-                    # worst case, return True to make sure the user is notified despite the lack of a release file
-                    return True, online_version_raw
+        # For standalone builds, only announce the release when an appropriate
+        # downloadable artifact is available for the current platform.
+        if (
+            self.standalone
+            and 'latest_release' in locals()
+            and 'assets' in latest_release
+        ):
+            release_files = latest_release['assets']
 
-                # continue the search if there's no version mismatch
-                if int(online_version[n]) == int(local_version[n]):
-                    continue
-                break
+            if len(release_files) == 0:
+                return False, online_version_raw
 
-        # return false (and the online version) if the local and the online versions match
-        return False, online_version_raw
+            if platform.system() == 'Darwin':
+                machine = platform.machine().lower()
+
+                release_file = [
+                    release
+                    for release in release_files
+                    if machine in release['name'].lower()
+                ]
+
+                return len(release_file) > 0, online_version_raw
+
+            if platform.system() == 'Windows':
+                release_file = [
+                    release
+                    for release in release_files
+                    if 'win' in release['name'].lower()
+                ]
+
+                return len(release_file) > 0, online_version_raw
+
+            # Preserve the existing fallback for other standalone platforms:
+            # notify the user even when no platform-specific test is defined.
+            return True, online_version_raw
+
+        return True, online_version_raw
 
     @staticmethod
     def check_ffmpeg(stAI = None):

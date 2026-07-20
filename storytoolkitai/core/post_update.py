@@ -1,7 +1,9 @@
 import os.path
 
 from storytoolkitai.core.logger import logger
-import packaging
+from packaging.version import InvalidVersion
+
+from storytoolkitai.core.versioning import parse_version
 import time
 import subprocess
 import sys
@@ -80,40 +82,108 @@ def reinstall_requirements():
 
 def post_update(current_version, last_version, is_standalone=False):
     """
-    This checks when the last post_update was run and runs the post_update if the current version is newer.
+    Run post-update tasks required between two released app versions.
+
+    Development builds intentionally do not run automatic migrations or
+    advance the saved ``last_update`` checkpoint. This prevents a dev checkout
+    from changing the migration state used by a stable installation.
+
+    The caller restarts the application when this function returns ``True``.
     """
 
     if last_version is None:
-        logger.debug('The last version value was not passed. Skipping post-update tasks.')
+        logger.debug(
+            'The last version value was not passed. '
+            'Skipping post-update tasks.'
+        )
+
         return False
 
-    # use packaging to compare the versions
-    if packaging.version.parse(current_version) <= packaging.version.parse(last_version):
+    try:
+        parsed_current_version = parse_version(current_version)
+
+    except InvalidVersion as exc:
+        logger.error(
+            'The current StoryToolkitAI version "{}" is invalid: {}'.format(
+                current_version,
+                exc,
+            )
+        )
+
         return False
 
-    logger.debug('Running post-update tasks from {} to {}...'.format(last_version, current_version))
+    # Do not automatically migrate real user data while running a development
+    # checkout. Migrations intended for version 1 should be registered under
+    # the final "1.0.0" version and will run when that release is installed.
+    if parsed_current_version.is_devrelease:
+        logger.debug(
+            'Skipping post-update tasks for development version {}.'.format(
+                current_version
+            )
+        )
 
-    # go through all post_update_functions, and run them if they are newer than the last version
-    # start from the last version
+        return False
 
-    # get the list of versions
-    versions = list(post_update_functions.keys())
+    try:
+        parsed_last_version = parse_version(last_version)
 
-    # filter out the versions that are older than the last version
-    versions = \
-        [version for version in versions
-         if packaging.version.parse(last_version)
-         < packaging.version.parse(version)
-         <= packaging.version.parse(current_version)
-         ]
+    except InvalidVersion as exc:
+        logger.error(
+            'The saved last_update version "{}" is invalid: {}'.format(
+                last_version,
+                exc,
+            )
+        )
 
-    # go through the versions in order
+        return False
+
+    if parsed_current_version <= parsed_last_version:
+        return False
+
+    logger.debug(
+        'Running post-update tasks from {} to {}...'.format(
+            last_version,
+            current_version,
+        )
+    )
+
+    try:
+        # Sort by parsed version rather than relying on dictionary insertion
+        # order. This also supports future prerelease or post-release keys.
+        versions = sorted(
+            [
+                version
+                for version in post_update_functions
+                if (
+                    parsed_last_version
+                    < parse_version(version)
+                    <= parsed_current_version
+                )
+            ],
+            key=parse_version,
+        )
+
+    except InvalidVersion as exc:
+        logger.error(
+            'A post-update task has an invalid version key: {}'.format(exc)
+        )
+
+        return False
+
     for version in versions:
+        logger.info(
+            'Running post-update tasks for {}...'.format(version)
+        )
 
-        # run the post_update function
-        logger.info('Running post-update tasks for {}...'.format(version))
-        post_update_functions[version](is_standalone=is_standalone)
+        # Preserve the current behavior: individual post-update return values
+        # do not change whether the version transition is recorded.
+        post_update_functions[version](
+            is_standalone=is_standalone,
+        )
 
+    # Returning True tells StoryToolkitAI.__init__ to save the new
+    # last_update value and restart once. This is retained for stable releases,
+    # even when no version-specific migration was registered.
     return True
 
 
