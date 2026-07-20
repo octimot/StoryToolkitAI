@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from storytoolkitai.core.engine import StoryToolkitEngine
+from storytoolkitai.core.events import EngineEvent, EventEmitter
 
 
 def _fake_task(**kwargs: Any) -> dict[str, Any]:
@@ -118,9 +119,13 @@ class FakeProcessingQueue:
 
 
 class FakeToolkitOps:
-    """ToolkitOps replacement containing only the processing queue."""
+    """ToolkitOps replacement containing the engine's current dependencies."""
 
     def __init__(self) -> None:
+        # the real ToolkitOps owns one shared emitter,
+        # the fake mirrors that public shape without
+        # importing the heavyweight processing module.
+        self.events = EventEmitter()
         self.processing_queue = FakeProcessingQueue()
 
 
@@ -248,4 +253,47 @@ def test_cancel_unknown_job_returns_false(
 
     assert result is False
     assert toolkit_ops.processing_queue.cancel_requests == ["missing-job"]
+
+def test_engine_subscriber_receives_processing_event(
+    engine: StoryToolkitEngine,
+    toolkit_ops: FakeToolkitOps,
+) -> None:
+    """Events published by processing reach subscribers through the engine."""
+
+    received: list[EngineEvent] = []
+    engine.subscribe(received.append)
+
+    event = EngineEvent(
+        type="job.changed",
+        data={
+            "job_id": "job-queued",
+            "status": "processing",
+        },
+    )
+    toolkit_ops.events.emit(event)
+
+    assert received == [event]
+
+
+def test_engine_unsubscribe_stops_processing_events(
+    engine: StoryToolkitEngine,
+    toolkit_ops: FakeToolkitOps,
+) -> None:
+    """The engine can remove a previously subscribed event listener."""
+
+    received: list[EngineEvent] = []
+    engine.subscribe(received.append)
+    engine.unsubscribe(received.append)
+
+    toolkit_ops.events.emit(
+        EngineEvent(
+            type="job.changed",
+            data={
+                "job_id": "job-queued",
+                "status": "processing",
+            },
+        )
+    )
+
+    assert received == []
 

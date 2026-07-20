@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from storytoolkitai.core.logger import logger
+from storytoolkitai.core.events import EventEmitter
 
 from storytoolkitai.integrations.mots_resolve import MotsResolve
 
@@ -251,13 +252,34 @@ class NotificationService:
 
 class ToolkitOps:
 
-    def __init__(self, stAI=None, disable_resolve_api=False):
+    def __init__(
+        self,
+        stAI=None,
+        disable_resolve_api=False,
+        event_emitter=None,
+    ):
 
         # this will be used to store all the transcripts that are ready to be transcribed
         self.transcription_queue = {}
 
         # keep a reference to the StoryToolkitAI object here if one was passed
         self.stAI = stAI
+
+        # Processing components share one UI-independent event emitter.
+        #
+        # An emitter can be supplied by tests or application startup.
+        # Normal construction creates one here.
+        # Processing code publishes events but does not know which UI,
+        # if any, is listening.
+        self.events = (
+            event_emitter
+
+            # using explicit is not None
+            # avoids accidentally replacing a custom emitter
+            # because it has a false-like behavior
+            if event_emitter is not None
+            else EventEmitter()
+        )
 
         # initialize the toolkit search engine
         self.t_search_obj = ToolkitSearch(toolkit_ops_obj=self)
@@ -301,7 +323,12 @@ class ToolkitOps:
         # this dictionary will hold all the actions and their observers (for e.g. from the UI)
         self._observers = {}
 
-        self.processing_queue = ProcessingQueue(toolkit_ops_obj=self)
+        # initialize the processing queue
+        # use the event emitter to send events to the UI (if any)
+        self.processing_queue = ProcessingQueue(
+            toolkit_ops_obj=self,
+            event_emitter=self.events,
+        )
 
         # this is used by the queue dispatcher to know which functions to call depending on the task
         # the key is the name of the task, the value is a list of functions to call for that task

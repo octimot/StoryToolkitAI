@@ -14,6 +14,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from storytoolkitai.core.events import EventListener
+
 
 # These queue fields contain runtime implementation details rather than stable
 # job information suitable for a UI.
@@ -59,6 +61,33 @@ class StoryToolkitEngine:
         """
 
         self._toolkit_ops = toolkit_ops_obj
+
+    def subscribe(self, listener: EventListener) -> None:
+        """
+        Subscribe to processing events.
+
+        Listeners may be called from a processing worker thread. A graphical
+        UI must move widget changes onto its own UI thread.
+
+        Args:
+            listener:
+                Function or bound method that accepts one EngineEvent.
+        """
+
+        self._toolkit_ops.events.subscribe(listener)
+
+    def unsubscribe(self, listener: EventListener) -> None:
+        """
+        Stop receiving processing events.
+
+        Removing a listener that is not subscribed is harmless.
+
+        Args:
+            listener:
+                Previously subscribed function or bound method.
+        """
+
+        self._toolkit_ops.events.unsubscribe(listener)
 
     @staticmethod
     def _copy_job(item: dict[str, Any]) -> dict[str, Any]:
