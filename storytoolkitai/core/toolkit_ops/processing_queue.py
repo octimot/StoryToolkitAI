@@ -3,6 +3,7 @@ import json
 
 from storytoolkitai import USER_DATA_PATH
 from storytoolkitai.core.logger import *
+from storytoolkitai.core.events import EngineEvent, EventEmitter
 
 import torch
 from threading import Thread
@@ -16,9 +17,21 @@ class ProcessingQueue:
     This class handles the processing queue:
     """
 
-    def __init__(self, toolkit_ops_obj=None):
-
+    def __init__(
+        self,
+        toolkit_ops_obj=None,
+        event_emitter=None,
+    ):
         self.toolkit_ops_obj = toolkit_ops_obj
+
+        # ToolkitOps passes its shared emitter here
+        # standalone queue instances, such as isolated tests,
+        # receive their own emitter by default
+        self.events = (
+            event_emitter
+            if event_emitter is not None
+            else EventEmitter()
+        )
 
         # this holds the queue ids of the items that need to be processed next
         # once the item is sent for processing, it is removed from this list and only remains in the queue history
@@ -321,7 +334,28 @@ class ProcessingQueue:
                 # replace the item in the queue history
                 self.queue_history[item_index] = new_item
 
-                # whenever the status is updated, make sure notify all the observers
+                # publish a presentation-neutral event for the new engine interface
+                #
+                # do not publish the complete queue dictionary here
+                # queue items can contain Python callables,
+                # temporary output objects, and other mutable processing
+                # details that should not cross the engine/UI boundary
+                self.events.emit(
+                    EngineEvent(
+                        type='job.changed',
+                        data={
+                            'job_id': queue_id,
+                            'status': new_item.get('status'),
+                            'progress': new_item.get('progress'),
+                            'item_type': new_item.get('item_type'),
+                        },
+                    )
+                )
+
+                # Keep the existing observer notification during the version 1
+                # migration. Tk windows still depend on this path. Individual observer
+                # registrations will be removed only after their UI code subscribes
+                # through StoryToolkitEngine.
                 self.toolkit_ops_obj.notify_observers('update_queue_item')
 
                 # save the queue to a file

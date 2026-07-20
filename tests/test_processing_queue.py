@@ -27,8 +27,8 @@ except ModuleNotFoundError:
     sys.modules["torch"] = torch_stub
 
 
+from storytoolkitai.core.events import EngineEvent
 from storytoolkitai.core.toolkit_ops import processing_queue as processing_queue_module
-
 
 ProcessingQueue = processing_queue_module.ProcessingQueue
 
@@ -161,11 +161,20 @@ def test_queue_items_can_be_filtered_by_status(processing_queue) -> None:
 
 
 def test_queue_item_status_can_be_updated(processing_queue) -> None:
-    """Updating a status changes history and emits the existing notification."""
+    """
+    Updating a status changes history and emits both notification mechanisms.
+
+    The new engine event is introduced alongside the existing observer
+    notification so current Tk behavior remains unchanged.
+    """
 
     _add_test_job(processing_queue, "job-1")
 
+    # Ignore the legacy notification emitted while the test job was added.
     processing_queue.toolkit_ops_obj.notifications.clear()
+
+    received_events: list[EngineEvent] = []
+    processing_queue.events.subscribe(received_events.append)
 
     processing_queue.update_status(
         queue_id="job-1",
@@ -178,6 +187,25 @@ def test_queue_item_status_can_be_updated(processing_queue) -> None:
     assert item["status"] == "processing"
     assert isinstance(item["last_update"], float)
 
+    assert received_events == [
+        EngineEvent(
+            type="job.changed",
+            data={
+                "job_id": "job-1",
+                "status": "processing",
+                "progress": None,
+                "item_type": "test",
+            },
+        )
+    ]
+
+    # Event data must not expose queue internals or runtime callables.
+    event_data = received_events[0].data
+    assert "task_queue" not in event_data
+    assert "last_task" not in event_data
+    assert "output" not in event_data
+
+    # The old observer path remains active during the gradual UI migration.
     assert processing_queue.toolkit_ops_obj.notifications == [
         "update_queue_item",
     ]
