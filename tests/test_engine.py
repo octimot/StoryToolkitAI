@@ -103,18 +103,21 @@ class FakeProcessingQueue:
 
         return selected_items
 
-    def cancel_item(self, queue_id: str) -> dict[str, Any] | None:
-        """Record and perform a simple cancellation request."""
-
+    def set_to_canceled(
+        self,
+        queue_id: str,
+    ) -> dict[str, Any] | None:
+        """Record and perform a simple safe cancellation request."""
         self.cancel_requests.append(queue_id)
 
         item = self.items.get(queue_id)
-
         if item is None:
             return None
 
-        item["status"] = "canceled"
+        if item.get("status") in {"done", "failed", "canceled"}:
+            return None
 
+        item["status"] = "canceled"
         return item
 
 
@@ -227,12 +230,11 @@ def test_list_jobs_returns_all_jobs_without_filters(
     }
 
 
-def test_cancel_job_delegates_to_processing_queue(
+def test_cancel_job_delegates_to_safe_queue_cancellation(
     engine: StoryToolkitEngine,
     toolkit_ops: FakeToolkitOps,
 ) -> None:
-    """A successful cancellation returns True and reaches the queue."""
-
+    """A successful cancellation reaches the queue's safe cancel path."""
     result = engine.cancel_job("job-queued")
 
     assert result is True

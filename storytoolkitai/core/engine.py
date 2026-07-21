@@ -206,20 +206,21 @@ class StoryToolkitEngine:
 
     def cancel_job(self, job_id: str) -> bool:
         """
-        Request cancellation of a processing job.
+        Request safe cancellation of a processing job.
+
+        A queued job can be canceled immediately. A running job enters the
+        ``canceling`` state so its current task can finish before the remaining
+        tasks are stopped.
 
         Args:
             job_id:
                 Queue ID of the job to cancel.
 
         Returns:
-            ``True`` when the queue found and updated the job, otherwise
-            ``False``.
+            ``True`` when cancellation was accepted, otherwise ``False``.
         """
-
-        result = self._toolkit_ops.processing_queue.cancel_item(
+        result = self._toolkit_ops.processing_queue.set_to_canceled(
             queue_id=job_id,
         )
-
         return bool(result)
 

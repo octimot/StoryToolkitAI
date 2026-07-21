@@ -229,6 +229,115 @@ def test_pending_queue_item_can_be_canceled(processing_queue) -> None:
     assert processing_queue.get_item("job-1") is canceled_item
 
 
+def test_queued_item_safe_cancellation_is_immediate(
+    processing_queue,
+) -> None:
+    """A queued item is removed from the runnable queue immediately."""
+    _add_test_job(processing_queue, "job-1")
+
+    result = processing_queue.set_to_canceled("job-1")
+
+    assert result
+    assert "job-1" not in processing_queue.queue
+    assert processing_queue.get_status("job-1") == "canceled"
+
+
+def test_running_item_safe_cancellation_waits_for_current_task(
+    processing_queue,
+) -> None:
+    """A running item enters canceling until its current task finishes."""
+    _add_test_job(processing_queue, "job-1")
+    processing_queue.update_status(
+        queue_id="job-1",
+        status="processing",
+    )
+
+    # the queue only needs the queue id here
+    # the actual thread object is not inspected by is_item_in_thread
+    processing_queue.queue_threads["cpu"] = {
+        "queue_id": "job-1",
+        "thread": object(),
+    }
+
+    result = processing_queue.set_to_canceled("job-1")
+
+    assert result
+    assert processing_queue.get_status("job-1") == "canceling"
+    assert processing_queue.get_progress("job-1") == ""
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "done",
+        "failed",
+        "canceled",
+    ],
+)
+def test_finished_item_safe_cancellation_is_rejected(
+    processing_queue,
+    status: str,
+) -> None:
+    """Finished and already canceled items keep their existing status."""
+    _add_test_job(processing_queue, "job-1")
+    processing_queue.update_status(
+        queue_id="job-1",
+        status=status,
+    )
+
+    result = processing_queue.set_to_canceled("job-1")
+
+    assert result is False
+    assert processing_queue.get_status("job-1") == status
+
+
+def test_repeated_running_item_cancellation_is_idempotent(
+    processing_queue,
+) -> None:
+    """A repeated cancellation request for a running item remains valid."""
+    _add_test_job(processing_queue, "job-1")
+    processing_queue.update_status(
+        queue_id="job-1",
+        status="canceling",
+    )
+
+    processing_queue.queue_threads["cpu"] = {
+        "queue_id": "job-1",
+        "thread": object(),
+    }
+
+    result = processing_queue.set_to_canceled("job-1")
+
+    assert result is True
+    assert processing_queue.get_status("job-1") == "canceling"
+
+
+def test_canceling_item_is_finalized_after_leaving_thread(
+    processing_queue,
+) -> None:
+    """A canceling item becomes canceled after its active task has stopped."""
+    _add_test_job(processing_queue, "job-1")
+    processing_queue.update_status(
+        queue_id="job-1",
+        status="canceling",
+    )
+
+    result = processing_queue.set_to_canceled("job-1")
+
+    assert result
+    assert "job-1" not in processing_queue.queue
+    assert processing_queue.get_status("job-1") == "canceled"
+
+
+def test_unknown_item_safe_cancellation_returns_false(
+    processing_queue,
+) -> None:
+    """An unknown queue id cannot be canceled."""
+    result = processing_queue.set_to_canceled("missing-job")
+
+    assert result is False
+
+
 def test_queue_history_can_be_saved_and_loaded(processing_queue) -> None:
     """
     Queue persistence keeps resumable data and removes runtime-only values.

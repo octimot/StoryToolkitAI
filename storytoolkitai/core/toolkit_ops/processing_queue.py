@@ -523,36 +523,55 @@ class ProcessingQueue:
 
     def set_to_canceled(self, queue_id):
         """
-        This function sets the status of a queue item to 'canceling' in the queue history
-        This is useful if we want the queue item to finish processing the current task before it is canceled,
-        to avoid killing a process in the middle of a task
+        Request safe cancellation of a queue item.
 
-        Once it finishes it current task, the cancel_if_canceled function should wait before the next task
+        Items that have not started can be canceled immediately. Items that
+        are currently running are marked as ``canceling`` so the active task
+        can finish before the queue stops the remaining tasks.
 
-        :param queue_id: the queue id of the item to set to 'canceled'
-        :return: True if the item was set to 'canceled', False otherwise
+        :param queue_id: the queue id of the item to cancel
+        :return: True if cancellation was requested, False otherwise
         """
 
         # get the item from the queue history
         item = self.get_item(queue_id=queue_id)
-
         if not item or not isinstance(item, dict):
-            logger.warning('Unable to set item to canceled - queue id {} not found in queue history'.format(queue_id))
+            logger.warning(
+                'Unable to set item to canceled - queue id {} not found '
+                'in queue history'.format(queue_id)
+            )
             return False
 
-        # if the current status is 'done' or 'failed',
-        # it doesn't make sense to cancel it
-        if item['status'] in ['done', 'failed']:
-            logger.debug('Item {} is already done or failed, cannot cancel.'
-                         .format(queue_id))
+        # finished or already canceled items cannot be canceled again
+        if item.get('status') in ['done', 'failed', 'canceled']:
+            logger.debug(
+                'Item {} is already finished or canceled, cannot cancel.'
+                .format(queue_id)
+            )
+            return False
 
-        # if the item is not currently being processed by one of the threads,
-        # we can simply set the status to 'canceled'
+        # a canceling item may still be finishing its current task
+        if item.get('status') == 'canceling':
+
+            # finalize the cancellation once the item has left the thread pool
+            if not self.is_item_in_thread(queue_id=queue_id):
+                return bool(self.cancel_item(queue_id=queue_id))
+
+            return True
+
+        # items that have not started can be removed from the runnable queue
+        # and marked as canceled immediately
         if not self.is_item_in_thread(queue_id=queue_id):
-            self._notify_on_stop_observer(item=item)
-            return self.update_queue_item(queue_id=queue_id, status='canceled')
+            return bool(self.cancel_item(queue_id=queue_id))
 
-        return self.update_queue_item(queue_id=queue_id, status='canceling', progress='')
+        # running items must finish their current task before cancellation
+        return bool(
+            self.update_queue_item(
+                queue_id=queue_id,
+                status='canceling',
+                progress='',
+            )
+        )
 
     def get_item(self, queue_id: str) -> dict or None:
         """
