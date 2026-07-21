@@ -175,15 +175,14 @@ The coupling is mostly through live objects and callbacks rather than obvious
 ## C03 — Transcription processing issues OS notifications directly
 
 | Field | Detail |
-|---|---|
-| **Direction** | Processing -> UI |
-| **Location** | `storytoolkitai/core/toolkit_ops/toolkit_ops.py::ToolkitOps.whisper_transcribe` |
-| **Current behaviour** | The transcription workflow calls `self.toolkit_UI_obj.notify_via_os(...)` when transcription starts and finishes. |
-| **Why it matters** | A headless engine should report a state change, not decide that it becomes a desktop notification. |
-| **Version 1 treatment** | Emit simple `job.started` and `job.completed` events. The Tk UI subscribes and optionally displays an OS notification. Logging remains in processing. |
-| **Tests needed first** | Mocked transcription success, failure and cancellation tests; assert queue statuses and emitted events. |
-| **Priority** | Critical; good first vertical refactor. |
-| **Status** | Open. |
+| --- | --- |
+| Direction | Processing -> UI |
+| Location | `storytoolkitai/core/toolkit_ops/toolkit_ops.py::ToolkitOps.whisper_transcribe` |
+| Previous behaviour | The transcription workflow called `self.toolkit_UI_obj.notify_via_os(...)` when transcription started and finished |
+| Resolution | The processing workflow now emits `transcription.started` and `transcription.completed` events containing simple data. The Tk UI subscribes through `StoryToolkitEngine` and decides whether to display an OS notification. Logging remains in processing |
+| Tests | Event payload tests cover transport-safe start and completion data. Mocked success, failure and cancellation lifecycle tests remain useful follow-up coverage |
+| Priority | Critical; completed as the first vertical refactor |
+| Status | Resolved in `9a6f1f05f1b7c0d4116e7027410a61a8a6f6467d` |
 
 ## C04 — Resolve operations receive and invoke a UI object
 
