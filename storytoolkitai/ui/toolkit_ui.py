@@ -5628,9 +5628,12 @@ class toolkit_UI():
                                       resizable=(False, True)
                                       ):
 
-            # update the queue item status to 'waiting user'
+            # let processing own the ingest job status
+            # the UI only keeps the queue id returned by the engine
             if queue_id is not None:
-                self.toolkit_ops_obj.processing_queue.update_queue_item(queue_id=queue_id, status='waiting user')
+                self.engine.mark_ingest_job_waiting_for_user(
+                    job_id=queue_id,
+                )
 
                 # add the queue id to the kwargs
                 kwargs['queue_id'] = queue_id
@@ -7682,8 +7685,11 @@ class toolkit_UI():
                 parent=self.windows[window_id]
         ):
 
+            # use the same safe cancellation path as the queue window
             if queue_id is not None:
-                self.toolkit_ops_obj.processing_queue.update_queue_item(queue_id=queue_id, status='canceled')
+                self.engine.cancel_job(
+                    job_id=queue_id,
+                )
 
             # call the default destroy window function
             self.destroy_window_(windows_dict=self.windows, window_id=window_id)
@@ -7841,9 +7847,10 @@ class toolkit_UI():
         # add it to the transcription list
         if target_files:
 
-            # a unique id is also useful to keep track
+            # create the ingest placeholder through the engine
+            # this keeps queue id generation out of the UI
             if 'queue_id' not in kwargs:
-                kwargs['queue_id'] = self.toolkit_ops_obj.processing_queue.generate_queue_id()
+                kwargs['queue_id'] = self.engine.create_ingest_job()
 
             # now open up the transcription settings window
             self.open_ingest_window(
@@ -7913,13 +7920,12 @@ class toolkit_UI():
                 logger.warning("Ingesting NLE timeline stopped - File name not defined.")
                 return
 
-            # generate a unique id to keep track of this file in the queue and transcription log
+            # create a queue item while Resolve renders the timeline
+            # processing owns both the queue id and its initial status
             if kwargs.get('queue_id', None) is None:
-                kwargs['queue_id'] = self.toolkit_ops_obj.processing_queue.generate_queue_id(name=file_name)
-
-            # update the transcription log
-            self.toolkit_ops_obj.processing_queue.update_queue_item(
-                name=file_name, queue_id=kwargs['queue_id'], status='waiting for render')
+                kwargs['queue_id'] = self.engine.create_timeline_ingest_job(
+                    name=file_name,
+                )
 
             # open the queue window
             self.open_queue_window()

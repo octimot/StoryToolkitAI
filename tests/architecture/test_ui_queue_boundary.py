@@ -1,10 +1,9 @@
 """
 Prevent Tk queue presentation code from bypassing StoryToolkitEngine.
 
-This guard is intentionally narrow. Other UI workflows still create and
-update queue items directly during the version 1 migration. Step 7 removes
-only queue inspection and cancellation from the UI, so those are the calls
-protected here.
+Queue inspection, cancellation, queue ID generation and queue-item mutation
+must go through StoryToolkitEngine. The UI may display detached job snapshots,
+but it must not access ProcessingQueue directly.
 """
 
 from __future__ import annotations
@@ -13,36 +12,54 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TOOLKIT_UI_PATH = (
-    PROJECT_ROOT
-    / "storytoolkitai"
-    / "ui"
-    / "toolkit_ui.py"
-)
+UI_ROOT = PROJECT_ROOT / "storytoolkitai" / "ui"
 
-FORBIDDEN_QUEUE_CALLS = (
+# Queue reads and cancellation were moved behind StoryToolkitEngine in Step 7.
+FORBIDDEN_QUEUE_READ_OR_CANCEL_CALLS = (
     ".processing_queue.get_all_queue_items(",
     ".processing_queue.get_item(",
     ".processing_queue.set_to_canceled(",
     ".processing_queue.cancel_item(",
 )
 
+# Queue ID generation and queue-item mutation are moved behind
+# StoryToolkitEngine in Step 8.
+FORBIDDEN_QUEUE_MUTATION_CALLS = (
+    ".processing_queue.generate_queue_id(",
+    ".processing_queue.add_to_queue(",
+    ".processing_queue.update_queue_item(",
+    ".processing_queue.update_status(",
+)
 
-def test_ui_does_not_read_or_cancel_jobs_through_processing_queue() -> None:
+FORBIDDEN_QUEUE_CALLS = (
+    FORBIDDEN_QUEUE_READ_OR_CANCEL_CALLS
+    + FORBIDDEN_QUEUE_MUTATION_CALLS
+)
+
+
+def test_ui_does_not_access_processing_queue_directly() -> None:
     """
-    Queue snapshots and cancellation must go through StoryToolkitEngine.
+    UI modules must use StoryToolkitEngine for queue operations.
     """
 
-    source = TOOLKIT_UI_PATH.read_text(encoding="utf-8")
+    violations: list[str] = []
 
-    violations = [
-        forbidden_call
-        for forbidden_call in FORBIDDEN_QUEUE_CALLS
-        if forbidden_call in source
-    ]
+    for path in sorted(UI_ROOT.rglob("*.py")):
+        source = path.read_text(encoding="utf-8")
+
+        for forbidden_call in FORBIDDEN_QUEUE_CALLS:
+            if forbidden_call not in source:
+                continue
+
+            violations.append(
+                "{}: contains {}".format(
+                    path.relative_to(PROJECT_ROOT),
+                    forbidden_call,
+                )
+            )
 
     assert not violations, (
-        "Tk queue reads and cancellation must use StoryToolkitEngine.\n"
-        "Replace the following ProcessingQueue calls:\n\n"
+        "UI queue operations must use StoryToolkitEngine.\n"
+        "Replace the following direct ProcessingQueue calls:\n\n"
         + "\n".join(violations)
     )

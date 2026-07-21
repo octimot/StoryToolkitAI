@@ -61,6 +61,8 @@ class FakeProcessingQueue:
         self.last_status_filter: str | list[str] | None = None
         self.last_not_status_filter: str | list[str] | None = None
         self.cancel_requests: list[str] = []
+        self.generated_names: list[str | None] = []
+        self.updated_items: list[dict[str, Any]] = []
 
     def get_item(self, queue_id: str) -> dict[str, Any] | None:
         """Return the real stored item, matching current queue behaviour."""
@@ -103,6 +105,50 @@ class FakeProcessingQueue:
 
         return selected_items
 
+    def generate_queue_id(
+        self,
+        name: str | None = None,
+    ) -> str:
+        """Create a pending queue item and return its generated ID."""
+
+        self.generated_names.append(name)
+
+        queue_id = "job-generated-{}".format(
+            len(self.generated_names),
+        )
+
+        self.items[queue_id] = {
+            "queue_id": queue_id,
+            "name": "",
+            "status": "pending",
+        }
+
+        return queue_id
+
+    def update_queue_item(
+        self,
+        queue_id: str,
+        **kwargs: Any,
+    ) -> dict[str, Any] | bool:
+        """Update a fake queue item using the real queue method's shape."""
+
+        item = self.items.get(queue_id)
+
+        if item is None:
+            return False
+
+        item.update(kwargs)
+        item["queue_id"] = queue_id
+
+        self.updated_items.append(
+            {
+                "queue_id": queue_id,
+                **kwargs,
+            }
+        )
+
+        return item
+
     def set_to_canceled(
         self,
         queue_id: str,
@@ -130,6 +176,17 @@ class FakeToolkitOps:
         # importing the heavyweight processing module.
         self.events = EventEmitter()
         self.processing_queue = FakeProcessingQueue()
+        self.ingest_requests: list[Any] = []
+
+    def add_media_to_queue(
+        self,
+        ingest_settings: Any,
+    ) -> list[str]:
+        """Record an ingest request and return a representative queue ID."""
+
+        self.ingest_requests.append(ingest_settings)
+
+        return ["job-ingest"]
 
 
 @pytest.fixture
@@ -255,6 +312,87 @@ def test_cancel_unknown_job_returns_false(
 
     assert result is False
     assert toolkit_ops.processing_queue.cancel_requests == ["missing-job"]
+
+def test_create_ingest_job_owns_placeholder_status(
+    engine: StoryToolkitEngine,
+    toolkit_ops: FakeToolkitOps,
+) -> None:
+    """A normal ingest placeholder is created in the waiting-user state."""
+
+    job_id = engine.create_ingest_job()
+
+    assert job_id == "job-generated-1"
+    assert toolkit_ops.processing_queue.generated_names == [None]
+    assert toolkit_ops.processing_queue.items[job_id] == {
+        "queue_id": job_id,
+        "name": "",
+        "status": "waiting user",
+    }
+
+
+def test_create_timeline_ingest_job_waits_for_render(
+    engine: StoryToolkitEngine,
+    toolkit_ops: FakeToolkitOps,
+) -> None:
+    """A Resolve timeline ingest is visible while its render is pending."""
+
+    job_id = engine.create_timeline_ingest_job(
+        name="Interview Timeline.wav",
+    )
+
+    assert job_id == "job-generated-1"
+    assert toolkit_ops.processing_queue.generated_names == [
+        "Interview Timeline.wav",
+    ]
+    assert toolkit_ops.processing_queue.items[job_id] == {
+        "queue_id": job_id,
+        "name": "Interview Timeline.wav",
+        "status": "waiting for render",
+    }
+
+
+def test_ingest_job_can_move_from_render_to_user_input(
+    engine: StoryToolkitEngine,
+    toolkit_ops: FakeToolkitOps,
+) -> None:
+    """A rendered timeline moves to waiting user when its form opens."""
+
+    job_id = engine.create_timeline_ingest_job(
+        name="Interview Timeline.wav",
+    )
+
+    result = engine.mark_ingest_job_waiting_for_user(job_id)
+
+    assert result is True
+    assert (
+        toolkit_ops.processing_queue.items[job_id]["status"]
+        == "waiting user"
+    )
+
+
+def test_mark_unknown_ingest_job_returns_false(
+    engine: StoryToolkitEngine,
+) -> None:
+    """An unknown ingest placeholder cannot be updated."""
+
+    assert (
+        engine.mark_ingest_job_waiting_for_user("missing-job")
+        is False
+    )
+
+
+def test_start_ingest_delegates_to_processing(
+    engine: StoryToolkitEngine,
+    toolkit_ops: FakeToolkitOps,
+) -> None:
+    """The engine forwards the completed settings to processing."""
+
+    ingest_settings = object()
+
+    result = engine.start_ingest(ingest_settings)
+
+    assert result == ["job-ingest"]
+    assert toolkit_ops.ingest_requests == [ingest_settings]
 
 def test_engine_subscriber_receives_processing_event(
     engine: StoryToolkitEngine,

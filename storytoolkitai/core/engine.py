@@ -128,6 +128,110 @@ class StoryToolkitEngine:
             )
         )
 
+    def create_ingest_job(
+        self,
+        name: str | None = None,
+    ) -> str:
+        """
+        Create a queue item for an ingest whose settings are being selected.
+
+        The placeholder makes the ingest visible in the queue before the user
+        submits the settings form. Processing owns the queue ID and its status;
+        the UI only keeps the returned ID.
+
+        Args:
+            name: Optional name used when generating the queue ID.
+
+        Returns:
+            The generated queue ID.
+        """
+
+        queue_id = self._toolkit_ops.processing_queue.generate_queue_id(
+            name=name,
+        )
+
+        self._toolkit_ops.processing_queue.update_queue_item(
+            queue_id=queue_id,
+            name=name or "",
+            status="waiting user",
+        )
+
+        return queue_id
+
+    def create_timeline_ingest_job(
+        self,
+        name: str,
+    ) -> str:
+        """
+        Create an ingest queue item for a timeline waiting to be rendered.
+
+        Args:
+            name: Name of the timeline render.
+
+        Returns:
+            The generated queue ID.
+        """
+
+        queue_id = self._toolkit_ops.processing_queue.generate_queue_id(
+            name=name,
+        )
+
+        self._toolkit_ops.processing_queue.update_queue_item(
+            queue_id=queue_id,
+            name=name,
+            status="waiting for render",
+        )
+
+        return queue_id
+
+    def mark_ingest_job_waiting_for_user(
+        self,
+        job_id: str,
+    ) -> bool:
+        """
+        Mark an ingest job as waiting for its settings to be confirmed.
+
+        This is used both for normal ingest windows and after a Resolve
+        timeline has finished rendering.
+
+        Args:
+            job_id: Queue ID of the ingest job.
+
+        Returns:
+            True when the queue item was updated, otherwise False.
+        """
+
+        result = self._toolkit_ops.processing_queue.update_queue_item(
+            queue_id=job_id,
+            status="waiting user",
+        )
+
+        return bool(result)
+
+    def start_ingest(
+        self,
+        ingest_settings: Any,
+    ) -> list[str] | bool:
+        """
+        Validate the ingest request and add its processing jobs to the queue.
+
+        The current IngestSettings model remains the in-process boundary for
+        version 1. A serializable API model can replace it when the version 2
+        process boundary is introduced.
+
+        Args:
+            ingest_settings: Existing IngestSettings instance created by the UI.
+
+        Returns:
+            Queue IDs created for the ingest, or False when nothing was queued.
+        """
+
+        result = self._toolkit_ops.add_media_to_queue(
+            ingest_settings=ingest_settings,
+        )
+
+        return deepcopy(result)
+
     @staticmethod
     def _copy_job(item: dict[str, Any]) -> dict[str, Any]:
         """
