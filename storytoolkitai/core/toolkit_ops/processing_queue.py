@@ -188,13 +188,28 @@ class ProcessingQueue:
         # check if the queue id already exists in the queue history
         item = self.get_item(queue_id=queue_id)
         if not item:
-
             # add the kwargs to the queue history
             self.queue_history.append(kwargs)
-
             logger.debug('Added item {} to queue history'.format(queue_id))
 
-            # notify the update_queue observers
+            # publish the same neutral event used for later job changes
+            #
+            # only stable summary fields are included here
+            # callers that need the full public snapshot should retrieve it
+            # through StoryToolkitEngine
+            self.events.emit(
+                EngineEvent(
+                    type='job.changed',
+                    data={
+                        'job_id': queue_id,
+                        'status': kwargs.get('status'),
+                        'progress': kwargs.get('progress'),
+                        'item_type': kwargs.get('item_type'),
+                    },
+                )
+            )
+
+            # keep the existing observer notification during migration
             self.toolkit_ops_obj.notify_observers('update_queue')
 
         else:

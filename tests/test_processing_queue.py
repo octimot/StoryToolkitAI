@@ -133,6 +133,26 @@ def test_queue_item_can_be_added_and_retrieved(processing_queue) -> None:
         "update_queue",
     ]
 
+def test_new_queue_item_emits_job_changed_event(
+    processing_queue,
+) -> None:
+    """Adding a new item emits a neutral event for engine clients."""
+    received_events = []
+    processing_queue.events.subscribe(received_events.append)
+
+    _add_test_job(processing_queue, "job-1")
+
+    assert len(received_events) == 1
+
+    event = received_events[0]
+    assert event.type == "job.changed"
+    assert event.data == {
+        "job_id": "job-1",
+        "status": "queued",
+        "progress": None,
+        "item_type": "test",
+    }
+
 
 def test_queue_items_can_be_filtered_by_status(processing_queue) -> None:
     """The current status and not_status filters select queue-history items."""
