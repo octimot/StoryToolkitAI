@@ -1632,7 +1632,7 @@ class toolkit_UI():
         Thread(target=self.update_wait).start()
 
         # open the Queue window if something is up in the transcription queue
-        if len(self.toolkit_ops_obj.processing_queue.get_all_queue_items()) > 0:
+        if self.engine.list_jobs():
             self.open_queue_window()
 
     def update_wait(self):
@@ -17410,30 +17410,41 @@ class toolkit_UI():
     # QUEUE WINDOW
 
     def on_button_cancel_queue_item(self, queue_id, button_cancel):
+        # get a detached public snapshot through the engine
+        queue_item = self.engine.get_job(queue_id)
 
-        all_queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+        # is the queue id still available?
+        if queue_item is not None:
 
-        # is the queue id in the Queue?
-        if queue_id in all_queue_items:
-
-            # ask the user if they're sure they want to cancel the transcription
-            if not messagebox.askyesno('Cancel transcription',
-                                       'Are you sure you want to cancel this item?'):
+            # ask the user if they're sure they want to cancel the item
+            if not messagebox.askyesno(
+                'Cancel transcription',
+                'Are you sure you want to cancel this item?',
+            ):
                 return
 
-            # cancel via toolkit_ops
-            self.toolkit_ops_obj.processing_queue.set_to_canceled(queue_id=queue_id)
+            # keep the existing cancellation path until the next commit
+            self.toolkit_ops_obj.processing_queue.set_to_canceled(
+                queue_id=queue_id,
+            )
 
-        # update the queue window
-        self.update_queue_window()
+            # update the queue window
+            self.update_queue_window()
 
     def on_click_queue_item(self, queue_id, button_cancel):
         """
         When the user clicks on a queue item, this will open the transcription window
         """
 
-        # get the queue item
-        queue_item = self.toolkit_ops_obj.processing_queue.get_item(queue_id=queue_id)
+        # get a detached public snapshot through the engine
+        queue_item = self.engine.get_job(queue_id)
+
+        if queue_item is None:
+            logger.warning(
+                'Unable to open queue item - queue id {} was not found.'
+                .format(queue_id)
+            )
+            return
 
         # if the status is done
         if queue_item['status'] == 'done':
@@ -17479,7 +17490,7 @@ class toolkit_UI():
 
     def on_button_cancel_queue(self):
 
-        all_queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+        all_queue_items = self.engine.list_jobs()
 
         if len(all_queue_items) == 0:
             return
@@ -17505,6 +17516,9 @@ class toolkit_UI():
         # get the queue window
         queue_window = self.get_window_by_id('queue')
 
+        if queue_window is None:
+            return
+
         # add the last_update attribute to the queue window if it doesn't exist
         if not hasattr(queue_window, 'last_update'):
             queue_window.last_update = time.time()
@@ -17515,7 +17529,7 @@ class toolkit_UI():
                 return
 
         # load all the queue items
-        all_queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+        all_queue_items = self.engine.list_jobs()
 
         # redraw the queue list if needed
         if force_redraw or \
@@ -17587,7 +17601,7 @@ class toolkit_UI():
 
         # get the queue
         if queue_items is None:
-            all_queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+            all_queue_items = self.engine.list_jobs()
         else:
             all_queue_items = queue_items
 
@@ -18084,7 +18098,8 @@ class toolkit_UI():
                 # but it also means that we're taking it through TextAnalysis which might be slow...
                 text_search_item.prepare_search_corpus()
 
-                queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+                # get detached job snapshots through the public engine interface
+                queue_items = self.engine.list_jobs()
 
                 in_queue = False
                 # look through all the queue items and see if the search_file_paths match
@@ -18187,8 +18202,12 @@ class toolkit_UI():
 
                         # check if the processing isn't already done by the time we reach this
                         # - sometimes the queue is so fast that we miss the observer notification
-                        queue_item = self.toolkit_ops_obj.processing_queue.get_item(queue_id)
-                        if queue_item['status'] == 'done':
+                        queue_item = self.engine.get_job(queue_id)
+
+                        if (
+                            queue_item is not None
+                            and queue_item.get('status') == 'done'
+                        ):
                             window_indexing_done()
 
                 # if the total file size is smaller than 150kb, process it now
