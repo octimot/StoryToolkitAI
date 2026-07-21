@@ -2,19 +2,16 @@
 
 **Status:** Temporary migration inventory for the StoryToolkitAI 1.0 architecture work
 **Branch reviewed:** `dev`
-**Reviewed:** 2026-07-21
+**Reviewed through:** `0df67f0`
 **Related decision:** [`engine-ui-separation.md`](./engine-ui-separation.md)
 
-Known behavior noticed during the migration is tracked in
-[`known-refactor-issues.md`](./known-refactor-issues.md).
+Known behavior noticed during the migration is tracked in [`known-refactor-issues.md`](./known-refactor-issues.md).
 
 ## Purpose
 
-This document records where the current UI and processing code depend on each
-other. It is a migration checklist, not a proposal for a large framework.
+This document records where the current UI and processing code depend on each other.
 
-Its purpose is to keep the remaining coupling visible while StoryToolkitAI is
-moved towards this dependency direction:
+It is a migration checklist, not a proposal for a large framework. Its purpose is to keep the remaining coupling visible while StoryToolkitAI is moved towards this dependency direction:
 
 ```text
 Tkinter UI / CLI
@@ -28,17 +25,14 @@ Processing, storage, models and integrations
 
 Processing must not store, receive or call UI objects.
 
-During the version 1 migration, some UI code may still reach into legacy
-processing objects. Those remaining cases are tracked here until they are moved
-behind `StoryToolkitEngine`.
+During the version 1 migration, some UI code may still reach into legacy processing objects. Those remaining cases are tracked here until they are moved behind `StoryToolkitEngine`.
 
 ## Status legend
 
 * **Open** — the identified coupling is still present
 * **In progress** — an engine-based path exists, but legacy access remains
 * **Resolved** — the identified coupling no longer exists
-* **Accepted temporarily** — deliberately retained for version 1 within stated
-  limits
+* **Accepted temporarily** — deliberately retained for version 1 within stated limits
 
 ## Scope reviewed
 
@@ -64,13 +58,11 @@ storytoolkitai/ui/toolkit_cli.py
 storytoolkitai/ui/menu.py
 ```
 
-File and symbol names are used instead of fixed line numbers because the larger
-source files change frequently.
+File and symbol names are used instead of fixed line numbers because the larger source files change frequently.
 
 # Current dependency picture
 
-After the completed processing-to-UI separation work, the central relationship
-looks approximately like this:
+After the completed processing-to-UI separation and queue-boundary work, the central relationship looks approximately like this:
 
 ```text
 __main__.py
@@ -80,10 +72,13 @@ __main__.py
     +--> ToolkitOps
     |       |
     |       +--> ProcessingQueue
+    |       |       |
+    |       |       +--> explicitly supplied task handlers
+    |       |       +--> EventEmitter
+    |       |
     |       +--> ToolkitSearch
     |       +--> Resolve API
     |       +--> model and settings state
-    |       |
     |       +--> EventEmitter
     |
     +--> StoryToolkitEngine
@@ -91,26 +86,30 @@ __main__.py
             +--> selected ToolkitOps operations
             +--> copied queue snapshots
             +--> safe queue cancellation
+            +--> ingest job lifecycle
             +--> event subscriptions
             +--> Resolve marker operations
-                    |
-                    v
-                  Tk UI
-                    |
-                    +--> displays engine events
-                    +--> owns dialogs and notifications
-                    +--> owns window callbacks
-                    +--> reads job state through the engine
-                    +--> still accesses ToolkitOps directly for
-                         unmigrated features
+            |
+            v
+        Tk UI
+            |
+            +--> displays engine events
+            +--> owns dialogs and notifications
+            +--> owns window callbacks
+            +--> reads job state through the engine
+            +--> creates and updates ingest jobs through the engine
+            +--> does not access ProcessingQueue directly
+            +--> still accesses ToolkitOps directly for unmigrated features
 ```
 
 The direct processing-to-Tk back-reference has been removed.
 
+The queue no longer stores or calls the complete `ToolkitOps` object. It receives only its task-handler mapping and the shared event emitter.
+
 The main remaining direction of coupling is:
 
 ```text
-Tk UI / CLI -> ToolkitOps and processing internals
+Tk UI / CLI -> ToolkitOps and other processing internals
 ```
 
 # Coupling inventory
@@ -122,7 +121,7 @@ Tk UI / CLI -> ToolkitOps and processing internals
 | **Direction**          | Bootstrap -> UI and processing                                                                                                                                                                                                  |
 | **Location**           | `storytoolkitai/__main__.py::main`, `storytoolkitai/ui/toolkit_ui.py::run_gui`, `storytoolkitai/ui/toolkit_cli.py::run_cli`                                                                                                     |
 | **Current state**      | Startup constructs `StoryToolkitAI`, `ToolkitOps` and `StoryToolkitEngine`. The Tk application receives the engine but still also receives the application and operations objects. The CLI continues to use the legacy objects. |
-| **Remaining coupling** | Both UIs can bypass the engine and call broad processing internals.                                                                                                                                                             |
+| **Remaining coupling** | Both interfaces can bypass the engine and call broad processing internals.                                                                                                                                                      |
 | **Status**             | In progress                                                                                                                                                                                                                     |
 | **Related commits**    | `89eabcf2c6ff3248e5c045f2bd40911d175f12d0`, `9a6f1f05f1b7c0d4116e7027410a61a8a6f6467d`                                                                                                                                          |
 
@@ -182,67 +181,69 @@ Tk UI / CLI -> ToolkitOps and processing internals
 | **Location**           | Former core `Observer` class and `ToolkitOps.attach_observer`, `dettach_observer` and `notify_observers` implementation                                                                      |
 | **Previous state**     | `ToolkitOps` stored live observer objects and invoked callbacks indirectly through `observer.update()`.                                                                                      |
 | **Current state**      | Processing no longer stores UI callback objects. The transitional `notify_observers(action)` method emits an `action.triggered` engine event. Tk stores and schedules its callbacks locally. |
-| **Remaining coupling** | The implicit action-name event vocabulary remains under C07.                                                                                                                                 |
+| **Remaining coupling** | Non-queue legacy workflows still use the implicit action-name event vocabulary. Queue lifecycle events no longer depend on `ToolkitOps.notify_observers(...)`.                               |
 | **Status**             | Resolved for live processing-to-UI callbacks                                                                                                                                                 |
 | **Commit**             | `3c9515dc094aba4a174a97d0a9aca13c7e45fe20`                                                                                                                                                   |
 
 ## C07 — Queue notifications use implicit action-name strings
 
-| Field                  | Detail                                                                                                                                                                                                |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Direction**          | Queue -> engine event -> UI                                                                                                                                                                           |
-| **Location**           | Queue addition, update and completion paths in `processing_queue.py`; `ToolkitOps.notify_observers`; engine-event handling in `toolkit_ui.py`                                                         |
-| **Previous state**     | Queue-window refresh depended on action names such as `update_queue` and `update_queue_item`, without event data identifying the changed job.                                                         |
-| **Current state**      | Queue additions and updates emit a neutral `job.changed` event containing stable summary fields. The Queue window listens for that event and retrieves a fresh snapshot through `StoryToolkitEngine`. |
-| **Remaining coupling** | Queue code still publishes transitional action names for other legacy workflows, including queue-item completion names and arbitrary `on_stop_action_name` values.                                    |
-| **Status**             | In progress                                                                                                                                                                                           |
-| **Related commits**    | `866d438`, `f97d0b3`, `3c9515dc094aba4a174a97d0a9aca13c7e45fe20`                                                                                                                                      |
+| Field                  | Detail                                                                                                                                                                                                                                                                                               |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Direction**          | Queue -> engine event -> UI                                                                                                                                                                                                                                                                          |
+| **Location**           | Queue lifecycle in `processing_queue.py`; engine-event handling in `toolkit_ui.py`                                                                                                                                                                                                                   |
+| **Previous state**     | Queue addition, updates and completion used names such as `update_queue`, `update_queue_item`, `<item_type>_queue_item_done` and `<queue_id>_queue_item_done`.                                                                                                                                       |
+| **Current state**      | Queue additions and updates emit `job.changed` with stable summary fields. Successful queue tasks emit `job.task_completed` containing the job ID, item type and completed task name. Tk converts that structured event into any remaining local window callbacks.                                   |
+| **Remaining coupling** | Advanced-search failure handling still uses `on_stop_action_name`. Other non-queue workflows may still use the transitional `ToolkitOps.notify_observers(...)` bridge. Search-specific action names are tracked under C11 and C12 and will be removed when search ownership moves behind the engine. |
+| **Status**             | Resolved for queue lifecycle; search-specific action remains                                                                                                                                                                                                                                         |
+| **Related commits**    | `866d438`, `f97d0b3`, `ffef103`, `0df67f0`                                                                                                                                                                                                                                                           |
 
 ## C08 — `ProcessingQueue` depends on the whole `ToolkitOps` object
 
-| Field                  | Detail                                                                                                                         |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| **Direction**          | Queue -> operations object                                                                                                     |
-| **Location**           | `ProcessingQueue.__init__`, task dispatch and event publication in `processing_queue.py`                                       |
-| **Current state**      | The queue stores `toolkit_ops_obj`, reads its `queue_tasks` mapping and calls its transitional `notify_observers(...)` method. |
-| **Remaining coupling** | The queue depends on much more state than its task mapping and event publisher require.                                        |
-| **Status**             | Open                                                                                                                           |
+| Field                  | Detail                                                                                                                                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Direction**          | Explicit construction data -> queue                                                                                                                                                              |
+| **Location**           | `ProcessingQueue.__init__`, task dispatch and event publication in `processing_queue.py`; queue construction in `ToolkitOps.__init__`                                                            |
+| **Previous state**     | The queue stored `toolkit_ops_obj`, read its `queue_tasks` mapping and called its transitional `notify_observers(...)` method.                                                                   |
+| **Current state**      | The queue receives only a task-handler dictionary and the shared `EventEmitter`. Task dispatch uses the supplied dictionary, and queue state changes are published directly through the emitter. |
+| **Remaining coupling** | None for the complete `ToolkitOps` dependency. The search-specific `on_stop_action_name` bridge is tracked under C07, C11 and C12.                                                               |
+| **Status**             | Resolved                                                                                                                                                                                         |
+| **Commit**             | `ffef103`                                                                                                                                                                                        |
 
 ## C09 — UI reads and mutates queue implementation details
 
-| Field                  | Detail                                                                                                                                                                                                                                                                                                                                  |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Direction**          | UI -> engine, with remaining UI -> queue writes                                                                                                                                                                                                                                                                                         |
-| **Location**           | Queue windows, application startup, shutdown handling, search queue checks and queue-submission workflows in `storytoolkitai/ui/toolkit_ui.py`                                                                                                                                                                                          |
-| **Previous state**     | Tk read raw queue dictionaries through `ProcessingQueue`, called queue cancellation methods directly and used queue implementation methods for startup, shutdown and search checks.                                                                                                                                                     |
-| **Current state**      | Tk retrieves detached job snapshots through `StoryToolkitEngine.list_jobs(...)` and `get_job(...)`. Cancellation uses `StoryToolkitEngine.cancel_job(...)`, preserving safe cancellation for queued and running jobs. Queue-window rendering, startup checks, shutdown checks and search queue reads no longer inspect queue internals. |
-| **Resolved scope**     | Direct calls to `get_all_queue_items(...)`, `get_item(...)`, `set_to_canceled(...)` and `cancel_item(...)` have been removed from the UI. An architecture test protects this boundary.                                                                                                                                                  |
-| **Remaining coupling** | Five direct queue write/submission calls remain: three `update_queue_item(...)` calls and two `generate_queue_id(...)` calls. They belong to user-interaction and ingest/transcription workflows and will be migrated with the operations that own those workflows.                                                                     |
-| **Status**             | In progress                                                                                                                                                                                                                                                                                                                             |
-| **Related commits**    | `a3865d6`, `059909c`, `153eebc`, `2a15029`, `fe9589618d668cc34de792e017e1c9244485f2f7`                                                                                                                                                                                                                                                  |
+| Field                  | Detail                                                                                                                                                                                                                                                                                                      |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Direction**          | UI -> `StoryToolkitEngine` -> queue                                                                                                                                                                                                                                                                         |
+| **Location**           | Queue windows, startup and shutdown handling, search queue checks and ingest workflows in `storytoolkitai/ui/toolkit_ui.py`                                                                                                                                                                                 |
+| **Previous state**     | Tk read queue dictionaries, generated queue IDs, changed queue-item statuses and called queue cancellation methods directly.                                                                                                                                                                                |
+| **Current state**      | Tk retrieves detached snapshots through `StoryToolkitEngine.list_jobs(...)` and `get_job(...)`. Cancellation, ingest placeholder creation, Resolve timeline placeholder creation, ingest status transitions and ingest submission go through `StoryToolkitEngine`.                                          |
+| **Resolved scope**     | UI modules no longer call `get_all_queue_items(...)`, `get_item(...)`, `generate_queue_id(...)`, `add_to_queue(...)`, `update_queue_item(...)`, `update_status(...)`, `set_to_canceled(...)` or `cancel_item(...)` on `ProcessingQueue`. Architecture tests protect queue reads, cancellation and mutation. |
+| **Remaining coupling** | Tk still calls other unmigrated `ToolkitOps` operations. Those broader bypasses remain under C01 and C19.                                                                                                                                                                                                   |
+| **Status**             | Resolved for direct queue access                                                                                                                                                                                                                                                                            |
+| **Related commits**    | `a3865d6`, `059909c`, `2a15029`, `fe95896`, `7c1babe`                                                                                                                                                                                                                                                       |
 
 ## C10 — Queue UI contains timing workarounds for observer races
 
-| Field                  | Detail                                                                                                                                                                                                                                                            |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Direction**          | Engine event -> UI snapshot refresh                                                                                                                                                                                                                               |
-| **Location**           | Queue-window event handling and search completion checks in `storytoolkitai/ui/toolkit_ui.py`                                                                                                                                                                     |
-| **Previous state**     | Tk registered payload-free queue observers and read `ProcessingQueue` directly because jobs could change or finish before a listener was attached.                                                                                                                |
-| **Current state**      | The Tk application has one engine-event subscription. A `job.changed` event schedules a Queue-window refresh on the Tk event loop. `list_jobs(...)` and `get_job(...)` remain authoritative, and the Queue window retrieves a snapshot immediately after opening. |
-| **Behaviour note**     | Retrieving a snapshot after subscribing is the intended race-safe pattern. Events signal that state changed; they are not treated as the state itself.                                                                                                            |
-| **Remaining coupling** | The advanced-search workflow still uses its existing window-specific completion action. The search workflow itself remains tracked under C11 and C12.                                                                                                             |
-| **Status**             | Resolved for Queue-window refresh and direct queue rechecks                                                                                                                                                                                                       |
-| **Related commits**    | `059909c`, `866d438`, `f97d0b3`                                                                                                                                                                                                                                   |
+| Field                  | Detail                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Direction**          | Engine event -> UI snapshot refresh                                                                                                                                                                                                                                                                                                                 |
+| **Location**           | Queue-window event handling and task-completion handling in `storytoolkitai/ui/toolkit_ui.py`                                                                                                                                                                                                                                                       |
+| **Previous state**     | Tk registered payload-free queue observers and read `ProcessingQueue` directly because jobs could change or finish before a listener was attached.                                                                                                                                                                                                  |
+| **Current state**      | The Tk application has one engine-event subscription. A `job.changed` event schedules a Queue-window refresh on the Tk event loop. `list_jobs(...)` and `get_job(...)` remain authoritative, and the Queue window retrieves a snapshot immediately after opening. Completed queue tasks emit `job.task_completed` with structured task information. |
+| **Behaviour note**     | Retrieving a snapshot after subscribing is the intended race-safe pattern. Events signal that state changed; they are not treated as the complete state itself.                                                                                                                                                                                     |
+| **Remaining coupling** | The advanced-search workflow still uses an existing window-specific completion or failure action. Search ownership remains tracked under C11 and C12.                                                                                                                                                                                               |
+| **Status**             | Resolved for Queue-window refresh and normal queue-task completion                                                                                                                                                                                                                                                                                  |
+| **Related commits**    | `059909c`, `866d438`, `f97d0b3`, `0df67f0`                                                                                                                                                                                                                                                                                                          |
 
 ## C11 — UI directly constructs search engines and owns worker threads
 
-| Field                  | Detail                                                                                                              |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Direction**          | UI -> processing implementation                                                                                     |
-| **Location**           | Advanced search code in `toolkit_ui.py`; search classes in `core/toolkit_ops/search.py`                             |
-| **Current state**      | UI code constructs text and video search objects, calls loading and indexing methods and starts processing threads. |
-| **Remaining coupling** | Model ownership, worker execution and presentation are mixed inside Tk workflows.                                   |
-| **Status**             | Open                                                                                                                |
+| Field                  | Detail                                                                                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Direction**          | UI -> processing implementation                                                                                                                                     |
+| **Location**           | Advanced search code in `toolkit_ui.py`; search classes in `core/toolkit_ops/search.py`                                                                             |
+| **Current state**      | UI code constructs text and video search objects, calls loading and indexing methods and starts processing threads.                                                 |
+| **Remaining coupling** | Model ownership, worker execution and presentation are mixed inside Tk workflows. The remaining queue `on_stop_action_name` bridge belongs to this search workflow. |
+| **Status**             | Open                                                                                                                                                                |
 
 ## C12 — Search classes receive the entire operations object
 
@@ -322,15 +323,15 @@ Tk UI / CLI -> ToolkitOps and processing internals
 
 ## C19 — UI holds the application object, operations object and model objects broadly
 
-| Field                  | Detail                                                                                                                                                         |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Direction**          | UI -> broad internal object graph                                                                                                                              |
-| **Location**           | Constructors and helpers throughout `toolkit_ui.py`                                                                                                            |
-| **Current state**      | The top-level Tk application stores `StoryToolkitEngine`, `ToolkitOps` and `StoryToolkitAI`. Many helpers also keep broad UI and processing object references. |
-| **Improvement made**   | Transcription events, Resolve operations and queue inspection/cancellation use the engine.                                                                     |
-| **Remaining coupling** | Most legacy UI workflows can still bypass the engine. Direct queue submission and state-update calls remain until their owning operations are migrated.        |
-| **Status**             | In progress                                                                                                                                                    |
-| **Related commits**    | `9a6f1f05f1b7c0d4116e7027410a61a8a6f6467d`, `0de06f4bde23b8655bcf88cfb08fd65ccb0b1d0a`, `059909c`, `153eebc`, `2a15029`                                        |
+| Field                  | Detail                                                                                                                                                                |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Direction**          | UI -> broad internal object graph                                                                                                                                     |
+| **Location**           | Constructors and helpers throughout `toolkit_ui.py`                                                                                                                   |
+| **Current state**      | The top-level Tk application stores `StoryToolkitEngine`, `ToolkitOps` and `StoryToolkitAI`. Many helpers also keep broad UI and processing object references.        |
+| **Improvement made**   | Transcription events, Resolve operations, queue inspection and cancellation, ingest placeholder creation, ingest status changes and ingest submission use the engine. |
+| **Remaining coupling** | Most legacy UI workflows can still bypass the engine through `ToolkitOps`. Direct queue access has been removed and is tracked as resolved under C09.                 |
+| **Status**             | In progress                                                                                                                                                           |
+| **Related commits**    | `9a6f1f05f1b7c0d4116e7027410a61a8a6f6467d`, `0de06f4bde23b8655bcf88cfb08fd65ccb0b1d0a`, `059909c`, `2a15029`, `7c1babe`                                               |
 
 ## C20 — UI directly creates, mutates and saves live project and content models
 
@@ -355,42 +356,42 @@ Tk UI / CLI -> ToolkitOps and processing internals
 
 ## C22 — Operation dispatch and result values are inconsistent
 
-| Field                  | Detail                                                                                                                                                        |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Direction**          | Processing API ambiguity exposed to UI and queue                                                                                                              |
-| **Location**           | `ToolkitOps`, `ProcessingQueue.execute_item_tasks` and engine-facing operations                                                                               |
-| **Current state**      | Processing operations return a mixture of dictionaries, booleans, paths and `None`.                                                                           |
-| **Improvement made**   | Engine queue methods return detached dictionaries, and Resolve operations use result dictionaries containing `ok` with optional `code`, `message` and `data`. |
-| **Remaining coupling** | Most legacy operations still have undocumented and inconsistent result shapes.                                                                                |
-| **Status**             | In progress                                                                                                                                                   |
-| **Related commits**    | `89eabcf2c6ff3248e5c045f2bd40911d175f12d0`, `0de06f4bde23b8655bcf88cfb08fd65ccb0b1d0a`                                                                        |
+| Field                  | Detail                                                                                                                                                                                                                                                                            |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Direction**          | Processing API ambiguity exposed to UI and queue                                                                                                                                                                                                                                  |
+| **Location**           | `ToolkitOps`, `ProcessingQueue.execute_item_tasks` and engine-facing operations                                                                                                                                                                                                   |
+| **Current state**      | Processing operations return a mixture of dictionaries, booleans, paths, lists and `None`.                                                                                                                                                                                        |
+| **Improvement made**   | Engine queue methods return detached dictionaries. Resolve operations use result dictionaries containing `ok` with optional `code`, `message` and `data`. Ingest lifecycle operations now have explicit engine methods, although they retain existing transitional result values. |
+| **Remaining coupling** | Most legacy operations still have undocumented and inconsistent result shapes.                                                                                                                                                                                                    |
+| **Status**             | In progress                                                                                                                                                                                                                                                                       |
+| **Related commits**    | `89eabcf2c6ff3248e5c045f2bd40911d175f12d0`, `0de06f4bde23b8655bcf88cfb08fd65ccb0b1d0a`, `7c1babe`                                                                                                                                                                                 |
 
 # Status summary
 
-| ID  | Coupling                                      | Status                                       |
-| --- | --------------------------------------------- | -------------------------------------------- |
-| C01 | Broad objects passed to UIs                   | In progress                                  |
-| C02 | `ToolkitOps` stores Tk application            | Resolved                                     |
-| C03 | Transcription sends OS notifications          | Resolved                                     |
-| C04 | Resolve processing receives UI object         | Resolved for Tk coupling                     |
-| C05 | Core notification service stores UI receivers | Resolved                                     |
-| C06 | Core stores live callback observers           | Resolved                                     |
-| C07 | Queue uses implicit action strings            | In progress                                  |
-| C08 | Queue depends on complete `ToolkitOps`        | Open                                         |
-| C09 | UI accesses queue internals                   | In progress; reads and cancellation resolved |
-| C10 | Queue event timing workarounds                | Resolved for Queue-window refresh            |
-| C11 | UI owns search objects and threads            | Open                                         |
-| C12 | Search receives complete `ToolkitOps`         | Open                                         |
-| C13 | Assistant stores UI reference                 | Resolved                                     |
-| C14 | Resolve state stored globally on `NLE`        | Open                                         |
-| C15 | Resolve menu passes UI into processing        | Resolved                                     |
-| C16 | CLI calls Resolve implementation details      | Open                                         |
-| C17 | Processing reads runtime arguments            | Open                                         |
-| C18 | UI wildcard-imports processing module         | Open                                         |
-| C19 | UI stores broad internal object graph         | In progress                                  |
-| C20 | UI mutates live content models                | Accepted temporarily                         |
-| C21 | `StoryToolkitAI` mixes responsibilities       | Open                                         |
-| C22 | Inconsistent operation result values          | In progress                                  |
+| ID  | Coupling                                      | Status                                          |
+| --- | --------------------------------------------- | ----------------------------------------------- |
+| C01 | Broad objects passed to UIs                   | In progress                                     |
+| C02 | `ToolkitOps` stores Tk application            | Resolved                                        |
+| C03 | Transcription sends OS notifications          | Resolved                                        |
+| C04 | Resolve processing receives UI object         | Resolved for Tk coupling                        |
+| C05 | Core notification service stores UI receivers | Resolved                                        |
+| C06 | Core stores live callback observers           | Resolved                                        |
+| C07 | Queue uses implicit action strings            | Queue lifecycle resolved; search action remains |
+| C08 | Queue depends on complete `ToolkitOps`        | Resolved                                        |
+| C09 | UI accesses queue internals                   | Resolved for direct queue access                |
+| C10 | Queue event timing workarounds                | Resolved for queue refresh and task completion  |
+| C11 | UI owns search objects and threads            | Open                                            |
+| C12 | Search receives complete `ToolkitOps`         | Open                                            |
+| C13 | Assistant stores UI reference                 | Resolved                                        |
+| C14 | Resolve state stored globally on `NLE`        | Open                                            |
+| C15 | Resolve menu passes UI into processing        | Resolved                                        |
+| C16 | CLI calls Resolve implementation details      | Open                                            |
+| C17 | Processing reads runtime arguments            | Open                                            |
+| C18 | UI wildcard-imports processing module         | Open                                            |
+| C19 | UI stores broad internal object graph         | In progress                                     |
+| C20 | UI mutates live content models                | Accepted temporarily                            |
+| C21 | `StoryToolkitAI` mixes responsibilities       | Open                                            |
+| C22 | Inconsistent operation result values          | In progress                                     |
 
 # Repeatable local audit
 
@@ -436,7 +437,9 @@ rg -n --glob '*.py' \
 
 ## Transitional action-event bridge
 
-Matches are expected until C07 and C08 are resolved.
+Matches remain for non-queue legacy workflows and search-specific completion or failure handling.
+
+Normal queue state and task-completion events must not depend on this bridge.
 
 ```bash
 rg -n --glob '*.py' \
@@ -444,39 +447,56 @@ rg -n --glob '*.py' \
   storytoolkitai
 ```
 
-## UI queue inspection and cancellation
+## Direct UI queue access
 
-Expected result after Step 7: no matches.
-
-```bash
-rg -n --glob '*.py' \
-  'processing_queue\.(get_all_queue_items|get_item|set_to_canceled|cancel_item)' \
-  storytoolkitai/ui
-```
-
-## Remaining direct UI queue writes
-
-Expected result at the current migration stage: five matches in
-`storytoolkitai/ui/toolkit_ui.py`.
-
-These writes will be migrated with their owning user-interaction,
-ingest/transcription and search workflows rather than as part of Queue-window
-presentation.
+Expected result after Step 8: no matches.
 
 ```bash
 rg -n --glob '*.py' \
-  'processing_queue\.(generate_queue_id|add_to_queue|update_queue_item)' \
+  'processing_queue\.(get_all_queue_items|get_item|generate_queue_id|add_to_queue|update_queue_item|update_status|set_to_canceled|cancel_item)' \
   storytoolkitai/ui
 ```
 
-Current expected calls:
+## `ProcessingQueue` dependency on `ToolkitOps`
 
-```text
-update_queue_item(...)
-update_queue_item(...)
-generate_queue_id(...)
-generate_queue_id(...)
-update_queue_item(...)
+Expected result after Step 8: no matches.
+
+```bash
+rg -n --glob '*.py' \
+  'toolkit_ops_obj|notify_observers' \
+  storytoolkitai/core/toolkit_ops/processing_queue.py
+```
+
+## Queue task-completion callback names
+
+Expected result in `processing_queue.py`: no matches.
+
+Tk may still construct local callback names after receiving a structured `job.task_completed` event.
+
+```bash
+rg -n --glob '*.py' \
+  '_queue_item_done' \
+  storytoolkitai/core/toolkit_ops/processing_queue.py
+```
+
+## Explicit queue events
+
+Expected matches in queue, event and Tk event-handling code.
+
+```bash
+rg -n --glob '*.py' \
+  'job\.changed|job\.task_completed|create_job_task_completed_event' \
+  storytoolkitai
+```
+
+## Remaining search action bridge
+
+Matches are expected until search ownership is moved behind `StoryToolkitEngine`.
+
+```bash
+rg -n --glob '*.py' \
+  'on_stop_action_name|update_(done|fail)_indexing_search_file_path' \
+  storytoolkitai
 ```
 
 ## Resolve globals and integration internals
@@ -532,7 +552,9 @@ rg -n --glob '*.py' \
 
 ## Broad engine bypasses in the UI
 
-Matches identify C01, C09, C14, C16 and C19 work.
+Matches identify C01, C14, C16 and C19 work.
+
+Direct queue access should no longer be among the results.
 
 ```bash
 rg -n --glob '*.py' \
