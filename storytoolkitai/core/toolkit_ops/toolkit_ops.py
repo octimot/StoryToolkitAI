@@ -179,24 +179,24 @@ class ToolkitOps:
         # it's very likely that the model will not be loaded here, but in the SearchItem, for each search
         self.s_semantic_search_model = None
 
-        # initialize the processing queue
-        # use the event emitter to send events to the UI (if any)
-        self.processing_queue = ProcessingQueue(
-            toolkit_ops_obj=self,
-            event_emitter=self.events,
-        )
-
-        # this is used by the queue dispatcher to know which functions to call depending on the task
-        # the key is the name of the task, the value is a list of functions to call for that task
-        # the queue dispatcher may also merge multiple tasks into one (for eg. if transcribe+ingest is called)
+        # this mapping tells the queue which functions belong to each task
+        # it is passed explicitly so ProcessingQueue does not need access
+        # to the complete ToolkitOps object
         self.queue_tasks = {
             'transcribe': [self.whisper_transcribe],
             'translate': [self.whisper_transcribe],
             'group_questions': [self.group_questions],
             'index_text': [self.index_text],
             'index_video': [self.index_video],
-            'speaker_detection': [self.speaker_detection]
+            'speaker_detection': [self.speaker_detection],
         }
+
+        # initialize the processing queue
+        # use the shared event emitter to report queue changes
+        self.processing_queue = ProcessingQueue(
+            task_handlers=self.queue_tasks,
+            event_emitter=self.events,
+        )
 
         # use this to store all the devices that can be used for processing queue tasks
         self.queue_devices = self.get_torch_available_devices()
@@ -229,8 +229,17 @@ class ToolkitOps:
             self.resolve_enable()
 
         # if this is not the CLI
-        # resume the transcription queue if there's anything in it
-        if self.stAI.cli_args and self.stAI.cli_args.mode != 'cli' and self.processing_queue.resume_queue_from_file():
+        # resume the processing queue if there is anything in it
+        if (
+            self.stAI.cli_args
+            and self.stAI.cli_args.mode != 'cli'
+            and self.processing_queue.resume_queue_from_file(
+                ignore_finished=self.stAI.get_app_setting(
+                    setting_name='queue_ignore_finished',
+                    default_if_none=True,
+                )
+            )
+        ):
             logger.info('Resuming queue from file')
 
     def notify_observers(self, action):

@@ -3,7 +3,11 @@ import json
 
 from storytoolkitai import USER_DATA_PATH
 from storytoolkitai.core.logger import *
-from storytoolkitai.core.events import EngineEvent, EventEmitter
+from storytoolkitai.core.events import (
+    EngineEvent,
+    EventEmitter,
+    create_action_triggered_event,
+)
 
 import torch
 from threading import Thread
@@ -19,10 +23,25 @@ class ProcessingQueue:
 
     def __init__(
         self,
-        toolkit_ops_obj=None,
+        task_handlers=None,
         event_emitter=None,
     ):
-        self.toolkit_ops_obj = toolkit_ops_obj
+        # the queue only needs the task names and their callables
+        # it must not keep a reference to the complete ToolkitOps object
+        self.task_handlers = (
+            task_handlers
+            if isinstance(task_handlers, dict)
+            else {}
+        )
+
+        # ToolkitOps passes its shared emitter here
+        # standalone queue instances, such as isolated tests,
+        # receive their own emitter by default
+        self.events = (
+            event_emitter
+            if event_emitter is not None
+            else EventEmitter()
+        )
 
         # ToolkitOps passes its shared emitter here
         # standalone queue instances, such as isolated tests,
@@ -59,6 +78,51 @@ class ProcessingQueue:
         # by checking the queue_threads dict
         # self.queue_check_interval = 30 # seconds
 
+    def _emit_job_changed(self, item):
+        """
+        Publish a stable summary after a queue item changes.
+
+        Queue items may contain Python callables and temporary processing
+        objects. Those implementation details must not be placed in events.
+        """
+
+        if not isinstance(item, dict):
+            return False
+
+        self.events.emit(
+            EngineEvent(
+                type='job.changed',
+                data={
+                    'job_id': item.get('queue_id'),
+                    'status': item.get('status'),
+                    'progress': item.get('progress'),
+                    'item_type': item.get('item_type'),
+                },
+            )
+        )
+
+        return True
+
+    def _emit_legacy_action(self, action):
+        """
+        Publish a remaining legacy action through the event emitter.
+
+        This is temporarily kept for the advanced-search stop callback.
+        Search-specific action names will be removed when search ownership
+        moves behind StoryToolkitEngine in Step 9.
+        """
+
+        if not action:
+            return False
+
+        self.events.emit(
+            create_action_triggered_event(
+                action=action,
+            )
+        )
+
+        return True
+
     def generate_queue_id(self, name: str = None) -> str:
         """
         This function generates a queue id for a task
@@ -69,18 +133,26 @@ class ProcessingQueue:
 
             # use the name if one was provided
             # and a timestamp to make it as unique as possible
-            queue_id = "{}{}".format(((name.replace(' ', '') + '-') if name else ''), time.time())
+            queue_id = "{}{}".format(
+                ((name.replace(' ', '') + '-') if name else ''),
+                time.time(),
+            )
 
             # if the queue id doesn't return an item
             if not self.get_item(queue_id=queue_id):
 
-                # add it to the queue history
-                self.queue_history.append({'queue_id': queue_id, 'name': '', 'status': 'pending'})
+                queue_item = {
+                    'queue_id': queue_id,
+                    'name': '',
+                    'status': 'pending',
+                }
 
-                logger.debug('Added queue id {} to queue history'.format(queue_id))
+                logger.debug(
+                    'Added queue id {} to queue history'.format(queue_id)
+                )
 
-                # notify the update_queue observers
-                self.toolkit_ops_obj.notify_observers('update_queue')
+                # publish the pending item through the engine event stream
+                self._emit_job_changed(queue_item)
 
                 return queue_id
 
@@ -110,7 +182,7 @@ class ProcessingQueue:
 
         :param item_type: the main type of item that is being processed
                      - this could be used for UI purposes on the Queue window
-                     - this will also be used to notify the "{}_queue_item_done" observers
+                     - this is included in queue events so callers know what kind of item changed
 
         :param source_file_path: the path(s) to the source file(s) - if empty, we need to have the task_data
 
@@ -188,29 +260,18 @@ class ProcessingQueue:
         # check if the queue id already exists in the queue history
         item = self.get_item(queue_id=queue_id)
         if not item:
+
             # add the kwargs to the queue history
             self.queue_history.append(kwargs)
-            logger.debug('Added item {} to queue history'.format(queue_id))
 
-            # publish the same neutral event used for later job changes
-            #
-            # only stable summary fields are included here
-            # callers that need the full public snapshot should retrieve it
-            # through StoryToolkitEngine
-            self.events.emit(
-                EngineEvent(
-                    type='job.changed',
-                    data={
-                        'job_id': queue_id,
-                        'status': kwargs.get('status'),
-                        'progress': kwargs.get('progress'),
-                        'item_type': kwargs.get('item_type'),
-                    },
+            logger.debug(
+                'Added item {} to queue history'.format(
+                    queue_id
                 )
             )
 
-            # keep the existing observer notification during migration
-            self.toolkit_ops_obj.notify_observers('update_queue')
+            # publish the new queue item through the engine event stream
+            self._emit_job_changed(kwargs)
 
         else:
             # just update the item, but make sure that the queue id is not stripped
@@ -349,29 +410,8 @@ class ProcessingQueue:
                 # replace the item in the queue history
                 self.queue_history[item_index] = new_item
 
-                # publish a presentation-neutral event for the new engine interface
-                #
-                # do not publish the complete queue dictionary here
-                # queue items can contain Python callables,
-                # temporary output objects, and other mutable processing
-                # details that should not cross the engine/UI boundary
-                self.events.emit(
-                    EngineEvent(
-                        type='job.changed',
-                        data={
-                            'job_id': queue_id,
-                            'status': new_item.get('status'),
-                            'progress': new_item.get('progress'),
-                            'item_type': new_item.get('item_type'),
-                        },
-                    )
-                )
-
-                # Keep the existing observer notification during the version 1
-                # migration. Tk windows still depend on this path. Individual observer
-                # registrations will be removed only after their UI code subscribes
-                # through StoryToolkitEngine.
-                self.toolkit_ops_obj.notify_observers('update_queue_item')
+                # publish a stable summary of the changed queue item
+                self._emit_job_changed(new_item)
 
                 # save the queue to a file
                 if save_to_file:
@@ -494,7 +534,7 @@ class ProcessingQueue:
                     and 'queue_id' in thread \
                     and thread['queue_id'] == queue_id:
 
-                self._notify_on_stop_observer(item=item)
+                self._notify_on_stop_action(item=item)
 
                 # set the status to 'canceling' in the queue history
                 # and hope that someone will be watching the status and cancel the item!
@@ -503,7 +543,7 @@ class ProcessingQueue:
         # if we reached this point,
         # the item is not currently being processed,
         # so we can remove it from the queue history
-        self._notify_on_stop_observer(item=item)
+        self._notify_on_stop_action(item=item)
         return self.update_queue_item(queue_id=queue_id, status='canceled')
 
     def cancel_if_canceled(self, queue_id):
@@ -678,60 +718,70 @@ class ProcessingQueue:
 
     def task_dispatcher(self, tasks: list or str) -> list or bool:
         """
-        This function dispatches the tasks to the appropriate function(s)
-        This function should be called by the queue manager before a task is added to the queue.
+        Convert task names into the functions that execute those tasks.
 
-        Each task had a 'task_queue' key that holds a list of functions that need to be executed
-        in order to complete the task. The functions are executed in the order they are in the list.
+        The task-handler dictionary is supplied when the queue is created.
+        This keeps ProcessingQueue independent from ToolkitOps.
 
-        We will store possible tasks in a dictionary, where the key is the task name and the value is a list of
-        functions that need to be executed in order to complete the task.
-
-        The dictionary will be stored in the toolkit_ops_obj and will be called 'queue_tasks'
-
-        :param tasks: the list of tasks to dispatch, or a single task as a string
-        :return: The list of queue tasks that need to be executed, or False if there was an error
-
+        :param tasks: task names to dispatch, or a single task name
+        :return: ordered task functions, or False if none were found
         """
 
         task_queue = []
 
-        # take each task in the list of tasks
-        # and dispatch the appropriate function(s)
+        # no task names means there is nothing to dispatch
         if tasks is None:
-            logger.warning('Unable to dispatch tasks - no tasks were specified')
+            logger.warning(
+                'Unable to dispatch tasks - no tasks were specified'
+            )
             return False
 
-        # if the tasks is a string, convert it to a list of one item
+        # handle one task name in the same way as a list of task names
         if isinstance(tasks, str):
             tasks = [tasks]
 
-        # iterate through the list of tasks
         for task in tasks:
 
-            # if the task is not in the queue tasks, return False
-            if task not in self.toolkit_ops_obj.queue_tasks.keys():
-                logger.warning('Unable to dispatch task {} - task not in queue tasks'.format(task))
+            # skip unknown task names but continue checking the others
+            if task not in self.task_handlers:
+                logger.warning(
+                    'Unable to dispatch task {} - '
+                    'task not in task handlers'.format(task)
+                )
                 continue
 
-            # get the task queue from the queue tasks dictionary in the toolkit ops object
-            task_queue.extend(self.toolkit_ops_obj.queue_tasks[task])
+            handlers = self.task_handlers[task]
 
-            # if the task queue is empty, return False
-            if len(task_queue) == 0:
-                logger.error('Unable to dispatch task {} - task queue is empty'.format(task))
+            if not isinstance(handlers, list) or not handlers:
+                logger.error(
+                    'Unable to dispatch task {} - '
+                    'task handler list is empty'.format(task)
+                )
                 continue
+
+            task_queue.extend(handlers)
+
+        if not task_queue:
+            return False
 
         return task_queue
 
-    def _notify_on_stop_observer(self, item):
+    def _notify_on_stop_action(self, item):
         """
-        This is used to notify the on_stop observers
+        Publish the temporary search-specific action for a stopped job.
+
+        The advanced-search workflow still identifies its failure callback
+        through on_stop_action_name, but we will replace this with search
+        events containing normal job and search identifiers.
         """
 
-        # notify on_stop observers
-        if 'on_stop_action_name' in item:
-            self.toolkit_ops_obj.notify_observers(item['on_stop_action_name'])
+        if (
+            isinstance(item, dict)
+            and item.get('on_stop_action_name')
+        ):
+            self._emit_legacy_action(
+                item['on_stop_action_name']
+            )
 
     def execute_item_tasks(self, queue_id, task_queue: list, **kwargs):
         """
@@ -775,14 +825,14 @@ class ProcessingQueue:
                 self.update_status(queue_id=queue_id, status='canceled')
 
                 # notify on_stop observers
-                self._notify_on_stop_observer(item=item)
+                self._notify_on_stop_action(item=item)
 
                 return False
 
             # stop also if something set the status to 'failed'
             if item['status'] == 'failed':
                 # notify on_stop observers
-                self._notify_on_stop_observer(item=item)
+                self._notify_on_stop_action(item=item)
                 return False
 
             try:
@@ -811,11 +861,16 @@ class ProcessingQueue:
                 # wait a moment
                 time.sleep(0.1)
 
-                # notify the observers listening to specific queue item types
-                self.toolkit_ops_obj.notify_observers('{}_queue_item_done'.format(item['item_type']))
-
-                # notify the item observers that this specific item is done
-                self.toolkit_ops_obj.notify_observers('{}_queue_item_done'.format(queue_id))
+                # keep task-completion callbacks working until the explicit
+                # queue task event is introduced in the next commit
+                self._emit_legacy_action(
+                    '{}_queue_item_done'.format(
+                        item['item_type']
+                    )
+                )
+                self._emit_legacy_action(
+                    '{}_queue_item_done'.format(queue_id)
+                )
 
                 executed = True
 
@@ -827,16 +882,13 @@ class ProcessingQueue:
                 self.update_status(queue_id=queue_id, status='failed')
 
                 # notify on_stop observers
-                self._notify_on_stop_observer(item=item)
+                self._notify_on_stop_action(item=item)
 
                 # stop the execution
                 executed = False
 
         # remove the thread from the queue threads to free up the device
         self.remove_thread_from_queue_threads(device=device)
-
-        # notify all the observers that the queue has been updated
-        self.toolkit_ops_obj.notify_observers('update_queue')
 
         # then ping the queue again
         self.ping_queue()
@@ -1179,9 +1231,19 @@ class ProcessingQueue:
 
         return queue_history
 
-    def resume_queue_from_file(self):
+    def resume_queue_from_file(
+        self,
+        ignore_finished=True,
+    ):
         """
-        This loads the queue file and adds it to the queue and queue history
+        Load saved queue items and restore unfinished processing jobs.
+
+        Args:
+            ignore_finished: Whether completed, failed and canceled items
+                should be omitted from the restored queue history.
+
+        Returns:
+            True when unfinished queue items were restored, otherwise False.
         """
 
         queue_history = self.load_queue_from_file()
@@ -1192,9 +1254,9 @@ class ProcessingQueue:
         # if we have a list
         if isinstance(queue_history, list) and len(queue_history) > 0:
 
-            # first, rebuild the entire queue history from the queue file
-            # but only if we're supposed to see the finished items in the queue too
-            if not self.toolkit_ops_obj.stAI.get_app_setting('queue_ignore_finished', True):
+            # rebuild the complete history only when finished items
+            # should remain visible after restarting the application
+            if not ignore_finished:
                 self.queue_history = queue_history
 
             # take each item in the queue history and add it to the queue
@@ -1205,9 +1267,9 @@ class ProcessingQueue:
                 if not item.get('queue_id', None) \
                         or not (item.get('source_file_path', None) or item.get('task_data', None)):
 
-                    # remove the item from the queue history
-                    # removing this will make sure we don't add it next time we save the queue file
-                    if not self.toolkit_ops_obj.stAI.get_app_setting('queue_ignore_finished', True):
+                    # remove unusable items from the restored history
+                    # so they are not written back into the queue file
+                    if not ignore_finished:
                         self.queue_history.pop(idx)
 
                     continue

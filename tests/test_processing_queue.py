@@ -38,6 +38,9 @@ def _run_test_task(**kwargs: Any) -> dict[str, Any]:
 
     return kwargs
 
+TEST_TASK_HANDLERS = {
+    "test_task": [_run_test_task],
+}
 
 class FakeToolkitOps:
     """
@@ -75,7 +78,7 @@ def processing_queue(tmp_path, monkeypatch):
     )
 
     return ProcessingQueue(
-        toolkit_ops_obj=FakeToolkitOps(),
+        task_handlers=TEST_TASK_HANDLERS,
     )
 
 
@@ -107,7 +110,7 @@ def _add_test_job(
 
 
 def test_queue_item_can_be_added_and_retrieved(processing_queue) -> None:
-    """Adding an item records it in both the pending queue and its history."""
+    """Updating a status changes history and emits a neutral event."""
 
     item = _add_test_job(
         processing_queue,
@@ -129,9 +132,6 @@ def test_queue_item_can_be_added_and_retrieved(processing_queue) -> None:
     # task queue, but the task itself must not have been executed.
     assert item["task_queue"] == [_run_test_task]
 
-    assert processing_queue.toolkit_ops_obj.notifications == [
-        "update_queue",
-    ]
 
 def test_new_queue_item_emits_job_changed_event(
     processing_queue,
@@ -182,16 +182,10 @@ def test_queue_items_can_be_filtered_by_status(processing_queue) -> None:
 
 def test_queue_item_status_can_be_updated(processing_queue) -> None:
     """
-    Updating a status changes history and emits both notification mechanisms.
-
-    The new engine event is introduced alongside the existing observer
-    notification so current Tk behavior remains unchanged.
+    Updating a status changes history and emits a neutral event.
     """
 
     _add_test_job(processing_queue, "job-1")
-
-    # Ignore the legacy notification emitted while the test job was added.
-    processing_queue.toolkit_ops_obj.notifications.clear()
 
     received_events: list[EngineEvent] = []
     processing_queue.events.subscribe(received_events.append)
@@ -224,11 +218,6 @@ def test_queue_item_status_can_be_updated(processing_queue) -> None:
     assert "task_queue" not in event_data
     assert "last_task" not in event_data
     assert "output" not in event_data
-
-    # The old observer path remains active during the gradual UI migration.
-    assert processing_queue.toolkit_ops_obj.notifications == [
-        "update_queue_item",
-    ]
 
 
 def test_pending_queue_item_can_be_canceled(processing_queue) -> None:
@@ -379,7 +368,7 @@ def test_queue_history_can_be_saved_and_loaded(processing_queue) -> None:
     assert processing_queue.save_queue_to_file() is True
 
     reloaded_queue = ProcessingQueue(
-        toolkit_ops_obj=FakeToolkitOps(),
+        task_handlers=TEST_TASK_HANDLERS,
     )
     loaded_history = reloaded_queue.load_queue_from_file()
 
@@ -399,3 +388,35 @@ def test_queue_history_can_be_saved_and_loaded(processing_queue) -> None:
     assert "task_queue" not in loaded_item
     assert "last_task" not in loaded_item
     assert "output" not in loaded_item
+
+def test_queue_keeps_only_explicit_task_handlers(
+    processing_queue,
+) -> None:
+    """ProcessingQueue must not retain the complete ToolkitOps object."""
+
+    assert processing_queue.task_handlers == TEST_TASK_HANDLERS
+    assert not hasattr(processing_queue, "toolkit_ops_obj")
+
+def test_generated_queue_id_emits_pending_job_event(
+    processing_queue,
+) -> None:
+    """Creating an ingest placeholder publishes its pending state."""
+
+    received_events: list[EngineEvent] = []
+    processing_queue.events.subscribe(received_events.append)
+
+    queue_id = processing_queue.generate_queue_id(
+        name="Example ingest",
+    )
+
+    assert received_events == [
+        EngineEvent(
+            type="job.changed",
+            data={
+                "job_id": queue_id,
+                "status": "pending",
+                "progress": None,
+                "item_type": None,
+            },
+        )
+    ]
