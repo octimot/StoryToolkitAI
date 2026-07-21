@@ -2212,96 +2212,114 @@ class toolkit_UI():
         # then remove its reference
         del windows_dict[window_id]
 
-    def add_observer_to_window(self, window_id, action, callback, dettach_after_call=False):
+    def add_observer_to_window(
+        self,
+        window_id,
+        action,
+        callback,
+        dettach_after_call=False,
+    ):
         """
-        This adds an observer to a window, so that the callback can be called
-        when the action is triggered from toolkit_ops_obj
-        :param window_id: The window id
-        :param action: The action to be observed
-        :param callback: The callback function to be called when the Observer is notified
-        :param dettach_after_call: If True, the observer will be dettached after the callback is called
+        Register a UI callback for an engine action
         """
 
-        # if the window_id is not in the windows_observers dictionary, add it
+        if not window_id or not action or not callable(callback):
+            return False
+
+        # create the callback collection for the window
         if window_id not in self.windows_observers:
             self.windows_observers[window_id] = {}
 
-        # if the action is already in the windows_observers dictionary, return
+        # keep one callback per action and window
         if action in self.windows_observers[window_id]:
             return False
 
-        # add an Observer to the window
-        window_observer = Observer()
+        self.windows_observers[window_id][action] = {
+            'callback': callback,
+            'dettach_after_call': dettach_after_call,
+        }
 
-        # wrap the call with after() so that all notifications are executed sequentially and not in parallel
-        # this is important,
-        # otherwise widgets might be destroyed by some threads while other threads are trying to access them
-        # triggering a _tkinter.TclError: invalid command name exception
-        def callback_after(*args, **kwargs):
+        return callback
 
-            # get the window
-            window = self.get_window_by_id(window_id=window_id)
+    def _notify_window_observers(self, action):
+        """
+        Schedule callbacks registered for an engine action
+        """
 
-            window.after(1, callback, *args, **kwargs)
+        if not action:
+            return False
 
-        # if the dettach_after_call is True, execute the callback and then dettach the observer
-        if dettach_after_call:
+        notified = False
 
-            # create a new callback which contains the callback and the dettach function
-            def callback_with_dettach(*args, **kwargs):
+        # use a copy because callbacks may remove their own registration
+        for window_id, actions in list(
+            self.windows_observers.items()
+        ):
+            observer = actions.get(action)
 
-                # call the callback through after()
-                callback_after(*args, **kwargs)
+            if observer is None:
+                continue
 
-                # dettach the observer
-                self.toolkit_ops_obj.dettach_observer(action=action, observer=window_observer)
+            window = self.get_window_by_id(
+                window_id=window_id,
+            )
 
-            # set the new callback
-            window_observer.update = callback_with_dettach
+            # remove registrations for windows that no longer exist
+            if not window:
+                self.remove_observer_from_window(
+                    window_id=window_id,
+                )
+                continue
 
-        else:
-            window_observer.update = callback_after
+            callback = observer.get('callback')
 
-        # attach the observer to the action
-        self.toolkit_ops_obj.attach_observer(action=action, observer=window_observer)
+            if not callable(callback):
+                continue
 
-        # add the observer to the windows_observers dictionary
-        self.windows_observers[window_id][action] = window_observer
+            # marshal the callback onto the Tk thread
+            window.after(
+                1,
+                callback,
+            )
 
-        return window_observer
+            notified = True
 
-    def remove_observer_from_window(self, window_id, action=None):
+            if observer.get('dettach_after_call'):
+                self.remove_observer_from_window(
+                    window_id=window_id,
+                    action=action,
+                )
 
-        # first, dettach the observer from the toolkit_ops_obj
-        # but if no action was specified, remove all actions (check them in the windows_observers dictionary)
+        return notified
+
+    def remove_observer_from_window(
+        self,
+        window_id,
+        action=None,
+    ):
+        """
+        Remove callbacks registered for a window
+        """
+
+        if window_id not in self.windows_observers:
+            return False
+
+        # remove every callback belonging to the window
         if action is None:
+            del self.windows_observers[window_id]
+            return True
 
-            # if the action is not in the windows_observers dictionary, return
-            if window_id not in self.windows_observers:
-                return
+        # return when the requested action is not registered
+        if action not in self.windows_observers[window_id]:
+            return False
 
-            # remove all actions related to this window
-            for removable_action in self.windows_observers[window_id]:
-                self.toolkit_ops_obj.dettach_observer(action=removable_action,
-                                                      observer=self.windows_observers[window_id][removable_action])
+        del self.windows_observers[window_id][action]
 
-        # if we do have an action, remove only that action
-        else:
-            self.toolkit_ops_obj.dettach_observer(action=action, observer=self.windows_observers[window_id][action])
+        # remove the empty window entry
+        if not self.windows_observers[window_id]:
+            del self.windows_observers[window_id]
 
-        # if the window_id is in the windows_observers dictionary
-        if window_id in self.windows_observers:
-
-            # if an action was specified, only remove that action
-            if action is not None and action in self.windows_observers[window_id]:
-                del self.windows_observers[window_id][action]
-
-            # otherwise, remove the entire window from the dictionary
-            else:
-                del self.windows_observers[window_id]
-
-        return
-
+        return True
     def get_window_type(self, window_id: str) -> str or None:
         """
         This function returns the type of a window based on the window_id
@@ -21004,7 +21022,17 @@ class toolkit_UI():
             return False
 
     def handle_engine_event(self, event: EngineEvent):
-        """Handle engine events that have a Tk presentation."""
+        """
+        Handle engine events that have a Tk presentation.
+        """
+
+        if event.type == 'action.triggered':
+            action = event.data.get('action')
+
+            if action:
+                self._notify_window_observers(action)
+
+            return
 
         if event.type == "transcription.started":
             name = event.data.get("name") or "audio file"

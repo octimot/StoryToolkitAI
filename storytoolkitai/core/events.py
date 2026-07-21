@@ -98,6 +98,18 @@ def create_transcription_completed_event(
         },
     )
 
+def create_action_triggered_event(
+    *,
+    action: str,
+) -> EngineEvent:
+    """create an event for a legacy application action"""
+
+    return EngineEvent(
+        type='action.triggered',
+        data={
+            'action': action,
+        },
+    )
 
 # A listener is simply a function or bound method receiving one event.
 EventListener = Callable[[EngineEvent], None]

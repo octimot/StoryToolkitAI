@@ -22,6 +22,7 @@ import tqdm
 from storytoolkitai.core.logger import logger
 from storytoolkitai.core.events import (
     EventEmitter,
+    create_action_triggered_event,
     create_transcription_completed_event,
     create_transcription_started_event,
 )
@@ -113,11 +114,6 @@ class NLE:
             return True
 
 
-class Observer:
-    def update(self, subject):
-        pass
-
-
 class ToolkitOps:
 
     def __init__(
@@ -187,10 +183,6 @@ class ToolkitOps:
         # it's very likely that the model will not be loaded here, but in the SearchItem, for each search
         self.s_semantic_search_model = None
 
-        # add observers so that we can trigger certain actions when something else happens
-        # this dictionary will hold all the actions and their observers (for e.g. from the UI)
-        self._observers = {}
-
         # initialize the processing queue
         # use the event emitter to send events to the UI (if any)
         self.processing_queue = ProcessingQueue(
@@ -245,44 +237,26 @@ class ToolkitOps:
         if self.stAI.cli_args and self.stAI.cli_args.mode != 'cli' and self.processing_queue.resume_queue_from_file():
             logger.info('Resuming queue from file')
 
-    def attach_observer(self, action, observer):
-        """
-        Attach an observer to an action
-        """
-
-        if action not in self._observers:
-            self._observers[action] = []
-
-        # add the observer to the list of observers for this action
-        self._observers[action].append(observer)
-
-    def dettach_observer(self, action, observer):
-        """
-        Dettach an observer from an action
-        """
-
-        if action not in self._observers:
-            return False
-
-        # remove the observer from the list of observers for this action
-        self._observers[action].remove(observer)
-
-        # if the list is empty, remove the action
-        if len(self._observers[action]) == 0:
-            del self._observers[action]
-
     def notify_observers(self, action):
         """
-        Use this to notify all observers if a certain action has been performed
+        Publish a legacy action through the engine event stream
+
+        todo: this is still needed for now because the queue
+        and Resolve polling already call it in many places.
+
         """
 
-        # no observers for this action
-        if action not in self._observers:
+        if not action:
             return False
 
-        # notify all observers for this action
-        for observer in self._observers[action]:
-            observer.update()
+        # keep the existing method name while queue callers are migrated
+        self.events.emit(
+            create_action_triggered_event(
+                action=action,
+            )
+        )
+
+        return True
 
     def get_torch_available_devices(self) -> list or None:
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from storytoolkitai.core.events import (
     EngineEvent,
     EventEmitter,
+    create_action_triggered_event,
     create_transcription_completed_event,
     create_transcription_started_event,
 )
@@ -162,5 +163,17 @@ def test_transcription_completed_event_contains_output_details() -> None:
             ),
             "task": "transcribe",
             "elapsed_seconds": 42,
+        },
+    )
+
+def test_action_triggered_event_contains_simple_data() -> None:
+    event = create_action_triggered_event(
+        action='update_queue',
+    )
+
+    assert event == EngineEvent(
+        type='action.triggered',
+        data={
+            'action': 'update_queue',
         },
     )
