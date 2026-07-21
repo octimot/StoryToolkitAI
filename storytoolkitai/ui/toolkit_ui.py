@@ -21099,6 +21099,25 @@ class toolkit_UI():
 
             return
 
+        if event.type == 'job.task_completed':
+
+            job_id = event.data.get('job_id')
+            item_type = event.data.get('item_type')
+
+            # these action names now remain local to Tk
+            # processing only publishes the structured task event above
+            if item_type:
+                self._notify_window_observers(
+                    '{}_queue_item_done'.format(item_type)
+                )
+
+            if job_id:
+                self._notify_window_observers(
+                    '{}_queue_item_done'.format(job_id)
+                )
+
+            return
+
         if event.type == 'action.triggered':
             action = event.data.get('action')
 

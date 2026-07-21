@@ -6,6 +6,7 @@ from storytoolkitai.core.events import (
     create_action_triggered_event,
     create_transcription_completed_event,
     create_transcription_started_event,
+    create_job_task_completed_event,
 )
 
 
@@ -163,6 +164,24 @@ def test_transcription_completed_event_contains_output_details() -> None:
             ),
             "task": "transcribe",
             "elapsed_seconds": 42,
+        },
+    )
+
+def test_job_task_completed_event_contains_simple_data() -> None:
+    """Queue task completion events identify the job and completed task."""
+
+    event = create_job_task_completed_event(
+        job_id="job-1",
+        item_type="transcription",
+        task_name="speaker_detection",
+    )
+
+    assert event == EngineEvent(
+        type="job.task_completed",
+        data={
+            "job_id": "job-1",
+            "item_type": "transcription",
+            "task_name": "speaker_detection",
         },
     )
 

@@ -420,3 +420,54 @@ def test_generated_queue_id_emits_pending_job_event(
             },
         )
     ]
+
+def test_successful_task_emits_explicit_completion_event(
+    processing_queue,
+    monkeypatch,
+) -> None:
+    """A completed queue callable publishes structured task information."""
+
+    _add_test_job(
+        processing_queue,
+        "job-1",
+    )
+
+    # The lifecycle test only needs to exercise task execution and events.
+    # Thread-pool cleanup and queue scheduling are tested separately.
+    monkeypatch.setattr(
+        processing_queue,
+        "remove_thread_from_queue_threads",
+        lambda device: True,
+    )
+    monkeypatch.setattr(
+        processing_queue,
+        "ping_queue",
+        lambda: True,
+    )
+
+    received_events: list[EngineEvent] = []
+    processing_queue.events.subscribe(received_events.append)
+
+    result = processing_queue.execute_item_tasks(
+        queue_id="job-1",
+        task_queue=[_run_test_task],
+        device="cpu",
+    )
+
+    task_events = [
+        event
+        for event in received_events
+        if event.type == "job.task_completed"
+    ]
+
+    assert result is True
+    assert task_events == [
+        EngineEvent(
+            type="job.task_completed",
+            data={
+                "job_id": "job-1",
+                "item_type": "test",
+                "task_name": "_run_test_task",
+            },
+        )
+    ]

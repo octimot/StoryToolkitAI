@@ -98,6 +98,29 @@ def create_transcription_completed_event(
         },
     )
 
+def create_job_task_completed_event(
+    *,
+    job_id: str,
+    item_type: str | None,
+    task_name: str | None,
+) -> EngineEvent:
+    """
+    Create the event published after one queue task finishes successfully.
+
+    A queue item normally contains one task, but the event deliberately says
+    task completed rather than job completed because the queue also supports
+    ordered task lists.
+    """
+
+    return EngineEvent(
+        type="job.task_completed",
+        data={
+            "job_id": job_id,
+            "item_type": item_type,
+            "task_name": task_name,
+        },
+    )
+
 def create_action_triggered_event(
     *,
     action: str,

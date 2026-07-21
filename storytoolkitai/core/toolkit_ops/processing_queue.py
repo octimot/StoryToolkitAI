@@ -7,6 +7,7 @@ from storytoolkitai.core.events import (
     EngineEvent,
     EventEmitter,
     create_action_triggered_event,
+    create_job_task_completed_event,
 )
 
 import torch
@@ -861,15 +862,17 @@ class ProcessingQueue:
                 # wait a moment
                 time.sleep(0.1)
 
-                # keep task-completion callbacks working until the explicit
-                # queue task event is introduced in the next commit
-                self._emit_legacy_action(
-                    '{}_queue_item_done'.format(
-                        item['item_type']
+                # publish stable task details instead of a callback name
+                self.events.emit(
+                    create_job_task_completed_event(
+                        job_id=queue_id,
+                        item_type=item.get('item_type'),
+                        task_name=getattr(
+                            task,
+                            '__name__',
+                            None,
+                        ),
                     )
-                )
-                self._emit_legacy_action(
-                    '{}_queue_item_done'.format(queue_id)
                 )
 
                 executed = True
