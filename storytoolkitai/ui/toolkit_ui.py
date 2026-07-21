@@ -17763,20 +17763,6 @@ class toolkit_UI():
             # bind the button to the cancel_all_transcriptions function
             button_cancel_all.bind("<Button-1>", lambda e: self.on_button_cancel_queue())
 
-            # add an observer to the queue window to make sure it gets updated if any item changes
-            self.add_observer_to_window(
-                window_id='queue',
-                action='update_queue_item',
-                callback=lambda: self.update_queue_window()
-            )
-
-            # add an observer to the queue window to make sure it gets redrawn when the queue changes
-            self.add_observer_to_window(
-                window_id='queue',
-                action='update_queue',
-                callback=lambda: self.update_queue_window(force_redraw=True)
-            )
-
             # and then call the update function to fill the window up
             self.update_queue_window()
 
@@ -21069,10 +21055,43 @@ class toolkit_UI():
             button.config(text="Keep on top")
             return False
 
+    def _refresh_queue_window_from_engine(self):
+        """
+        Refresh the Queue window from the latest engine snapshot.
+
+        Engine events are only change signals. The engine snapshot remains
+        authoritative if several updates happen before Tk redraws the window.
+        """
+
+        queue_window = self.get_window_by_id('queue')
+        if queue_window is None:
+            return
+
+        try:
+            if not queue_window.winfo_exists():
+                return
+        except tk.TclError:
+            # the window may have been destroyed after the event was queued
+            return
+
+        self.update_queue_window()
+
     def handle_engine_event(self, event: EngineEvent):
         """
         Handle engine events that have a Tk presentation.
         """
+
+        if event.type == 'job.changed':
+
+            # processing events may arrive on worker threads
+            # always schedule Tk widget access on the Tk event loop
+            if getattr(self, 'root', None) is not None:
+                self.root.after(
+                    0,
+                    self._refresh_queue_window_from_engine,
+                )
+
+            return
 
         if event.type == 'action.triggered':
             action = event.data.get('action')
