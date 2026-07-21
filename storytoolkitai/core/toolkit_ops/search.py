@@ -16,6 +16,14 @@ from sentence_transformers import SentenceTransformer, util
 from sentence_transformers.SentenceTransformer import logging, batch_to_device, trange
 import torch
 
+from .search_paths import (
+    calculate_search_file_paths_size,
+    create_search_file_path_id,
+    filter_search_file_paths,
+    is_text_search_file,
+    is_video_search_file,
+)
+
 from .transcription import Transcription, TranscriptionSegment, TranscriptionUtils
 from .textanalysis import TextAnalysis
 
@@ -142,96 +150,53 @@ class SearchItem(ToolkitSearch):
     @staticmethod
     def get_search_file_path_id(search_file_paths: list):
         """
-        We need the search_file_path_id to identify the search corpus
-        and to pick-up the search item from different places (cache, queue, etc.)
+        Return the identifier used for one set of search paths.
+
+        The lightweight implementation lives outside the model-processing
+        module so path handling can be tested without importing Torch.
         """
 
-        # if the search_file_paths is empty, we'll return a hash of the current time
-        if not search_file_paths:
-            return hashlib.md5(('empty_' + str(time.time())).encode('utf-8')).hexdigest()
-
-        # turn the list of file paths into a string
-        search_file_paths = '__'.join(search_file_paths)
-
-        return hashlib.md5(search_file_paths.encode('utf-8')).hexdigest()
+        return create_search_file_path_id(search_file_paths)
 
     @classmethod
-    def filter_file_paths(cls, search_paths: str or list = None, file_validator: callable = None) -> list or None:
+    def filter_file_paths(
+        cls,
+        search_paths: str or list = None,
+        file_validator: callable = None,
+    ) -> list or None:
         """
-        This function will filter all the file paths and directories that are passed to it,
-        do a recursive walk through the directories to include all the valid files (by extension)
-        and return a list of file paths the are valid.
+        Return sorted unique paths supported by this search class.
 
-        It also sorts them and removes duplicates.
-
-        :param search_paths: list of file paths or directories
-        :param file_validator: a function that will be used to validate the file paths,
-                               by default it will use the is_file_searchable function from SearchItem
-        :return: list of file paths
-
+        ``file_validator`` remains optional so TextSearch and VideoSearch keep
+        their existing class-specific extension handling.
         """
 
         if file_validator is None:
             file_validator = cls.is_file_searchable
 
-        filtered_search_file_paths = []
-
-        # is this a search for a single file or a directory?
-        # if it's a single file, we'll just add it to the search_file_paths list
-        if search_paths is not None and type(search_paths) is str and os.path.isfile(search_paths) \
-                and file_validator(search_paths):
-            filtered_search_file_paths = [search_paths]
-
-        # if it's a list of files, we'll just add it to the search_file_paths list
-        elif search_paths is not None and (type(search_paths) is list or type(search_paths) is tuple):
-
-            # but we only add the path if it's a file
-            for search_path in search_paths:
-                if os.path.isfile(search_path) and file_validator(search_path):
-                    filtered_search_file_paths.append(search_path)
-
-        # if it's a directory, we'll process all the files in the directory
-        elif search_paths is not None and type(search_paths) is str and os.path.isdir(search_paths):
-
-            for root, dirs, files in os.walk(search_paths):
-
-                # skip if the directory starts with a dot
-                if os.path.basename(root).startswith('.'):
-                    continue
-
-                for file in files:
-                    if file_validator(file):
-                        filtered_search_file_paths.append(os.path.join(root, file))
-
-        # remove duplicates
-        filtered_search_file_paths = list(set(filtered_search_file_paths))
-
-        # sort the list of file paths
-        filtered_search_file_paths.sort()
-
-        return filtered_search_file_paths
+        return filter_search_file_paths(
+            search_paths=search_paths,
+            file_validator=file_validator,
+        )
 
     @staticmethod
-    def is_file_searchable(file_path):
+    def is_file_searchable(file_path: str) -> bool:
         """
-        Used in the process_file_paths function to identify the searchable files
+        Return whether the path is supported by this search processor.
+
+        SearchItem does not define supported file types itself. Subclasses must
+        implement this method for their respective search data.
         """
-        pass
+
+        raise NotImplementedError(
+            'SearchItem subclasses must implement is_file_searchable().'
+        )
 
     @staticmethod
     def calculate_total_file_size(files: list):
-        """
-        This function will calculate the total size of all the files that are being used for the search
-        """
+        """Return the combined size of the selected search files."""
 
-        if not files:
-            return 0
-
-        total_size = 0
-        for file in files:
-            total_size += os.path.getsize(file)
-
-        return total_size
+        return calculate_search_file_paths_size(files)
 
     @property
     def search_file_paths_size(self):
@@ -308,13 +273,10 @@ class TextSearch(SearchItem):
         return len(self._search_corpus_phrases) if self._search_corpus_phrases is not None else 0
 
     @staticmethod
-    def is_file_searchable(file_path):
-        """
-        This identifies the searchable files and returns True if the file is searchable
-        """
-        # for now,
-        # just check if the file ends with one of the extensions we're looking for
-        return file_path.endswith(('.transcription.json', '.txt', 'project.json'))
+    def is_file_searchable(file_path) -> bool:
+        """Return whether the path is supported by text search."""
+
+        return is_text_search_file(file_path)
 
     def prepare_search_corpus(self, force=False):
         """
@@ -1353,14 +1315,10 @@ class VideoSearch(SearchItem, ClipIndex):
         ClipIndex.__init__(self, *args, **kwargs)
 
     @staticmethod
-    def is_file_searchable(file_path):
-        """
-        This identifies the searchable files and returns True if the file is searchable
-        """
-        # for now,
-        # just check if the file ends with one of the extensions we're looking for
+    def is_file_searchable(file_path) -> bool:
+        """Return whether the path can provide a video-search index."""
 
-        return file_path.endswith('.transcription.json')
+        return is_video_search_file(file_path)
 
     @staticmethod
     def set_video_index_paths(self, search_file_paths: List[str] = None):
