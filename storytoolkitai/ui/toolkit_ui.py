@@ -1930,8 +1930,14 @@ class toolkit_UI():
         # check if there are any items left in the queue
         # if there are, ask the user if they want to quit anyway
 
-        queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items(
-            not_status=['failed', 'done', 'canceled', 'canceling'])
+        queue_items = self.engine.list_jobs(
+            not_status=[
+                'failed',
+                'done',
+                'canceled',
+                'canceling',
+            ],
+        )
 
         if queue_items is not None and len(queue_items) > 0:
 
