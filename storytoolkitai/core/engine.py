@@ -89,6 +89,45 @@ class StoryToolkitEngine:
 
         self._toolkit_ops.events.unsubscribe(listener)
 
+    def get_resolve_marker_colors(self) -> dict:
+        """
+        Return marker colors for the current Resolve timeline
+        """
+
+        return deepcopy(
+            self._toolkit_ops.get_resolve_marker_colors()
+        )
+
+    def copy_resolve_markers(self, source: str) -> dict:
+        """
+        Copy Resolve markers between timeline and bin clip
+        """
+
+        return deepcopy(
+            self._toolkit_ops.copy_resolve_markers(
+                source=source,
+            )
+        )
+
+    def render_resolve_markers(
+        self,
+        *,
+        marker_color: str | None,
+        target_dir: str,
+        starts_with: str | None = None,
+        render_stills: bool = False,
+    ) -> dict:
+        """render selected markers from the current Resolve timeline"""
+
+        return deepcopy(
+            self._toolkit_ops.render_resolve_markers(
+                marker_color=marker_color,
+                target_dir=target_dir,
+                starts_with=starts_with,
+                render_stills=render_stills,
+            )
+        )
+
     @staticmethod
     def _copy_job(item: dict[str, Any]) -> dict[str, Any]:
         """

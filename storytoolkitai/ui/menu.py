@@ -24,6 +24,7 @@ class UImenus:
         # declare the main objects
         self.toolkit_UI_obj = toolkit_UI_obj
         self.toolkit_ops_obj = toolkit_UI_obj.toolkit_ops_obj
+        self.engine = toolkit_UI_obj.engine
         self.stAI = toolkit_UI_obj.stAI
 
         self.app_items_obj = toolkit_UI_obj.app_items_obj
@@ -672,6 +673,185 @@ class UImenus:
         # add a postcommand to the assistant menu to enable/disable menu items depending on the current window
         self.assistantmenu.configure(postcommand=toggle_assistant_menu_items)
 
+    def _show_resolve_operation_error(self, result):
+        """
+        Show an error returned by a Resolve engine operation
+        """
+
+        error_code = result.get('code')
+
+        error_messages = {
+            'resolve_unavailable': (
+                'Resolve unavailable',
+                'Resolve is not connected',
+                'warning',
+            ),
+            'timeline_unavailable': (
+                'Timeline not available',
+                'Timeline not available\n\n'
+                'Make sure a timeline is open in Resolve',
+                'warning',
+            ),
+            'bin_unavailable': (
+                'Bin clips not available',
+                'Bin clips not available\n\n'
+                'Make sure that a bin is opened in Resolve\n\n'
+                'This does not work if multiple bins or smart bins '
+                'are selected due to the Resolve API',
+                'warning',
+            ),
+            'markers_unavailable': (
+                'No timeline markers',
+                'The timeline does not contain any markers',
+                'warning',
+            ),
+            'marker_color_invalid': (
+                'Unavailable marker color',
+                'The selected marker color does not exist '
+                'on the timeline',
+                'error',
+            ),
+            'invalid_marker_source': (
+                'Invalid marker source',
+                'The selected marker source is not supported',
+                'error',
+            ),
+            'target_dir_required': (
+                'Target directory required',
+                'Choose a target directory before rendering markers',
+                'warning',
+            ),
+            'marker_filter_required': (
+                'Marker filter required',
+                'Choose a marker color or enter a marker name prefix',
+                'warning',
+            ),
+            'resolve_operation_failed': (
+                'Resolve operation failed',
+                'The Resolve operation could not be completed',
+                'error',
+            ),
+        }
+
+        title, message, level = error_messages.get(
+            error_code,
+            (
+                'Resolve operation failed',
+                result.get('message')
+                or 'The Resolve operation could not be completed',
+                'error',
+            ),
+        )
+
+        self.toolkit_UI_obj.notify_via_messagebox(
+            title=title,
+            message=message,
+            message_log=result.get('message') or message,
+            level=level,
+        )
+
+        return False
+
+    def copy_resolve_markers(self, source):
+        """copy markers through the public engine interface"""
+
+        result = self.engine.copy_resolve_markers(
+            source=source,
+        )
+
+        if not result.get('ok'):
+            return self._show_resolve_operation_error(result)
+
+        return True
+
+    def render_resolve_markers(self, render_stills=False):
+        """collect render options and call the engine"""
+
+        marker_colors_result = (
+            self.engine.get_resolve_marker_colors()
+        )
+
+        if not marker_colors_result.get('ok'):
+            return self._show_resolve_operation_error(
+                marker_colors_result
+            )
+
+        current_timeline_marker_colors = (
+            [' ']
+            + marker_colors_result['data']['marker_colors']
+        )
+
+        input_widgets = [
+            {
+                'name': 'starts_with',
+                'label': 'Starts With:',
+                'type': 'entry',
+                'default_value': '',
+            },
+            {
+                'name': 'color',
+                'label': 'Color:',
+                'type': 'option_menu',
+                'default_value': 'Blue',
+                'options': current_timeline_marker_colors,
+            },
+        ]
+
+        # ask the user which markers should be rendered
+        user_input = self.toolkit_UI_obj.AskDialog(
+            title='Markers to Render',
+            input_widgets=input_widgets,
+            parent=self.root,
+            toolkit_UI_obj=self.toolkit_UI_obj,
+        ).value()
+
+        if not user_input:
+            logger.debug(
+                'User canceled Resolve marker selection'
+            )
+            return False
+
+        starts_with = (
+            user_input.get('starts_with')
+            or None
+        )
+
+        marker_color = (
+            user_input.get('color')
+            if user_input.get('color') != ' '
+            else None
+        )
+
+        if not marker_color and not starts_with:
+            logger.debug(
+                'User canceled Resolve render operation '
+                'without selecting markers'
+            )
+            return False
+
+        # ask the user where the rendered files should be saved
+        render_target_dir = (
+            self.toolkit_UI_obj.ask_for_target_dir()
+        )
+
+        if not render_target_dir:
+            logger.debug(
+                'User canceled Resolve render operation'
+            )
+            return False
+
+        result = self.engine.render_resolve_markers(
+            marker_color=marker_color,
+            target_dir=render_target_dir,
+            starts_with=starts_with,
+            render_stills=render_stills,
+        )
+
+        if not result.get('ok'):
+            return self._show_resolve_operation_error(result)
+
+        return True
+
     def _load_integrations_menu(self):
         """
         Create the integrations menu
@@ -745,24 +925,35 @@ class UImenus:
                                                   state=NORMAL)
                 self.integrationsmenu.entryconfig(
                     "Copy Timeline Markers to Timeline Bin Clip",
-                    command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
-                        'copy_markers_timeline_to_clip', self.toolkit_UI_obj),
-                    state=NORMAL)
+                    command=lambda: self.copy_resolve_markers(
+                        source='timeline',
+                    ),
+                    state=NORMAL,
+                )
+
                 self.integrationsmenu.entryconfig(
                     "Copy Timeline Bin Clip Markers to Timeline",
-                    command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
-                        'copy_markers_clip_to_timeline', self.toolkit_UI_obj),
-                    state=NORMAL)
+                    command=lambda: self.copy_resolve_markers(
+                        source='clip',
+                    ),
+                    state=NORMAL,
+                )
+
                 self.integrationsmenu.entryconfig(
                     "Render Markers to Stills",
-                    command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
-                        'render_markers_to_stills', self.toolkit_UI_obj),
-                    state=NORMAL)
+                    command=lambda: self.render_resolve_markers(
+                        render_stills=True,
+                    ),
+                    state=NORMAL,
+                )
+
                 self.integrationsmenu.entryconfig(
                     "Render Markers to Clips",
-                    command=lambda: self.toolkit_ops_obj.execute_resolve_operation(
-                        'render_markers_to_clips', self.toolkit_UI_obj),
-                    state=NORMAL)
+                    command=lambda: self.render_resolve_markers(
+                        render_stills=False,
+                    ),
+                    state=NORMAL,
+                )
 
             else:
                 self.integrationsmenu.entryconfig("Render and Transcribe Timeline", command=self.donothing,

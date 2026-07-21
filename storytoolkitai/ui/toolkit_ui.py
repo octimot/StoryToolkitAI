@@ -18,7 +18,7 @@ import time
 import re
 import hashlib
 
-from typing import Union, List
+from typing import TYPE_CHECKING, Union, List
 
 from timecode import Timecode
 
@@ -34,6 +34,10 @@ from whisper import available_models as whisper_available_models
 
 from ..core.toolkit_ops.ingest import MetadataSettings, TranscriptionSettings, VideoIndexingSettings, IngestSettings
 from .menu import UImenus
+
+# this prevents circular imports when using type hints
+if TYPE_CHECKING:
+    from storytoolkitai.core.engine import StoryToolkitEngine
 
 class CTkToplevelExt(ctk.CTkToplevel):
     """
@@ -1394,10 +1398,18 @@ class toolkit_UI():
 
             return
 
-    def __init__(self, toolkit_ops_obj=None, stAI=None, **other_options):
+    def __init__(
+        self,
+        toolkit_ops_obj,
+        stAI,
+        engine: 'StoryToolkitEngine',
+    ):
 
         # make a reference to toolkit ops obj
         self.toolkit_ops_obj = toolkit_ops_obj
+
+        # use the public processing interface
+        self.engine = engine
 
         # make a reference to StoryToolkitAI obj
         self.stAI = stAI
@@ -3026,27 +3038,39 @@ class toolkit_UI():
         )
 
         main_window.r_copy_markers_clip = ctk.CTkButton(
-            resolve_buttons_frame, **self.ctk_main_button_size,
+            resolve_buttons_frame,
+            **self.ctk_main_button_size,
             text="Timeline Markers to Same Clip",
-            command=lambda: self.toolkit_ops_obj.execute_resolve_operation('copy_markers_timeline_to_clip', self)
+            command=lambda: self.main_menu.copy_resolve_markers(
+                source='timeline',
+            ),
         )
 
         main_window.r_copy_markers_timeline = ctk.CTkButton(
-            resolve_buttons_frame, **self.ctk_main_button_size,
+            resolve_buttons_frame,
+            **self.ctk_main_button_size,
             text="Clip Markers to Same Timeline",
-            command=lambda: self.toolkit_ops_obj.execute_resolve_operation('copy_markers_clip_to_timeline', self)
+            command=lambda: self.main_menu.copy_resolve_markers(
+                source='clip',
+            ),
         )
 
-        main_window.r_render_marker_stils = ctk.CTkButton(
-            resolve_buttons_frame, **self.ctk_main_button_size,
+        main_window.r_render_marker_stills = ctk.CTkButton(
+            resolve_buttons_frame,
+            **self.ctk_main_button_size,
             text="Render Markers to Stills",
-            command=lambda: self.toolkit_ops_obj.execute_resolve_operation('render_markers_to_stills', self)
+            command=lambda: self.main_menu.render_resolve_markers(
+                render_stills=True,
+            ),
         )
 
         main_window.r_render_marker_clips = ctk.CTkButton(
-            resolve_buttons_frame, **self.ctk_main_button_size,
+            resolve_buttons_frame,
+            **self.ctk_main_button_size,
             text="Render Markers to Clips",
-            command=lambda: self.toolkit_ops_obj.execute_resolve_operation('render_markers_to_clips', self)
+            command=lambda: self.main_menu.render_resolve_markers(
+                render_stills=False,
+            ),
         )
 
         # TOOL BUTTONS
@@ -3110,7 +3134,7 @@ class toolkit_UI():
         # main_window.r_transcribe.grid(row=1, column=1, **self.ctk_main_paddings)
         # main_window.r_copy_markers_clip.grid(row=1, column=2, **self.ctk_main_paddings)
         # main_window.r_copy_markers_timeline.grid(row=1, column=3, **self.ctk_main_paddings)
-        # main_window.r_render_marker_stils.grid(row=1, column=4, **self.ctk_main_paddings)
+        # main_window.r_render_marker_stills.grid(row=1, column=4, **self.ctk_main_paddings)
         # main_window.r_render_marker_clips.grid(row=1, column=5, **self.ctk_main_paddings)
 
         # make the window resizable only on the height
@@ -21225,14 +21249,16 @@ class toolkit_UI():
 
 
 def run_gui(toolkit_ops_obj, stAI, engine):
-    # initialize GUI
-    app_UI = toolkit_UI(toolkit_ops_obj=toolkit_ops_obj, stAI=stAI)
+
+    # initialize the GUI with its processing interface
+    app_UI = toolkit_UI(
+        toolkit_ops_obj=toolkit_ops_obj,
+        stAI=stAI,
+        engine=engine,
+    )
 
     # subscribe the Tk UI through the public engine interface
     engine.subscribe(app_UI.handle_engine_event)
-
-    # keep the legacy reference for couplings not migrated yet
-    toolkit_ops_obj.toolkit_UI_obj = app_UI
 
     # create the main window
     app_UI.create_main_window()

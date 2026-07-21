@@ -155,10 +155,6 @@ class ToolkitOps:
         # the format is {queue_id: transcription_item_attributes}
         self.transcription_queue_current_item = {}
 
-        # todo: remove this and use observers instead
-        # declare this as none for now so we know it exists
-        self.toolkit_UI_obj = None
-
         # use this to store the whisper model later
         self.whisper_model = None
 
@@ -3491,22 +3487,43 @@ class ToolkitOps:
                 # take a 0.5-second break before trying this again
                 time.sleep(0.5)
 
-    def resolve_check_timeline(self, resolve_data, toolkit_UI_obj):
-        '''
-        This checks if a timeline is available
-        :param resolve:
-        :return: bool
-        '''
+    @staticmethod
+    def resolve_check_timeline(resolve_data):
+        """
+        Check whether Resolve returned a current timeline
+        """
 
-        # trigger warning if there is no current timeline
-        if resolve_data['currentTimeline'] is None:
-            toolkit_UI_obj.notify_via_messagebox(
-                message='Timeline not available. Make sure that you\'ve opened a Timeline in Resolve.',
-                level='warning')
-            return False
+        return (
+            isinstance(resolve_data, dict)
+            and resolve_data.get('currentTimeline') is not None
+        )
 
-        else:
-            return True
+    @staticmethod
+    def _resolve_operation_result(
+        ok,
+        *,
+        code=None,
+        message=None,
+        data=None,
+    ):
+        """
+        Create a simple result for a Resolve operation
+        """
+
+        result = {
+            'ok': bool(ok),
+        }
+
+        if code is not None:
+            result['code'] = code
+
+        if message is not None:
+            result['message'] = message
+
+        if data is not None:
+            result['data'] = data
+
+        return result
 
     def are_files_in_dir(self, dir, files_present):
         """
@@ -3679,129 +3696,258 @@ class ToolkitOps:
             logger.error("An error occurred while trying to render timeline via CLI.", exc_info=True)
             return False
 
-    def execute_resolve_operation(self, operation, toolkit_UI_obj):
+    def get_resolve_marker_colors(self):
         """
-        This executes a given Resolve API operation
+        Return marker colors available on the current Resolve timeline
         """
 
-        if not operation or operation == '':
-            return False
+        if self.resolve_api is None:
+            return self._resolve_operation_result(
+                False,
+                code='resolve_unavailable',
+                message='Resolve is not connected',
+            )
 
-        stAI = self.stAI
+        try:
+            resolve_data = self.resolve_api.get_resolve_data()
+        except Exception as error:
+            logger.error(
+                'Unable to read Resolve timeline data: {}'.format(error),
+                exc_info=True,
+            )
 
-        # get info from resolve for later
-        resolve_data = self.resolve_api.get_resolve_data()
+            return self._resolve_operation_result(
+                False,
+                code='resolve_operation_failed',
+                message='Unable to read Resolve timeline data',
+            )
 
-        # copy markers operation
-        if operation == 'copy_markers_timeline_to_clip' or operation == 'copy_markers_clip_to_timeline':
+        if not self.resolve_check_timeline(resolve_data):
+            return self._resolve_operation_result(
+                False,
+                code='timeline_unavailable',
+                message='Timeline not available',
+            )
 
-            # set source and destination depending on the operation
-            if operation == 'copy_markers_timeline_to_clip':
-                source = 'timeline'
-                destination = 'clip'
+        timeline = resolve_data.get('currentTimeline')
+        markers = None
 
-            elif operation == 'copy_markers_clip_to_timeline':
-                source = 'clip'
-                destination = 'timeline'
+        if isinstance(timeline, dict):
+            markers = timeline.get('markers')
 
-            # this else will never be triggered but let's leave it here for safety for now
-            else:
-                return False
+        # use the most recently polled timeline as a fallback
+        if not markers and isinstance(NLE.current_timeline, dict):
+            markers = NLE.current_timeline.get('markers')
 
-            # trigger warning and stop if there is no current timeline
-            if not self.resolve_check_timeline(resolve_data, toolkit_UI_obj):
-                return False
+        if not isinstance(markers, dict) or not markers:
+            return self._resolve_operation_result(
+                False,
+                code='markers_unavailable',
+                message='The timeline does not contain any markers',
+            )
 
-            # trigger warning and stop if there are no bin clips
-            if resolve_data['binClips'] is None:
-                toolkit_UI_obj.notify_via_messagebox(
-                    message='Bin clips not available. Make sure that a bin is opened in Resolve.\n\n'
-                            'This doesn\'t work if multiple bins or smart bins are selected due to API.',
-                    level='warning')
-                return False
+        marker_colors = sorted(
+            {
+                marker.get('color')
+                for marker in markers.values()
+                if (
+                    isinstance(marker, dict)
+                    and marker.get('color')
+                )
+            }
+        )
 
-            # execute operation without asking for any prompts
-            # this will delete the existing clip/timeline destination markers,
-            # but the user can undo the operation from Resolve
-            return self.resolve_api.copy_markers(source, destination,
-                                                 resolve_data['currentTimeline']['name'],
-                                                 resolve_data['currentTimeline']['name'],
-                                                 True)
+        if not marker_colors:
+            return self._resolve_operation_result(
+                False,
+                code='markers_unavailable',
+                message='The timeline does not contain any marker colors',
+            )
 
-        # render marker operation
-        elif operation == 'render_markers_to_stills' or operation == 'render_markers_to_clips':
+        return self._resolve_operation_result(
+            True,
+            data={
+                'marker_colors': marker_colors,
+            },
+        )
 
-            # ask user for marker color
-            # or what the marker name starts with
+    def copy_resolve_markers(self, source):
+        """
+        Copy markers between the current timeline and bin clip
+        """
 
-            # but first make a list of all the available marker colors based on the timeline markers
-            current_timeline_marker_colors = []
-            if self.resolve_check_timeline(resolve_data, toolkit_UI_obj) and \
-                    NLE.current_timeline and 'markers' in NLE.current_timeline:
-                # take each marker from timeline and get its color
-                # but also add a an empty string to the list to allow the user to render all markers
-                current_timeline_marker_colors = [' '] + sorted(
-                    list(set([NLE.current_timeline['markers'][marker]['color']
-                              for marker in NLE.current_timeline['markers']])))
+        if source not in ['timeline', 'clip']:
+            return self._resolve_operation_result(
+                False,
+                code='invalid_marker_source',
+                message='Invalid Resolve marker source',
+            )
 
-            # if no markers exist, cancel operation and let the user know that there are no markers to render
-            marker_color = None
-            starts_with = None
-            if current_timeline_marker_colors:
+        if self.resolve_api is None:
+            return self._resolve_operation_result(
+                False,
+                code='resolve_unavailable',
+                message='Resolve is not connected',
+            )
 
-                # create a list of widgets for the input dialogue
-                input_widgets = [
-                    {'name': 'starts_with', 'label': 'Starts With:', 'type': 'entry', 'default_value': ''},
-                    {'name': 'color', 'label': 'Color:', 'type': 'option_menu', 'default_value': 'Blue',
-                     'options': current_timeline_marker_colors}
-                ]
+        destination = (
+            'clip'
+            if source == 'timeline'
+            else 'timeline'
+        )
 
-                # then we call the ask_dialogue function
-                user_input = self.toolkit_UI_obj.AskDialog(title='Markers to Render',
-                                                           input_widgets=input_widgets,
-                                                           parent=self.toolkit_UI_obj.root,
-                                                           toolkit_UI_obj=self.toolkit_UI_obj,
-                                                           ).value()
+        try:
+            resolve_data = self.resolve_api.get_resolve_data()
+        except Exception as error:
+            logger.error(
+                'Unable to read Resolve timeline data: {}'.format(error),
+                exc_info=True,
+            )
 
-                # if the user didn't cancel the operation
-                if user_input:
-                    starts_with = user_input['starts_with'] if user_input['starts_with'] else None
-                    marker_color = user_input['color'] if user_input['color'] != ' ' else None
+            return self._resolve_operation_result(
+                False,
+                code='resolve_operation_failed',
+                message='Unable to read Resolve timeline data',
+            )
 
-            else:
-                no_markers_alert = 'The timeline doesn\'t contain any markers'
-                logger.warning(no_markers_alert)
-                return False
+        if not self.resolve_check_timeline(resolve_data):
+            return self._resolve_operation_result(
+                False,
+                code='timeline_unavailable',
+                message='Timeline not available',
+            )
 
-            if not marker_color and not starts_with:
-                logger.debug("User canceled Resolve render operation by mentioning which markers.")
-                return False
+        if resolve_data.get('binClips') is None:
+            return self._resolve_operation_result(
+                False,
+                code='bin_unavailable',
+                message='Bin clips not available',
+            )
 
-            if marker_color and marker_color not in current_timeline_marker_colors:
-                toolkit_UI_obj.notify_via_messagebox(title='Unavailable marker color',
-                                                     message='The marker color you\'ve entered doesn\'t exist on the timeline.',
-                                                     message_log="Aborting. User entered a marker color that doesn't exist on the timeline.",
-                                                     level='error'
-                                                     )
+        timeline_name = resolve_data['currentTimeline'].get('name')
 
-                return False
+        if not timeline_name:
+            return self._resolve_operation_result(
+                False,
+                code='timeline_unavailable',
+                message='Timeline name not available',
+            )
 
-            render_target_dir = toolkit_UI_obj.ask_for_target_dir()
+        try:
+            operation_result = self.resolve_api.copy_markers(
+                source,
+                destination,
+                timeline_name,
+                timeline_name,
+                True,
+            )
+        except Exception as error:
+            logger.error(
+                'Unable to copy Resolve markers: {}'.format(error),
+                exc_info=True,
+            )
 
-            if not render_target_dir or render_target_dir == '':
-                logger.debug("User canceled Resolve render operation")
-                return False
+            return self._resolve_operation_result(
+                False,
+                code='resolve_operation_failed',
+                message='Unable to copy Resolve markers',
+            )
 
-            if operation == 'render_markers_to_stills':
-                stills = True
-                render = True
-                render_preset = "Still_TIFF"
-            else:
-                stills = False
-                render = False
-                render_preset = False
+        if operation_result is False:
+            return self._resolve_operation_result(
+                False,
+                code='resolve_operation_failed',
+                message='Resolve did not copy the markers',
+            )
 
-            self.resolve_api.render_markers(marker_color, render_target_dir, False, stills, render, render_preset,
-                                            starts_with=starts_with)
+        return self._resolve_operation_result(
+            True,
+            data={
+                'result': operation_result,
+            },
+        )
 
-        return False
+    def render_resolve_markers(
+        self,
+        *,
+        marker_color,
+        target_dir,
+        starts_with=None,
+        render_stills=False,
+    ):
+        """
+        Render selected markers from the current Resolve timeline
+        """
+
+        if not target_dir:
+            return self._resolve_operation_result(
+                False,
+                code='target_dir_required',
+                message='A render target directory is required',
+            )
+
+        marker_color = marker_color or None
+        starts_with = starts_with or None
+
+        if not marker_color and not starts_with:
+            return self._resolve_operation_result(
+                False,
+                code='marker_filter_required',
+                message='A marker color or name prefix is required',
+            )
+
+        marker_colors_result = self.get_resolve_marker_colors()
+
+        if not marker_colors_result.get('ok'):
+            return marker_colors_result
+
+        marker_colors = marker_colors_result['data']['marker_colors']
+
+        if marker_color and marker_color not in marker_colors:
+            return self._resolve_operation_result(
+                False,
+                code='marker_color_invalid',
+                message=(
+                    'The selected marker color does not exist '
+                    'on the timeline'
+                ),
+            )
+
+        if render_stills:
+            stills = True
+            render = True
+            render_preset = 'Still_TIFF'
+        else:
+            stills = False
+            render = False
+            render_preset = False
+
+        try:
+            operation_result = self.resolve_api.render_markers(
+                marker_color,
+                target_dir,
+                False,
+                stills,
+                render,
+                render_preset,
+                starts_with=starts_with,
+            )
+        except Exception as error:
+            logger.error(
+                'Unable to render Resolve markers: {}'.format(error),
+                exc_info=True,
+            )
+
+            return self._resolve_operation_result(
+                False,
+                code='resolve_operation_failed',
+                message='Unable to render Resolve markers',
+            )
+
+        return self._resolve_operation_result(
+            True,
+            data={
+                'result': operation_result,
+            },
+        )
+
