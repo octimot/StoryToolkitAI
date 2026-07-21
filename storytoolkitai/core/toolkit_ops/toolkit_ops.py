@@ -23,7 +23,11 @@ from pydantic import BaseModel
 from typing import Optional
 
 from storytoolkitai.core.logger import logger
-from storytoolkitai.core.events import EventEmitter
+from storytoolkitai.core.events import (
+    EventEmitter,
+    create_transcription_completed_event,
+    create_transcription_started_event,
+)
 
 from storytoolkitai.integrations.mots_resolve import MotsResolve
 
@@ -2172,8 +2176,16 @@ class ToolkitOps:
 
         return audio_segments, time_intervals
 
-    def whisper_transcribe(self, name: str = None, audio_file_path: str = None, task=None,
-                           target_dir=None, queue_id=None, return_path=False, **other_options) -> bool or str:
+    def whisper_transcribe(
+        self, name: str = None,
+        audio_file_path: str = None,
+        task=None,
+        target_dir=None,
+        queue_id=None,
+        return_path=False,
+        **other_options
+    ) -> bool or str:
+
         """
         This prepares and transcribes audio using Whisper
         :param name:
@@ -2259,18 +2271,33 @@ class ToolkitOps:
         # technically the transcription process starts here, so start a timer for statistics
         transcription_start_time = time.time()
 
-        # let the user know the transcription process has started
+        # log that the transcription process has started
         if isinstance(time_intervals, list):
-            time_intervals_str = ", ".join([f"{start}-{end}" for start, end in time_intervals])
-            debug_message = "Transcribing {} between: {}.".format(name, time_intervals_str)
+            time_intervals_str = ", ".join(
+                [
+                    f"{start}-{end}"
+                    for start, end in time_intervals
+                ]
+            )
+            debug_message = "Transcribing {} between: {}.".format(
+                name,
+                time_intervals_str,
+            )
         else:
             debug_message = "Transcribing {}.".format(name)
-        # logger.info(debug_message)
 
-        if self.toolkit_UI_obj:
-            self.toolkit_UI_obj.notify_via_os("Starting Transcription",
-                                              text="Transcribing {}".format(name),
-                                              debug_message=debug_message)
+        logger.info(debug_message)
+
+        # publish simple data without deciding how it should be displayed
+        self.events.emit(
+            create_transcription_started_event(
+                job_id=queue_id,
+                name=name,
+                audio_file_path=audio_file_path,
+                task=task,
+                time_intervals=time_intervals,
+            )
+        )
 
         # initialize empty result
         result = None
@@ -2316,17 +2343,12 @@ class ToolkitOps:
 
             return None
 
-        # let the user know that the speech was processed
-        notification_msg = "Finished transcription for {} in {} seconds" \
-            .format(name, round(time.time() - transcription_start_time))
-
-        if self.toolkit_UI_obj:
-            self.toolkit_UI_obj.notify_via_os("Finished Transcription", notification_msg, notification_msg)
-        else:
-            logger.info(notification_msg)
-
         # update the status of the item in the transcription log
-        self.processing_queue.update_queue_item(queue_id=queue_id, status='saving files', progress='')
+        self.processing_queue.update_queue_item(
+            queue_id=queue_id,
+            status='saving files',
+            progress=''
+        )
 
         # if we made it here, it means that the transcription is complete
         transcription.set('incomplete', False)
@@ -2382,7 +2404,36 @@ class ToolkitOps:
             transcription_file_path=transcription.transcription_file_path
         )
 
-        return True if not return_path else transcription.transcription_file_path
+        elapsed_seconds = round(
+            time.time() - transcription_start_time
+        )
+
+        notification_msg = (
+            "Finished transcription for {} in {} seconds"
+            .format(name, elapsed_seconds)
+        )
+
+        logger.info(notification_msg)
+
+        # publish completion after the output is saved and the job is done
+        self.events.emit(
+            create_transcription_completed_event(
+                job_id=queue_id,
+                name=name,
+                audio_file_path=audio_file_path,
+                transcription_file_path=(
+                    transcription.transcription_file_path
+                ),
+                task=task,
+                elapsed_seconds=elapsed_seconds,
+            )
+        )
+
+        return (
+            True
+            if not return_path
+            else transcription.transcription_file_path
+        )
 
     def process_transcription_metadata(self, other_options, transcription: Transcription | str):
         """

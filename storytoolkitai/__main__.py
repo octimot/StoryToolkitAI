@@ -26,6 +26,7 @@ def is_cuda_available():
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 from storytoolkitai.core.logger import *
+from storytoolkitai.core.engine import StoryToolkitEngine
 
 # signal the start of the session in the log by adding some info about the machine
 logger.debug('\n--------------\n'
@@ -238,11 +239,20 @@ def main():
     # initialize operations object
     toolkit_ops_obj = ToolkitOps(stAI=stAI)
 
+    # create the public engine facade
+    engine = StoryToolkitEngine(
+        toolkit_ops_obj=toolkit_ops_obj
+    )
+
     if '--debug' in sys.argv:
         stAI.debug_mode = True
 
     if args.mode == "gui":
-        run_gui(toolkit_ops_obj=toolkit_ops_obj, stAI=stAI)
+        run_gui(
+            toolkit_ops_obj=toolkit_ops_obj,
+            stAI=stAI,
+            engine=engine,
+        )
 
     elif args.mode == "cli":
         run_cli(args, parser, toolkit_ops_obj=toolkit_ops_obj, stAI=stAI)

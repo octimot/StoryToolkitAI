@@ -1,4 +1,5 @@
 from storytoolkitai.core.toolkit_ops.toolkit_ops import *
+from storytoolkitai.core.events import EngineEvent
 
 import copy
 import os.path
@@ -20998,7 +20999,41 @@ class toolkit_UI():
             button.config(text="Keep on top")
             return False
 
-    def notify_via_os(self, title, text, debug_message):
+    def handle_engine_event(self, event: EngineEvent):
+        """Handle engine events that have a Tk presentation."""
+
+        if event.type == "transcription.started":
+            name = event.data.get("name") or "audio file"
+
+            self.notify_via_os(
+                "Starting Transcription",
+                text="Transcribing {}".format(name),
+                debug_message=None,
+            )
+
+            return
+
+        if event.type == "transcription.completed":
+            name = event.data.get("name") or "audio file"
+            elapsed_seconds = event.data.get("elapsed_seconds", 0)
+
+            notification_msg = (
+                "Finished transcription for {} in {} seconds"
+                .format(name, elapsed_seconds)
+            )
+
+            self.notify_via_os(
+                "Finished Transcription",
+                text=notification_msg,
+                debug_message=None,
+            )
+
+    def notify_via_os(
+            self,
+            title,
+            text,
+            debug_message=None,
+    ):
         """
         Uses OS specific tools to notify the user
 
@@ -21009,7 +21044,8 @@ class toolkit_UI():
         """
 
         # log and print to console first
-        logger.info(debug_message)
+        if debug_message:
+            logger.info(debug_message)
 
         # notify the user depending on which platform they're on
         try:
@@ -21156,11 +21192,14 @@ class toolkit_UI():
             subprocess.call(['xdg-open', os.path.dirname(file_path)])
 
 
-def run_gui(toolkit_ops_obj, stAI):
+def run_gui(toolkit_ops_obj, stAI, engine):
     # initialize GUI
     app_UI = toolkit_UI(toolkit_ops_obj=toolkit_ops_obj, stAI=stAI)
 
-    # connect app UI to operations object
+    # subscribe the Tk UI through the public engine interface
+    engine.subscribe(app_UI.handle_engine_event)
+
+    # keep the legacy reference for couplings not migrated yet
     toolkit_ops_obj.toolkit_UI_obj = app_UI
 
     # create the main window

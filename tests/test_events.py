@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from storytoolkitai.core.events import EngineEvent, EventEmitter
+from storytoolkitai.core.events import (
+    EngineEvent,
+    EventEmitter,
+    create_transcription_completed_event,
+    create_transcription_started_event,
+)
 
 
 def test_subscriber_receives_event() -> None:
@@ -103,3 +108,59 @@ def test_listener_can_unsubscribe_during_emit() -> None:
     emitter.emit(second_event)
 
     assert received == [first_event]
+
+
+def test_transcription_started_event_contains_simple_data() -> None:
+    """Transcription start events contain only transport-safe data."""
+
+    event = create_transcription_started_event(
+        job_id="job-1",
+        name="interview.wav",
+        audio_file_path="/media/interview.wav",
+        task="transcribe",
+        time_intervals=[
+            (1, 2),
+            [3.5, 4.75],
+        ],
+    )
+
+    assert event == EngineEvent(
+        type="transcription.started",
+        data={
+            "job_id": "job-1",
+            "name": "interview.wav",
+            "audio_file_path": "/media/interview.wav",
+            "task": "transcribe",
+            "time_intervals": [
+                [1.0, 2.0],
+                [3.5, 4.75],
+            ],
+        },
+    )
+
+
+def test_transcription_completed_event_contains_output_details() -> None:
+    """Transcription completion events identify the saved output."""
+
+    event = create_transcription_completed_event(
+        job_id="job-1",
+        name="interview.wav",
+        audio_file_path="/media/interview.wav",
+        transcription_file_path="/media/interview.transcription.json",
+        task="transcribe",
+        elapsed_seconds=42,
+    )
+
+    assert event == EngineEvent(
+        type="transcription.completed",
+        data={
+            "job_id": "job-1",
+            "name": "interview.wav",
+            "audio_file_path": "/media/interview.wav",
+            "transcription_file_path": (
+                "/media/interview.transcription.json"
+            ),
+            "task": "transcribe",
+            "elapsed_seconds": 42,
+        },
+    )

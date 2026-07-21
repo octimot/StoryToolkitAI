@@ -36,6 +36,69 @@ class EngineEvent:
     data: dict[str, Any] = field(default_factory=dict)
 
 
+def create_transcription_started_event(
+    *,
+    job_id: str | None,
+    name: str,
+    audio_file_path: str,
+    task: str | None,
+    time_intervals: list[Any] | None,
+) -> EngineEvent:
+    """Create the event published when Whisper starts processing audio."""
+
+    normalized_time_intervals = None
+
+    # keep interval data safe for future process communication
+    if isinstance(time_intervals, list):
+        normalized_time_intervals = []
+
+        for interval in time_intervals:
+            if not isinstance(interval, (list, tuple)) or len(interval) < 2:
+                continue
+
+            normalized_time_intervals.append(
+                [
+                    float(interval[0]),
+                    float(interval[1]),
+                ]
+            )
+
+    return EngineEvent(
+        type="transcription.started",
+        data={
+            "job_id": job_id,
+            "name": name,
+            "audio_file_path": audio_file_path,
+            "task": task,
+            "time_intervals": normalized_time_intervals,
+        },
+    )
+
+
+def create_transcription_completed_event(
+    *,
+    job_id: str | None,
+    name: str,
+    audio_file_path: str,
+    transcription_file_path: str,
+    task: str | None,
+    elapsed_seconds: int,
+) -> EngineEvent:
+    """Create the event published after a transcription is saved."""
+
+    return EngineEvent(
+        type="transcription.completed",
+        data={
+            "job_id": job_id,
+            "name": name,
+            "audio_file_path": audio_file_path,
+            "transcription_file_path": transcription_file_path,
+            "task": task,
+            "elapsed_seconds": elapsed_seconds,
+        },
+    )
+
+
 # A listener is simply a function or bound method receiving one event.
 EventListener = Callable[[EngineEvent], None]
 
