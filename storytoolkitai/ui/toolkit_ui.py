@@ -17423,10 +17423,8 @@ class toolkit_UI():
             ):
                 return
 
-            # keep the existing cancellation path until the next commit
-            self.toolkit_ops_obj.processing_queue.set_to_canceled(
-                queue_id=queue_id,
-            )
+            # request cancellation through the public engine interface
+            self.engine.cancel_job(job_id=queue_id)
 
             # update the queue window
             self.update_queue_window()
@@ -17505,8 +17503,8 @@ class toolkit_UI():
 
             # if the transcription is not already done, canceled or failed
             if all_queue_items[queue_id]['status'] not in ['canceling', 'canceled', 'done', 'failed']:
-                # cancel via toolkit_ops
-                self.toolkit_ops_obj.processing_queue.set_to_canceled(queue_id=queue_id)
+                # request cancellation through the public engine interface
+                self.engine.cancel_job(job_id=queue_id)
 
         # update the queue window
         self.update_queue_window()
