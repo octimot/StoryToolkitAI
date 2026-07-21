@@ -1403,6 +1403,7 @@ class toolkit_UI():
         toolkit_ops_obj,
         stAI,
         engine: 'StoryToolkitEngine',
+        **other_options,
     ):
 
         # make a reference to toolkit ops obj
