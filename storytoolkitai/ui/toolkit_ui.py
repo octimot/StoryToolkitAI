@@ -17992,10 +17992,17 @@ class toolkit_UI():
         use_analyzer = self.stAI.get_app_setting('search_preindexing_textanalysis', default_if_none=False)
 
         # initialize the search item object
-        text_search_item = TextSearch(toolkit_ops_obj=self.toolkit_ops_obj, search_file_paths=text_search_file_paths,
-                                 search_type='semantic', use_analyzer=use_analyzer)
+        text_search_item = TextSearch(
+            search_config=self.toolkit_ops_obj.search_config,
+            search_file_paths=text_search_file_paths,
+            search_type='semantic',
+            use_analyzer=use_analyzer
+        )
 
-        video_search_item = VideoSearch(toolkit_ops_obj=self.toolkit_ops_obj, search_file_paths=video_search_file_paths)
+        video_search_item = VideoSearch(
+            search_config=self.toolkit_ops_obj.search_config,
+            search_file_paths=video_search_file_paths
+        )
 
         # if this search has a file path id,
         if text_search_item.search_file_path_id is not None:

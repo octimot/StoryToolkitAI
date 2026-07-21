@@ -36,7 +36,7 @@ from .transcription import Transcription, TranscriptionSegment, TranscriptionUti
 from .story import Story, StoryLine, StoryUtils
 from .document import Document
 from .processing_queue import ProcessingQueue
-from .search import ToolkitSearch, SearchItem, TextSearch, VideoSearch, cv2
+from .search import SearchConfig, ToolkitSearch, SearchItem, TextSearch, VideoSearch, cv2
 from .assistant import ToolkitAssistant, AssistantUtils
 from .assistant import DEFAULT_SYSTEM_MESSAGE as ASSISTANT_DEFAULT_SYSTEM_MESSAGE
 from .media import MediaUtils
@@ -145,9 +145,6 @@ class ToolkitOps:
             else EventEmitter()
         )
 
-        # initialize the toolkit search engine
-        self.t_search_obj = ToolkitSearch(toolkit_ops_obj=self)
-
         # this is used to get fast the name of what is being transcribed currently
         self.transcription_queue_current_name = None
 
@@ -165,19 +162,43 @@ class ToolkitOps:
 
         # get the whisper device setting
         # currently, the setting may be cuda, cpu or auto
-        self.torch_device = stAI.get_app_setting('torch_device', default_if_none='auto')
+        self.torch_device = self.stAI.get_app_setting(
+            'torch_device',
+            default_if_none='auto',
+        )
 
-        self.torch_device = self.torch_device_type_select(self.torch_device)
+        self.torch_device = self.torch_device_type_select(
+            self.torch_device,
+        )
 
         # now let's deal with the sentence transformer model
-        # this is the transformer model name that we will use to search semantically
-        self.s_semantic_search_model_name \
-            = self.stAI.get_app_setting(setting_name='s_semantic_search_model_name',
-                                        default_if_none='msmarco-distilbert-base-v4')
+        # this is the transformer model name that we will use to search
+        # semantically
+        self.s_semantic_search_model_name = self.stAI.get_app_setting(
+            setting_name='s_semantic_search_model_name',
+            default_if_none='msmarco-distilbert-base-v4',
+        )
 
-        # for now define an empty model here which should be loaded the first time it's needed
-        # it's very likely that the model will not be loaded here, but in the SearchItem, for each search
+        # for now define an empty model here which should be loaded the first
+        # time it's needed
+        # it's very likely that the model will not be loaded here, but in the
+        # SearchItem, for each search
         self.s_semantic_search_model = None
+
+        # expose only the settings and callbacks required by search processing
+        self.search_config = SearchConfig(
+            get_torch_device=lambda: self.torch_device,
+            semantic_search_model_name=(
+                self.s_semantic_search_model_name
+            ),
+            get_app_setting=self.stAI.get_app_setting,
+            save_config=self.stAI.save_config,
+        )
+
+        # keep the existing shared search helper during the version 1 migration
+        self.t_search_obj = ToolkitSearch(
+            search_config=self.search_config,
+        )
 
         # this mapping tells the queue which functions belong to each task
         # it is passed explicitly so ProcessingQueue does not need access
@@ -2687,7 +2708,9 @@ class ToolkitOps:
             self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='reading files')
 
         search_item = TextSearch(
-            toolkit_ops_obj=self, search_file_paths=search_file_paths, search_type='semantic',
+            search_config=self.search_config,
+            search_file_paths=search_file_paths, 
+            search_type='semantic',
             use_analyzer=kwargs.get('use_analyzer', False)
         )
 
@@ -2748,7 +2771,11 @@ class ToolkitOps:
         queue_item['search_file_paths'] = search_file_paths
 
         # get the search_file_path_id from the TextSearch object
-        search_item = TextSearch(toolkit_ops_obj=self, search_file_paths=search_file_paths, search_type='semantic')
+        search_item = TextSearch(
+            search_config=self.search_config,
+            search_file_paths=search_file_paths,
+            search_type='semantic'
+        )
 
         queue_item['use_analyzer'] = search_item.use_analyzer
 
