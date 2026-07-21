@@ -15,19 +15,18 @@ continues.
 * **Resolved** — cause and resolution have been confirmed
 * **Not a regression** — reproduced independently of the refactor
 
-## R01 — DaVinci Resolve API does not connect on macOS with Resolve 20+
+## R01 — DaVinci Resolve API temporarily failed to connect on macOS with Resolve 20+
 
-| Field                        | Detail                                                                                                                                                                                                                                                     |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **First observed**           | During the StoryToolkitAI 1.0 architecture migration, after Steps 1–6.                                                                                                                                                                                     |
-| **Environment**              | macOS with DaVinci Resolve 20 or newer.                                                                                                                                                                                                                    |
-| **Observed behavior**        | StoryToolkitAI does not establish a Resolve API connection.                                                                                                                                                                                                |
-| **Known comparison**         | Not yet reproduced against the last pre-refactor commit, the current `main` branch or an older Resolve release using the same machine and Python environment.                                                                                              |
-| **Possible external factor** | The machine is using a newer major Resolve release than the previously working setup. This has not yet been confirmed as the cause.                                                                                                                        |
-| **Current decision**         | Do not change Resolve integration while completing the remaining architecture refactor steps.                                                                                                                                                              |
-| **Future check**             | Compare `main` and `dev` using the same Resolve installation, StoryToolkitAI settings and Python environment. Verify Resolve external scripting configuration, API availability and supported Python runtime before attributing the issue to the refactor. |
-| **Regression range**         | Unknown.                                                                                                                                                                                                                                                   |
-| **Status**                   | Deferred                                                                                                                                                                                                                                                   |
+| Field | Detail |
+| --- | --- |
+| **First observed** | During the StoryToolkitAI 1.0 architecture migration, after Steps 1–6. |
+| **Environment** | macOS with DaVinci Resolve 20 or newer. |
+| **Original behavior** | StoryToolkitAI did not establish a Resolve API connection. |
+| **Current behavior** | The current `dev` branch now establishes the Resolve API connection successfully in the same development environment. |
+| **Cause** | Unknown. No specific code or configuration change has been confirmed as the cause of either the original failure or its disappearance. |
+| **Regression status** | No current evidence of a persistent refactor regression. |
+| **Future action** | Reopen this investigation if the connection failure returns. Record the exact Resolve, macOS, Python and StoryToolkitAI versions at that time. |
+| **Status** | No longer reproducible |                                                                                                                                                                                                                                               |
 
 ### Investigation checklist
 
