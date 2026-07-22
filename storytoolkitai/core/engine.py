@@ -186,6 +186,38 @@ class StoryToolkitEngine:
             self._toolkit_ops.is_resolve_connected()
         )
 
+    def get_resolve_state(self) -> dict:
+        """
+        Return detached Resolve state needed for presentation decisions.
+        """
+
+        return deepcopy(
+            self._toolkit_ops.get_resolve_state()
+        )
+
+    def get_resolve_marker_color_palette(self) -> dict:
+        """
+        Return the fixed Resolve marker-color palette.
+        """
+
+        return deepcopy(
+            self._toolkit_ops.get_resolve_marker_color_palette()
+        )
+
+    def set_resolve_polling_suspended(
+        self,
+        suspended: bool,
+    ) -> bool:
+        """
+        Suspend or resume Resolve polling around a busy Resolve operation.
+        """
+
+        return bool(
+            self._toolkit_ops.set_resolve_polling_suspended(
+                suspended=suspended,
+            )
+        )
+
     def ensure_resolve_connection(
         self,
         *,
@@ -239,6 +271,159 @@ class StoryToolkitEngine:
                 render_data=render_data,
             )
         )
+
+    def start_resolve_render_and_monitor(
+        self,
+        *,
+        monitor_callback: Any = None,
+        **render_options: Any,
+    ) -> tuple[Any, list[str]] | None:
+        """
+        Start the legacy Resolve render monitor.
+
+        The Monitor instance remains an accepted version 1 in-process bridge.
+        It must be replaced by job events before the version 2 process
+        boundary is introduced.
+
+        Returns:
+            A monitor and detached render-path list, or None when processing
+            could not start a valid render monitor.
+        """
+
+        result = (
+            self._toolkit_ops.start_resolve_render_and_monitor(
+                monitor_callback=monitor_callback,
+                **render_options,
+            )
+        )
+
+        if result is None or result is False:
+            return None
+
+        if not isinstance(result, tuple) or len(result) != 2:
+            logger.error(
+                "Resolve render monitor returned an invalid result."
+            )
+            return None
+
+        monitor, render_file_paths = result
+
+        if monitor is None:
+            logger.error(
+                "Resolve render monitor did not return a monitor instance."
+            )
+            return None
+
+        if not isinstance(render_file_paths, (list, tuple)):
+            logger.error(
+                "Resolve render monitor did not return a render-path list."
+            )
+            return None
+
+        detached_render_file_paths = [
+            str(file_path)
+            for file_path in render_file_paths
+            if file_path
+        ]
+
+        if not detached_render_file_paths:
+            logger.error(
+                "Resolve render monitor did not return any render paths."
+            )
+            return None
+
+        return monitor, detached_render_file_paths
+
+    def import_resolve_media(
+        self,
+        file_path: str,
+    ) -> bool:
+        """
+        Import one file into the current Resolve project.
+        """
+
+        return bool(
+            self._toolkit_ops.import_resolve_media(
+                file_path=file_path,
+            )
+        )
+
+    def add_resolve_timeline_markers(
+        self,
+        *,
+        timeline_name: str,
+        markers: dict,
+        delete_existing: bool = False,
+    ) -> bool:
+        """
+        Add detached marker data to one Resolve timeline.
+
+        Existing timeline markers are preserved unless ``delete_existing`` is
+        explicitly enabled.
+        """
+
+        return bool(
+            self._toolkit_ops.add_resolve_timeline_markers(
+                timeline_name=timeline_name,
+                markers=deepcopy(markers),
+                delete_existing=delete_existing,
+            )
+        )
+
+    def resolve_seconds_to_timecode(
+        self,
+        seconds: float,
+    ) -> Any:
+        """
+        Convert seconds to a timecode on the current Resolve timeline.
+
+        The existing Timecode value remains an accepted version 1 in-process
+        result.
+        """
+
+        return (
+            self._toolkit_ops.calculate_sec_to_resolve_timecode(
+                seconds
+            )
+        )
+
+    def get_resolve_playhead_seconds(self) -> float | None:
+        """
+        Return the current Resolve playhead position in seconds.
+        """
+
+        return (
+            self._toolkit_ops.calculate_resolve_timecode_to_sec()
+        )
+
+    def move_resolve_playhead(
+        self,
+        *,
+        seconds: float,
+        fps: float | None = None,
+    ) -> Any:
+        """
+        Move the Resolve playhead to a position expressed in seconds.
+        """
+
+        if fps is None:
+            return self._toolkit_ops.go_to_time(
+                seconds=seconds,
+            )
+
+        return self._toolkit_ops.go_to_time(
+            seconds=seconds,
+            fps=fps,
+        )
+
+    def disable_resolve_connection(self) -> bool:
+        """
+        Disable Resolve integration for the current runtime.
+        """
+
+        self._toolkit_ops.resolve_disable()
+
+        return not self.is_resolve_connected()
 
     def create_ingest_job(
         self,
@@ -1132,4 +1317,3 @@ class StoryToolkitEngine:
             queue_id=job_id,
         )
         return bool(result)
-

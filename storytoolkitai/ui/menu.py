@@ -8,7 +8,6 @@ import webbrowser
 
 from storytoolkitai import USER_DATA_PATH
 from storytoolkitai.core.logger import *
-from storytoolkitai.core.toolkit_ops.toolkit_ops import NLE
 
 from customtkinter import AppearanceModeTracker
 from customtkinter import ThemeManager
@@ -23,7 +22,6 @@ class UImenus:
 
         # declare the main objects
         self.toolkit_UI_obj = toolkit_UI_obj
-        self.toolkit_ops_obj = toolkit_UI_obj.toolkit_ops_obj
         self.engine = toolkit_UI_obj.engine
         self.stAI = toolkit_UI_obj.stAI
 
@@ -905,7 +903,21 @@ class UImenus:
             # make sure we know which window is focused etc.
             self.update_current_window_references()
 
-            if not NLE.is_connected():
+            # read one detached Resolve snapshot for this menu refresh
+            resolve_state = self.engine.get_resolve_state()
+            resolve_connected = resolve_state.get(
+                "connected",
+                False,
+            )
+            resolve_timeline = resolve_state.get(
+                "current_timeline"
+            )
+            resolve_has_timeline = (
+                isinstance(resolve_timeline, dict)
+                and bool(resolve_timeline)
+            )
+
+            if not resolve_connected:
                 self.integrationsmenu.entryconfig("Connect to Resolve API", state=NORMAL)
                 self.integrationsmenu.entryconfig("Disable Resolve API", state=DISABLED)
 
@@ -914,7 +926,7 @@ class UImenus:
                 self.integrationsmenu.entryconfig("Disable Resolve API", state=NORMAL)
 
             # toggle the menu items for general resolve related functions
-            if NLE.is_connected() and NLE.current_timeline is not None:
+            if resolve_connected and resolve_has_timeline:
                 self.integrationsmenu.entryconfig("Render and Transcribe Timeline",
                                                   command=self.toolkit_UI_obj.button_nle_transcribe_timeline,
                                                   state=NORMAL)
@@ -971,7 +983,8 @@ class UImenus:
 
             # if this is a transcription window enable the relevant menu items
             if self.current_window_type == 'transcription' \
-                    and NLE.is_connected() and NLE.current_timeline is not None:
+                and resolve_connected and resolve_has_timeline:
+
                 self.integrationsmenu.entryconfig("Markers to Segments", state=NORMAL,
                                                   command=lambda:
                                                   self.toolkit_UI_obj.t_edit_obj.button_markers_to_segments(
@@ -1020,7 +1033,7 @@ class UImenus:
             # and there are selected segments enable the relevant menu items
             if self.current_window_type == 'transcription' \
                     and self.toolkit_UI_obj.t_edit_obj.has_selected_segments(window_id=self.current_window_id) \
-                    and NLE.is_connected() and NLE.current_timeline is not None:
+                    and resolve_connected and resolve_has_timeline:
 
                 self.integrationsmenu.entryconfig("Quick Selection to Markers", state=NORMAL,
                                                   command=lambda:

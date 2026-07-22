@@ -157,8 +157,8 @@ class toolkit_UI():
 
     ctk_main_paddings = {'padx': 10, 'pady': 10}
 
-    # these are the marker colors used in Resolve
-    resolve_marker_colors = MotsResolve.RESOLVE_MARKER_COLORS
+    # this is populated from the engine when the UI instance is created
+    resolve_marker_colors = {}
 
     class AppItemsUI:
         """
@@ -1417,6 +1417,11 @@ class toolkit_UI():
         # use the public processing interface
         self.engine = engine
 
+        # keep Resolve integration constants behind the engine boundary
+        self.resolve_marker_colors = (
+            self.engine.get_resolve_marker_color_palette()
+        )
+
         # make a reference to StoryToolkitAI obj
         self.stAI = stAI
 
@@ -2634,7 +2639,7 @@ class toolkit_UI():
         main_window = self.windows['main']
 
         # make the resolve buttons visible if resolve is connected
-        # if NLE.is_connected():
+        # if resolve_state.get("connected", False):
         #    main_window.resolve_buttons_frame.pack(fill='x')
 
         # otherwise, make sure they're hidden
@@ -3164,64 +3169,116 @@ class toolkit_UI():
             self.add_observer_to_window(
                 window_id='main',
                 action='project_changed',
-                callback=lambda: self.update_main_window()
+                callback=self.update_main_window,
             )
 
             # this updates the buttons in the main window
             self.add_observer_to_window(
                 window_id='main',
                 action='update_NLE_status',
-                callback=lambda: self.update_main_window()
+                callback=self.update_main_window,
             )
+
+            # observer callbacks fetch a fresh detached Resolve snapshot when
+            # they run instead of closing over processing globals
+            def get_resolve_timeline_snapshot():
+                resolve_state = self.engine.get_resolve_state()
+                resolve_timeline = resolve_state.get(
+                    'current_timeline'
+                )
+
+                if not isinstance(resolve_timeline, dict):
+                    resolve_timeline = None
+
+                return resolve_state, resolve_timeline
 
             # this also checks if we need to automatically switch projects
             def change_project_wrapper(project_name):
                 if not self.stAI.get_app_setting('ignore_project_switch', default_if_none=False):
                     self.change_project(project_name=project_name)
 
-            # this deals with NLE project changes in relation to the UI
+            def handle_resolve_project_changed():
+                resolve_state = self.engine.get_resolve_state()
+                change_project_wrapper(
+                    project_name=resolve_state.get('current_project')
+                )
+
+            def handle_resolve_timeline_changed():
+                _, resolve_timeline = get_resolve_timeline_snapshot()
+                self.open_active_transcription_windows(
+                    timeline_name=(
+                        resolve_timeline.get('name')
+                        if resolve_timeline
+                        else None
+                    ),
+                )
+
+            def handle_resolve_timecode_data_changed():
+                resolve_state, resolve_timeline = (
+                    get_resolve_timeline_snapshot()
+                )
+                self.update_timeline_timecode_data(
+                    timeline_name=(
+                        resolve_timeline.get('name')
+                        if resolve_timeline
+                        else None
+                    ),
+                    timeline_fps=resolve_state.get(
+                        'current_timeline_fps'
+                    ),
+                    start_tc=resolve_state.get(
+                        'current_start_tc'
+                    ),
+                )
+
+            def handle_resolve_markers_changed():
+                _, resolve_timeline = get_resolve_timeline_snapshot()
+                self.update_timeline_markers(
+                    timeline_name=(
+                        resolve_timeline.get('name')
+                        if resolve_timeline
+                        else None
+                    ),
+                    markers=(
+                        resolve_timeline.get('markers')
+                        if resolve_timeline
+                        else None
+                    ),
+                )
+
+            # this deals with Resolve project changes in relation to the UI
             self.add_observer_to_window(
                 window_id='main',
                 action='NLE_project_changed',
-                callback=lambda: change_project_wrapper(project_name=NLE.current_project)
+                callback=handle_resolve_project_changed,
             )
 
-            # this opens the relevant transcriptions if the NLE timeline changed
-            # - it only works if the relevant app settings are enabled - see open_active_transcription_windows()
+            # this opens relevant transcriptions when the Resolve timeline changes
             self.add_observer_to_window(
                 window_id='main',
                 action='NLE_timeline_changed',
-                callback=lambda l_NLE=NLE: self.open_active_transcription_windows(
-                    timeline_name=l_NLE.current_timeline.get('name', None) if l_NLE.current_timeline else None,
-                )
+                callback=handle_resolve_timeline_changed,
             )
 
-            # this syncs the relevant transcriptions if the NLE timecode changed
+            # this syncs relevant transcriptions when the timecode changes
             self.add_observer_to_window(
                 window_id='main',
                 action='NLE_tc_changed',
-                callback=lambda: self.sync_all_transcription_windows()
+                callback=self.sync_all_transcription_windows,
             )
 
-            # this updates the timecode data of the timeline if the NLE timeline timecode data changed
+            # this updates timeline timecode data when Resolve reports a change
             self.add_observer_to_window(
                 window_id='main',
                 action='NLE_timecode_data_changed',
-                callback=lambda l_NLE=NLE: self.update_timeline_timecode_data(
-                    timeline_name=l_NLE.current_timeline.get('name', None) if l_NLE.current_timeline else None,
-                    timeline_fps=l_NLE.current_timeline_fps if l_NLE.current_timeline else None,
-                    start_tc=l_NLE.current_start_tc if l_NLE.current_start_tc else None,
-                )
+                callback=handle_resolve_timecode_data_changed,
             )
 
-            # this updates the markers of the timeline if the NLE timeline markers changed
+            # this updates timeline markers when Resolve reports a change
             self.add_observer_to_window(
                 window_id='main',
                 action='NLE_markers_changed',
-                callback=lambda l_NLE=NLE: self.update_timeline_markers(
-                    timeline_name=l_NLE.current_timeline.get('name', None) if l_NLE.current_timeline else None,
-                    markers=l_NLE.current_timeline.get('markers', None) if l_NLE.current_timeline else None
-                )
+                callback=handle_resolve_markers_changed,
             )
 
         # add the observer after half a second
@@ -7876,109 +7933,151 @@ class toolkit_UI():
 
     def button_nle_transcribe_timeline(self, transcription_task='transcribe', **kwargs):
         """
-        Used to render a timeline in Resolve and add it to the ingest window, once it's rendered
+        Render the current Resolve timeline and open the rendered files in the
+        ingest workflow.
         """
 
-        # get the current NLE timeline if it exists
-        nle_current_timeline_name = NLE.current_timeline.get('name', None) \
-            if NLE and hasattr(NLE, 'current_timeline') else None
+        resolve_state = self.engine.get_resolve_state()
+        resolve_timeline = resolve_state.get(
+            'current_timeline'
+        )
 
-        # set an empty target directory for future use
+        if (
+            not resolve_state.get('connected', False)
+            or not isinstance(resolve_timeline, dict)
+        ):
+            logger.warning(
+                'Cannot transcribe a Resolve timeline because no timeline is active.'
+            )
+            return False
+
+        timeline_name = resolve_timeline.get('name')
+
+        if not timeline_name:
+            logger.warning(
+                'Cannot transcribe a Resolve timeline without a timeline name.'
+            )
+            return False
+
         target_dir = ''
         file_name = None
 
-        if nle_current_timeline_name:
+        # use the project target directory first, then the application default
+        initial_target_dir = self.get_project_last_target_dir(
+            self.current_project
+        )
 
-            # use the initial dir of the project if we are in one
-            initial_target_dir = self.get_project_last_target_dir(self.current_project)
+        if not initial_target_dir:
+            initial_target_dir = self.stAI.initial_target_dir
 
-            # or use the initial target dir of the app
-            if not initial_target_dir:
-                initial_target_dir = self.stAI.initial_target_dir
-
-            # ask the user where to save the files
-            while target_dir == '' or not os.path.exists(os.path.join(target_dir)):
-                logger.debug("Ingesting NLE timeline - Prompting user for render path.")
-                # target_dir = self.ask_for_target_dir(target_dir=last_target_dir)
-
-                target_file = self.ask_for_save_file(target_dir=initial_target_dir,
-                                                     initialfile=nle_current_timeline_name
-                                                     )
-                if target_file:
-                    # get the file_name
-                    target_dir = os.path.dirname(target_file)
-
-                    # get the file_name
-                    file_name = os.path.basename(target_file)
-
-                # update the last target dir of the project and the app
-                self.update_project_last_target_dir(project=self.current_project, dir_path=target_dir)
-                self.stAI.update_initial_target_dir(target_dir)
-
-                # cancel if the user presses cancel
-                if not target_dir:
-                    logger.debug("Ingesting NLE timeline stopped - User canceled operation.")
-                    return
-
-            # suspend NLE polling while we're rendering
-            NLE.suspend_polling = True
-
-            # and wait for a second to make sure that the last poll was executed
-            time.sleep(1)
-
-            if not file_name:
-                logger.warning("Ingesting NLE timeline stopped - File name not defined.")
-                return
-
-            # create a queue item while Resolve renders the timeline
-            # processing owns both the queue id and its initial status
-            if kwargs.get('queue_id', None) is None:
-                kwargs['queue_id'] = self.engine.create_timeline_ingest_job(
-                    name=file_name,
-                )
-
-            # open the queue window
-            self.open_queue_window()
-
-            # use transcription_WAV render preset if it exists
-            # transcription_WAV is an audio only custom render preset that renders Linear PCM codec in a Wave format
-            # instead of Quicktime mp4; this is just to work with wav files instead of mp4 to improve compatibility.
-            # but the user needs to add it manually to resolve in order for it to work since the Resolve API
-            # doesn't permit choosing the audio format (only the codec)
-            render_preset = self.stAI.get_app_setting(setting_name='transcription_render_preset',
-                                                      default_if_none='transcription_WAV')
-
-            # let the user know that we're starting the render
-            self.notify_via_os("Starting Render", "Starting Render in Resolve",
-                               "Saving into {} and starting render.".format(target_dir))
-
-            render_monitor, render_file_paths = \
-                self.toolkit_ops_obj.start_resolve_render_and_monitor(
-                    target_dir=target_dir, render_preset=render_preset, start_render=False,
-                    add_file_suffix=False, add_date=False, add_timestamp=True, file_name=file_name,
-                )
-
-            # turn the rendered files into a string separated by commas with each element between double quotes,
-            # so they fit the files input in the ingest window
-            if len(render_file_paths) > 1:
-                render_file_paths = ', '.join(['"{}"'.format(f) for f in render_file_paths])
-            else:
-                # add double quotes to the file path if it contains spaces or commas
-                if ' ' in render_file_paths[0] or ',' in render_file_paths[0]:
-                    render_file_paths = '"{}"'.format(render_file_paths[0])
-
-                else:
-                    render_file_paths = '{}'.format(render_file_paths[0])
-
-            # add the done function to the render monitor
-            # - when the monitor reaches the done state, it will call the function button_transcribe
-            render_monitor.add_done_callback(
-                lambda l_render_file_paths=render_file_paths:
-                self.button_ingest(target_files=l_render_file_paths, transcription_task=transcription_task, **kwargs)
+        # keep asking until the user selects a valid target or cancels
+        while target_dir == '' or not os.path.exists(target_dir):
+            logger.debug(
+                'Ingesting Resolve timeline - Prompting user for render path.'
             )
 
-            # resume polling
-            NLE.suspend_polling = False
+            target_file = self.ask_for_save_file(
+                target_dir=initial_target_dir,
+                initialfile=timeline_name,
+            )
+
+            if not target_file:
+                logger.debug(
+                    'Ingesting Resolve timeline stopped - User canceled operation.'
+                )
+                return False
+
+            target_dir = os.path.dirname(target_file)
+            file_name = os.path.basename(target_file)
+
+            self.update_project_last_target_dir(
+                project=self.current_project,
+                dir_path=target_dir,
+            )
+            self.stAI.update_initial_target_dir(target_dir)
+
+        if not file_name:
+            logger.warning(
+                'Ingesting Resolve timeline stopped - File name not defined.'
+            )
+            return False
+
+        # processing owns the queue id and its initial waiting-for-render state
+        if kwargs.get('queue_id') is None:
+            kwargs['queue_id'] = self.engine.create_timeline_ingest_job(
+                name=file_name,
+            )
+
+        self.open_queue_window()
+
+        # transcription_WAV is an optional audio-only preset that improves
+        # compatibility by producing a Wave file instead of a QuickTime file
+        render_preset = self.stAI.get_app_setting(
+            setting_name='transcription_render_preset',
+            default_if_none='transcription_WAV',
+        )
+
+        self.notify_via_os(
+            'Starting Render',
+            'Starting Render in Resolve',
+            'Saving into {} and starting render.'.format(target_dir),
+        )
+
+        # pause polling only while the render monitor is being created; always
+        # restore polling when setup fails or raises
+        self.engine.set_resolve_polling_suspended(True)
+
+        try:
+            time.sleep(1)
+
+            render_result = (
+                self.engine.start_resolve_render_and_monitor(
+                    target_dir=target_dir,
+                    render_preset=render_preset,
+                    start_render=False,
+                    add_file_suffix=False,
+                    add_date=False,
+                    add_timestamp=True,
+                    file_name=file_name,
+                )
+            )
+
+            if render_result is None:
+                logger.error(
+                    'Unable to start the Resolve render monitor.'
+                )
+                return False
+
+            render_monitor, render_file_paths = render_result
+
+            if len(render_file_paths) > 1:
+                ingest_target_files = ', '.join(
+                    '"{}"'.format(file_path)
+                    for file_path in render_file_paths
+                )
+            else:
+                ingest_target_files = render_file_paths[0]
+
+                # quote a single path when the ingest parser would otherwise
+                # split it on spaces or commas
+                if ' ' in ingest_target_files or ',' in ingest_target_files:
+                    ingest_target_files = '"{}"'.format(
+                        ingest_target_files
+                    )
+
+            # start ingest only after Resolve reports that the render is done
+            render_monitor.add_done_callback(
+                lambda l_render_file_paths=ingest_target_files: self.button_ingest(
+                    target_files=l_render_file_paths,
+                    transcription_task=transcription_task,
+                    **kwargs,
+                )
+            )
+
+            return True
+
+        finally:
+            self.engine.set_resolve_polling_suspended(False)
 
     def convert_text_to_time_intervals(self, text, **kwargs):
         """
@@ -8293,12 +8392,24 @@ class toolkit_UI():
 
             current_project = self.toolkit_UI_obj.current_project
 
-            # if no timeline name was passed, try to use the current timeline
+            # if no timeline name was passed, use the current Resolve snapshot
             if timeline_name is None:
-                try:
-                    timeline_name = NLE.current_timeline.get('name', None)
-                except AttributeError:
-                    logger.error('No timeline name was passed and no current timeline was found. ')
+                resolve_timeline = (
+                    self.engine.get_resolve_state().get(
+                        'current_timeline'
+                    )
+                )
+
+                timeline_name = (
+                    resolve_timeline.get('name')
+                    if isinstance(resolve_timeline, dict)
+                    else None
+                )
+
+                if not timeline_name:
+                    logger.error(
+                        'No timeline name was passed and no current timeline was found.'
+                    )
                     return None
 
             # if the link action wasn't passed, decide here whether to link or unlink
@@ -8382,7 +8493,12 @@ class toolkit_UI():
                     return
 
                 # if we reached this point, import the srt file to the bin
-                self.toolkit_ops_obj.resolve_api.import_media(full_srt_file_path)
+                if not self.engine.import_resolve_media(
+                    file_path=full_srt_file_path,
+                ):
+                    logger.error(
+                        "Unable to import the subtitle file into Resolve."
+                    )
 
                 # and delete the temporary file
                 os.remove(full_srt_file_path)
@@ -8664,8 +8780,16 @@ class toolkit_UI():
                         window_id=window_id, line=line, meta=True),
                 )
 
-            # NLE-SPECIFIC BUTTONS
-            if NLE.is_connected() and NLE.current_timeline is not None:
+            # RESOLVE-SPECIFIC BUTTONS
+            resolve_state = self.engine.get_resolve_state()
+            resolve_timeline = resolve_state.get(
+                'current_timeline'
+            )
+
+            if (
+                resolve_state.get('connected', False)
+                and isinstance(resolve_timeline, dict)
+            ):
 
                 context_menu.add_separator()
 
@@ -8991,8 +9115,18 @@ class toolkit_UI():
             # CMD/CTRL+M key event (select all segments between markers)
             if event.keysym == 'm' or event.keysym == 'M':
 
-                # this only works if resolve is connected
-                if NLE.resolve and NLE.current_timeline is not None and 'name' in NLE.current_timeline:
+                # read Resolve state only for marker-related shortcuts
+                resolve_state = self.engine.get_resolve_state()
+                resolve_timeline = resolve_state.get(
+                    'current_timeline'
+                )
+
+                # this only works if Resolve is connected to a named timeline
+                if (
+                    resolve_state.get('connected', False)
+                    and isinstance(resolve_timeline, dict)
+                    and resolve_timeline.get('name')
+                ):
 
                     # if CMD/CTRL+M was pressed
                     # select segments based on current timeline markers
@@ -9726,10 +9860,25 @@ class toolkit_UI():
             This function selects all the segments between certain markers
             """
 
-            # first, see if there are any markers on the timeline
-            if not NLE.is_connected() or 'markers' not in NLE.current_timeline:
-                logger.debug('No markers found on the timeline.')
-                return
+            # use one detached timeline snapshot for this conversion
+            resolve_state = self.engine.get_resolve_state()
+            resolve_timeline = resolve_state.get(
+                "current_timeline"
+            )
+            resolve_timeline_fps = resolve_state.get(
+                "current_timeline_fps"
+            )
+
+            if (
+                not resolve_state.get("connected", False)
+                or not isinstance(resolve_timeline, dict)
+                or "markers" not in resolve_timeline
+            ):
+                logger.error(
+                    "Cannot convert Resolve markers because no timeline "
+                    "with markers is available."
+                )
+                return False
 
             # if no text_element is provided, try to get it from the window
             if text_element is None:
@@ -9737,8 +9886,8 @@ class toolkit_UI():
                     .nametowidget('middle_frame.text_form_frame.transcript_text')
 
             # get the marker colors from all the markers in the current_timeline['markers'] dict
-            marker_colors = [' '] + sorted(list(set([NLE.current_timeline['markers'][marker]['color']
-                                                     for marker in NLE.current_timeline['markers']])))
+            marker_colors = [' '] + sorted(list(set([resolve_timeline["markers"][marker]['color']
+                                                     for marker in resolve_timeline["markers"]])))
 
             # create a list of widgets for the input dialogue
             input_widgets = [
@@ -9764,28 +9913,34 @@ class toolkit_UI():
                 selected_markers = {}
 
                 # go through the markers on the timeline
-                for marker in NLE.current_timeline['markers']:
+                for marker in resolve_timeline["markers"]:
 
                     # if the marker starts with the text the user entered (if not empty)
                     # and the marker color matches the color the user selected (if not empty)
                     if (starts_with == ''
-                        or NLE.current_timeline['markers'][marker]['name'].startswith(starts_with)) \
-                            and (color == ' ' or NLE.current_timeline['markers'][marker]['color'] == color):
+                        or resolve_timeline["markers"][marker]['name'].startswith(starts_with)) \
+                            and (color == ' ' or resolve_timeline["markers"][marker]['color'] == color):
                         # add the marker to the marker_groups dictionary
-                        selected_markers[marker] = NLE.current_timeline['markers'][marker]
+                        selected_markers[marker] = resolve_timeline["markers"][marker]
 
                 # if there are markers in the selection
                 if len(selected_markers) > 0:
 
                     time_intervals = []
 
+                    if not resolve_timeline_fps:
+                        logger.error(
+                            "Cannot convert Resolve markers without a timeline FPS."
+                        )
+                        return False
+
                     # add them to the transcript group, based on their start time and duration
                     # the start time (marker) and duration are in frames
                     for marker in selected_markers:
                         # convert the frames to seconds
-                        start_time = int(marker) / NLE.current_timeline_fps
+                        start_time = int(marker) / resolve_timeline_fps
                         duration = int(
-                            NLE.current_timeline['markers'][marker]['duration']) / NLE.current_timeline_fps
+                            resolve_timeline["markers"][marker]['duration']) / resolve_timeline_fps
                         end_time = start_time + duration
 
                         # add the time interval to the list of time intervals
@@ -9802,10 +9957,30 @@ class toolkit_UI():
 
         def button_segments_to_markers(self, window_id, text_element=None, prompt=False):
 
-            # first, see if there are any markers on the timeline
-            if not NLE.is_connected() or NLE.current_timeline is None:
-                logger.debug('No timeline available.')
-                return
+            # use one detached timeline snapshot for this marker operation
+            resolve_state = self.engine.get_resolve_state()
+            resolve_timeline = resolve_state.get(
+                "current_timeline"
+            )
+
+            if (
+                not resolve_state.get("connected", False)
+                or not isinstance(resolve_timeline, dict)
+            ):
+                logger.error(
+                    "Cannot add markers because no Resolve timeline is available."
+                )
+                return False
+
+            resolve_timeline_name = resolve_timeline.get(
+                "name"
+            )
+
+            if not resolve_timeline_name:
+                logger.error(
+                    "Cannot add markers because the Resolve timeline has no name."
+                )
+                return False
 
             # if no text_element is provided, try to get it from the window
             if text_element is None:
@@ -9829,7 +10004,7 @@ class toolkit_UI():
             # to a timeline that is not connected to the transcription in this window
             is_linked = current_project.is_transcription_linked_to_timeline(
                 transcription_file_path=self.get_window_transcription(window_id).transcription_file_path,
-                timeline_name=NLE.current_timeline['name'])
+                timeline_name=resolve_timeline_name)
 
             # if the transcription is not linked to the timeline
             if not is_linked:
@@ -9900,13 +10075,19 @@ class toolkit_UI():
 
             # calculate the start timecode of the timeline (simply use second 0 for the conversion)
             # we will use this to calculate the text_chunk durations
-            timeline_start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(0)
+            timeline_start_tc = (
+                self.engine.resolve_seconds_to_timecode(0)
+            )
 
             # now take all the text chunks
             for text_chunk in text:
 
                 # calculate the end timecodes for each text chunk
-                end_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(text_chunk['end'])
+                end_tc = (
+                    self.engine.resolve_seconds_to_timecode(
+                        text_chunk["end"]
+                    )
+                )
 
                 # get the start_tc from the text_chunk but place it back into a Timecode object
                 # using the timeline framerate
@@ -9934,7 +10115,7 @@ class toolkit_UI():
                 index_blocked = True
                 while index_blocked:
 
-                    if 'markers' in NLE.current_timeline and marker_index in NLE.current_timeline['markers']:
+                    if 'markers' in resolve_timeline and marker_index in resolve_timeline['markers']:
 
                         # give up if the duration is under a frame:
                         if marker_duration_tc.frames <= 1:
@@ -9984,9 +10165,14 @@ class toolkit_UI():
                 marker_data[marker_index]['customData'] = ''
 
                 # pass the marker add request to resolve
-                self.toolkit_ops_obj.resolve_api.add_timeline_markers(NLE.current_timeline['name'],
-                                                                      marker_data,
-                                                                      False)
+                if not self.engine.add_resolve_timeline_markers(
+                    timeline_name=resolve_timeline_name,
+                    markers=marker_data,
+                ):
+                    logger.error(
+                        "Unable to add markers to the Resolve timeline."
+                    )
+                    return False
 
         def button_export_as(self, window_id, export_file_path=None):
             """
@@ -10811,7 +10997,7 @@ class toolkit_UI():
                 # try to get the line from the active segment
                 line_index = self.get_active_segment(window_id)
 
-            if NLE.is_connected() is None:
+            if not self.engine.is_resolve_connected():
                 logger.error('Resolve is not connected.')
                 return False
 
@@ -10827,7 +11013,9 @@ class toolkit_UI():
                 return False
 
             # convert the current_tc to seconds
-            current_tc_sec = self.toolkit_ops_obj.calculate_resolve_timecode_to_sec()
+            current_tc_sec = (
+                self.engine.get_resolve_playhead_seconds()
+            )
 
             # check if we actually have a timecode
             if current_tc_sec is None:
@@ -10980,10 +11168,11 @@ class toolkit_UI():
                                                            timecode=goto_timecode, fps=fps, start_tc=start_tc)
 
                         # if the NLE is connected, move the playhead to the new timecode
-                        if NLE.is_connected():
-                            # convert the entered timecode to seconds,
-                            # but use the tc_to_sec method to remove one frame
-                            self.toolkit_ops_obj.go_to_time(seconds=tc_to_sec(str(goto_timecode), fps=float(fps)))
+                        if self.engine.is_resolve_connected():
+                            self.engine.move_resolve_playhead(
+                                seconds=tc_to_sec(str(goto_timecode)),
+                                fps=float(fps),
+                            )
 
                         goto_time = True
 
@@ -11580,7 +11769,7 @@ class toolkit_UI():
                 seconds = start_sec
 
             # move playhead to seconds
-            self.toolkit_ops_obj.go_to_time(seconds=seconds)
+            self.engine.move_resolve_playhead(seconds=seconds,)
 
             # update the transcription window
             # this triggers an endless playhead sync loop if "sync" is on
@@ -12009,7 +12198,7 @@ class toolkit_UI():
             text_widget.unbind('<FocusOut>')
 
             # if resolve is connected, get the timecode from resolve
-            if NLE.is_connected():
+            if self.engine.is_resolve_connected():
 
                 # ask the user to move the playhead in Resolve to where the split should happen via info dialog
                 move_playhead = messagebox.askokcancel(title='Move playhead',
@@ -12026,7 +12215,9 @@ class toolkit_UI():
                     return 'break'
 
                 # convert the current resolve timecode to seconds
-                split_time_seconds = self.toolkit_ops_obj.calculate_resolve_timecode_to_sec()
+                split_time_seconds = (
+                    self.engine.get_resolve_playhead_seconds()
+                )
 
             # if resolve isn't connected, ask the user to enter the timecode manually
             else:
@@ -13385,7 +13576,7 @@ class toolkit_UI():
                     )
                 import_srt_button.pack(side=ctk.TOP, fill='x', **self.ctk_side_frame_button_paddings, anchor='sw')
 
-                if not NLE.is_connected():
+                if not self.engine.is_resolve_connected():
                     import_srt_button.pack_forget()
 
                 # SYNC BUTTON
@@ -13599,6 +13790,20 @@ class toolkit_UI():
         if not t_window:
             return
 
+        # read one detached Resolve snapshot for this window refresh
+        resolve_state = self.engine.get_resolve_state()
+        resolve_timeline = resolve_state.get(
+            'current_timeline'
+        )
+        resolve_timeline_name = (
+            resolve_timeline.get('name')
+            if isinstance(resolve_timeline, dict)
+            else None
+        )
+        resolve_current_tc = resolve_state.get(
+            'current_tc'
+        )
+
         # get the transcription object
         transcription = self.t_edit_obj.get_window_transcription(window_id=window_id)
 
@@ -13655,9 +13860,12 @@ class toolkit_UI():
                 # show the segment buttons
                 show_selection_buttons = True
 
-        # if NLE is connected and there is a current timeline
+        # show Resolve controls only when a named timeline is available
         show_resolve_buttons = False
-        if NLE.is_connected() and NLE.current_timeline is not None:
+        if (
+            resolve_state.get('connected', False)
+            and resolve_timeline_name
+        ):
 
             # if we still don't have a transcription file path by now,
             # assume there is no link between the window and the resolve timeline
@@ -13675,7 +13883,7 @@ class toolkit_UI():
                     # is there a link between the transcription and the resolve timeline?
                     link = self.current_project.is_transcription_linked_to_timeline(
                         transcription_file_path=update_attr['transcription_file_path'],
-                        timeline_name=NLE.current_timeline['name'])
+                        timeline_name=resolve_timeline_name)
 
             # update the import srt button if it was passed in the call
             if update_attr.get('import_srt_button', None) is not None:
@@ -13726,7 +13934,7 @@ class toolkit_UI():
             # only do this if the sync is on for this window
             # and if the timecode in resolve has changed compared to last time
             if t_window.sync_with_playhead \
-                    and self.t_edit_obj.current_window_tc[window_id] != NLE.current_tc:
+                    and self.t_edit_obj.current_window_tc[window_id] != resolve_current_tc:
                 update_attr = self.sync_current_tc_to_transcript(window_id=window_id, **update_attr)
 
             # update the resolve buttons frame if it was passed in the call
@@ -13760,55 +13968,95 @@ class toolkit_UI():
     def sync_current_tc_to_transcript(self, window_id, **update_attr):
 
         # get the window transcription object
-        transcription = self.get_window_by_id(window_id=window_id).transcription
+        transcription = self.get_window_by_id(
+            window_id=window_id
+        ).transcription
 
         # if no text was passed, get it from the window
         if 'text' not in update_attr or type(update_attr['text']) is not tk.Text:
-            # so get the link button from the window by using the hard-coded name
-            update_attr['text'] \
-                = self.windows[window_id].nametowidget('middle_frame.text_form_frame.transcript_text')
+            update_attr['text'] = self.windows[window_id].nametowidget(
+                'middle_frame.text_form_frame.transcript_text'
+            )
 
-        # how many lines does the transcript on this window contain?
-        max_lines = transcription.get_num_lines()
+        current_timecode = update_attr.get('timecode')
+        timeline_fps = update_attr.get('fps')
+        timeline_start_tc = update_attr.get('start_tc')
 
-        if 'timecode' in update_attr and 'fps' in update_attr and 'start_tc' in update_attr:
-            # initialize the timecode object for the current_tc
-            current_tc_obj = Timecode(update_attr['fps'], update_attr['timecode'])
+        # observer calls may pass explicit values. Otherwise, read one fresh
+        # Resolve snapshot through the engine.
+        if (
+            current_timecode is None
+            or timeline_fps is None
+            or timeline_start_tc is None
+        ):
+            resolve_state = self.engine.get_resolve_state()
+            resolve_timeline = resolve_state.get(
+                'current_timeline'
+            )
 
-            # initialize the timecode object for the timeline start_tc
-            timeline_start_tc_obj = Timecode(update_attr['fps'], update_attr['start_tc'])
+            current_timecode = resolve_state.get(
+                'current_tc'
+            )
+            timeline_fps = resolve_state.get(
+                'current_timeline_fps'
+            )
+            timeline_start_tc = resolve_state.get(
+                'current_start_tc'
+            )
 
-        elif NLE.current_timeline_fps is not None and NLE.current_tc is not None:
-            # initialize the timecode object for the current_tc
-            current_tc_obj = Timecode(NLE.current_timeline_fps, NLE.current_tc)
+            if (
+                timeline_start_tc is None
+                and isinstance(resolve_timeline, dict)
+            ):
+                timeline_start_tc = resolve_timeline.get(
+                    'startTC'
+                )
 
-            # initialize the timecode object for the timeline start_tc
-            timeline_start_tc_obj = Timecode(NLE.current_timeline_fps, NLE.current_timeline['startTC'])
-
-        else:
-            logger.warning('No timecode or fps passed to sync_current_tc_to_transcript()')
+        if (
+            current_timecode is None
+            or timeline_fps is None
+            or timeline_start_tc is None
+        ):
+            logger.warning(
+                'No complete Resolve timecode data was available for '
+                'sync_current_tc_to_transcript().'
+            )
             return None
 
-        # subtract the two timecodes to get the corresponding transcript seconds
+        try:
+            current_tc_obj = Timecode(
+                timeline_fps,
+                current_timecode,
+            )
+            timeline_start_tc_obj = Timecode(
+                timeline_fps,
+                timeline_start_tc,
+            )
+
+        except (TypeError, ValueError):
+            logger.error(
+                'Unable to convert Resolve timecode data.',
+                exc_info=True,
+            )
+            return None
+
+        # subtract the timeline start from the playhead to get transcript time
         if current_tc_obj > timeline_start_tc_obj:
             transcript_tc = current_tc_obj - timeline_start_tc_obj
-
-            # so we can now convert the current tc into seconds
             transcript_sec = transcript_tc.float
-
-        # but if the current_tc_obj is at 0 or less
         else:
             transcript_sec = 0
 
         self.set_active_segment_by_time(
-            transcript_sec=transcript_sec, window_id=window_id,
-            text_widget=update_attr['text'], transcription=transcription, toolkit_UI_obj=self)
+            transcript_sec=transcript_sec,
+            window_id=window_id,
+            text_widget=update_attr['text'],
+            transcription=transcription,
+            toolkit_UI_obj=self,
+        )
 
-        # highlight current line on transcript
-        # update_attr['text'].tag_add('current_time')
-
-        # now remember that we did the update for the current timecode
-        self.t_edit_obj.current_window_tc[window_id] = NLE.current_tc
+        # remember the timecode used for this synchronization pass
+        self.t_edit_obj.current_window_tc[window_id] = current_timecode
 
         return update_attr
 
@@ -21292,48 +21540,93 @@ class toolkit_UI():
     # GENERAL FUNCTIONS
 
     def on_connect_resolve_api_press(self):
+        """
+        Connect processing to Resolve without exposing its API wrapper.
+        """
 
-        # update menu references
-        self.toolkit_ops_obj.resolve_enable()
+        # request the connection through the engine instead of waiting on the
+        # internal Resolve API object from the Tk thread
+        result = self.engine.ensure_resolve_connection()
 
-        # now wait for resolve to connect
-        while self.toolkit_ops_obj.resolve_api is None:
-            time.sleep(0.01)
+        if not result.get("ok", False):
+            error_message = (
+                result.get("message")
+                or "Unable to connect to the Resolve API."
+            )
 
-        # if the app config says that we should connect, ask the user if they still want that
-        if self.toolkit_ops_obj.stAI.get_app_setting('disable_resolve_api', default_if_none=False) is True:
+            logger.error(error_message)
 
-            # and ask the user if they want to always connect to Resolve API on startup
-            always_connect = messagebox.askyesno(title='Always Connect?',
-                                                 message='We\'re now connected to Resolve.\n\n'
-                                                         'Do you want to always connect to the Resolve API '
-                                                         'on tool startup?',
-                                                 parent=self.root
-                                                 )
+            messagebox.showerror(
+                title="Resolve Connection",
+                message=error_message,
+                parent=self.root,
+            )
+
+            return False
+
+        # when automatic connection was disabled, offer to remember this
+        # successful manual connection for future application starts
+        if self.stAI.get_app_setting(
+            "disable_resolve_api",
+            default_if_none=False,
+        ) is True:
+            always_connect = messagebox.askyesno(
+                title="Always Connect?",
+                message=(
+                    "We're now connected to Resolve.\n\n"
+                    "Do you want to always connect to the Resolve API "
+                    "on tool startup?"
+                ),
+                parent=self.root,
+            )
 
             time.sleep(0.1)
 
             if always_connect:
-                self.toolkit_ops_obj.stAI.save_config('disable_resolve_api', False)
+                self.stAI.save_config(
+                    "disable_resolve_api",
+                    False,
+                )
+
+        return True
 
     def on_disable_resolve_api_press(self):
+        """
+        Disable Resolve processing for the current runtime.
+        """
 
-        # disable resolve api
-        self.toolkit_ops_obj.resolve_disable()
+        resolve_disabled = (
+            self.engine.disable_resolve_connection()
+        )
 
-        # if the app config says that we should connect, ask the user if they still want that
-        if self.toolkit_ops_obj.stAI.get_app_setting('disable_resolve_api', default_if_none=False) is False:
+        if not resolve_disabled:
+            logger.warning(
+                "Resolve did not report a fully disconnected state."
+            )
 
-            # and ask the user if they want to connect to Resolve API on startup
-            always_connect = messagebox.askyesno(title='Connect back at startup?',
-                                                 message='Resolve API connection disabled.\n\n'
-                                                         'Do you want to still reconnect to the '
-                                                         'Resolve API at tool startup?',
-                                                 parent=self.root
-                                                 )
+        # when automatic connection is currently enabled, ask whether that
+        # preference should remain enabled for the next application start
+        if self.stAI.get_app_setting(
+            "disable_resolve_api",
+            default_if_none=False,
+        ) is False:
+            connect_at_startup = messagebox.askyesno(
+                title="Connect back at startup?",
+                message=(
+                    "Resolve API connection disabled.\n\n"
+                    "Do you want to still reconnect to the Resolve API "
+                    "at tool startup?"
+                ),
+                parent=self.root,
+            )
 
-            if not always_connect:
-                self.toolkit_ops_obj.stAI.save_config('disable_resolve_api', True)
+            if not connect_at_startup:
+                self.stAI.save_config(
+                    "disable_resolve_api",
+                    True,
+                )
+
+        return resolve_disabled
 
     def open_file_in_os(self, file_path):
         """

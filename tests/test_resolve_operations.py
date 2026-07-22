@@ -467,6 +467,7 @@ class FakeResolveApi:
         self.resolve_data = resolve_data
         self.copy_call = None
         self.render_call = None
+        self.add_markers_call = None
 
     def get_resolve_data(self):
         return self.resolve_data
@@ -485,6 +486,24 @@ class FakeResolveApi:
             source_name,
             destination_name,
             delete_destination_markers,
+        )
+
+        return True
+
+    def add_timeline_markers(
+        self,
+        timeline_name,
+        markers,
+        delete_timeline_markers,
+    ):
+        """
+        Record a timeline-marker request using the real Resolve signature.
+        """
+
+        self.add_markers_call = (
+            timeline_name,
+            markers,
+            delete_timeline_markers,
         )
 
         return True
@@ -593,6 +612,82 @@ def test_copy_resolve_markers_uses_current_timeline() -> None:
         'clip',
         'Timeline 1',
         'Timeline 1',
+        True,
+    )
+
+def test_add_resolve_timeline_markers_preserves_existing_by_default() -> None:
+    """
+    The UI marker workflow must not erase existing Resolve markers by default.
+    """
+
+    toolkit_ops = create_toolkit_ops(
+        {
+            "currentTimeline": {
+                "name": "Timeline 1",
+                "markers": {},
+            },
+            "binClips": [],
+        }
+    )
+
+    markers = {
+        24: {
+            "color": "Blue",
+            "name": "Test marker",
+            "note": "",
+            "duration": 12,
+            "customData": "",
+        }
+    }
+
+    result = toolkit_ops.add_resolve_timeline_markers(
+        timeline_name="Timeline 1",
+        markers=markers,
+    )
+
+    assert result is True
+    assert toolkit_ops.resolve_api.add_markers_call == (
+        "Timeline 1",
+        markers,
+        False,
+    )
+
+
+def test_add_resolve_timeline_markers_can_delete_existing() -> None:
+    """
+    Callers may explicitly replace all existing Resolve timeline markers.
+    """
+
+    toolkit_ops = create_toolkit_ops(
+        {
+            "currentTimeline": {
+                "name": "Timeline 1",
+                "markers": {},
+            },
+            "binClips": [],
+        }
+    )
+
+    markers = {
+        24: {
+            "color": "Blue",
+            "name": "Replacement marker",
+            "note": "",
+            "duration": 12,
+            "customData": "",
+        }
+    }
+
+    result = toolkit_ops.add_resolve_timeline_markers(
+        timeline_name="Timeline 1",
+        markers=markers,
+        delete_existing=True,
+    )
+
+    assert result is True
+    assert toolkit_ops.resolve_api.add_markers_call == (
+        "Timeline 1",
+        markers,
         True,
     )
 

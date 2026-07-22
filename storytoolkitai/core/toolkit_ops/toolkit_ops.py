@@ -5,6 +5,7 @@ import json
 import yaml
 import subprocess
 import platform
+from copy import deepcopy
 
 from threading import Thread
 
@@ -3611,6 +3612,146 @@ class ToolkitOps:
             self.resolve_api is not None
             and NLE.is_connected()
         )
+
+    def get_resolve_state(self) -> dict:
+        """
+        Return a detached snapshot of Resolve state needed by interfaces.
+
+        Resolve API objects are intentionally excluded. Interfaces receive only
+        names, timecode values and copied timeline data.
+        """
+
+        return {
+            "enabled": not bool(self.disable_resolve_api),
+            "connected": bool(NLE.is_connected()),
+            "current_project": deepcopy(NLE.current_project),
+            "current_timeline": deepcopy(NLE.current_timeline),
+            "current_timeline_fps": deepcopy(
+                NLE.current_timeline_fps
+            ),
+            "current_tc": deepcopy(NLE.current_tc),
+            "current_start_tc": deepcopy(NLE.current_start_tc),
+            "polling_suspended": bool(NLE.suspend_polling),
+        }
+
+    @staticmethod
+    def get_resolve_marker_color_palette() -> dict:
+        """
+        Return the Resolve marker-color palette used by UI controls.
+        """
+
+        return deepcopy(
+            MotsResolve.RESOLVE_MARKER_COLORS
+        )
+
+    @staticmethod
+    def set_resolve_polling_suspended(
+        suspended: bool,
+    ) -> bool:
+        """
+        Suspend or resume Resolve polling while Resolve is rendering.
+        """
+
+        NLE.suspend_polling = bool(suspended)
+
+        return NLE.suspend_polling
+
+    def import_resolve_media(
+        self,
+        file_path: str,
+    ) -> bool:
+        """
+        Import one media file into the current Resolve project.
+        """
+
+        if not file_path:
+            logger.error(
+                "Cannot import Resolve media without a file path."
+            )
+            return False
+
+        if self.resolve_api is None:
+            logger.error(
+                "Cannot import media because Resolve is not connected."
+            )
+            return False
+
+        try:
+            result = self.resolve_api.import_media(
+                file_path
+            )
+
+        except Exception:
+            logger.error(
+                "Unable to import media into Resolve.",
+                exc_info=True,
+            )
+            return False
+
+        # Some Resolve API operations return None after completing
+        # successfully. Only an explicit False indicates rejection.
+        return result is not False
+
+    def add_resolve_timeline_markers(
+        self,
+        *,
+        timeline_name: str,
+        markers: dict,
+        delete_existing: bool = False,
+    ) -> bool:
+        """
+        Add marker data to one Resolve timeline.
+
+        Args:
+            timeline_name:
+                Name of the Resolve timeline that should receive the markers.
+
+            markers:
+                Marker data keyed by timeline frame.
+
+            delete_existing:
+                When True, remove all existing timeline markers before adding
+                the supplied markers. The default preserves existing markers.
+
+        Returns:
+            True when Resolve accepted the marker operation, otherwise False.
+        """
+
+        if not timeline_name:
+            logger.error(
+                "Cannot add Resolve markers without a timeline name."
+            )
+            return False
+
+        if not markers:
+            logger.error(
+                "Cannot add Resolve markers because no markers were provided."
+            )
+            return False
+
+        if self.resolve_api is None:
+            logger.error(
+                "Cannot add markers because Resolve is not connected."
+            )
+            return False
+
+        try:
+            result = self.resolve_api.add_timeline_markers(
+                timeline_name,
+                markers,
+                delete_timeline_markers=delete_existing,
+            )
+
+        except Exception:
+            logger.error(
+                "Unable to add markers to the Resolve timeline.",
+                exc_info=True,
+            )
+            return False
+
+        # Resolve operations may return None after completing successfully.
+        # Only an explicit False indicates that the operation was rejected.
+        return result is not False
 
     def ensure_resolve_connection(
         self,
