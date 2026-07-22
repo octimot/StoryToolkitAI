@@ -2699,6 +2699,43 @@ class ToolkitOps:
 
         return self.processing_queue.add_to_queue(**queue_item)
 
+    def create_search_items(
+        self,
+        search_file_paths: list[str],
+        use_analyzer: bool = False,
+    ) -> tuple[TextSearch, VideoSearch]:
+        """
+        Create the text and video processors for one advanced search.
+
+        ToolkitOps owns construction because it has the current processing
+        configuration. StoryToolkitEngine keeps the returned processors private
+        and exposes only detached search information to user interfaces.
+        """
+
+        # classify the selected paths separately for text and video search
+        text_search_file_paths = TextSearch.filter_file_paths(
+            search_file_paths,
+        )
+        video_search_file_paths = VideoSearch.filter_file_paths(
+            search_file_paths,
+        )
+
+        # create or reuse the cached text search processor for these paths
+        text_search_item = TextSearch(
+            search_config=self.search_config,
+            search_file_paths=text_search_file_paths,
+            search_type='semantic',
+            use_analyzer=use_analyzer,
+        )
+
+        # create or reuse the cached video search processor for these paths
+        video_search_item = VideoSearch(
+            search_config=self.search_config,
+            search_file_paths=video_search_file_paths,
+        )
+
+        return text_search_item, video_search_item
+
     def index_text(self, search_file_paths: list = None, **kwargs):
         """
         This takes the search_file_paths through the TextSearch embedder and saves their cached embeddings to disk

@@ -300,6 +300,7 @@ def _load_toolkit_ops_for_resolve_tests():
             'storytoolkitai.core.toolkit_ops.search',
             _create_module(
                 'storytoolkitai.core.toolkit_ops.search',
+                SearchConfig=_Placeholder,
                 ToolkitSearch=_Placeholder,
                 SearchItem=_Placeholder,
                 TextSearch=_Placeholder,

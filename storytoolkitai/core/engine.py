@@ -12,6 +12,7 @@ ProcessingQueue, or other processing internals directly.
 from __future__ import annotations
 
 from copy import deepcopy
+from threading import Lock
 from typing import Any
 
 from storytoolkitai.core.events import EventListener
@@ -61,6 +62,12 @@ class StoryToolkitEngine:
         """
 
         self._toolkit_ops = toolkit_ops_obj
+
+        # live search processors remain private to the engine
+        self._search_sessions: dict[str, dict[str, Any]] = {}
+
+        # search preparation may update session state from a worker thread
+        self._search_sessions_lock = Lock()
 
     def subscribe(self, listener: EventListener) -> None:
         """
@@ -231,6 +238,172 @@ class StoryToolkitEngine:
         )
 
         return deepcopy(result)
+
+    def _get_search_session(
+        self,
+        search_id: str,
+    ) -> dict[str, Any] | None:
+        """
+        Return one internal search session.
+
+        The returned dictionary is an engine implementation detail and must
+        never be returned directly to a caller.
+        """
+
+        with self._search_sessions_lock:
+            return self._search_sessions.get(search_id)
+
+    @staticmethod
+    def _get_search_status(
+        session: dict[str, Any],
+    ) -> str:
+        """Return the combined public status of one search session."""
+
+        component_statuses = {
+            session["text_status"],
+            session["video_status"],
+        }
+
+        if session.get("error") or "failed" in component_statuses:
+            return "failed"
+
+        if component_statuses.issubset({"ready", "not_available"}):
+            return "ready"
+
+        if "waiting_for_job" in component_statuses:
+            return "waiting_for_job"
+
+        if "preparing" in component_statuses:
+            return "preparing"
+
+        return "created"
+
+    def _copy_search_info(
+        self,
+        session: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Return detached information about one search session.
+
+        Live TextSearch and VideoSearch processors are intentionally excluded.
+        """
+
+        text_search_item = session["text_search_item"]
+        video_search_item = session["video_search_item"]
+
+        search_info = {
+            "search_id": session["search_id"],
+            "status": self._get_search_status(session),
+            "text_status": session["text_status"],
+            "video_status": session["video_status"],
+            "text_file_paths": list(text_search_item.search_file_paths or []),
+            "video_file_paths": list(video_search_item.search_file_paths or []),
+            "text_file_count": text_search_item.search_file_paths_count,
+            "video_file_count": video_search_item.search_file_paths_count,
+            "model_name": getattr(text_search_item, "model_name", None),
+            "text_job_id": session.get("text_job_id"),
+            "error": session.get("error"),
+        }
+
+        return deepcopy(search_info)
+
+    def create_search(
+        self,
+        search_file_paths: list[str],
+        use_analyzer: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Create or reuse an engine-owned advanced search session.
+
+        Args:
+            search_file_paths:
+                Files or directories selected by the user.
+            use_analyzer:
+                Whether text analysis should prepare the text corpus.
+
+        Returns:
+            Detached public information about the search session.
+        """
+
+        text_search_item, video_search_item = (
+            self._toolkit_ops.create_search_items(
+                search_file_paths=search_file_paths,
+                use_analyzer=use_analyzer,
+            )
+        )
+
+        # preserve the existing text corpus ID as the search window/session ID
+        search_id = text_search_item.search_file_path_id
+
+        with self._search_sessions_lock:
+            existing_session = self._search_sessions.get(search_id)
+
+            if existing_session is not None:
+                return self._copy_search_info(existing_session)
+
+            session = {
+                "search_id": search_id,
+                "text_search_item": text_search_item,
+                "video_search_item": video_search_item,
+                "text_status": (
+                    "created"
+                    if text_search_item.search_file_paths_count
+                    else "not_available"
+                ),
+                "video_status": (
+                    "created"
+                    if video_search_item.search_file_paths_count
+                    else "not_available"
+                ),
+                "text_job_id": None,
+                "preparation_thread": None,
+                "error": None,
+            }
+
+            self._search_sessions[search_id] = session
+
+        return self._copy_search_info(session)
+
+    def get_search(
+        self,
+        search_id: str,
+    ) -> dict[str, Any] | None:
+        """
+        Return detached information about an advanced search session.
+
+        Args:
+            search_id: ID returned by ``create_search``.
+
+        Returns:
+            Search information, or ``None`` when the session does not exist.
+        """
+
+        session = self._get_search_session(search_id)
+
+        if session is None:
+            return None
+
+        return self._copy_search_info(session)
+
+    def close_search(
+        self,
+        search_id: str,
+    ) -> bool:
+        """
+        Remove a search session from the engine registry.
+
+        SearchItem currently keeps its own corpus cache, so closing a session
+        does not unload a reusable model or delete an embedding cache.
+
+        Args:
+            search_id: ID returned by ``create_search``.
+
+        Returns:
+            True when the session existed, otherwise False.
+        """
+
+        with self._search_sessions_lock:
+            return self._search_sessions.pop(search_id, None) is not None
 
     @staticmethod
     def _copy_job(item: dict[str, Any]) -> dict[str, Any]:
