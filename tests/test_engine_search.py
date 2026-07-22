@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+import time
 
 from storytoolkitai.core.engine import StoryToolkitEngine
 from storytoolkitai.core.events import EventEmitter
@@ -19,6 +20,19 @@ class FakeTextSearch:
         self.model_name = "fake-model"
         self.use_analyzer = False
         self.cache_exists = False
+        self.prepared = False
+
+    def prepare_search_corpus(self):
+        self.prepared = True
+        return [], {}
+
+    def load_model(self, model_name=None):
+        if model_name:
+            self.model_name = model_name
+        return self.model_name
+
+    def search(self, query: str, max_results: int = 5):
+        return [], max_results
 
 
 class FakeVideoSearch:
@@ -27,6 +41,14 @@ class FakeVideoSearch:
     def __init__(self) -> None:
         self.search_file_paths = ["/tmp/interview.npy"]
         self.search_file_paths_count = 1
+        self.index_paths_loaded = False
+        self.model_loaded = False
+
+    def load_index_paths(self):
+        self.index_paths_loaded = True
+
+    def load_model(self):
+        self.model_loaded = True
 
 
 class FakeProcessingQueue:
@@ -50,6 +72,7 @@ class FakeToolkitOps:
         self.processing_queue = FakeProcessingQueue()
         self.text_search_item = FakeTextSearch()
         self.video_search_item = FakeVideoSearch()
+        self.index_text_calls: list[dict[str, Any]] = []
 
     def create_search_items(
         self,
@@ -57,6 +80,41 @@ class FakeToolkitOps:
         use_analyzer: bool = False,
     ) -> tuple[FakeTextSearch, FakeVideoSearch]:
         return self.text_search_item, self.video_search_item
+
+    def index_text(self, **kwargs):
+        self.index_text_calls.append(kwargs)
+        return True
+
+    def add_index_text_to_queue(self, **kwargs):
+        return "text-index-job"
+
+def wait_for_search_status(
+    engine: StoryToolkitEngine,
+    search_id: str,
+    expected_status: str,
+    timeout: float = 2.0,
+) -> dict[str, Any]:
+    """Wait briefly for the engine-owned search worker."""
+
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
+        search_info = engine.get_search(search_id)
+
+        if (
+            search_info is not None
+            and search_info["status"] == expected_status
+        ):
+            return search_info
+
+        time.sleep(0.01)
+
+    raise AssertionError(
+        "Search {!r} did not reach status {!r}".format(
+            search_id,
+            expected_status,
+        )
+    )
 
 
 def test_engine_creates_detached_search_information():
@@ -109,3 +167,28 @@ def test_engine_closes_a_search_session():
     assert engine.close_search("search-1") is True
     assert engine.get_search("search-1") is None
     assert engine.close_search("search-1") is False
+
+def test_engine_prepares_search_processors_outside_the_ui():
+    """The engine owns text and video preparation."""
+
+    toolkit_ops = FakeToolkitOps()
+    engine = StoryToolkitEngine(toolkit_ops)
+
+    search_info = engine.create_search(
+        search_file_paths=["/tmp/interview.transcription.json"],
+    )
+
+    engine.prepare_search(search_info["search_id"])
+
+    prepared_info = wait_for_search_status(
+        engine,
+        search_info["search_id"],
+        "ready",
+    )
+
+    assert prepared_info["text_status"] == "ready"
+    assert prepared_info["video_status"] == "ready"
+    assert toolkit_ops.text_search_item.prepared is True
+    assert toolkit_ops.video_search_item.index_paths_loaded is True
+    assert toolkit_ops.video_search_item.model_loaded is True
+    assert len(toolkit_ops.index_text_calls) == 1

@@ -12,9 +12,10 @@ ProcessingQueue, or other processing internals directly.
 from __future__ import annotations
 
 from copy import deepcopy
-from threading import Lock
+from threading import Lock, Thread
 from typing import Any
 
+from storytoolkitai.core.logger import logger
 from storytoolkitai.core.events import EventListener
 
 
@@ -32,6 +33,47 @@ _RUNTIME_JOB_FIELDS = frozenset(
         "task_queue",
         "last_task",
         "output",
+    }
+)
+
+
+# Queue statuses that indicate a text-search indexing job is still active.
+#
+# ``pending`` exists briefly while a queue ID is being initialized.
+# ``queued`` waits for a processing device.
+# ``processing`` is assigned before each queue task runs.
+# ``reading files`` and ``indexing`` are the progress states reported by
+# ToolkitOps.index_text().
+# ``canceling`` means the worker is finishing its current task before the
+# queue finalizes the job as canceled.
+_SEARCH_ACTIVE_JOB_STATUSES = frozenset(
+    {
+        "pending",
+        "queued",
+        "processing",
+        "reading files",
+        "indexing",
+        "canceling",
+    }
+)
+
+# Queue statuses that mean a text-search indexing attempt cannot be reused.
+#
+# ``cancelled`` is retained as a defensive spelling variant even though the
+# current ProcessingQueue implementation writes ``canceled``.
+_SEARCH_FAILED_JOB_STATUSES = frozenset(
+    {
+        "failed",
+        "canceled",
+        "cancelled",
+    }
+)
+
+# Successful queue completion is kept separate because it makes the associated
+# search session immediately ready.
+_SEARCH_DONE_JOB_STATUSES = frozenset(
+    {
+        "done",
     }
 )
 
@@ -364,12 +406,64 @@ class StoryToolkitEngine:
 
         return self._copy_search_info(session)
 
+    def _refresh_search_job_status(
+        self,
+        session: dict[str, Any],
+    ) -> None:
+        """Update a search session that is waiting for a queue job."""
+
+        text_job_id = session.get("text_job_id")
+
+        if not text_job_id:
+            return
+
+        job = self.get_job(text_job_id)
+
+        if job is None:
+            session["text_status"] = "failed"
+            session["error"] = (
+                "The text indexing job is no longer available."
+            )
+            return
+
+        job_status = job.get("status")
+
+        if job_status in _SEARCH_DONE_JOB_STATUSES:
+            session["text_status"] = "ready"
+            session["error"] = None
+            return
+
+        if job_status in _SEARCH_FAILED_JOB_STATUSES:
+            session["text_status"] = "failed"
+            session["error"] = (
+                job.get("fail_error")
+                or job.get("error")
+                or "The text indexing job did not complete."
+            )
+            return
+
+        if job_status in _SEARCH_ACTIVE_JOB_STATUSES:
+            session["text_status"] = "waiting_for_job"
+            return
+
+        # An unknown status should remain visible rather than being mistaken for
+        # successful preparation. This also exposes newly introduced queue states
+        # during development instead of silently hiding them.
+        session["text_status"] = "waiting_for_job"
+        session["error"] = (
+            "The text indexing job reported an unknown status: {!r}.".format(
+                job_status
+            )
+        )
+
     def get_search(
         self,
         search_id: str,
     ) -> dict[str, Any] | None:
         """
         Return detached information about an advanced search session.
+
+        Waiting text-index jobs are checked before the public status is copied.
 
         Args:
             search_id: ID returned by ``create_search``.
@@ -382,6 +476,227 @@ class StoryToolkitEngine:
 
         if session is None:
             return None
+
+        self._refresh_search_job_status(session)
+
+        return self._copy_search_info(session)
+
+    def _find_text_index_job(
+        self,
+        search_file_paths: list[str],
+    ) -> tuple[str, dict[str, Any]] | None:
+        """Return the newest queue item for the same text search paths."""
+
+        matching_job = None
+
+        for job_id, job in self.list_jobs().items():
+            if job.get("item_type") != "search":
+                continue
+
+            if job.get("search_file_paths") != search_file_paths:
+                continue
+
+            # queue dictionaries retain insertion order, so keeping the last
+            # match selects the newest known job for this corpus
+            matching_job = job_id, job
+
+        return matching_job
+
+    def _refresh_search_job_status(
+        self,
+        session: dict[str, Any],
+    ) -> None:
+        """Update a search session that is waiting for a queue job."""
+
+        text_job_id = session.get("text_job_id")
+
+        if not text_job_id:
+            return
+
+        job = self.get_job(text_job_id)
+
+        if job is None:
+            session["text_status"] = "failed"
+            session["error"] = (
+                "The text indexing job is no longer available."
+            )
+            return
+
+        job_status = job.get("status")
+
+        if job_status == "done":
+            session["text_status"] = "ready"
+            return
+
+        if job_status in _SEARCH_FAILED_JOB_STATUSES:
+            session["text_status"] = "failed"
+            session["error"] = (
+                job.get("error")
+                or "The text indexing job did not complete."
+            )
+            return
+
+        session["text_status"] = "waiting_for_job"
+
+    def _prepare_search_worker(
+        self,
+        search_id: str,
+        queue_item_name: str | None,
+    ) -> None:
+        """Prepare text and video search processors outside the UI thread."""
+
+        session = self._get_search_session(search_id)
+
+        if session is None:
+            return
+
+        text_search_item = session["text_search_item"]
+        video_search_item = session["video_search_item"]
+
+        try:
+            # TEXT SEARCH
+            if text_search_item.search_file_paths_count:
+                session["text_status"] = "preparing"
+
+                # corpus preparation is needed both for direct indexing and for
+                # deciding which cache belongs to this set of source files
+                text_search_item.prepare_search_corpus()
+
+                existing_job = self._find_text_index_job(
+                    list(text_search_item.search_file_paths),
+                )
+
+                if existing_job is not None:
+                    existing_job_id, existing_job_info = existing_job
+                    existing_status = existing_job_info.get("status")
+
+                    if existing_status in _SEARCH_DONE_JOB_STATUSES:
+                        session["text_job_id"] = existing_job_id
+                        session["text_status"] = "ready"
+
+                    elif existing_status in _SEARCH_ACTIVE_JOB_STATUSES:
+                        session["text_job_id"] = existing_job_id
+                        session["text_status"] = "waiting_for_job"
+
+                    # failed and canceled jobs do not prevent a new indexing attempt
+                    elif existing_status in _SEARCH_FAILED_JOB_STATUSES:
+                        existing_job = None
+
+                    # an unknown historical status should not be treated as a reusable job
+                    else:
+                        logger.warning(
+                            f"Ignoring text indexing job {existing_job_id} "
+                            f"with unknown status {existing_status}."
+                        )
+                        existing_job = None
+
+                # large corpora without a cache continue to use the persistent
+                # processing queue so indexing survives the search window
+                if (
+                    existing_job is None
+                    and text_search_item.search_file_paths_size > 300000
+                    and not text_search_item.cache_exists
+                ):
+                    text_job_id = (
+                        self._toolkit_ops.add_index_text_to_queue(
+                            queue_item_name=(
+                                queue_item_name
+                                or "Preparing text search"
+                            ),
+                            search_file_paths=list(
+                                text_search_item.search_file_paths
+                            ),
+                            use_analyzer=text_search_item.use_analyzer,
+                        )
+                    )
+
+                    if not text_job_id:
+                        session["text_status"] = "failed"
+                        session["error"] = (
+                            "The text search could not be added to the "
+                            "processing queue."
+                        )
+                    else:
+                        session["text_job_id"] = text_job_id
+                        session["text_status"] = "waiting_for_job"
+
+                elif existing_job is None:
+                    # small corpora and existing caches can be prepared in the
+                    # engine-owned worker without creating another queue item
+                    self._toolkit_ops.index_text(
+                        search_file_paths=list(
+                            text_search_item.search_file_paths
+                        ),
+                        use_analyzer=text_search_item.use_analyzer,
+                    )
+                    session["text_status"] = "ready"
+
+            # VIDEO SEARCH
+            if video_search_item.search_file_paths_count:
+                session["video_status"] = "preparing"
+
+                video_search_item.load_index_paths()
+                video_search_item.load_model()
+
+                session["video_status"] = "ready"
+
+        except Exception as exc:
+            session["error"] = str(exc)
+
+            if session["text_status"] == "preparing":
+                session["text_status"] = "failed"
+
+            if session["video_status"] == "preparing":
+                session["video_status"] = "failed"
+
+    def prepare_search(
+        self,
+        search_id: str,
+        queue_item_name: str | None = None,
+    ) -> dict[str, Any] | None:
+        """
+        Begin preparing an advanced search in an engine-owned worker.
+
+        Calling this method again while preparation is active is harmless.
+
+        Args:
+            search_id:
+                ID returned by ``create_search``.
+            queue_item_name:
+                Optional name for a persistent text-index queue item.
+
+        Returns:
+            Current detached search information, or ``None`` if it is unknown.
+        """
+
+        session = self._get_search_session(search_id)
+
+        if session is None:
+            return None
+
+        preparation_thread = session.get("preparation_thread")
+
+        if (
+            preparation_thread is not None
+            and preparation_thread.is_alive()
+        ):
+            return self._copy_search_info(session)
+
+        if self._get_search_status(session) in {"ready", "failed"}:
+            return self._copy_search_info(session)
+
+        preparation_thread = Thread(
+            target=self._prepare_search_worker,
+            kwargs={
+                "search_id": search_id,
+                "queue_item_name": queue_item_name,
+            },
+            name="search-preparation-{}".format(search_id[:8]),
+            daemon=True,
+        )
+
+        session["preparation_thread"] = preparation_thread
+        preparation_thread.start()
 
         return self._copy_search_info(session)
 
