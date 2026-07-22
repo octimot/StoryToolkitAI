@@ -68,14 +68,16 @@ class FakeVideoSearch:
         threshold: int = 35,
         combine_patches: bool = True,
     ):
-        return [
-            {
-                "type": "video",
-                "query": query,
-                "frame": 12,
-            }
-        ]
-
+        return (
+            [
+                {
+                    "type": "video",
+                    "query": query,
+                    "frame": 12,
+                }
+            ],
+            1,
+        )
     def video_frame(self, full_path: str, frame: int):
         return {
             "full_path": full_path,
@@ -256,7 +258,7 @@ def test_engine_runs_text_search_with_detached_results():
 
 
 def test_engine_runs_video_search():
-    """Video search execution is exposed through the engine."""
+    """Video search execution and its result count pass through the engine."""
 
     toolkit_ops = FakeToolkitOps()
     engine = StoryToolkitEngine(toolkit_ops)
@@ -267,11 +269,12 @@ def test_engine_runs_video_search():
     engine.prepare_search(search_info["search_id"])
     wait_for_search_status(engine, search_info["search_id"], "ready")
 
-    results = engine.search_video(
+    results, max_results = engine.search_video(
         search_id=search_info["search_id"],
         query="red car",
     )
 
+    assert max_results == 1
     assert results == [
         {
             "type": "video",

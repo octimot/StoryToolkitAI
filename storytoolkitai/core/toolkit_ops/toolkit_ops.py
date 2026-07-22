@@ -2701,7 +2701,7 @@ class ToolkitOps:
 
     def create_search_items(
         self,
-        search_file_paths: list[str],
+        search_file_paths: str | list[str] | tuple[str, ...],
         use_analyzer: bool = False,
     ) -> tuple[TextSearch, VideoSearch]:
         """

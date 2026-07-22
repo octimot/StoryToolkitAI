@@ -351,7 +351,7 @@ class StoryToolkitEngine:
 
     def create_search(
         self,
-        search_file_paths: list[str],
+        search_file_paths: str | list[str] | tuple[str, ...],
         use_analyzer: bool = False,
     ) -> dict[str, Any]:
         """
@@ -778,30 +778,35 @@ class StoryToolkitEngine:
         max_results: int = 5,
         threshold: int = 35,
         combine_patches: bool = True,
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], int]:
         """
         Run a video search and return detached result data.
 
-        The existing VideoSearch arguments are retained so the Tk interface
-        behaves the same during the version 1 migration.
+        VideoSearch returns both the matching frames and the effective result
+        count after parsing any result limit included in the query.
         """
 
         session = self._get_search_session(search_id)
 
         if session is None or session["video_status"] != "ready":
-            return []
+            return [], max_results
 
-        search_results = session["video_search_item"].search(
+        result = session["video_search_item"].search(
             query=query,
             max_results=max_results,
             threshold=threshold,
             combine_patches=combine_patches,
         )
 
-        if not isinstance(search_results, list):
-            return []
+        if not isinstance(result, tuple) or len(result) != 2:
+            return [], max_results
 
-        return deepcopy(search_results)
+        search_results, effective_max_results = result
+
+        if not isinstance(search_results, list):
+            search_results = []
+
+        return deepcopy(search_results), int(effective_max_results)
 
     def get_search_video_frame(
         self,
