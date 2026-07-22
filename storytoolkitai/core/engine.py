@@ -344,6 +344,128 @@ class StoryToolkitEngine:
 
         return deepcopy(result)
 
+    def get_whisper_available_languages(self) -> list[str]:
+        """
+        Return the Whisper languages available to ingest forms.
+
+        The returned list is detached from processing state so callers may
+        sort or otherwise modify it without affecting ToolkitOps.
+        """
+
+        languages = (
+            self._toolkit_ops.get_whisper_available_languages()
+        )
+
+        if not languages:
+            return []
+
+        return deepcopy(list(languages))
+
+    def get_processing_devices(self) -> list[str]:
+        """
+        Return processing-device names suitable for UI selectors.
+
+        ``auto`` is a presentation choice and is intentionally not added here.
+        Each caller can decide whether an automatic-device option is useful.
+        """
+
+        devices = getattr(
+            self._toolkit_ops,
+            "queue_devices",
+            None,
+        )
+
+        if not devices:
+            return []
+
+        return deepcopy(list(devices))
+
+    def start_speaker_detection(
+        self,
+        *,
+        queue_item_name: str,
+        transcription_file_path: str,
+        time_intervals: list,
+        device_name: str,
+    ) -> str | bool:
+        """
+        Add speaker detection for one transcription to the processing queue.
+
+        Returns:
+            The queue ID created by processing, or False when the operation
+            could not be queued.
+        """
+
+        result = (
+            self._toolkit_ops.add_speaker_detection_to_queue(
+                queue_item_name=queue_item_name,
+                transcription_file_path=transcription_file_path,
+                time_intervals=time_intervals,
+                device_name=device_name,
+            )
+        )
+
+        return deepcopy(result)
+
+    def start_group_questions(
+        self,
+        *,
+        queue_item_name: str,
+        transcription_file_path: str,
+        group_name: str,
+    ) -> str | bool:
+        """
+        Add automatic question grouping to the processing queue.
+
+        Returns:
+            The queue ID created by processing, or False when the operation
+            could not be queued.
+        """
+
+        result = (
+            self._toolkit_ops.add_group_questions_to_queue(
+                queue_item_name=queue_item_name,
+                transcription_file_path=transcription_file_path,
+                group_name=group_name,
+            )
+        )
+
+        return deepcopy(result)
+
+    def publish_transcription_changed(
+        self,
+        transcription_id: str,
+    ) -> bool:
+        """
+        Publish the existing transcription-refresh event.
+
+        This remains a compatibility event for version 1. The UI may request
+        that processing publish it, but does not call ToolkitOps observers
+        directly.
+        """
+
+        if not transcription_id:
+            return False
+
+        return bool(
+            self._toolkit_ops.notify_observers(
+                action="update_transcription_{}".format(
+                    transcription_id
+                ),
+            )
+        )
+
+    def publish_project_changed(self) -> bool:
+        """
+        Publish the existing project-refresh compatibility event.
+        """
+
+        return bool(
+            self._toolkit_ops.notify_observers(
+                action="project_changed",
+            )
+        )
+
     def _get_search_session(
         self,
         search_id: str,

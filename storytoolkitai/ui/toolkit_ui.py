@@ -6209,7 +6209,9 @@ class toolkit_UI():
 
         # SOURCE LANGUAGE DROPDOWN
         # get the available languages from whisper, and the default language from the app settings
-        languages_available = self.toolkit_ops_obj.get_whisper_available_languages()
+        languages_available = (
+            self.engine.get_whisper_available_languages()
+        )
 
         # use either the language selected from the kwargs, or the default language from the app settings
         language_selected = \
@@ -6303,7 +6305,10 @@ class toolkit_UI():
 
         # DEVICE DROPDOWN
         # get the available devices from the toolkit, and the default device from the app settings
-        devices_available = ['auto'] + list(self.toolkit_ops_obj.queue_devices)
+        devices_available = (
+            ['auto']
+            + self.engine.get_processing_devices()
+        )
         device_selected = \
             kwargs.get('device_selected', None) \
                 if kwargs.get('device_selected', None) is not None \
@@ -7665,7 +7670,7 @@ class toolkit_UI():
             return None
 
         # add the ingest job(s) to the queue
-        if self.toolkit_ops_obj.add_media_to_queue(ingest_settings):
+        if self.engine.start_ingest(ingest_settings):
 
             # if we reached this point safely, just open the queue window
             self.open_queue_window()
@@ -8218,10 +8223,14 @@ class toolkit_UI():
             # keep a reference to the toolkit_UI object here
             self.toolkit_UI_obj = toolkit_UI_obj
 
+            # use the same public processing interface as the parent UI
+            self.engine: 'StoryToolkitEngine' = toolkit_UI_obj.engine
+
             # keep a reference to the StoryToolkitAI object here
             self.stAI = toolkit_UI_obj.stAI
 
             # keep a reference to the toolkit_ops_obj object here
+            # this remains temporarily for assistant and Resolve migration
             self.toolkit_ops_obj = toolkit_UI_obj.toolkit_ops_obj
 
             self.root = toolkit_UI_obj.root
@@ -9007,7 +9016,6 @@ class toolkit_UI():
             # Shift+L key event (link current timeline to this transcription)
             if event.keysym == 'L':
                 # link transcription to file
-                # self.toolkit_ops_obj.link_transcription_to_timeline(self.transcription_file_paths[window_id])
                 self.link_to_timeline_button(window_id=window_id)
 
             # s key event (sync transcript cursor with playhead)
@@ -10511,8 +10519,16 @@ class toolkit_UI():
                 user_input = toolkit_UI.AskDialog(
                     title='Speaker Detection Settings',
                     input_widgets=[
-                        {'name': 'device_name', 'label': 'Device', 'type': 'option_menu', 'default_value': 'auto',
-                            'options': ['auto'] + list(self.toolkit_ops_obj.queue_devices)},
+                        {
+                            'name': 'device_name',
+                            'label': 'Device',
+                            'type': 'option_menu',
+                            'default_value': 'auto',
+                            'options': (
+                                ['auto']
+                                + self.engine.get_processing_devices()
+                            ),
+                        },
                         {'name': 'transcription_speaker_detection_threshold',
                          'label': 'Detection Threshold', 'type': 'entry_float',
                          'default_value': threshold,
@@ -10550,11 +10566,11 @@ class toolkit_UI():
 
             queue_item_name = '{} {}'.format(window_transcription.name, '(Speaker Detection)')
 
-            queue_item_id = self.toolkit_ops_obj.add_speaker_detection_to_queue(
+            queue_item_id = self.engine.start_speaker_detection(
                 queue_item_name=queue_item_name,
                 transcription_file_path=transcription_file_path,
                 device_name=user_input['device_name'],
-                time_intervals=selected_time_intervals
+                time_intervals=selected_time_intervals,
             )
 
             # attach a queue item observer that updates the window when the queue item is done
@@ -10621,8 +10637,11 @@ class toolkit_UI():
             queue_item_name = '{} {}'.format(window_transcription.name, '(Group Questions)')
             group_name = user_input['group_name']
 
-            self.toolkit_ops_obj.add_group_questions_to_queue(
-                queue_item_name=queue_item_name, transcription_file_path=transcription_file_path, group_name=group_name)
+            self.engine.start_group_questions(
+                queue_item_name=queue_item_name,
+                transcription_file_path=transcription_file_path,
+                group_name=group_name,
+            )
 
             # open the queue window
             self.toolkit_UI_obj.open_queue_window()
@@ -12760,8 +12779,10 @@ class toolkit_UI():
             if window := self.toolkit_UI_obj.get_window_by_id(window_id=window_id):
                 setattr(window, 'transcription', transcription)
 
-                # notify observers of the transcription update
-                self.toolkit_ops_obj.notify_observers(action='update_transcription_{}'.format(window_id))
+                # publish the transcription update
+                self.engine.publish_transcription_changed(
+                    transcription_id=window_id,
+                )
 
                 return True
 
@@ -13818,7 +13839,6 @@ class toolkit_UI():
                 # so we keep them disabled - if it's needed, 
                 # we'll have to trigger go_to_time from caller function
                 # and move the NLE playhead (if any)
-                # toolkit_UI_obj.toolkit_ops_obj.go_to_time(seconds=transcript_sec)
 
                 break
 
@@ -13830,7 +13850,6 @@ class toolkit_UI():
                 # so we keep them disabled - if it's needed, 
                 # we'll have to trigger go_to_time from caller function
                 # just move the NLE playhead (if any)
-                # toolkit_UI_obj.toolkit_ops_obj.go_to_time(seconds=transcript_sec)
 
                 # this notification might be annoying, so maybe remove it
                 # toolkit_UI_obj.notify_via_messagebox(
@@ -15346,8 +15365,8 @@ class toolkit_UI():
         # destroy the settings window after 100ms
         t_settings_window.after(100, lambda: self.destroy_window_(window_id=window_id))
 
-        # if the name changed trigger notify the observers that the project has changed
-        self.toolkit_ops_obj.notify_observers('project_changed')
+        # if the name changed trigger publish that the project has changed
+        self.engine.publish_project_changed()
 
     # STORY EDITOR WINDOW FUNCTIONS
 
