@@ -177,6 +177,69 @@ class StoryToolkitEngine:
             )
         )
 
+    def is_resolve_connected(self) -> bool:
+        """
+        Return whether processing currently has an active Resolve connection.
+        """
+
+        return bool(
+            self._toolkit_ops.is_resolve_connected()
+        )
+
+    def ensure_resolve_connection(
+        self,
+        *,
+        timeout_seconds: float = 5.0,
+        poll_interval: float = 0.05,
+    ) -> dict:
+        """
+        Enable Resolve when needed and wait briefly for a connection.
+
+        The engine returns plain copied result data. Callers do not receive
+        access to the Resolve API wrapper or its polling state.
+        """
+
+        return deepcopy(
+            self._toolkit_ops.ensure_resolve_connection(
+                timeout_seconds=timeout_seconds,
+                poll_interval=poll_interval,
+            )
+        )
+
+    def render_resolve_timeline(
+        self,
+        *,
+        target_dir: str,
+        render_options: dict,
+    ) -> dict:
+        """
+        Render the current Resolve timeline.
+        """
+
+        return deepcopy(
+            self._toolkit_ops.render_resolve_timeline(
+                target_dir=target_dir,
+                render_options=render_options,
+            )
+        )
+
+    def render_resolve_job(
+        self,
+        *,
+        job_id: str,
+        render_data: dict | None = None,
+    ) -> dict:
+        """
+        Render one existing job from the Resolve render queue.
+        """
+
+        return deepcopy(
+            self._toolkit_ops.render_resolve_job(
+                job_id=job_id,
+                render_data=render_data,
+            )
+        )
+
     def create_ingest_job(
         self,
         name: str | None = None,

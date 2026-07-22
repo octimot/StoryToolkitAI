@@ -18,11 +18,17 @@ from requests import get
 
 
 class StoryToolkitAI:
-    def __init__(self, server=False, args=None):
+    def __init__(
+        self,
+        server=False,
+        *,
+        debug_mode=False,
+        check_api_key=True,
+        check_updates=True,
+    ):
+
         # import version.py - this holds the version stored locally
         import version
-
-        self.cli_args = args
 
         # are we running the standalone version?
         # keep track of this in this class variable
@@ -45,7 +51,8 @@ class StoryToolkitAI:
         self.api = None
         self.api_key_valid = False
 
-        self.debug_mode = False
+        # debug mode is decided by application startup
+        self.debug_mode = bool(debug_mode)
 
         # trigger post_update if necessary
         # if not last_update key is found in the config, it will assume that the app was just installed
@@ -61,7 +68,8 @@ class StoryToolkitAI:
             # restart the app to make sure the changes are applied
             self.restart()
 
-        if not self.cli_args or not self.cli_args.mode == 'cli':
+        # start the API-key check only when this runtime needs it
+        if check_api_key:
             self.check_api_thread()
 
         # add a variable that holds usage statistics
@@ -75,18 +83,17 @@ class StoryToolkitAI:
         self.update_available = None
         self.online_version = None
 
-        # check if a new version of the app exists
-        # but only if the user is not running the CLI or has disabled the check
-        if (self.cli_args
-                and (self.cli_args.mode == 'cli' or self.cli_args.skip_update_check)
-                and not self.cli_args.force_update_check
-        ):
-            logger.debug("Skipping update check due to command line argument.")
-        else:
+        # application startup decides whether this runtime should check
+        # for an available update
+        if check_updates:
+
             def check_update_wrapper():
                 self.update_available, self.online_version = self.check_update()
 
             Thread(target=check_update_wrapper).start()
+
+        else:
+            logger.debug('Skipping update check for this runtime.')
 
         # if this is not a standalone version, get the git commit hash
         if not self.standalone:

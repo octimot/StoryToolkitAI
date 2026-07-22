@@ -120,6 +120,7 @@ class ToolkitOps:
         self,
         stAI=None,
         disable_resolve_api=False,
+        resume_queue=True,
         event_emitter=None,
     ):
 
@@ -222,38 +223,41 @@ class ToolkitOps:
         # use this to store all the devices that can be used for processing queue tasks
         self.queue_devices = self.get_torch_available_devices()
 
-        # use this to know whether the resolve API is disabled or not for this session
-        self.disable_resolve_api = disable_resolve_api
+        # remember whether Resolve was disabled explicitly for this runtime
+        #
+        # this is kept separate from the saved application setting because
+        # CLI render commands historically enable Resolve when needed, even
+        # when automatic Resolve polling is disabled in the user settings
+        self.resolve_api_disabled_for_runtime = bool(disable_resolve_api)
+
+        # use this to know whether the Resolve API is disabled for this session
+        self.disable_resolve_api = self.resolve_api_disabled_for_runtime
 
         # if this is True, it means that there is a polling thread running
         self.polling_resolve = False
 
-        # to hold the resolve API object
+        # to hold the Resolve API object
         self.resolve_api = None
 
-        # init Resolve but if...
+        # do not initialize Resolve when it was disabled for this runtime
+        if self.resolve_api_disabled_for_runtime:
+            logger.debug('Resolve API disabled for this runtime.')
 
-        # ... if --noresolve was passed as an argument, disable the resolve API
-        if '--noresolve' in sys.argv:
-            self.resolve_api = None
-            self.disable_resolve_api = True
-            logger.debug('Resolve API disabled via --noresolve argument.')
-
-        # ... and if the resolve API is disabled via config, disable the resolve API
-        elif self.stAI.get_app_setting('disable_resolve_api', default_if_none=True):
-            self.resolve_api = None
+        # otherwise honor the saved application setting
+        elif self.stAI.get_app_setting(
+            'disable_resolve_api',
+            default_if_none=True,
+        ):
             self.disable_resolve_api = True
             logger.debug('Resolve API disabled via config.')
 
-        # ... then, init Resolve
+        # initialize Resolve when it was not disabled
         if not self.disable_resolve_api:
             self.resolve_enable()
 
-        # if this is not the CLI
-        # resume the processing queue if there is anything in it
+        # restore queued work only when application startup requested it
         if (
-            self.stAI.cli_args
-            and self.stAI.cli_args.mode != 'cli'
+            resume_queue
             and self.processing_queue.resume_queue_from_file(
                 ignore_finished=self.stAI.get_app_setting(
                     setting_name='queue_ignore_finished',
@@ -3597,6 +3601,224 @@ class ToolkitOps:
             result['data'] = data
 
         return result
+
+    def is_resolve_connected(self):
+        """
+        Return whether the Resolve wrapper and active Resolve connection exist.
+        """
+
+        return bool(
+            self.resolve_api is not None
+            and NLE.is_connected()
+        )
+
+    def ensure_resolve_connection(
+        self,
+        timeout_seconds=5.0,
+        poll_interval=0.05,
+    ):
+        """
+        Enable Resolve when needed and wait briefly for a connection.
+
+        Connection polling belongs to processing. Callers receive a normal
+        operation result and do not inspect Resolve objects or polling state.
+        """
+
+        # an explicit --noresolve runtime decision must not be overridden
+        if self.resolve_api_disabled_for_runtime:
+            return self._resolve_operation_result(
+                False,
+                code='resolve_disabled',
+                message='Resolve is disabled for this runtime',
+            )
+
+        # return immediately when Resolve is already connected
+        if self.is_resolve_connected():
+            return self._resolve_operation_result(
+                True,
+                data={
+                    'connected': True,
+                },
+            )
+
+        # this also preserves the previous CLI behavior where a render command
+        # could enable Resolve even when automatic polling was disabled in the
+        # saved application settings
+        self.resolve_enable()
+
+        timeout_seconds = max(float(timeout_seconds), 0.0)
+        poll_interval = max(float(poll_interval), 0.01)
+        connection_deadline = time.monotonic() + timeout_seconds
+
+        while time.monotonic() < connection_deadline:
+
+            if self.is_resolve_connected():
+                return self._resolve_operation_result(
+                    True,
+                    data={
+                        'connected': True,
+                    },
+                )
+
+            time.sleep(poll_interval)
+
+        return self._resolve_operation_result(
+            False,
+            code='resolve_unavailable',
+            message='Resolve is not connected. Please open Resolve and try again.',
+            data={
+                'connected': False,
+            },
+        )
+
+    def render_resolve_timeline(
+        self,
+        *,
+        target_dir,
+        render_options,
+    ):
+        """
+        Render the current Resolve timeline using explicit render options.
+        """
+
+        if not target_dir or not isinstance(target_dir, str):
+            return self._resolve_operation_result(
+                False,
+                code='target_dir_required',
+                message='A valid output directory is required',
+            )
+
+        if not os.path.isdir(target_dir):
+            return self._resolve_operation_result(
+                False,
+                code='target_dir_not_found',
+                message='The output directory does not exist: {}'.format(
+                    target_dir,
+                ),
+            )
+
+        if not isinstance(render_options, dict):
+            return self._resolve_operation_result(
+                False,
+                code='invalid_render_options',
+                message='Resolve render options must be a dictionary',
+            )
+
+        if not self.is_resolve_connected():
+            return self._resolve_operation_result(
+                False,
+                code='resolve_unavailable',
+                message='Resolve is not connected. Please open Resolve and try again.',
+            )
+
+        try:
+            render_result = self.resolve_api.render_timeline(
+                target_dir=target_dir,
+                **render_options,
+            )
+
+        except Exception as exception:
+            logger.error(
+                'Error rendering Resolve timeline.',
+                exc_info=True,
+            )
+
+            return self._resolve_operation_result(
+                False,
+                code='resolve_render_failed',
+                message='Unable to render the Resolve timeline: {}'.format(
+                    exception,
+                ),
+            )
+
+        # some Resolve API versions return None after successfully starting
+        # a render, so only an explicit False is considered a failed request
+        if render_result is False:
+            return self._resolve_operation_result(
+                False,
+                code='resolve_render_failed',
+                message='Resolve rejected the timeline render request',
+            )
+
+        return self._resolve_operation_result(
+            True,
+            data={
+                'result': render_result,
+            },
+        )
+
+    def render_resolve_job(
+        self,
+        *,
+        job_id,
+        render_data=None,
+    ):
+        """
+        Render one existing job from the Resolve render queue.
+        """
+
+        if not job_id or not isinstance(job_id, str):
+            return self._resolve_operation_result(
+                False,
+                code='resolve_job_required',
+                message='A Resolve render job ID is required',
+            )
+
+        if render_data is None:
+            render_data = {}
+
+        if not isinstance(render_data, dict):
+            return self._resolve_operation_result(
+                False,
+                code='invalid_render_data',
+                message='Resolve render data must be a dictionary',
+            )
+
+        if not self.is_resolve_connected():
+            return self._resolve_operation_result(
+                False,
+                code='resolve_unavailable',
+                message='Resolve is not connected. Please open Resolve and try again.',
+            )
+
+        try:
+            render_result = self.resolve_api.render(
+                render_jobs=[job_id],
+                resolve_objects=None,
+                stills=False,
+                render_data=render_data,
+            )
+
+        except Exception as exception:
+            logger.error(
+                'Error rendering Resolve job.',
+                exc_info=True,
+            )
+
+            return self._resolve_operation_result(
+                False,
+                code='resolve_render_failed',
+                message='Unable to render Resolve job {}: {}'.format(
+                    job_id,
+                    exception,
+                ),
+            )
+
+        # only an explicit False indicates that Resolve rejected the request
+        if render_result is False:
+            return self._resolve_operation_result(
+                False,
+                code='resolve_render_failed',
+                message='Resolve rejected render job {}'.format(job_id),
+            )
+
+        return self._resolve_operation_result(
+            True,
+            data={
+                'job_id': job_id,
+                'result': render_result,
+            },
+        )
 
     def are_files_in_dir(self, dir, files_present):
         """
