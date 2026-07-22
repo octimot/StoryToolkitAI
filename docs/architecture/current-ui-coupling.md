@@ -2,7 +2,7 @@
 
 **Status:** Temporary migration inventory for the StoryToolkitAI 1.0 architecture work
 **Branch reviewed:** `dev`
-**Reviewed through:** `e9684f2`
+**Reviewed through:** `201ca62`
 **Related decision:** [`engine-ui-separation.md`](./engine-ui-separation.md)
 
 Known behavior noticed during the migration is tracked in [`known-refactor-issues.md`](./known-refactor-issues.md).
@@ -40,6 +40,7 @@ The inventory covers the following areas:
 
 ```text
 storytoolkitai/__main__.py
+storytoolkitai/app.py
 storytoolkitai/core/engine.py
 storytoolkitai/core/events.py
 storytoolkitai/core/storytoolkitai.py
@@ -62,47 +63,58 @@ File and symbol names are used instead of fixed line numbers because the larger 
 
 # Current dependency picture
 
-After the completed processing-to-UI separation, queue-boundary and advanced-search work, the central relationship looks approximately like this:
+After the completed processing-to-UI separation, queue-boundary, advanced-search, runtime-construction and CLI migration work, the central relationship looks approximately like this:
 
 ```text
 __main__.py
     |
-    +--> StoryToolkitAI
-    |
-    +--> ToolkitOps
+    +--> runtime_options_from_args(...)
     |       |
-    |       +--> ProcessingQueue
+    |       +--> explicit RuntimeOptions
+    |
+    +--> build_runtime(...)
+    |       |
+    |       +--> StoryToolkitAI
+    |       |
+    |       +--> ToolkitOps
     |       |       |
-    |       |       +--> explicitly supplied task handlers
+    |       |       +--> ProcessingQueue
+    |       |       |       |
+    |       |       |       +--> explicitly supplied task handlers
+    |       |       |       +--> EventEmitter
+    |       |       |
+    |       |       +--> SearchConfig
+    |       |       +--> text and video search processors
+    |       |       +--> Resolve API
+    |       |       +--> model and settings state
     |       |       +--> EventEmitter
     |       |
-    |       +--> SearchConfig
-    |       +--> text and video search processors
-    |       +--> Resolve API
-    |       +--> model and settings state
-    |       +--> EventEmitter
+    |       +--> StoryToolkitEngine
+    |               |
+    |               +--> selected ToolkitOps operations
+    |               +--> copied queue snapshots
+    |               +--> safe queue cancellation
+    |               +--> ingest job lifecycle
+    |               +--> engine-owned search sessions
+    |               +--> search preparation and query execution
+    |               +--> event subscriptions
+    |               +--> Resolve marker, connection and render operations
     |
-    +--> StoryToolkitEngine
+    +--> Tk UI
+    |       |
+    |       +--> receives StoryToolkitEngine
+    |       +--> temporarily also receives StoryToolkitAI and ToolkitOps
+    |       +--> displays engine events
+    |       +--> owns dialogs, notifications, windows and presentation callbacks
+    |       +--> reads job and search state through the engine
+    |       +--> still accesses ToolkitOps directly for unmigrated features
+    |
+    +--> CLI
             |
-            +--> selected ToolkitOps operations
-            +--> copied queue snapshots
-            +--> safe queue cancellation
-            +--> ingest job lifecycle
-            +--> engine-owned search sessions
-            +--> search preparation and query execution
-            +--> event subscriptions
-            +--> Resolve marker operations
-            |
-            v
-        Tk UI
-            |
-            +--> displays engine events
-            +--> owns dialogs and notifications
-            +--> owns windows and presentation callbacks
-            +--> reads job and search state through the engine
-            +--> stores search IDs instead of live search processors
-            +--> does not access ProcessingQueue directly
-            +--> still accesses ToolkitOps directly for unmigrated features
+            +--> receives StoryToolkitEngine only for processing
+            +--> parses and validates command-line presentation input
+            +--> uses engine Resolve connection and render operations
+            +--> does not access ToolkitOps, StoryToolkitAI, NLE or resolve_api
 ```
 
 The direct processing-to-Tk back-reference has been removed.
@@ -111,24 +123,29 @@ The queue no longer stores or calls the complete `ToolkitOps` object. It receive
 
 Advanced-search processors no longer receive the complete `ToolkitOps` object. `StoryToolkitEngine` owns their live sessions, preparation workers and query execution, while Tk keeps only the engine-provided search ID.
 
-The main remaining direction of coupling is:
+Command-line arguments are now converted into explicit `RuntimeOptions` before the runtime is constructed. `StoryToolkitAI` and `ToolkitOps` receive only the decisions that affect them, rather than reading an argparse namespace or inferring mode from command-line flags.
+
+The CLI now uses `StoryToolkitEngine` as its only processing entry point. Resolve connection waiting, timeline rendering and render-queue job execution are owned by processing and exposed through plain result dictionaries.
+
+The main remaining direction of broad interface coupling is:
 
 ```text
-Tk UI / CLI -> ToolkitOps and other unmigrated processing internals
+Tk UI -> ToolkitOps and other unmigrated processing internals
 ```
 
 # Coupling inventory
 
 ## C01 — Application construction exposes broad internals to each UI
 
-| Field                  | Detail                                                                                                                                                                                                                          |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Direction**          | Bootstrap -> UI and processing                                                                                                                                                                                                  |
-| **Location**           | `storytoolkitai/__main__.py::main`, `storytoolkitai/ui/toolkit_ui.py::run_gui`, `storytoolkitai/ui/toolkit_cli.py::run_cli`                                                                                                     |
-| **Current state**      | Startup constructs `StoryToolkitAI`, `ToolkitOps` and `StoryToolkitEngine`. The Tk application receives the engine but still also receives the application and operations objects. The CLI continues to use the legacy objects. |
-| **Remaining coupling** | Both interfaces can bypass the engine and call broad processing internals.                                                                                                                                                      |
-| **Status**             | In progress                                                                                                                                                                                                                     |
-| **Related commits**    | `89eabcf2c6ff3248e5c045f2bd40911d175f12d0`, `9a6f1f05f1b7c0d4116e7027410a61a8a6f6467d`                                                                                                                                          |
+| Field                  | Detail |
+| ---------------------- | ------ |
+| **Direction**          | Bootstrap -> UI and processing |
+| **Location**           | `storytoolkitai/__main__.py::main`, `storytoolkitai/app.py::build_runtime`, `storytoolkitai/ui/toolkit_ui.py::run_gui`, `storytoolkitai/ui/toolkit_cli.py::run_cli` |
+| **Previous state**     | Startup constructed `StoryToolkitAI`, `ToolkitOps` and `StoryToolkitEngine` directly in `__main__.py`. Both Tk and CLI received broad legacy processing objects and could bypass the engine. |
+| **Current state**      | `__main__.py` converts parsed arguments into explicit runtime options and delegates object construction to `build_runtime(...)`. The CLI receives only `StoryToolkitEngine` for processing. Tk still receives `StoryToolkitAI`, `ToolkitOps` and the engine through its temporary compatibility path. |
+| **Remaining coupling** | The Tk interface can still bypass the engine and call broad processing internals. The CLI part of this coupling is resolved under C16. |
+| **Status**             | In progress — CLI resolved; Tk migration remains |
+| **Related commits**    | `89eabcf2c6ff3248e5c045f2bd40911d175f12d0`, `9a6f1f05f1b7c0d4116e7027410a61a8a6f6467d`, `201ca62b576adecec333c061c35977f5dd5bfa96` |
 
 ## C02 — `ToolkitOps` stores the live Tk application
 
@@ -162,7 +179,7 @@ Tk UI / CLI -> ToolkitOps and other unmigrated processing internals
 | **Location**           | Formerly `ToolkitOps.resolve_check_timeline` and `ToolkitOps.execute_resolve_operation`                                                                             |
 | **Previous state**     | Resolve processing accepted `toolkit_UI_obj`, displayed message boxes, opened `AskDialog` and requested an output directory.                                        |
 | **Current state**      | Resolve processing accepts plain values and returns plain result dictionaries. Marker selection, directory selection and error presentation are owned by the Tk UI. |
-| **Remaining coupling** | Global Resolve state and direct UI access to Resolve internals remain under C14 and C16.                                                                            |
+| **Remaining coupling** | Global Resolve state and direct Tk access to Resolve internals remain under C14.                                                                                     |
 | **Status**             | Resolved for Tk processing-to-UI coupling                                                                                                                           |
 | **Commit**             | `0de06f4bde23b8655bcf88cfb08fd65ccb0b1d0a`                                                                                                                          |
 
@@ -280,14 +297,15 @@ Tk UI / CLI -> ToolkitOps and other unmigrated processing internals
 
 ## C14 — Resolve state is stored globally on `NLE`
 
-| Field                  | Detail                                                                                                             |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **Direction**          | Shared mutable state between processing and UI                                                                     |
-| **Location**           | `NLE` in `toolkit_ops.py`; Resolve-related code in `toolkit_ui.py`, `menu.py` and `toolkit_cli.py`                 |
+| Field                  | Detail |
+| ---------------------- | ------ |
+| **Direction**          | Shared mutable state between processing and Tk UI |
+| **Location**           | `NLE` in `toolkit_ops.py`; Resolve-related code in `toolkit_ui.py` and `menu.py` |
 | **Current state**      | Class attributes hold the current Resolve project, timeline, markers, timecode, bin, connection and polling state. |
-| **Improvement made**   | Resolve marker operations are available through `StoryToolkitEngine`.                                              |
-| **Remaining coupling** | UI and CLI code can still read global `NLE` or Resolve integration state directly.                                 |
-| **Status**             | Open                                                                                                               |
+| **Improvement made**   | Resolve marker, connection, timeline-render and render-job operations are available through `StoryToolkitEngine`. The CLI no longer reads `NLE`, controls Resolve lifecycle or accesses `resolve_api` directly. |
+| **Remaining coupling** | Tk code can still read global `NLE` or Resolve integration state directly. |
+| **Status**             | Open |
+| **Related commit**     | `201ca62b576adecec333c061c35977f5dd5bfa96` |
 
 ## C15 — Menu commands pass the UI object into processing
 
@@ -303,24 +321,28 @@ Tk UI / CLI -> ToolkitOps and other unmigrated processing internals
 
 ## C16 — CLI calls Resolve implementation details
 
-| Field                  | Detail                                                                                                     |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------- |
-| **Direction**          | CLI -> processing and integration internals                                                                |
-| **Location**           | Resolve command handling in `storytoolkitai/ui/toolkit_cli.py`                                             |
-| **Current state**      | CLI code still receives `ToolkitOps`, controls Resolve lifecycle and calls `resolve_api` methods directly. |
-| **Improvement made**   | Engine methods now exist for marker copy and render operations.                                            |
-| **Remaining coupling** | The CLI has not been migrated to those methods and still knows integration lifecycle details.              |
-| **Status**             | Open                                                                                                       |
+| Field                  | Detail |
+| ---------------------- | ------ |
+| **Direction**          | Former CLI -> processing and integration internals |
+| **Location**           | Resolve command handling in `storytoolkitai/ui/toolkit_cli.py`; public operations in `storytoolkitai/core/engine.py` |
+| **Previous state**     | CLI code received `ToolkitOps` and `StoryToolkitAI`, enabled Resolve directly, polled `resolve_api` and invoked raw Resolve render methods. |
+| **Current state**      | The CLI receives only `StoryToolkitEngine` for processing. It validates command-line input, asks the engine to establish a Resolve connection and invokes engine timeline-render or render-job operations. Processing owns connection waiting and raw Resolve calls. Results cross the boundary as plain dictionaries containing `ok` with optional `code`, `message` and `data`. |
+| **Remaining coupling** | None for the CLI-to-Resolve implementation dependency. Global Resolve state still used by Tk is tracked separately under C14. |
+| **Status**             | Resolved |
+| **Commit**             | `201ca62b576adecec333c061c35977f5dd5bfa96` |
 
 ## C17 — Processing infers runtime mode from `sys.argv` and `cli_args`
 
-| Field                  | Detail                                                                                                                       |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **Direction**          | Startup mode -> processing behaviour                                                                                         |
-| **Location**           | `ToolkitOps.__init__`, `StoryToolkitAI` state and Resolve helper launch paths                                                |
-| **Current state**      | Processing checks command-line state to decide Resolve initialization, queue resume behaviour and some subprocess workflows. |
-| **Remaining coupling** | The engine cannot be constructed with explicit runtime options independently of the host process arguments.                  |
-| **Status**             | Open                                                                                                                         |
+| Field                  | Detail |
+| ---------------------- | ------ |
+| **Direction**          | Former startup mode -> implicit processing behaviour |
+| **Location**           | `storytoolkitai/app.py`, `storytoolkitai/__main__.py`, `StoryToolkitAI.__init__` and `ToolkitOps.__init__` |
+| **Previous state**     | `StoryToolkitAI` stored the complete argparse namespace. Processing inspected `cli_args`, `sys.argv` and `--noresolve` to decide update checks, API-key checks, Resolve initialization and queue restoration. |
+| **Current state**      | `runtime_options_from_args(...)` converts parser values into an immutable `RuntimeOptions` object. `build_runtime(...)` passes explicit startup decisions into `StoryToolkitAI` and `ToolkitOps`. Neither object stores the argparse namespace or infers runtime mode from command-line flags. |
+| **Boundary note**      | Uses of `sys.argv` that reproduce the current process command, locate packaged resources or construct an existing subprocess command are process mechanics, not runtime-mode inference, and are outside this coupling item. |
+| **Remaining coupling** | None for ambient runtime-mode or `--noresolve` policy reads in processing construction. |
+| **Status**             | Resolved |
+| **Commit**             | `201ca62b576adecec333c061c35977f5dd5bfa96` |
 
 ## C18 — UI uses a wildcard import from the large operations module
 
@@ -357,13 +379,16 @@ Tk UI / CLI -> ToolkitOps and other unmigrated processing internals
 
 ## C21 — `StoryToolkitAI` combines engine settings with launcher and UI state
 
-| Field                  | Detail                                                                                                                                   |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| **Direction**          | Shared application object across startup, processing and UI                                                                              |
-| **Location**           | `storytoolkitai/core/storytoolkitai.py::StoryToolkitAI`                                                                                  |
-| **Current state**      | The object stores settings and application paths together with command-line state, update lifecycle and values related to UI navigation. |
-| **Remaining coupling** | Passing the complete object into processing hides which configuration values are actually required.                                      |
-| **Status**             | Open                                                                                                                                     |
+| Field                  | Detail |
+| ---------------------- | ------ |
+| **Direction**          | Shared application object across startup, processing and Tk UI |
+| **Location**           | `storytoolkitai/core/storytoolkitai.py::StoryToolkitAI`; construction in `storytoolkitai/app.py` |
+| **Previous state**     | The object stored settings and application paths together with the complete command-line namespace, update lifecycle and values related to UI navigation. |
+| **Current state**      | Command-line state has been removed. Startup now passes explicit booleans for debug mode, API-key checks and update checks. The object still combines settings, application paths, update lifecycle and values related to UI navigation. |
+| **Improvement made**   | Runtime policy is explicit and testable without constructing or retaining argparse state. |
+| **Remaining coupling** | Passing the complete object into `ToolkitOps` and Tk still hides which settings and lifecycle values each consumer actually needs. Decompose only where the remaining Tk migration or a concrete Version 2 requirement benefits from it. |
+| **Status**             | In progress |
+| **Related commit**     | `201ca62b576adecec333c061c35977f5dd5bfa96` |
 
 ## C22 — Operation dispatch and result values are inconsistent
 
@@ -372,17 +397,17 @@ Tk UI / CLI -> ToolkitOps and other unmigrated processing internals
 | **Direction**          | Processing API ambiguity exposed to UI and queue |
 | **Location**           | `ToolkitOps`, `ProcessingQueue.execute_item_tasks` and engine-facing operations |
 | **Current state**      | Processing operations return a mixture of dictionaries, booleans, paths, lists, tuples and `None`. |
-| **Improvement made**   | Engine queue methods return detached dictionaries. Resolve operations use result dictionaries containing `ok` with optional `code`, `message` and `data`. Ingest lifecycle operations have explicit engine methods. Advanced-search session methods return detached dictionaries, text search returns a detached `(results, max_results)` tuple, and video search returns detached result dictionaries. |
+| **Improvement made**   | Engine queue methods return detached dictionaries. Resolve marker, connection, timeline-render and render-job operations use result dictionaries containing `ok` with optional `code`, `message` and `data`. Ingest lifecycle operations have explicit engine methods. Advanced-search session methods return detached dictionaries, text search returns a detached `(results, max_results)` tuple, and video search returns detached result dictionaries. |
 | **Accepted limit**     | The in-process video-frame helper returns an image array for Tk rendering, as documented under C11. |
 | **Remaining coupling** | Most legacy operations still have undocumented and inconsistent result shapes. Public engine results should be standardized only as each operation is migrated. |
 | **Status**             | In progress |
-| **Related commits**    | `89eabcf2`, `0de06f4b`, `7c1babe`, `9cfc6f5`, `e67b05f`, `537d032` |
+| **Related commits**    | `89eabcf2`, `0de06f4b`, `7c1babe`, `9cfc6f5`, `e67b05f`, `537d032`, `201ca62` |
 
 # Status summary
 
 | ID  | Coupling                                      | Status |
 | --- | --------------------------------------------- | ------ |
-| C01 | Broad objects passed to UIs                   | In progress |
+| C01 | Broad objects passed to UIs                   | In progress — CLI resolved; Tk remains |
 | C02 | `ToolkitOps` stores Tk application            | Resolved |
 | C03 | Transcription sends OS notifications          | Resolved |
 | C04 | Resolve processing receives UI object         | Resolved for Tk coupling |
@@ -397,12 +422,12 @@ Tk UI / CLI -> ToolkitOps and other unmigrated processing internals
 | C13 | Assistant stores UI reference                 | Resolved |
 | C14 | Resolve state stored globally on `NLE`        | Open |
 | C15 | Resolve menu passes UI into processing        | Resolved |
-| C16 | CLI calls Resolve implementation details      | Open |
-| C17 | Processing reads runtime arguments            | Open |
+| C16 | CLI calls Resolve implementation details      | Resolved |
+| C17 | Processing reads runtime arguments            | Resolved |
 | C18 | UI wildcard-imports processing module         | Open |
 | C19 | UI stores broad internal object graph         | In progress |
 | C20 | UI mutates live content models                | Accepted temporarily |
-| C21 | `StoryToolkitAI` mixes responsibilities       | Open |
+| C21 | `StoryToolkitAI` mixes responsibilities       | In progress |
 | C22 | Inconsistent operation result values          | In progress |
 
 # Repeatable local audit
@@ -519,13 +544,22 @@ The second command must return no matches. Remove the remaining processing-side 
 
 ## Resolve globals and integration internals
 
-Matches identify C14 and C16 work.
+Matches in Tk or core identify the remaining C14 global-state work. The CLI must not be among those callers.
 
 ```bash
 rg -n --glob '*.py' \
   '\bNLE\.|resolve_api|resolve_enable|resolve_disable|poll_resolve|resolve_check_timeline' \
-  storytoolkitai/ui \
+  storytoolkitai/ui/toolkit_ui.py \
+  storytoolkitai/ui/menu.py \
   storytoolkitai/core
+```
+
+Expected result for the migrated CLI: no matches.
+
+```bash
+rg -n --glob '*.py' \
+  'toolkit_ops_obj|stAI|\bNLE\.|resolve_api|resolve_enable|resolve_disable|poll_resolve' \
+  storytoolkitai/ui/toolkit_cli.py
 ```
 
 The removed generic Resolve operation should not appear:
@@ -556,16 +590,23 @@ rg -n --glob '*.py' \
 
 The architecture checks for this boundary are in `tests/architecture/test_search_boundary.py`.
 
-## Ambient runtime-mode reads
+## Explicit runtime construction
 
-Matches identify C17 work.
+Runtime-mode policy is now protected by an architecture test:
+
+```bash
+python -m pytest tests/architecture/test_runtime_boundary.py
+```
+
+Expected result for argparse-state storage: no matches.
 
 ```bash
 rg -n --glob '*.py' \
-  'sys\.argv|cli_args|--noresolve|--mode.?cli|subprocess\.(Popen|run)' \
-  storytoolkitai/core \
-  storytoolkitai/integrations
+  'cli_args' \
+  storytoolkitai
 ```
+
+Broad `sys.argv` searches may still find process-restart, packaged-resource or subprocess command construction. Those mechanics are not C17 regressions unless processing uses them to decide application mode, queue restoration, update checks, API-key checks or Resolve enablement.
 
 ## Wildcard processing import
 
@@ -579,7 +620,7 @@ rg -n --glob '*.py' \
 
 ## Broad engine bypasses in the UI
 
-Matches identify C01, C14, C16 and C19 work.
+Matches identify C01, C14 and C19 work. The CLI has been removed from this bypass path.
 
 Direct queue access should no longer be among the results.
 
