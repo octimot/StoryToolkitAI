@@ -272,9 +272,8 @@ class ToolkitOps:
         """
         Publish a legacy action through the engine event stream
 
-        todo: this is still needed for now because the queue
-        and Resolve polling already call it in many places.
-
+        todo: this is still needed for now because the queue and Resolve polling
+        already call it in many places.
         """
 
         if not action:
@@ -288,6 +287,98 @@ class ToolkitOps:
         )
 
         return True
+
+    # ASSISTANT PROCESS MANAGEMENT
+
+    @staticmethod
+    def get_assistant_default_system_message() -> str:
+        """
+        Return the default system prompt used by assistant sessions.
+        """
+
+        return ASSISTANT_DEFAULT_SYSTEM_MESSAGE
+
+    @staticmethod
+    def get_assistant_providers() -> list:
+        """
+        Return the configured assistant model providers.
+        """
+
+        return AssistantUtils.assistant_available_providers()
+
+    def get_assistant_models(
+        self,
+        *,
+        provider: str | None = None,
+        refresh_provider: bool = False,
+    ) -> list:
+        """
+        Return assistant models available for one provider.
+
+        The provider handler needs ToolkitOps only when a live provider refresh
+        was requested. Static model-list reads remain local and inexpensive.
+        """
+
+        return AssistantUtils.assistant_available_models(
+            provider=provider,
+            toolkit_ops_obj=(
+                self
+                if refresh_provider
+                else None
+            ),
+        )
+
+    def create_assistant(
+        self,
+        *,
+        model_provider: str,
+        model_name: str,
+        **assistant_options,
+    ):
+        """
+        Create one assistant using the configured processing environment.
+
+        Assistant instances remain internal processing objects. Interfaces
+        receive an engine-owned session handle instead of this object.
+        """
+
+        return AssistantUtils.assistant_handler(
+            toolkit_ops_obj=self,
+            model_provider=model_provider,
+            model_name=model_name,
+            **assistant_options,
+        )
+
+    @staticmethod
+    def copy_assistant_context_and_chat(
+        source_assistant,
+        target_assistant,
+    ) -> bool:
+        """
+        Copy conversation state between two assistant implementations.
+        """
+
+        if source_assistant is None or target_assistant is None:
+            return False
+
+        ToolkitAssistant.copy_context_and_chat(
+            source_assistant,
+            target_assistant,
+        )
+
+        return True
+
+    @staticmethod
+    def parse_assistant_response(
+        assistant_response: str,
+    ) -> dict | None:
+        """
+        Parse a structured assistant response using the existing helper.
+        """
+
+        return AssistantUtils.parse_response_to_dict(
+            assistant_response=assistant_response,
+        )
 
     def get_torch_available_devices(self) -> list or None:
 

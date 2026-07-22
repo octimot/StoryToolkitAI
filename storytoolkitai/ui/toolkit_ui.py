@@ -171,9 +171,9 @@ class toolkit_UI():
                 logger.error('No toolkit_UI_obj provided for AppItemsUI.')
                 raise Exception('No toolkit_UI_obj provided.')
 
-            # declare the UI, ops and app objects for easier access
+            # keep the public processing interface and application state
             self.toolkit_UI_obj = toolkit_UI_obj
-            self.toolkit_ops_obj = toolkit_UI_obj.toolkit_ops_obj
+            self.engine = toolkit_UI_obj.engine
             self.stAI = toolkit_UI_obj.stAI
             self.UI_menus = UImenus
 
@@ -786,7 +786,7 @@ class toolkit_UI():
                     if kwargs.get('assistant_provider', None) is not None \
                     else self.toolkit_UI_obj.stAI.get_app_setting('assistant_provider', default_if_none='OpenAI')
 
-            assistant_provider_list = AssistantUtils.assistant_available_providers()
+            assistant_provider_list = self.engine.get_assistant_providers()
 
             form_vars['assistant_provider_var'] = \
                 assistant_provider_var = tk.StringVar(assistant_prefs_frame, value=assistant_provider)
@@ -803,7 +803,9 @@ class toolkit_UI():
                 if kwargs.get('assistant_model', None) is not None \
                 else self.toolkit_UI_obj.stAI.get_app_setting('assistant_model', default_if_none='gpt-3.5-turbo-1106')
 
-            assistant_model_list = AssistantUtils.assistant_available_models(assistant_provider)
+            assistant_model_list = self.engine.get_assistant_models(
+                provider=assistant_provider,
+            )
 
             form_vars['assistant_model_var'] = \
                 assistant_model_var = tk.StringVar(assistant_prefs_frame, value=assistant_model)
@@ -830,18 +832,24 @@ class toolkit_UI():
 
                 # Check if the provider has actually changed
                 if current_provider != assistant_provider_var.previous_provider or f_kwargs.get('online', False):
-                    # Update the model list based on the current provider
-                    if f_kwargs.get('online', False):
-                        new_model_list = AssistantUtils.assistant_available_models(
-                            current_provider, toolkit_ops_obj=self.toolkit_ops_obj)
-                    else:
-                        new_model_list = AssistantUtils.assistant_available_models(current_provider)
 
-                    # Update the OptionMenu with new models
+                    # ask the engine for either the cached models or a live
+                    # provider refresh when the user pressed Reload
+                    new_model_list = self.engine.get_assistant_models(
+                        provider=current_provider,
+                        refresh_provider=f_kwargs.get('online', False),
+                    )
+
+                    # Update the OptionMenu with the available models
                     assistant_model_input.configure(values=new_model_list)
 
-                    # Optionally, set the assistant_model_var to a default value
-                    assistant_model_var.set(new_model_list[0])
+                    # Select the first available model or clear the selection
+                    # when the provider returned no models
+                    assistant_model_var.set(
+                        new_model_list[0]
+                        if new_model_list
+                        else ''
+                    )
 
                     # Update the previous provider for the next change
                     assistant_provider_var.previous_provider = current_provider
@@ -857,8 +865,10 @@ class toolkit_UI():
             system_prompt = \
                 kwargs.get('assistant_system_prompt', None) \
                     if kwargs.get('assistant_system_prompt', None) is not None \
-                    else self.toolkit_UI_obj.stAI.get_app_setting('assistant_system_prompt',
-                                                                  default_if_none=ASSISTANT_DEFAULT_SYSTEM_MESSAGE)
+                    else self.toolkit_UI_obj.stAI.get_app_setting(
+                            'assistant_system_prompt',
+                            default_if_none=(self.engine.get_assistant_default_system_message())
+                    )
 
             # create the system prompt variable, label and input
             form_vars['assistant_system_prompt_var'] = \
@@ -20027,18 +20037,17 @@ class toolkit_UI():
 
     # THE ASSISTANT WINDOW
 
-    def open_assistant_window(self, assistant_window_id: str = None,
-                              transcript_text: str = None,
-                              transcription_segments: list = None,
-                              transcription_file_path: str = None
-                              ):
-
-        if self.toolkit_ops_obj is None:
-            logger.error('Cannot open advanced search window. A ToolkitOps object is needed to continue.')
-            return False
+    def open_assistant_window(
+            self,
+            assistant_window_id: str = None,
+            transcript_text: str = None,
+            transcription_segments: list = None,
+            transcription_file_path: str = None
+    ):
 
         # open a new console assistant window
-        # only one assistant window can be open at a time for now, so we'll use a fixed window id
+        # only one assistant window can be open at a time for now, 
+        # so we'll use a fixed window id
         assistant_window_id = 'assistant'
         assistant_window_title = 'Assistant'
 
@@ -20047,7 +20056,10 @@ class toolkit_UI():
 
         assistant_settings = {
             'system_prompt': self.stAI.get_app_setting(
-                'assistant_system_prompt', default_if_none=ASSISTANT_DEFAULT_SYSTEM_MESSAGE),
+                'assistant_system_prompt', default_if_none=(
+                    self.engine.get_assistant_default_system_message()
+                )
+            ),
             "temperature": self.stAI.get_app_setting('assistant_temperature', default_if_none=1),
             "max_length": self.stAI.get_app_setting('assistant_max_length', default_if_none=512),
             "max_completion_length": self.stAI.get_app_setting('assistant_max_completion_length', default_if_none=512),
@@ -20096,12 +20108,12 @@ class toolkit_UI():
                 '<Button-2>', lambda e: self._assistant_window_context_menu(
                     e, window_id=assistant_window_id))
 
-            # initialize an assistant item if one doesn't already exist
+            # initialize an engine-owned assistant session if one doesn't
+            # already exist for this window
             if not hasattr(assistant_window, 'assistant_item'):
-                assistant_window.assistant_item = AssistantUtils.assistant_handler(
-                    toolkit_ops_obj=self.toolkit_ops_obj,
+                assistant_window.assistant_item = self.engine.create_assistant(
                     model_provider=default_model_provider,
-                    model_name=default_model_name
+                    model_name=default_model_name,
                 )
 
             if not assistant_window.assistant_item:
@@ -20277,22 +20289,20 @@ class toolkit_UI():
             and (assistant_settings.get('assistant_provider', None) != assistant_item.model_provider
                  or assistant_settings.get('assistant_model', None) != assistant_item.model_name):
 
-            # reset the assistant item
-            new_assistant_item = AssistantUtils.assistant_handler(
-                toolkit_ops_obj=self.toolkit_ops_obj,
+            # replace the private assistant implementation while preserving
+            # this window's engine-owned session and conversation state
+            new_assistant_item = self.engine.replace_assistant(
+                session_id=assistant_item.session_id,
                 model_provider=assistant_settings.get('assistant_provider'),
                 model_name=assistant_settings.get('assistant_model'),
-                strict=True
+                strict=True,
             )
 
             if new_assistant_item is None:
                 logger.error('Cannot change assistant model. The model provider or model name is invalid.')
                 return False
 
-            # copy the context and chat history from the old to the new assistant item
-            ToolkitAssistant.copy_context_and_chat(assistant_item, new_assistant_item)
-
-            # if the model is valid, replace the assistant item
+            # keep the public session handle on the assistant window
             assistant_window.assistant_item = new_assistant_item
             assistant_item = new_assistant_item
 
@@ -20459,9 +20469,13 @@ class toolkit_UI():
                     )
                     return
 
-                new_assistant_item = AssistantUtils.assistant_handler(
-                    toolkit_ops_obj=self.toolkit_ops_obj, model_provider=model_provider, model_name=model_name,
-                    strict=True
+                # replace the private assistant implementation while preserving
+                # this window's engine-owned session and conversation state
+                new_assistant_item = self.engine.replace_assistant(
+                    session_id=assistant_item.session_id,
+                    model_provider=model_provider,
+                    model_name=model_name,
+                    strict=True,
                 )
 
                 if new_assistant_item is None:
@@ -20473,10 +20487,7 @@ class toolkit_UI():
                     self._text_window_update(assistant_window_id, model_reply)
                     return
 
-                # copy the context and chat history from the old to the new assistant item
-                ToolkitAssistant.copy_context_and_chat(assistant_item, new_assistant_item)
-
-                # if the model is valid, replace the assistant item
+                # keep the public session handle on the assistant window
                 assistant_window.assistant_item = new_assistant_item
                 assistant_item = new_assistant_item
 
@@ -20859,7 +20870,7 @@ class toolkit_UI():
 
         # make sure we have a chat_history attribute on the window,
         # so we can keep track of what messages we see on the window,
-        # and which are referenced in the assistant_item.chat_history
+        # and which are referenced in the engine-owned assistant history
         # below, the chat_history is a dict with two keys:
         # - order (stores the order of the messages in the text widget) and
         # - items (stores the actual messages)
@@ -20987,7 +20998,7 @@ class toolkit_UI():
 
                 # if we didn't find anything,
                 # we return the length of the assistant chat history so that we insert at the end
-                return len(window.assistant_item.chat_history)
+                return window.assistant_item.chat_history_length
 
             def add_to_conversation(tag_id, item):
 
@@ -21014,8 +21025,12 @@ class toolkit_UI():
                             and current_chat_history_item['assistant_chat_history_index'] >= insert_index:
                         window.chat_history['items'][key]['assistant_chat_history_index'] += 1
 
-                # then, add the item to the assistant chat history
-                window.assistant_item.chat_history.insert(insert_index, assistant_chat_history_item)
+                # then, add the item through the engine-owned assistant
+                # session instead of mutating the private history directly
+                window.assistant_item.insert_chat_history(
+                    index=insert_index,
+                    item=assistant_chat_history_item,
+                )
 
                 # add the reference to the assistant chat history index to the item
                 item['assistant_chat_history_index'] = insert_index
@@ -21032,8 +21047,10 @@ class toolkit_UI():
                     logger.debug('Cannot remove from conversation. '
                                  'Item {} is already not in the conversation.'.format(tag_id))
 
-                # use the index to remove it from the assistant chat history
-                window.assistant_item.chat_history.pop(item['assistant_chat_history_index'])
+                # remove the item through the engine-owned assistant session
+                window.assistant_item.pop_chat_history(
+                    index=item['assistant_chat_history_index'],
+                )
 
                 past_item_index = item['assistant_chat_history_index']
 
@@ -21131,7 +21148,9 @@ class toolkit_UI():
         """
 
         # first, clean the response and try to parse it to json
-        assistant_response_dict = AssistantUtils.parse_response_to_dict(assistant_response=assistant_response)
+        assistant_response_dict = self.engine.parse_assistant_response(
+            assistant_response
+        )
 
         # if no parsing was possible, just return None
         if assistant_response_dict is None:
@@ -21526,13 +21545,29 @@ class toolkit_UI():
 
     def destroy_assistant_window(self, assistant_window_id: str):
         """
-        Destroys the assistant window
+        Destroy the assistant window and close its engine session.
         """
 
         # also remove any settings window it might have
         settings_window_id = assistant_window_id + '_settings'
         if settings_window_id in self.windows:
             self.destroy_window_(window_id=settings_window_id)
+
+        # close the private assistant implementation before removing the
+        # window that owns its public session handle
+        assistant_window = self.get_window_by_id(assistant_window_id)
+
+        if assistant_window is not None:
+            assistant_item = getattr(
+                assistant_window,
+                'assistant_item',
+                None,
+            )
+
+            if assistant_item is not None:
+                self.engine.close_assistant(
+                    assistant_item.session_id
+                )
 
         # destroy the assistant window
         self.destroy_text_window(assistant_window_id)

@@ -78,6 +78,171 @@ _SEARCH_DONE_JOB_STATUSES = frozenset(
 )
 
 
+class AssistantSession:
+    """
+    Public in-process handle for one engine-owned assistant.
+
+    The Tk interface keeps this lightweight handle, while the real assistant
+    implementation and its ToolkitOps dependency remain private inside
+    StoryToolkitEngine.
+
+    This is intentionally an in-process Version 1 API. A future process-based
+    API will replace it with serializable commands and events.
+    """
+
+    def __init__(
+        self,
+        engine: "StoryToolkitEngine",
+        session_id: str,
+    ) -> None:
+        self._engine = engine
+        self._session_id = session_id
+
+    @property
+    def session_id(self) -> str:
+        """
+        Return the stable engine session ID.
+        """
+
+        return self._session_id
+
+    def _item(self):
+        """
+        Resolve the current private assistant implementation.
+
+        The implementation may change when the user switches models while the
+        public session handle and session ID remain stable.
+        """
+
+        return self._engine._get_assistant_item(
+            self._session_id,
+        )
+
+    @property
+    def model_provider(self) -> str:
+        return self._item().model_provider
+
+    @property
+    def model_name(self) -> str:
+        return self._item().model_name
+
+    @property
+    def model_description(self) -> str:
+        return self._item().model_description
+
+    @property
+    def available_models(self) -> dict:
+        return deepcopy(
+            self._item().available_models
+        )
+
+    @property
+    def tokens_used(self) -> dict:
+        return deepcopy(
+            self._item().tokens_used
+        )
+
+    @property
+    def context(self):
+        return deepcopy(
+            self._item().context
+        )
+
+    @property
+    def last_assistant_message_idx(self):
+        return self._item().last_assistant_message_idx
+
+    @property
+    def assistant_id(self) -> str:
+        """
+        Return the implementation-specific assistant ID.
+
+        UI code should use ``session_id`` for lifecycle operations. This
+        property remains available for existing presentation behaviour.
+        """
+
+        return self._item().assistant_id
+
+    @property
+    def chat_history_length(self) -> int:
+        """
+        Return the number of private assistant-history entries.
+        """
+
+        return len(
+            self._item().chat_history
+        )
+
+    def insert_chat_history(
+        self,
+        *,
+        index: int,
+        item: dict,
+    ) -> bool:
+        """
+        Insert one detached item into the private assistant history.
+        """
+
+        self._item().chat_history.insert(
+            index,
+            deepcopy(item),
+        )
+
+        return True
+
+    def pop_chat_history(
+        self,
+        *,
+        index: int,
+    ):
+        """
+        Remove and return one private assistant-history item.
+        """
+
+        return self._item().chat_history.pop(
+            index
+        )
+
+    def add_context(
+        self,
+        context: str,
+    ):
+        return self._item().add_context(
+            context=context,
+        )
+
+    def set_system(
+        self,
+        system_message: str,
+    ):
+        return self._item().set_system(
+            system_message=system_message,
+        )
+
+    def calculate_history_tokens(self):
+        return self._item().calculate_history_tokens()
+
+    def reset(self):
+        return self._item().reset()
+
+    def send_query(
+        self,
+        *args: Any,
+        **kwargs: Any,
+    ):
+        """
+        Send a query using the private assistant implementation.
+
+        The flexible signature intentionally preserves the existing assistant
+        implementations during the Version 1 boundary migration.
+        """
+
+        return self._item().send_query(
+            *args,
+            **kwargs,
+        )
+
+
 class StoryToolkitEngine:
     """
     Small public facade for UI-independent StoryToolkitAI operations.
@@ -111,6 +276,11 @@ class StoryToolkitEngine:
         # search preparation may update session state from a worker thread
         self._search_sessions_lock = Lock()
 
+
+        # keep live assistant implementations inside the engine
+        self._assistant_sessions = {}
+        self._assistant_sessions_lock = Lock()
+
     def subscribe(self, listener: EventListener) -> None:
         """
         Subscribe to processing events.
@@ -132,11 +302,224 @@ class StoryToolkitEngine:
         Removing a listener that is not subscribed is harmless.
 
         Args:
-            listener:
-                Previously subscribed function or bound method.
+            listener: Previously subscribed function or bound method.
         """
 
         self._toolkit_ops.events.unsubscribe(listener)
+
+    # ASSISTANT SESSIONS
+
+    def _get_assistant_item(
+        self,
+        session_id: str,
+    ):
+        """
+        Return the private assistant implementation for one session.
+
+        This method is used only by AssistantSession and engine lifecycle
+        operations. Interfaces must not call or receive the returned object.
+        """
+
+        with self._assistant_sessions_lock:
+            assistant_item = self._assistant_sessions.get(
+                session_id
+            )
+
+        if assistant_item is None:
+            raise KeyError(
+                "Assistant session not found: {}".format(
+                    session_id
+                )
+            )
+
+        return assistant_item
+
+    def get_assistant_default_system_message(self) -> str:
+        """
+        Return the default assistant system prompt.
+        """
+
+        return str(
+            self._toolkit_ops.get_assistant_default_system_message()
+        )
+
+    def get_assistant_providers(self) -> list:
+        """
+        Return configured assistant model providers.
+        """
+
+        providers = self._toolkit_ops.get_assistant_providers()
+
+        if not providers:
+            return []
+
+        return deepcopy(
+            list(providers)
+        )
+
+    def get_assistant_models(
+        self,
+        *,
+        provider: str | None = None,
+        refresh_provider: bool = False,
+    ) -> list:
+        """
+        Return available model names for one assistant provider.
+        """
+
+        models = self._toolkit_ops.get_assistant_models(
+            provider=provider,
+            refresh_provider=refresh_provider,
+        )
+
+        if not models:
+            return []
+
+        return deepcopy(
+            list(models)
+        )
+
+    def create_assistant(
+        self,
+        *,
+        model_provider: str,
+        model_name: str,
+        **assistant_options: Any,
+    ) -> AssistantSession | None:
+        """
+        Create and register one engine-owned assistant session.
+
+        Returns:
+            A public AssistantSession handle, or None when the configured
+            provider or model could not create an assistant.
+        """
+
+        assistant_item = self._toolkit_ops.create_assistant(
+            model_provider=model_provider,
+            model_name=model_name,
+            **assistant_options,
+        )
+
+        if assistant_item is None:
+            return None
+
+        session_id = str(
+            assistant_item.assistant_id
+        )
+
+        with self._assistant_sessions_lock:
+            self._assistant_sessions[session_id] = (
+                assistant_item
+            )
+
+        return AssistantSession(
+            engine=self,
+            session_id=session_id,
+        )
+
+    def replace_assistant(
+        self,
+        *,
+        session_id: str,
+        model_provider: str,
+        model_name: str,
+        **assistant_options: Any,
+    ) -> AssistantSession | None:
+        """
+        Replace an assistant implementation while preserving its session.
+
+        Existing context, conversation history and token usage are copied using
+        the same behaviour as the previous Tk-owned model-switch workflow.
+        """
+
+        try:
+            current_assistant = self._get_assistant_item(
+                session_id
+            )
+
+        except KeyError:
+            logger.error(
+                "Cannot replace unknown assistant session %s.",
+                session_id,
+            )
+            return None
+
+        new_assistant = self._toolkit_ops.create_assistant(
+            model_provider=model_provider,
+            model_name=model_name,
+            **assistant_options,
+        )
+
+        if new_assistant is None:
+            return None
+
+        if not self._toolkit_ops.copy_assistant_context_and_chat(
+            source_assistant=current_assistant,
+            target_assistant=new_assistant,
+        ):
+            logger.error(
+                "Cannot copy assistant conversation state."
+            )
+            return None
+
+        # replace only the private implementation; callers retain the same
+        # public AssistantSession and stable session ID
+        with self._assistant_sessions_lock:
+            if session_id not in self._assistant_sessions:
+                logger.error(
+                    "Assistant session %s was closed while changing models.",
+                    session_id,
+                )
+                return None
+
+            self._assistant_sessions[session_id] = (
+                new_assistant
+            )
+
+        return AssistantSession(
+            engine=self,
+            session_id=session_id,
+        )
+
+    def close_assistant(
+        self,
+        session_id: str,
+    ) -> bool:
+        """
+        Remove one assistant implementation from the engine registry.
+        """
+
+        if not session_id:
+            return False
+
+        with self._assistant_sessions_lock:
+            assistant_item = self._assistant_sessions.pop(
+                session_id,
+                None,
+            )
+
+        return assistant_item is not None
+
+    def parse_assistant_response(
+        self,
+        assistant_response: str,
+    ) -> dict | None:
+        """
+        Parse a structured assistant response through processing.
+        """
+
+        if not isinstance(assistant_response, str):
+            return None
+
+        parsed_response = (
+            self._toolkit_ops.parse_assistant_response(
+                assistant_response
+            )
+        )
+
+        return deepcopy(
+            parsed_response
+        )
 
     def get_resolve_marker_colors(self) -> dict:
         """
