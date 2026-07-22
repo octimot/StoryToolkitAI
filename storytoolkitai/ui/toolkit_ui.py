@@ -1415,14 +1415,10 @@ class toolkit_UI():
 
     def __init__(
         self,
-        toolkit_ops_obj,
         stAI,
         engine: 'StoryToolkitEngine',
         **other_options,
     ):
-
-        # make a reference to toolkit ops obj
-        self.toolkit_ops_obj = toolkit_ops_obj
 
         # use the public processing interface
         self.engine = engine
@@ -8338,10 +8334,6 @@ class toolkit_UI():
             # keep a reference to the StoryToolkitAI object here
             self.stAI = toolkit_UI_obj.stAI
 
-            # keep a reference to the toolkit_ops_obj object here
-            # this remains temporarily for assistant and Resolve migration
-            self.toolkit_ops_obj = toolkit_UI_obj.toolkit_ops_obj
-
             self.root = toolkit_UI_obj.root
 
             # search results indexes stored here
@@ -14436,7 +14428,6 @@ class toolkit_UI():
             # we will need these
             self.toolkit_UI_obj = toolkit_UI_obj
             self.t_edit_obj = toolkit_UI_obj.t_edit_obj
-            self.toolkit_ops_obj = toolkit_UI_obj.toolkit_ops_obj
             self.stAI = toolkit_UI_obj.stAI
 
             # create the CTKScrollableFrame
@@ -15118,7 +15109,7 @@ class toolkit_UI():
             :param: groups_data: the new groups data (must contain the all the groups, similar to self._groups_data)
             """
 
-            # push this change to the toolkit_ops_obj
+            # push this change to the transcription object
             self._window_transcription.set_transcript_groups(transcript_groups=groups_data)
 
             # ask the transcription for a save to file
@@ -22134,11 +22125,11 @@ class toolkit_UI():
             subprocess.call(['xdg-open', os.path.dirname(file_path)])
 
 
-def run_gui(toolkit_ops_obj, stAI, engine):
+def run_gui(stAI, engine):
 
-    # initialize the GUI with its processing interface
+    # initialize the GUI with application state
+    # and its public processing interface
     app_UI = toolkit_UI(
-        toolkit_ops_obj=toolkit_ops_obj,
         stAI=stAI,
         engine=engine,
     )

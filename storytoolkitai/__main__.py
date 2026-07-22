@@ -231,18 +231,14 @@ def main():
     # convert argparse values into explicit application decisions
     options = runtime_options_from_args(args)
 
-    # construct the processing runtime
-    stAI, toolkit_ops_obj, engine = build_runtime(options)
+    # construct application state and its public processing interface
+    stAI, engine = build_runtime(options)
 
     if options.mode == "gui":
-
         # import the Tk UI only when the graphical interface was selected
         from storytoolkitai.ui.toolkit_ui import run_gui
 
-        # ToolkitOps and StoryToolkitAI remain here temporarily until the
-        # remaining Tk migration is completed
         run_gui(
-            toolkit_ops_obj=toolkit_ops_obj,
             stAI=stAI,
             engine=engine,
         )

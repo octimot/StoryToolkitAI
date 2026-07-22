@@ -60,10 +60,10 @@ def runtime_options_from_args(args: Any) -> RuntimeOptions:
 
 def build_runtime(options: RuntimeOptions):
     """
-    Construct the application objects required for one runtime session.
+    Construct application state and its public processing interface.
 
-    ToolkitOps is still returned temporarily because the Tk UI has not yet
-    completed its version 1 migration. The CLI must use only the engine.
+    ToolkitOps remains the private processing implementation owned by
+    StoryToolkitEngine. First-party interfaces receive only the engine.
     """
 
     # keep FFmpeg discovery before the ToolkitOps import
@@ -86,17 +86,15 @@ def build_runtime(options: RuntimeOptions):
     )
 
     # ToolkitOps receives only the runtime decisions that affect processing
-    toolkit_ops_obj = ToolkitOps(
+    toolkit_ops = ToolkitOps(
         stAI=stAI,
         disable_resolve_api=options.disable_resolve,
         resume_queue=options.resume_queue,
     )
 
-    # all first-party interfaces should use this public processing facade
+    # keep ToolkitOps private behind the public processing facade
     engine = StoryToolkitEngine(
-        toolkit_ops_obj=toolkit_ops_obj,
+        toolkit_ops_obj=toolkit_ops,
     )
 
-    # ToolkitOps is returned only for the temporary Tk compatibility path.
-    # Remove it from this return value after the Step 11 UI migration.
-    return stAI, toolkit_ops_obj, engine
+    return stAI, engine
