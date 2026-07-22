@@ -700,6 +700,133 @@ class StoryToolkitEngine:
 
         return self._copy_search_info(session)
 
+    def load_search_model(
+        self,
+        search_id: str,
+        model_name: str,
+    ) -> str | None:
+        """
+        Load a semantic model for one engine-owned text search.
+
+        Returns the selected model name, or ``None`` when the search does not
+        exist or has no text processor.
+        """
+
+        session = self._get_search_session(search_id)
+
+        if session is None:
+            return None
+
+        text_search_item = session["text_search_item"]
+
+        if not text_search_item.search_file_paths_count:
+            return None
+
+        text_search_item.load_model(
+            model_name=model_name,
+        )
+
+        return getattr(text_search_item, "model_name", model_name)
+
+    def search_text(
+        self,
+        search_id: str,
+        query: str,
+        max_results: int = 5,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """
+        Run a text search and return detached result data.
+
+        Args:
+            search_id: ID returned by ``create_search``.
+            query: Search query entered by the user.
+            max_results: Default maximum number of results.
+
+        Returns:
+            A copied result list and the effective maximum result count.
+        """
+
+        session = self._get_search_session(search_id)
+
+        if session is None:
+            return [], max_results
+
+        self._refresh_search_job_status(session)
+
+        if session["text_status"] != "ready":
+            return [], max_results
+
+        result = session["text_search_item"].search(
+            query=query,
+            max_results=max_results,
+        )
+
+        if not isinstance(result, tuple) or len(result) != 2:
+            return [], max_results
+
+        search_results, effective_max_results = result
+
+        if not isinstance(search_results, list):
+            search_results = []
+
+        return deepcopy(search_results), int(effective_max_results)
+
+    def search_video(
+        self,
+        search_id: str,
+        query: str,
+        max_results: int = 5,
+        threshold: int = 35,
+        combine_patches: bool = True,
+    ) -> list[dict[str, Any]]:
+        """
+        Run a video search and return detached result data.
+
+        The existing VideoSearch arguments are retained so the Tk interface
+        behaves the same during the version 1 migration.
+        """
+
+        session = self._get_search_session(search_id)
+
+        if session is None or session["video_status"] != "ready":
+            return []
+
+        search_results = session["video_search_item"].search(
+            query=query,
+            max_results=max_results,
+            threshold=threshold,
+            combine_patches=combine_patches,
+        )
+
+        if not isinstance(search_results, list):
+            return []
+
+        return deepcopy(search_results)
+
+    def get_search_video_frame(
+        self,
+        search_id: str,
+        full_path: str,
+        frame: int,
+    ) -> Any:
+        """
+        Return one frame used to render a video-search result.
+
+        Returning the existing image array is an accepted version 1 in-process
+        bridge. Version 2 must replace it with bytes or an artifact reference
+        before search crosses the service boundary.
+        """
+
+        session = self._get_search_session(search_id)
+
+        if session is None:
+            return None
+
+        return session["video_search_item"].video_frame(
+            full_path,
+            frame,
+        )
+
     def close_search(
         self,
         search_id: str,

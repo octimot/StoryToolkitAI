@@ -32,7 +32,18 @@ class FakeTextSearch:
         return self.model_name
 
     def search(self, query: str, max_results: int = 5):
-        return [], max_results
+        return (
+            [
+                {
+                    "type": "text",
+                    "text": query,
+                    "metadata": {
+                        "source": "fake",
+                    },
+                }
+            ],
+            max_results,
+        )
 
 
 class FakeVideoSearch:
@@ -49,6 +60,27 @@ class FakeVideoSearch:
 
     def load_model(self):
         self.model_loaded = True
+
+    def search(
+        self,
+        query: str,
+        max_results: int = 5,
+        threshold: int = 35,
+        combine_patches: bool = True,
+    ):
+        return [
+            {
+                "type": "video",
+                "query": query,
+                "frame": 12,
+            }
+        ]
+
+    def video_frame(self, full_path: str, frame: int):
+        return {
+            "full_path": full_path,
+            "frame": frame,
+        }
 
 
 class FakeProcessingQueue:
@@ -192,3 +224,80 @@ def test_engine_prepares_search_processors_outside_the_ui():
     assert toolkit_ops.video_search_item.index_paths_loaded is True
     assert toolkit_ops.video_search_item.model_loaded is True
     assert len(toolkit_ops.index_text_calls) == 1
+
+def test_engine_runs_text_search_with_detached_results():
+    """Text search results must not expose processor-owned dictionaries."""
+
+    toolkit_ops = FakeToolkitOps()
+    engine = StoryToolkitEngine(toolkit_ops)
+
+    search_info = engine.create_search(
+        search_file_paths=["/tmp/interview.transcription.json"],
+    )
+    engine.prepare_search(search_info["search_id"])
+    wait_for_search_status(engine, search_info["search_id"], "ready")
+
+    results, max_results = engine.search_text(
+        search_id=search_info["search_id"],
+        query="red car",
+        max_results=7,
+    )
+
+    results[0]["metadata"]["source"] = "mutated"
+
+    second_results, _ = engine.search_text(
+        search_id=search_info["search_id"],
+        query="red car",
+        max_results=7,
+    )
+
+    assert max_results == 7
+    assert second_results[0]["metadata"]["source"] == "fake"
+
+
+def test_engine_runs_video_search():
+    """Video search execution is exposed through the engine."""
+
+    toolkit_ops = FakeToolkitOps()
+    engine = StoryToolkitEngine(toolkit_ops)
+
+    search_info = engine.create_search(
+        search_file_paths=["/tmp/interview.transcription.json"],
+    )
+    engine.prepare_search(search_info["search_id"])
+    wait_for_search_status(engine, search_info["search_id"], "ready")
+
+    results = engine.search_video(
+        search_id=search_info["search_id"],
+        query="red car",
+    )
+
+    assert results == [
+        {
+            "type": "video",
+            "query": "red car",
+            "frame": 12,
+        }
+    ]
+
+
+def test_engine_returns_video_result_frame():
+    """The version 1 frame bridge remains owned by the engine."""
+
+    toolkit_ops = FakeToolkitOps()
+    engine = StoryToolkitEngine(toolkit_ops)
+
+    search_info = engine.create_search(
+        search_file_paths=["/tmp/interview.transcription.json"],
+    )
+
+    frame = engine.get_search_video_frame(
+        search_id=search_info["search_id"],
+        full_path="/tmp/interview.mov",
+        frame=12,
+    )
+
+    assert frame == {
+        "full_path": "/tmp/interview.mov",
+        "frame": 12,
+    }
