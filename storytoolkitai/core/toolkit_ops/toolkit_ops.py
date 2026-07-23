@@ -22,9 +22,11 @@ import tqdm
 
 from storytoolkitai.core.logger import logger
 from storytoolkitai.core.events import (
+    EngineEvent,
     EventEmitter,
-    create_action_triggered_event,
+    create_transcription_changed_event,
     create_transcription_completed_event,
+    create_transcription_groups_changed_event,
     create_transcription_started_event,
 )
 
@@ -270,19 +272,75 @@ class ToolkitOps:
 
     def notify_observers(self, action):
         """
-        Publish a legacy action through the engine event stream
+        Translate remaining internal refresh names into engine events.
 
-        todo: this is still needed for now because the queue and Resolve polling
-        already call it in many places.
+        Resolve polling and question grouping still use the historical method
+        name during the version 1 cleanup. The engine event stream must not
+        expose those callback-shaped names to an interface.
+
+        Step 12.4 removes this compatibility method after its remaining
+        callers publish named events directly.
         """
 
         if not action:
             return False
 
-        # keep the existing method name while queue callers are migrated
+        event_type_by_action = {
+            'project_changed': 'project.changed',
+            'update_NLE_status': 'resolve.connection.changed',
+            'update_all_transcriptions': 'transcriptions.changed',
+            'NLE_project_changed': 'resolve.project.changed',
+            'NLE_timeline_changed': 'resolve.timeline.changed',
+            'NLE_markers_changed': 'resolve.markers.changed',
+            'NLE_bin_changed': 'resolve.bin.changed',
+            'NLE_tc_changed': 'resolve.playhead.changed',
+            'NLE_timecode_data_changed': (
+                'resolve.timecode_data.changed'
+            ),
+        }
+
+        if action.startswith('update_transcription_groups_'):
+            transcription_id = action.removeprefix(
+                'update_transcription_groups_'
+            )
+
+            if not transcription_id:
+                return False
+
+            self.events.emit(
+                create_transcription_groups_changed_event(
+                    transcription_id=transcription_id,
+                )
+            )
+            return True
+
+        if action.startswith('update_transcription_'):
+            transcription_id = action.removeprefix(
+                'update_transcription_'
+            )
+
+            if not transcription_id:
+                return False
+
+            self.events.emit(
+                create_transcription_changed_event(
+                    transcription_id=transcription_id,
+                )
+            )
+            return True
+
+        event_type = event_type_by_action.get(action)
+
+        if event_type is None:
+            logger.warning(
+                'Unable to publish unknown engine refresh action: {}'
+                .format(action)
+            )
+            return False
+
         self.events.emit(
-            create_action_triggered_event(
-                action=action,
+            EngineEvent(
+                type=event_type,
             )
         )
 
@@ -2886,10 +2944,8 @@ class ToolkitOps:
         if kwargs.get('queue_id', None):
             self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='done')
 
-        # search_item.search_file_path_id
-        # notify all observers that are listening for this search_file_path_id
-        self.notify_observers('update_done_indexing_search_file_path_{}'.format(search_item.search_file_path_id))
-
+        # The engine-owned search session reads the authoritative queue
+        # status, so indexing does not publish a callback-shaped action.
         return True
 
     def add_index_text_to_queue(self, queue_item_name, search_file_paths):
@@ -2912,10 +2968,8 @@ class ToolkitOps:
 
         queue_item['use_analyzer'] = search_item.use_analyzer
 
-        # this will be used to notify observers when the indexing has been stopped for any reason
-        queue_item['on_stop_action_name'] \
-            = 'update_fail_indexing_search_file_path_{}'.format(search_item.search_file_path_id)
-
+        # The engine-owned search session derives failure and cancellation
+        # from the queue snapshot; no callback name belongs on the job.
         return self.processing_queue.add_to_queue(**queue_item)
 
     def index_video(self, video_file_path, **kwargs):

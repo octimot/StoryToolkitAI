@@ -437,6 +437,57 @@ def test_engine_unsubscribe_stops_processing_events(
 
     assert received == []
 
+def test_publish_transcription_changed_emits_named_event(
+    engine: StoryToolkitEngine,
+) -> None:
+    """Transcription refreshes use a named event and plain identifier."""
+    received: list[EngineEvent] = []
+    engine.subscribe(received.append)
+
+    result = engine.publish_transcription_changed(
+        "transcription-123"
+    )
+
+    assert result is True
+    assert received == [
+        EngineEvent(
+            type="transcription.changed",
+            data={
+                "transcription_id": "transcription-123",
+            },
+        )
+    ]
+
+
+def test_publish_transcription_changed_rejects_empty_identifier(
+    engine: StoryToolkitEngine,
+) -> None:
+    """An empty transcription identifier publishes no event."""
+    received: list[EngineEvent] = []
+    engine.subscribe(received.append)
+
+    result = engine.publish_transcription_changed("")
+
+    assert result is False
+    assert received == []
+
+
+def test_publish_project_changed_emits_named_event(
+    engine: StoryToolkitEngine,
+) -> None:
+    """Project refreshes use a named event without live project data."""
+    received: list[EngineEvent] = []
+    engine.subscribe(received.append)
+
+    result = engine.publish_project_changed()
+
+    assert result is True
+    assert received == [
+        EngineEvent(
+            type="project.changed",
+        )
+    ]
+
 def _make_search_job_session(
     *,
     job_id: str | None,

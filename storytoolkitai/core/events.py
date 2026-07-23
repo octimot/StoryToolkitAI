@@ -121,16 +121,40 @@ def create_job_task_completed_event(
         },
     )
 
-def create_action_triggered_event(
-    *,
-    action: str,
-) -> EngineEvent:
-    """create an event for a legacy application action"""
+def create_project_changed_event() -> EngineEvent:
+    """Create the event published after the active project changes."""
 
     return EngineEvent(
-        type='action.triggered',
+        type="project.changed",
+    )
+
+
+def create_transcription_changed_event(
+    *,
+    transcription_id: str,
+) -> EngineEvent:
+    """Create the event published after one saved transcription changes."""
+
+    return EngineEvent(
+        type="transcription.changed",
         data={
-            'action': action,
+            "transcription_id": transcription_id,
+        },
+    )
+
+
+def create_transcription_groups_changed_event(
+    *,
+    transcription_id: str,
+) -> EngineEvent:
+    """
+    Create the event published after one transcription's groups change.
+    """
+
+    return EngineEvent(
+        type="transcription.groups.changed",
+        data={
+            "transcription_id": transcription_id,
         },
     )
 

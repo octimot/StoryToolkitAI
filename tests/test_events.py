@@ -3,10 +3,12 @@ from __future__ import annotations
 from storytoolkitai.core.events import (
     EngineEvent,
     EventEmitter,
-    create_action_triggered_event,
-    create_transcription_completed_event,
-    create_transcription_started_event,
     create_job_task_completed_event,
+    create_project_changed_event,
+    create_transcription_changed_event,
+    create_transcription_completed_event,
+    create_transcription_groups_changed_event,
+    create_transcription_started_event,
 )
 
 
@@ -185,14 +187,32 @@ def test_job_task_completed_event_contains_simple_data() -> None:
         },
     )
 
-def test_action_triggered_event_contains_simple_data() -> None:
-    event = create_action_triggered_event(
-        action='update_queue',
+def test_project_changed_event_has_named_type() -> None:
+    """Project changes do not encode a UI callback name."""
+    assert create_project_changed_event() == EngineEvent(
+        type="project.changed",
     )
 
-    assert event == EngineEvent(
-        type='action.triggered',
+
+def test_transcription_changed_event_contains_identifier() -> None:
+    """A transcription change identifies the saved transcription."""
+    assert create_transcription_changed_event(
+        transcription_id="transcription-1",
+    ) == EngineEvent(
+        type="transcription.changed",
         data={
-            'action': 'update_queue',
+            "transcription_id": "transcription-1",
+        },
+    )
+
+
+def test_transcription_groups_changed_event_contains_identifier() -> None:
+    """A group change identifies the affected transcription."""
+    assert create_transcription_groups_changed_event(
+        transcription_id="transcription-1",
+    ) == EngineEvent(
+        type="transcription.groups.changed",
+        data={
+            "transcription_id": "transcription-1",
         },
     )

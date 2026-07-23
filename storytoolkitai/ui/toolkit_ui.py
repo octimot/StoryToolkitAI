@@ -21955,12 +21955,60 @@ class toolkit_UI():
 
             return
 
-        if event.type == 'action.triggered':
-            action = event.data.get('action')
+        if event.type == 'project.changed':
+            self._notify_window_observers(
+                'project_changed'
+            )
+            return
 
-            if action:
-                self._notify_window_observers(action)
+        if event.type == 'transcriptions.changed':
+            self._notify_window_observers(
+                'update_all_transcriptions'
+            )
+            return
 
+        if event.type == 'transcription.changed':
+            transcription_id = event.data.get(
+                'transcription_id'
+            )
+
+            if transcription_id:
+                self._notify_window_observers(
+                    'update_transcription_{}'.format(
+                        transcription_id
+                    )
+                )
+            return
+
+        if event.type == 'transcription.groups.changed':
+            transcription_id = event.data.get(
+                'transcription_id'
+            )
+
+            if transcription_id:
+                self._notify_window_observers(
+                    'update_transcription_groups_{}'.format(
+                        transcription_id
+                    )
+                )
+            return
+
+        resolve_window_action = {
+            'resolve.connection.changed': 'update_NLE_status',
+            'resolve.project.changed': 'NLE_project_changed',
+            'resolve.timeline.changed': 'NLE_timeline_changed',
+            'resolve.markers.changed': 'NLE_markers_changed',
+            'resolve.bin.changed': 'NLE_bin_changed',
+            'resolve.playhead.changed': 'NLE_tc_changed',
+            'resolve.timecode_data.changed': (
+                'NLE_timecode_data_changed'
+            ),
+        }.get(event.type)
+
+        if resolve_window_action is not None:
+            self._notify_window_observers(
+                resolve_window_action
+            )
             return
 
         if event.type == "transcription.started":

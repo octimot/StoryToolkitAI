@@ -56,16 +56,6 @@ class FakeToolkitOps:
 
         return "questions-job-1"
 
-    def notify_observers(self, action):
-        self.calls.append(
-            (
-                "notify",
-                action,
-            )
-        )
-
-        return True
-
 
 def test_get_whisper_available_languages_returns_detached_list():
     toolkit_ops = FakeToolkitOps()
@@ -149,39 +139,5 @@ def test_start_group_questions_forwards_named_arguments():
                 ),
                 "group_name": "Questions",
             },
-        )
-    ]
-
-
-def test_publish_transcription_changed_uses_compatibility_event():
-    toolkit_ops = FakeToolkitOps()
-    engine = StoryToolkitEngine(toolkit_ops)
-
-    assert engine.publish_transcription_changed("abc123") is True
-    assert toolkit_ops.calls == [
-        (
-            "notify",
-            "update_transcription_abc123",
-        )
-    ]
-
-
-def test_publish_transcription_changed_rejects_empty_id():
-    toolkit_ops = FakeToolkitOps()
-    engine = StoryToolkitEngine(toolkit_ops)
-
-    assert engine.publish_transcription_changed("") is False
-    assert toolkit_ops.calls == []
-
-
-def test_publish_project_changed_uses_compatibility_event():
-    toolkit_ops = FakeToolkitOps()
-    engine = StoryToolkitEngine(toolkit_ops)
-
-    assert engine.publish_project_changed() is True
-    assert toolkit_ops.calls == [
-        (
-            "notify",
-            "project_changed",
         )
     ]

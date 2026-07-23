@@ -6,7 +6,6 @@ from storytoolkitai.core.logger import *
 from storytoolkitai.core.events import (
     EngineEvent,
     EventEmitter,
-    create_action_triggered_event,
     create_job_task_completed_event,
 )
 
@@ -91,26 +90,6 @@ class ProcessingQueue:
                     'progress': item.get('progress'),
                     'item_type': item.get('item_type'),
                 },
-            )
-        )
-
-        return True
-
-    def _emit_legacy_action(self, action):
-        """
-        Publish a remaining legacy action through the event emitter.
-
-        This is temporarily kept for the advanced-search stop callback.
-        Search-specific action names will be removed when search ownership
-        moves behind StoryToolkitEngine in Step 9.
-        """
-
-        if not action:
-            return False
-
-        self.events.emit(
-            create_action_triggered_event(
-                action=action,
             )
         )
 
@@ -527,8 +506,6 @@ class ProcessingQueue:
                     and 'queue_id' in thread \
                     and thread['queue_id'] == queue_id:
 
-                self._notify_on_stop_action(item=item)
-
                 # set the status to 'canceling' in the queue history
                 # and hope that someone will be watching the status and cancel the item!
                 return self.update_queue_item(queue_id=queue_id, status='canceled')
@@ -536,7 +513,6 @@ class ProcessingQueue:
         # if we reached this point,
         # the item is not currently being processed,
         # so we can remove it from the queue history
-        self._notify_on_stop_action(item=item)
         return self.update_queue_item(queue_id=queue_id, status='canceled')
 
     def cancel_if_canceled(self, queue_id):
@@ -759,23 +735,6 @@ class ProcessingQueue:
 
         return task_queue
 
-    def _notify_on_stop_action(self, item):
-        """
-        Publish the temporary search-specific action for a stopped job.
-
-        The advanced-search workflow still identifies its failure callback
-        through on_stop_action_name, but we will replace this with search
-        events containing normal job and search identifiers.
-        """
-
-        if (
-            isinstance(item, dict)
-            and item.get('on_stop_action_name')
-        ):
-            self._emit_legacy_action(
-                item['on_stop_action_name']
-            )
-
     def execute_item_tasks(self, queue_id, task_queue: list, **kwargs):
         """
         This function executes the functions in the task queue for a given queue item
@@ -817,15 +776,10 @@ class ProcessingQueue:
             if item['status'] == 'canceling':
                 self.update_status(queue_id=queue_id, status='canceled')
 
-                # notify on_stop observers
-                self._notify_on_stop_action(item=item)
-
                 return False
 
             # stop also if something set the status to 'failed'
             if item['status'] == 'failed':
-                # notify on_stop observers
-                self._notify_on_stop_action(item=item)
                 return False
 
             try:
@@ -875,9 +829,6 @@ class ProcessingQueue:
 
                 # update the status of the queue item to 'failed'
                 self.update_status(queue_id=queue_id, status='failed')
-
-                # notify on_stop observers
-                self._notify_on_stop_action(item=item)
 
                 # stop the execution
                 executed = False

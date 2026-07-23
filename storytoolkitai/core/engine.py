@@ -16,7 +16,11 @@ from threading import Lock, Thread
 from typing import Any
 
 from storytoolkitai.core.logger import logger
-from storytoolkitai.core.events import EventListener
+from storytoolkitai.core.events import (
+    EventListener,
+    create_project_changed_event,
+    create_transcription_changed_event,
+)
 
 
 # These queue fields contain runtime implementation details rather than stable
@@ -1005,34 +1009,33 @@ class StoryToolkitEngine:
         transcription_id: str,
     ) -> bool:
         """
-        Publish the existing transcription-refresh event.
+        Publish an event after one saved transcription changes.
 
-        This remains a compatibility event for version 1. The UI may request
-        that processing publish it, but does not call ToolkitOps observers
-        directly.
+        The event contains a transcription identifier rather than a Tk
+        callback name. Each interface decides how to refresh its own views.
         """
 
         if not transcription_id:
             return False
 
-        return bool(
-            self._toolkit_ops.notify_observers(
-                action="update_transcription_{}".format(
-                    transcription_id
-                ),
+        self._toolkit_ops.events.emit(
+            create_transcription_changed_event(
+                transcription_id=transcription_id,
             )
         )
+
+        return True
 
     def publish_project_changed(self) -> bool:
         """
-        Publish the existing project-refresh compatibility event.
+        Publish an event after the active project changes.
         """
 
-        return bool(
-            self._toolkit_ops.notify_observers(
-                action="project_changed",
-            )
+        self._toolkit_ops.events.emit(
+            create_project_changed_event()
         )
+
+        return True
 
     def _get_search_session(
         self,
