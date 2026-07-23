@@ -1,20 +1,25 @@
-import tkinter as tk
-from tkinter import *
-from tkinter import messagebox
-
+import ctypes
 import platform
 import subprocess
+import tkinter as tk
 import webbrowser
 
+from tkinter import (
+    BooleanVar,
+    DISABLED,
+    Menu,
+    NORMAL,
+    font,
+    messagebox,
+)
+
+from customtkinter import (
+    AppearanceModeTracker,
+    ThemeManager,
+)
+
 from storytoolkitai import USER_DATA_PATH
-from storytoolkitai.core.logger import *
-
-from customtkinter import AppearanceModeTracker
-from customtkinter import ThemeManager
-
-from tkinter import font
-import ctypes
-
+from storytoolkitai.core.logger import logger
 
 class UImenus:
 

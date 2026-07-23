@@ -1,7 +1,7 @@
-from storytoolkitai.core.logger import *
-
 import json
 import os
+
+from storytoolkitai.core.logger import logger
 
 
 class toolkit_CLI:
