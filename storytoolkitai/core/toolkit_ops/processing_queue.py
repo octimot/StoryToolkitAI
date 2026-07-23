@@ -27,21 +27,13 @@ class ProcessingQueue:
         task_handlers=None,
         event_emitter=None,
     ):
+
         # the queue only needs the task names and their callables
         # it must not keep a reference to the complete ToolkitOps object
         self.task_handlers = (
             task_handlers
             if isinstance(task_handlers, dict)
             else {}
-        )
-
-        # ToolkitOps passes its shared emitter here
-        # standalone queue instances, such as isolated tests,
-        # receive their own emitter by default
-        self.events = (
-            event_emitter
-            if event_emitter is not None
-            else EventEmitter()
         )
 
         # ToolkitOps passes its shared emitter here

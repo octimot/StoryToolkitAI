@@ -1163,7 +1163,13 @@ class StoryToolkitEngine:
         self,
         session: dict[str, Any],
     ) -> None:
-        """Update a search session that is waiting for a queue job."""
+        """
+        Update a search session that depends on a processing-queue job.
+
+        Queue statuses are converted into the smaller set of states exposed by
+        the engine search interface. Known active and successful states clear
+        stale errors left by an earlier queue state.
+        """
 
         text_job_id = session.get("text_job_id")
 
@@ -1197,11 +1203,12 @@ class StoryToolkitEngine:
 
         if job_status in _SEARCH_ACTIVE_JOB_STATUSES:
             session["text_status"] = "waiting_for_job"
+            session["error"] = None
             return
 
-        # An unknown status should remain visible rather than being mistaken for
-        # successful preparation. This also exposes newly introduced queue states
-        # during development instead of silently hiding them.
+        # Keep an unknown queue state visible instead of treating it as
+        # successful preparation. This also exposes newly introduced queue
+        # states during development instead of silently hiding them.
         session["text_status"] = "waiting_for_job"
         session["error"] = (
             "The text indexing job reported an unknown status: {!r}.".format(
@@ -1254,42 +1261,6 @@ class StoryToolkitEngine:
             matching_job = job_id, job
 
         return matching_job
-
-    def _refresh_search_job_status(
-        self,
-        session: dict[str, Any],
-    ) -> None:
-        """Update a search session that is waiting for a queue job."""
-
-        text_job_id = session.get("text_job_id")
-
-        if not text_job_id:
-            return
-
-        job = self.get_job(text_job_id)
-
-        if job is None:
-            session["text_status"] = "failed"
-            session["error"] = (
-                "The text indexing job is no longer available."
-            )
-            return
-
-        job_status = job.get("status")
-
-        if job_status == "done":
-            session["text_status"] = "ready"
-            return
-
-        if job_status in _SEARCH_FAILED_JOB_STATUSES:
-            session["text_status"] = "failed"
-            session["error"] = (
-                job.get("error")
-                or "The text indexing job did not complete."
-            )
-            return
-
-        session["text_status"] = "waiting_for_job"
 
     def _prepare_search_worker(
         self,
