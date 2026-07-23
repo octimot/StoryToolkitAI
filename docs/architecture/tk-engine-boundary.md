@@ -241,8 +241,7 @@ Version 1 remains a single Python process. The following values may cross the cu
 - `AssistantSession`, which is a lightweight handle to an engine-owned assistant;
 - the existing Resolve render monitor returned by the monitored-render workflow;
 - existing `Timecode` values used by Resolve-related Tk behaviour;
-- image arrays returned for video-search frame presentation;
-- transitional `action.triggered` events used by remaining compatibility workflows.
+- image arrays returned for video-search frame presentation.
 
 These are accepted Version 1 limits, not Version 2 API designs.
 
@@ -258,6 +257,7 @@ tests/architecture/test_ui_engine_boundary.py
 tests/architecture/test_ui_resolve_boundary.py
 tests/architecture/test_runtime_object_graph.py
 tests/architecture/test_search_boundary.py
+tests/architecture/test_legacy_event_boundary.py
 ```
 
 The central checks require that:
@@ -273,7 +273,7 @@ The central checks require that:
 Run the focused boundary suite with:
 
 ```bash
-python -m pytest   tests/architecture/test_ui_import_boundary.py   tests/architecture/test_ui_engine_boundary.py   tests/architecture/test_ui_resolve_boundary.py   tests/architecture/test_runtime_object_graph.py   tests/architecture/test_search_boundary.py   -q
+python -m pytest tests/architecture/test_ui_import_boundary.py tests/architecture/test_ui_engine_boundary.py tests/architecture/test_ui_resolve_boundary.py tests/architecture/test_runtime_object_graph.py tests/architecture/test_search_boundary.py tests/architecture/test_legacy_event_boundary.py -q
 ```
 
 Then run the complete suite:
@@ -322,4 +322,4 @@ Earlier queue, event, search, CLI and runtime-option commits established the pre
 
 For StoryToolkitAI Version 1, the Tk and CLI processing boundary is complete when the architecture tests above pass and the source audits produce the documented results.
 
-Further cleanup may simplify `ToolkitOps`, `StoryToolkitAI`, compatibility events or return values, but that cleanup must not weaken the implemented dependency direction.
+Further cleanup may simplify `ToolkitOps`, `StoryToolkitAI` or return values, but that cleanup must not weaken the implemented dependency direction.

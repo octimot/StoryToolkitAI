@@ -270,82 +270,6 @@ class ToolkitOps:
         ):
             logger.info('Resuming queue from file')
 
-    def notify_observers(self, action):
-        """
-        Translate remaining internal refresh names into engine events.
-
-        Resolve polling and question grouping still use the historical method
-        name during the version 1 cleanup. The engine event stream must not
-        expose those callback-shaped names to an interface.
-
-        Step 12.4 removes this compatibility method after its remaining
-        callers publish named events directly.
-        """
-
-        if not action:
-            return False
-
-        event_type_by_action = {
-            'project_changed': 'project.changed',
-            'update_NLE_status': 'resolve.connection.changed',
-            'update_all_transcriptions': 'transcriptions.changed',
-            'NLE_project_changed': 'resolve.project.changed',
-            'NLE_timeline_changed': 'resolve.timeline.changed',
-            'NLE_markers_changed': 'resolve.markers.changed',
-            'NLE_bin_changed': 'resolve.bin.changed',
-            'NLE_tc_changed': 'resolve.playhead.changed',
-            'NLE_timecode_data_changed': (
-                'resolve.timecode_data.changed'
-            ),
-        }
-
-        if action.startswith('update_transcription_groups_'):
-            transcription_id = action.removeprefix(
-                'update_transcription_groups_'
-            )
-
-            if not transcription_id:
-                return False
-
-            self.events.emit(
-                create_transcription_groups_changed_event(
-                    transcription_id=transcription_id,
-                )
-            )
-            return True
-
-        if action.startswith('update_transcription_'):
-            transcription_id = action.removeprefix(
-                'update_transcription_'
-            )
-
-            if not transcription_id:
-                return False
-
-            self.events.emit(
-                create_transcription_changed_event(
-                    transcription_id=transcription_id,
-                )
-            )
-            return True
-
-        event_type = event_type_by_action.get(action)
-
-        if event_type is None:
-            logger.warning(
-                'Unable to publish unknown engine refresh action: {}'
-                .format(action)
-            )
-            return False
-
-        self.events.emit(
-            EngineEvent(
-                type=event_type,
-            )
-        )
-
-        return True
-
     # ASSISTANT PROCESS MANAGEMENT
 
     @staticmethod
@@ -1788,8 +1712,13 @@ class ToolkitOps:
         if kwargs.get('queue_id', None):
             self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='done')
 
-        # update all the observers that are listening for this transcription
-        self.notify_observers('update_transcription_{}'.format(transcription.transcription_path_id))
+        # publish the saved transcription change before the more specific
+        # transcription-groups change below
+        self.events.emit(
+            create_transcription_changed_event(
+                transcription_id=transcription.transcription_path_id,
+            )
+        )
 
         return speaker_segments
 
@@ -2504,8 +2433,12 @@ class ToolkitOps:
                 timeline_name=transcription.timeline_name
             )
 
-            # notify the observers that the project has changed
-            self.notify_observers('project_changed')
+            # publish the project-link change after the transcription is linked
+            self.events.emit(
+                EngineEvent(
+                    type='project.changed',
+                )
+            )
 
         # if a timeline_name wasn't set, but a project_name was set,
         # just link the transcription to the project
@@ -2515,8 +2448,12 @@ class ToolkitOps:
 
             project.link_to_project(object_type='transcription', file_path=transcription.transcription_file_path)
 
-            # notify the observers that the project has changed
-            self.notify_observers('project_changed')
+            # publish the project-link change after the transcription is linked
+            self.events.emit(
+                EngineEvent(
+                    type='project.changed',
+                )
+            )
 
         # save the transcription to file with all the added data
         transcription.save_soon(sec=0)
@@ -2807,19 +2744,29 @@ class ToolkitOps:
             transcription.set_transcript_groups(group_id=questions_group_id, transcript_groups=questions_group)
 
             # save the transcription now, not soon
-            # - this ensures that the transcription is saved before notifying observers
+            # - this ensures that the transcription is saved before publishing
+            # its change events
             transcription.save_soon(sec=0)
 
-        # if we have a queue_id, update the status to done
-        if kwargs.get('queue_id', None):
-            self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='done')
+            # if we have a queue_id, update the status to done
+            if kwargs.get('queue_id', None):
+                self.processing_queue.update_status(
+                    queue_id=kwargs.get('queue_id', None),
+                    status='done',
+                )
 
-        # update all the observers that are listening for this transcription
-        self.notify_observers('update_transcription_{}'.format(transcription.transcription_path_id))
-
-        # update all the observers that are listening for this transcription's groups
-        self.notify_observers('update_transcription_groups_{}'
-                              .format(transcription.transcription_path_id))
+            # publish the general transcription change first, followed by the
+            # more specific group change for interfaces that track both
+            self.events.emit(
+                create_transcription_changed_event(
+                    transcription_id=transcription.transcription_path_id,
+                )
+            )
+            self.events.emit(
+                create_transcription_groups_changed_event(
+                    transcription_id=transcription.transcription_path_id,
+                )
+            )
 
         return questions_group
 
@@ -3247,8 +3194,12 @@ class ToolkitOps:
         NLE.resolve = None
         NLE.reset_all()
 
-        # notify observers that the NLE has been reset
-        self.notify_observers('update_NLE_status')
+        # publish the connection change after the shared NLE state is reset
+        self.events.emit(
+            EngineEvent(
+                type='resolve.connection.changed',
+            )
+        )
 
     def resolve_enable(self):
         """
@@ -3470,17 +3421,34 @@ class ToolkitOps:
                             # set the resolve object to whatever it is now
                             NLE.resolve = resolve_data['resolve']
 
-                            # notify the observers that the resolve object has changed
-                            self.notify_observers('update_NLE_status')
-                            self.notify_observers('update_all_transcriptions')
+                            # publish connection and transcription availability
+                            # changes after the shared Resolve object is updated
+                            self.events.emit(
+                                EngineEvent(
+                                    type='resolve.connection.changed',
+                                )
+                            )
+                            self.events.emit(
+                                EngineEvent(
+                                    type='transcriptions.changed',
+                                )
+                            )
 
                             # if the resolve object is now None,
-                            # reset all and skip the rest of the polling
+                            # publish the cleared project and timeline state
                             if NLE.resolve is None:
-                                self.notify_observers('NLE_project_changed')
-                                self.notify_observers('NLE_timeline_changed')
-
+                                self.events.emit(
+                                    EngineEvent(
+                                        type='resolve.project.changed',
+                                    )
+                                )
+                                self.events.emit(
+                                    EngineEvent(
+                                        type='resolve.timeline.changed',
+                                    )
+                                )
                                 NLE.reset_all()
+
                     except:
                         import traceback
                         logger.debug('Fail detected in resolve object change check.')
@@ -3501,9 +3469,18 @@ class ToolkitOps:
                             NLE.current_project = resolve_data[
                                 'currentProject'] if 'currentProject' in resolve_data else None
 
-                            # notify the observers that the project has changed
-                            self.notify_observers('NLE_project_changed')
-                            self.notify_observers('update_all_transcriptions')
+                            # publish the Resolve project change and refresh the
+                            # transcription list that depends on the active project
+                            self.events.emit(
+                                EngineEvent(
+                                    type='resolve.project.changed',
+                                )
+                            )
+                            self.events.emit(
+                                EngineEvent(
+                                    type='transcriptions.changed',
+                                )
+                            )
 
                     except Exception as e:
                         logger.debug(e)
@@ -3534,7 +3511,12 @@ class ToolkitOps:
                                 # set the current timeline to None
                                 NLE.current_timeline = None
 
-                                self.notify_observers('NLE_timeline_changed')
+                                # publish the cleared timeline state
+                                self.events.emit(
+                                    EngineEvent(
+                                        type='resolve.timeline.changed',
+                                    )
+                                )
 
                             # if the polled data contains the currentTimeline key
                             elif 'currentTimeline' in resolve_data \
@@ -3552,9 +3534,18 @@ class ToolkitOps:
                                 NLE.current_timeline = resolve_data['currentTimeline'] \
                                     if 'currentTimeline' in resolve_data else None
 
-                                # and notify the observers that the timeline has changed
-                                self.notify_observers('NLE_timeline_changed')
-                                self.notify_observers('NLE_timecode_data_changed')
+                                # publish the Resolve project and transcription availability
+                                # changes after the shared project name is updated
+                                self.events.emit(
+                                    EngineEvent(
+                                        type='resolve.project.changed',
+                                    )
+                                )
+                                self.events.emit(
+                                    EngineEvent(
+                                        type='transcriptions.changed',
+                                    )
+                                )
 
                             # if the polled data contains the currentTimeline key,
                             # but the name of the timeline hasn't changed
@@ -3579,56 +3570,97 @@ class ToolkitOps:
 
                         # first compare the types
                         if type(NLE.current_timeline_markers) != type(resolve_data['currentTimeline']['markers']):
-                            # if the types are different, then the markers have changed
-                            self.notify_observers('NLE_markers_changed')
 
+                            # if the types are different, then the markers have changed
+                            self.events.emit(
+                                EngineEvent(
+                                    type='resolve.markers.changed',
+                                )
+                            )
                             NLE.current_timeline_markers = resolve_data['currentTimeline']['markers']
 
                         # also do a key compare only for speed
                         elif set(NLE.current_timeline_markers.keys()) != set(
                                 resolve_data['currentTimeline']['markers'].keys()):
-                            # if the keys are different, then the markers have changed
-                            self.notify_observers('NLE_markers_changed')
 
+                            # if the keys are different, then the markers have changed
+                            self.events.emit(
+                                EngineEvent(
+                                    type='resolve.markers.changed',
+                                )
+                            )
                             NLE.current_timeline_markers = resolve_data['currentTimeline']['markers']
 
                         # but if the marker keys are the same do a deeper compare
                         elif NLE.current_timeline_markers != resolve_data['currentTimeline']['markers']:
-                            # if the keys are the same, but the values are different, then the markers have changed
-                            self.notify_observers('NLE_markers_changed')
 
+                            # if the keys are the same, but the values are different,
+                            # then the markers have changed
+                            self.events.emit(
+                                EngineEvent(
+                                    type='resolve.markers.changed',
+                                )
+                            )
                             NLE.current_timeline_markers = resolve_data['currentTimeline']['markers']
-
                     else:
                         NLE.current_timeline_markers = None
 
-                    #  updates the currentBin
-                    if (NLE.current_bin is not None and NLE.current_bin != '' and 'currentBin' not in resolve_data) \
+                    # updates the currentBin
+                    if (NLE.current_bin is not None
+                            and NLE.current_bin != ''
+                            and 'currentBin' not in resolve_data) \
                             or NLE.current_bin != resolve_data['currentBin']:
+
                         NLE.current_bin = resolve_data['currentBin'] if 'currentBin' in resolve_data else ''
-                        self.notify_observers('NLE_bin_changed')
+
+                        # publish the updated Resolve-bin selection
+                        self.events.emit(
+                            EngineEvent(
+                                type='resolve.bin.changed',
+                            )
+                        )
 
                     # update current playhead timecode
                     if (NLE.current_tc is not None and 'currentTC' not in resolve_data) \
                             or NLE.current_tc != resolve_data['currentTC']:
+
                         NLE.current_tc = resolve_data['currentTC']
-                        self.notify_observers('NLE_tc_changed')
+
+                        # publish the updated Resolve playhead position
+                        self.events.emit(
+                            EngineEvent(
+                                type='resolve.playhead.changed',
+                            )
+                        )
 
                     # update current playhead timecode
                     if (NLE.current_timeline_fps is not None and 'currentTimelineFPS' not in resolve_data) \
                             or NLE.current_timeline_fps != resolve_data['currentTimelineFPS']:
                         NLE.current_timeline_fps = resolve_data['currentTimelineFPS']
-                        self.notify_observers('NLE_timecode_data_changed')
 
-                    # update start_tc timecode
+                        # publish the change
+                        self.events.emit(
+                            EngineEvent(
+                                type='resolve.timecode_data.changed',
+                            )
+                        )
+
+                    # update the current timeline start timecode
                     if (NLE.current_start_tc is not None
-                        and 'currentTimeline' not in resolve_data
-                        and 'startTC' not in resolve_data['currentTimeline']) \
-                            or (resolve_data['currentTimeline'] is not None \
-                            and NLE.current_start_tc != resolve_data['currentTimeline']['startTC']):
+                            and 'currentTimeline' not in resolve_data
+                            and 'startTC' not in resolve_data['currentTimeline']) \
+                            or (resolve_data['currentTimeline'] is not None
+                                and NLE.current_start_tc != resolve_data['currentTimeline']['startTC']):
+
                         NLE.current_start_tc = \
                             resolve_data['currentTimeline']['startTC'] if isinstance(resolve_data, dict) else None
-                        self.notify_observers('NLE_timecode_data_changed')
+
+                        # publish timecode data derived from the timeline start
+                        self.events.emit(
+                            EngineEvent(
+                                type='resolve.timecode_data.changed',
+                            )
+                        )
 
                     # was there a previous error?
                     if NLE.resolve is not None and NLE.resolve_error > 0:

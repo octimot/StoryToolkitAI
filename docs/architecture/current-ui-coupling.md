@@ -129,20 +129,18 @@ Tk still receives `StoryToolkitAI` for application settings, paths and lifecycle
 | Field | Detail |
 |---|---|
 | **Previous state** | Processing stored observer objects and invoked their callbacks. |
-| **Current state** | Processing emits engine events. Tk owns and schedules presentation callbacks locally. |
-| **Remaining compatibility** | A transitional `notify_observers(action)` bridge still emits `action.triggered` for a small number of legacy workflows. It no longer stores UI observers. |
-| **Status** | Resolved for the UI dependency |
-| **Related commit** | `3c9515dc094aba4a174a97d0a9aca13c7e45fe20` |
+| **Current state** | Processing emits named engine events. Tk owns and schedules presentation callbacks locally. No processing observer bridge or live UI callback object remains. |
+| **Status** | Resolved |
+| **Related commits** | `3c9515dc094aba4a174a97d0a9aca13c7e45fe20`, `df324563dcaad7d9de10e1502871a3a297b7e27a`; final bridge removed during Step 12.4. |
 
 ## C07 — Queue and compatibility notifications use implicit action strings
 
 | Field | Detail |
 |---|---|
-| **Previous state** | Queue lifecycle and search completion relied on UI-oriented action names. |
-| **Current state** | Queue changes emit `job.changed`; completed tasks emit `job.task_completed`; advanced search reads engine-owned state. Tk requests project and transcription refresh through named engine methods rather than calling `notify_observers(...)` directly. |
-| **Remaining compatibility** | Unused search indexing compatibility fields and the transitional action bridge may remain inside processing until later cleanup confirms that no external caller needs them. |
-| **Status** | Compatibility cleanup |
-| **Related commits** | `866d438`, `f97d0b3`, `ffef103`, `0df67f0`, `3ce19ad`, `e9684f2`, `3518c45b9c56a60b5e76ab65994bd12223d94e50` |
+| **Previous state** | Queue lifecycle, search completion, Resolve polling and transcription-group updates relied on UI-oriented action names. |
+| **Current state** | Queue changes emit `job.changed`; completed tasks emit `job.task_completed`; advanced search reads engine-owned state. Resolve polling and question grouping publish named engine events directly. No processing compatibility action bridge remains. |
+| **Status** | Resolved |
+| **Related commits** | `866d438`, `f97d0b3`, `ffef103`, `0df67f0`, `3ce19ad`, `e9684f2`, `3518c45b9c56a60b5e76ab65994bd12223d94e50`, `df324563dcaad7d9de10e1502871a3a297b7e27a`; final bridge removed during Step 12.4. |
 
 ## C08 — `ProcessingQueue` depends on the whole `ToolkitOps` object
 
@@ -292,8 +290,8 @@ Tk still receives `StoryToolkitAI` for application settings, paths and lifecycle
 | C03 | Processing sends OS notifications | Resolved |
 | C04 | Resolve processing receives UI object | Resolved |
 | C05 | Core notification service stores receivers | Resolved |
-| C06 | Core stores live UI callbacks | Resolved for UI dependency |
-| C07 | Compatibility action strings | Compatibility cleanup |
+| C06 | Core stores live UI callbacks | Resolved |
+| C07 | Compatibility action strings | Resolved |
 | C08 | Queue depends on complete `ToolkitOps` | Resolved |
 | C09 | UI accesses queue internals | Resolved |
 | C10 | Queue and search observer races | Resolved |
@@ -354,10 +352,19 @@ Expected result: no matches in `__main__.py` or UI modules. Matches in `app.py` 
 rg -n --glob '*.py'   'toolkit_ops_obj|ToolkitOps'   storytoolkitai/__main__.py   storytoolkitai/ui
 ```
 
+## Legacy processing refresh actions
+
+Expected result: no matches under core or integrations.
+
+```bash
+rg -n --glob '*.py' \
+  'notify_observers|update_NLE_status|update_all_transcriptions|NLE_project_changed|NLE_timeline_changed|NLE_markers_changed|NLE_bin_changed|NLE_tc_changed|NLE_timecode_data_changed|update_transcription_groups_|update_transcription_' \
+  storytoolkitai/core storytoolkitai/integrations
+
 ## Architecture tests
 
 ```bash
-python -m pytest   tests/architecture/test_ui_import_boundary.py   tests/architecture/test_ui_engine_boundary.py   tests/architecture/test_ui_resolve_boundary.py   tests/architecture/test_runtime_object_graph.py   tests/architecture/test_search_boundary.py   -q
+python -m pytest tests/architecture/test_ui_import_boundary.py tests/architecture/test_ui_engine_boundary.py tests/architecture/test_ui_resolve_boundary.py tests/architecture/test_runtime_object_graph.py tests/architecture/test_search_boundary.py tests/architecture/test_legacy_event_boundary.py -q
 ```
 
 Then:
