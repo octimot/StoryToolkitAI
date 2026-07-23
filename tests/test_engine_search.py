@@ -107,19 +107,44 @@ class FakeToolkitOps:
         self.text_search_item = FakeTextSearch()
         self.video_search_item = FakeVideoSearch()
         self.index_text_calls: list[dict[str, Any]] = []
+        self.index_text_queue_calls: list[dict[str, Any]] = []
 
     def create_search_items(
         self,
         search_file_paths: list[str],
         use_analyzer: bool = False,
     ) -> tuple[FakeTextSearch, FakeVideoSearch]:
+        # mirror the real ToolkitOps behavior so the session carries the
+        # analyzer choice into direct or queued text indexing
+        self.text_search_item.use_analyzer = use_analyzer
+
         return self.text_search_item, self.video_search_item
 
     def index_text(self, **kwargs):
         self.index_text_calls.append(kwargs)
         return True
 
-    def add_index_text_to_queue(self, **kwargs):
+    def add_index_text_to_queue(
+        self,
+        queue_item_name: str,
+        search_file_paths: list[str],
+        use_analyzer: bool = False,
+    ) -> str:
+        """
+        Record the exact queue boundary used by SearchSessionManager.
+
+        Keeping an explicit signature prevents tests from hiding mismatches
+        between the manager and the real ToolkitOps implementation.
+        """
+
+        self.index_text_queue_calls.append(
+            {
+                "queue_item_name": queue_item_name,
+                "search_file_paths": list(search_file_paths),
+                "use_analyzer": use_analyzer,
+            }
+        )
+
         return "text-index-job"
 
 def wait_for_search_status(
@@ -148,6 +173,24 @@ def wait_for_search_status(
             search_id,
             expected_status,
         )
+    )
+
+def wait_for_index_text_queue_call(
+    toolkit_ops: FakeToolkitOps,
+    timeout: float = 2.0,
+) -> dict[str, Any]:
+    """Wait briefly for the engine-owned preparation worker to queue indexing."""
+
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
+        if toolkit_ops.index_text_queue_calls:
+            return toolkit_ops.index_text_queue_calls[-1]
+
+        time.sleep(0.01)
+
+    raise AssertionError(
+        "Search preparation did not add a text indexing job to the queue."
     )
 
 
@@ -226,6 +269,39 @@ def test_engine_prepares_search_processors_outside_the_ui():
     assert toolkit_ops.video_search_item.index_paths_loaded is True
     assert toolkit_ops.video_search_item.model_loaded is True
     assert len(toolkit_ops.index_text_calls) == 1
+
+def test_engine_queues_large_text_search_with_analyzer_setting():
+    """Queued indexing must preserve the search session's analyzer choice."""
+
+    toolkit_ops = FakeToolkitOps()
+
+    # force the persistent queue path instead of direct in-thread indexing
+    toolkit_ops.text_search_item.search_file_paths_size = 300001
+    toolkit_ops.text_search_item.cache_exists = False
+
+    engine = StoryToolkitEngine(toolkit_ops)
+
+    search_info = engine.create_search(
+        search_file_paths=[
+            "/tmp/interview.transcription.json",
+        ],
+        use_analyzer=True,
+    )
+
+    engine.prepare_search(
+        search_id=search_info["search_id"],
+        queue_item_name="Indexing interview search",
+    )
+
+    queue_call = wait_for_index_text_queue_call(toolkit_ops)
+
+    assert queue_call == {
+        "queue_item_name": "Indexing interview search",
+        "search_file_paths": [
+            "/tmp/interview.transcription.json",
+        ],
+        "use_analyzer": True,
+    }
 
 def test_engine_runs_text_search_with_detached_results():
     """Text search results must not expose processor-owned dictionaries."""

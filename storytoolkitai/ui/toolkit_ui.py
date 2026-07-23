@@ -2156,29 +2156,54 @@ class toolkit_UI():
 
                     def push_higher_if_too_low():
                         """
-                        This makes sure that after the window is created, it is not too low on the screen.
+                        Make sure a newly created window remains inside the screen.
+
+                        The callback runs after a short delay. The window may have
+                        already been closed because startup or preparation failed, so
+                        it must not access the window registry without checking it.
                         """
 
-                        # get the window's height
-                        window_height = self.windows[window_id].winfo_height()
+                        window = self.windows.get(window_id)
 
-                        # get the screen height
-                        screen_height = self.windows[window_id].winfo_screenheight()
+                        # stop when the delayed callback outlives the window
+                        if window is None:
+                            return
 
-                        # get the window's y position
-                        window_y = self.windows[window_id].winfo_y()
+                        try:
+                            if not window.winfo_exists():
+                                return
 
-                        # if the window is too low, push it up so that it fits the screen,
-                        # just don't push it higher than the top of the screen
-                        if window_y + window_height > screen_height:
-                            # push the window up by the difference
-                            self.windows[window_id].geometry("+{}+{}".format(
-                                self.windows[window_id].winfo_x(),
-                                window_y - (window_y + window_height - screen_height) if window_y > 20 else 20
-                            ))
+                            # get the current window and screen geometry
+                            window_height = window.winfo_height()
+                            screen_height = window.winfo_screenheight()
+                            window_y = window.winfo_y()
 
-                        # but also bring it back down if it's too high
-                        self._bring_window_inside_screen(self.windows[window_id])
+                            # push the window up when its bottom is outside the screen,
+                            # without moving it above the top margin
+                            if window_y + window_height > screen_height:
+                                window.geometry(
+                                    "+{}+{}".format(
+                                        window.winfo_x(),
+                                        (
+                                            window_y
+                                            - (
+                                                window_y
+                                                + window_height
+                                                - screen_height
+                                            )
+                                            if window_y > 20
+                                            else 20
+                                        ),
+                                    )
+                                )
+
+                            # also bring the window back down when it is too high
+                            self._bring_window_inside_screen(window)
+
+                        except tk.TclError:
+                            # Tk may destroy the underlying widget between the
+                            # existence check and a geometry call.
+                            return
 
                     # after the window is created, push it up if it's too low
                     self.windows[window_id].after(200, push_higher_if_too_low)
@@ -18587,14 +18612,41 @@ class toolkit_UI():
             )
         )
 
+        def focus_search_input():
+            """
+            Focus the search prompt after the window has finished drawing.
+
+            Search preparation may fail before this delayed callback runs. In
+            that case the window and its text-widget entry have already been
+            removed and there is nothing left to focus.
+            """
+
+            text_window = self.text_windows.get(search_window_id)
+
+            if text_window is None:
+                return
+
+            text_widget = text_window.get('text_widget')
+
+            if text_widget is None:
+                return
+
+            try:
+                if text_widget.winfo_exists():
+                    text_widget.focus_set()
+
+            except tk.TclError:
+                # The widget may be destroyed between the existence check and
+                # the focus request.
+                return
+
         # focus the text widget after the window has finished drawing
         search_window.after(
             110,
-            lambda: self.text_windows[
-                search_window_id
-            ]['text_widget'].focus_set()
+            focus_search_input,
         )
 
+        return search_window_id
         return search_window_id
 
     def _advanced_search_mark_ready(

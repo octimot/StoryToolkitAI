@@ -2948,8 +2948,12 @@ class ToolkitOps:
         # status, so indexing does not publish a callback-shaped action.
         return True
 
-    def add_index_text_to_queue(self, queue_item_name, search_file_paths):
-
+    def add_index_text_to_queue(
+        self,
+        queue_item_name,
+        search_file_paths,
+        use_analyzer=False,
+    ):
         # prepare the options for the processing queue
         queue_item = dict()
         queue_item['name'] = queue_item_name
@@ -2959,14 +2963,11 @@ class ToolkitOps:
         queue_item['item_type'] = 'search'
         queue_item['search_file_paths'] = search_file_paths
 
-        # get the search_file_path_id from the TextSearch object
-        search_item = TextSearch(
-            search_config=self.search_config,
-            search_file_paths=search_file_paths,
-            search_type='semantic'
-        )
-
-        queue_item['use_analyzer'] = search_item.use_analyzer
+        # preserve the analyzer choice made when the search session was created
+        #
+        # The queue worker creates its own TextSearch instance later, so the
+        # selected value must be included in the queue item.
+        queue_item['use_analyzer'] = bool(use_analyzer)
 
         # The engine-owned search session derives failure and cancellation
         # from the queue snapshot; no callback name belongs on the job.
