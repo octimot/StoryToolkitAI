@@ -21,7 +21,11 @@ from storytoolkitai.core.events import (
     create_project_changed_event,
     create_transcription_changed_event,
 )
-from storytoolkitai.core.search_sessions import SearchSessionManager
+from storytoolkitai.core.search_sessions import (
+    SearchInfo,
+    SearchResults,
+    SearchSessionManager,
+)
 
 
 # These queue fields contain runtime implementation details rather than stable
@@ -1004,7 +1008,7 @@ class StoryToolkitEngine:
         self,
         search_file_paths: str | list[str] | tuple[str, ...],
         use_analyzer: bool = False,
-    ) -> dict[str, Any]:
+    ) -> SearchInfo:
         """
         Create or reuse an engine-owned advanced search session.
 
@@ -1015,7 +1019,7 @@ class StoryToolkitEngine:
                 Whether text analysis should prepare the text corpus.
 
         Returns:
-            Detached public information about the search session.
+            A detached ``SearchInfo`` snapshot.
         """
 
         return self._search_session_manager.create_search(
@@ -1026,7 +1030,7 @@ class StoryToolkitEngine:
     def get_search(
         self,
         search_id: str,
-    ) -> dict[str, Any] | None:
+    ) -> SearchInfo | None:
         """
         Return detached information about an advanced search session.
 
@@ -1036,7 +1040,8 @@ class StoryToolkitEngine:
             search_id: ID returned by ``create_search``.
 
         Returns:
-            Search information, or ``None`` when the session does not exist.
+            A detached ``SearchInfo`` snapshot, or ``None`` when the session
+            does not exist.
         """
 
         return self._search_session_manager.get_search(
@@ -1047,7 +1052,7 @@ class StoryToolkitEngine:
         self,
         search_id: str,
         queue_item_name: str | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> SearchInfo | None:
         """
         Begin preparing an advanced search in an engine-owned worker.
 
@@ -1060,7 +1065,8 @@ class StoryToolkitEngine:
                 Optional name for a persistent text-index queue item.
 
         Returns:
-            Current detached search information, or ``None`` if it is unknown.
+            The current detached ``SearchInfo`` snapshot, or ``None`` when the
+            session does not exist.
         """
 
         return self._search_session_manager.prepare_search(
@@ -1090,7 +1096,7 @@ class StoryToolkitEngine:
         search_id: str,
         query: str,
         max_results: int = 5,
-    ) -> tuple[list[dict[str, Any]], int]:
+    ) -> SearchResults:
         """
         Run a text search and return detached result data.
 
@@ -1100,7 +1106,8 @@ class StoryToolkitEngine:
             max_results: Default maximum number of results.
 
         Returns:
-            A copied result list and the effective maximum result count.
+            A ``SearchResults`` tuple containing a detached result list and
+            the effective maximum result count.
         """
 
         return self._search_session_manager.search_text(
@@ -1116,12 +1123,16 @@ class StoryToolkitEngine:
         max_results: int = 5,
         threshold: int = 35,
         combine_patches: bool = True,
-    ) -> tuple[list[dict[str, Any]], int]:
+    ) -> SearchResults:
         """
         Run a video search and return detached result data.
 
         VideoSearch returns both the matching frames and the effective result
         count after parsing any result limit included in the query.
+
+        Returns:
+            A ``SearchResults`` tuple containing a detached result list and
+            the effective maximum result count.
         """
 
         return self._search_session_manager.search_video(
@@ -1172,6 +1183,7 @@ class StoryToolkitEngine:
         return self._search_session_manager.close_search(
             search_id=search_id,
         )
+
     @staticmethod
     def _copy_job(item: dict[str, Any]) -> dict[str, Any]:
         """

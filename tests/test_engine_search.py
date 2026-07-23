@@ -7,6 +7,7 @@ import time
 
 from storytoolkitai.core.engine import StoryToolkitEngine
 from storytoolkitai.core.events import EventEmitter
+from storytoolkitai.core.search_sessions import SearchInfo
 
 
 class FakeTextSearch:
@@ -152,7 +153,7 @@ def wait_for_search_status(
     search_id: str,
     expected_status: str,
     timeout: float = 2.0,
-) -> dict[str, Any]:
+) -> SearchInfo:
     """Wait briefly for the engine-owned search worker."""
 
     deadline = time.monotonic() + timeout
@@ -195,7 +196,7 @@ def wait_for_index_text_queue_call(
 
 
 def test_engine_creates_detached_search_information():
-    """A caller must not receive mutable engine session state."""
+    """The public search snapshot has one stable detached dictionary shape."""
 
     toolkit_ops = FakeToolkitOps()
     engine = StoryToolkitEngine(toolkit_ops)
@@ -204,16 +205,50 @@ def test_engine_creates_detached_search_information():
         search_file_paths=["/tmp/interview.transcription.json"],
     )
 
+    expected_info: SearchInfo = {
+        "search_id": "search-1",
+        "status": "created",
+        "text_status": "created",
+        "video_status": "created",
+        "text_file_paths": [
+            "/tmp/interview.transcription.json",
+        ],
+        "video_file_paths": [
+            "/tmp/interview.npy",
+        ],
+        "text_file_count": 1,
+        "video_file_count": 1,
+        "model_name": "fake-model",
+        "text_job_id": None,
+        "error": None,
+    }
+
+    assert search_info == expected_info
+
+    # Public snapshots must not expose the manager's mutable path lists.
     search_info["text_file_paths"].append("/tmp/mutated.txt")
+    search_info["video_file_paths"].append("/tmp/mutated.npy")
 
     stored_info = engine.get_search("search-1")
 
-    assert stored_info is not None
-    assert stored_info["search_id"] == "search-1"
-    assert stored_info["status"] == "created"
-    assert stored_info["text_file_paths"] == [
-        "/tmp/interview.transcription.json"
-    ]
+    assert stored_info == expected_info
+
+
+def test_engine_unknown_search_returns_stable_empty_result_shapes():
+    """Unknown search IDs keep text and video return shapes predictable."""
+
+    engine = StoryToolkitEngine(FakeToolkitOps())
+
+    assert engine.search_text(
+        search_id="missing-search",
+        query="red car",
+        max_results=7,
+    ) == ([], 7)
+    assert engine.search_video(
+        search_id="missing-search",
+        query="red car",
+        max_results=9,
+    ) == ([], 9)
 
 
 def test_engine_reuses_an_open_search_session():

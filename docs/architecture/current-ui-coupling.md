@@ -276,10 +276,11 @@ Tk still receives `StoryToolkitAI` for application settings, paths and lifecycle
 
 | Field | Detail |
 |---|---|
-| **Current state** | Existing operations return booleans, dictionaries, paths, lists, tuples, model objects and `None`. Migrated engine methods document and copy results where practical. |
-| **Accepted approach** | Standardize public engine results one migrated workflow at a time. Do not introduce a generic result framework solely to normalize legacy internals. |
-| **Version 2 requirement** | Commands and queries crossing a process boundary need documented serializable request, result and error shapes. |
-| **Status** | In progress; not a Version 1 Tk-boundary blocker |
+| **Current state** | Existing engine operations intentionally retain operation-specific Boolean, dictionary, list, tuple, model-object and `None` results. Search snapshots use the documented `SearchInfo` dictionary shape, while text and video queries use the documented `SearchResults` tuple shape. Mutable search and queue snapshots are detached before being returned. |
+| **Version 1 decision** | The public methods affected by the Step 12 event and search cleanup have explicit return annotations, documented missing-value behaviour and regression tests for their stable outer shapes. No generic result wrapper is required for Version 1. |
+| **Accepted approach** | Continue standardizing public engine results one migrated workflow at a time. Do not introduce a generic result framework solely to normalize legacy internals. |
+| **Version 2 requirement** | Commands and queries crossing a process boundary need documented serializable request, result and error shapes. Existing in-process aliases are not automatically Version 2 network contracts. |
+| **Status** | Reviewed and accepted for Version 1; future standardization remains incremental |
 
 # Status summary
 
@@ -306,7 +307,7 @@ Tk still receives `StoryToolkitAI` for application settings, paths and lifecycle
 | C19 | UI stores processing implementation objects | Resolved for processing internals |
 | C20 | UI mutates live content models | Accepted for Version 1 |
 | C21 | `StoryToolkitAI` mixes responsibilities | Accepted for Version 1; deferred |
-| C22 | Inconsistent public result shapes | In progress; incremental |
+| C22 | Inconsistent public result shapes | Reviewed and accepted for Version 1 |
 
 # Repeatable local audit
 

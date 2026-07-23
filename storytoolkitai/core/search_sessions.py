@@ -9,7 +9,15 @@ from __future__ import annotations
 
 from copy import deepcopy
 from threading import Lock, Thread
-from typing import Any, Callable
+from copy import deepcopy
+from threading import Lock, Thread
+from typing import (
+    Any,
+    Callable,
+    Literal,
+    TypeAlias,
+    TypedDict,
+)
 
 from storytoolkitai.core.logger import logger
 
@@ -53,6 +61,49 @@ _SEARCH_DONE_JOB_STATUSES = frozenset(
         "done",
     }
 )
+
+
+# These aliases document the existing Version 1 in-process search API.
+# They keep the public dictionary and tuple shapes reviewable without adding
+# runtime wrapper classes. Version 2 may replace them with serializable API
+# models when search crosses a process boundary.
+SearchComponentStatus: TypeAlias = Literal[
+    "created",
+    "preparing",
+    "waiting_for_job",
+    "ready",
+    "failed",
+    "not_available",
+]
+SearchStatus: TypeAlias = Literal[
+    "created",
+    "preparing",
+    "waiting_for_job",
+    "ready",
+    "failed",
+]
+
+
+class SearchInfo(TypedDict):
+    """Detached public state for one engine-owned search session."""
+
+    search_id: str
+    status: SearchStatus
+    text_status: SearchComponentStatus
+    video_status: SearchComponentStatus
+    text_file_paths: list[str]
+    video_file_paths: list[str]
+    text_file_count: int
+    video_file_count: int
+    model_name: str | None
+    text_job_id: str | None
+    error: str | None
+
+
+# Individual search results keep their existing open dictionary shape because
+# text and video processors attach different metadata. The surrounding tuple
+# is stable: detached result items followed by the effective result limit.
+SearchResults: TypeAlias = tuple[list[dict[str, Any]], int]
 
 
 class SearchSessionManager:
@@ -115,7 +166,8 @@ class SearchSessionManager:
     @staticmethod
     def _get_status(
         session: dict[str, Any],
-    ) -> str:
+    ) -> SearchStatus:
+        """Return the combined public status of one search session."""
         """Return the combined public status of one search session."""
 
         component_statuses = {
@@ -140,17 +192,18 @@ class SearchSessionManager:
     def _copy_info(
         self,
         session: dict[str, Any],
-    ) -> dict[str, Any]:
+    ) -> SearchInfo:
         """
-        Return detached information about one search session.
+        Return detached public information about one search session.
 
         Live TextSearch and VideoSearch processors are intentionally excluded.
+        The returned dictionary follows the stable ``SearchInfo`` shape.
         """
 
         text_search_item = session["text_search_item"]
         video_search_item = session["video_search_item"]
 
-        search_info = {
+        search_info: SearchInfo = {
             "search_id": session["search_id"],
             "status": self._get_status(session),
             "text_status": session["text_status"],
@@ -178,7 +231,7 @@ class SearchSessionManager:
         self,
         search_file_paths: str | list[str] | tuple[str, ...],
         use_analyzer: bool = False,
-    ) -> dict[str, Any]:
+    ) -> SearchInfo:
         """
         Create or reuse an engine-owned advanced search session.
 
@@ -189,7 +242,7 @@ class SearchSessionManager:
                 Whether text analysis should prepare the text corpus.
 
         Returns:
-            Detached public information about the search session.
+            A detached SearchInfo snapshot.
         """
 
         text_search_item, video_search_item = (
@@ -291,7 +344,7 @@ class SearchSessionManager:
     def get_search(
         self,
         search_id: str,
-    ) -> dict[str, Any] | None:
+    ) -> SearchInfo | None:
         """
         Return detached information about an advanced search session.
 
@@ -301,7 +354,8 @@ class SearchSessionManager:
             search_id: ID returned by ``create_search``.
 
         Returns:
-            Search information, or ``None`` when the session does not exist.
+            A detached ``SearchInfo`` snapshot, or ``None`` when the session
+            does not exist.
         """
 
         session = self._get_session(search_id)
@@ -449,7 +503,7 @@ class SearchSessionManager:
         self,
         search_id: str,
         queue_item_name: str | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> SearchInfo | None:
         """
         Begin preparing an advanced search in an engine-owned worker.
 
@@ -462,7 +516,8 @@ class SearchSessionManager:
                 Optional name for a persistent text-index queue item.
 
         Returns:
-            Current detached search information, or ``None`` if it is unknown.
+            The current detached ``SearchInfo`` snapshot, or ``None`` when the
+            session does not exist.
         """
 
         session = self._get_session(search_id)
@@ -533,7 +588,7 @@ class SearchSessionManager:
         search_id: str,
         query: str,
         max_results: int = 5,
-    ) -> tuple[list[dict[str, Any]], int]:
+    ) -> SearchResults:
         """
         Run a text search and return detached result data.
 
@@ -543,7 +598,8 @@ class SearchSessionManager:
             max_results: Default maximum number of results.
 
         Returns:
-            A copied result list and the effective maximum result count.
+            A ``SearchResults`` tuple containing a detached result list and
+            the effective maximum result count.
         """
 
         session = self._get_session(search_id)
@@ -578,14 +634,17 @@ class SearchSessionManager:
         max_results: int = 5,
         threshold: int = 35,
         combine_patches: bool = True,
-    ) -> tuple[list[dict[str, Any]], int]:
+    ) -> SearchResults:
         """
         Run a video search and return detached result data.
 
         VideoSearch returns both the matching frames and the effective result
         count after parsing any result limit included in the query.
-        """
 
+        Returns:
+            A ``SearchResults`` tuple containing a detached result list and
+            the effective maximum result count.
+        """
         session = self._get_session(search_id)
 
         if session is None or session["video_status"] != "ready":

@@ -207,6 +207,10 @@ The engine owns live text and video search processors, preparation workers and s
 
 Tk stores a search ID and uses engine methods to prepare, inspect, query and close a search session.
 
+Public search snapshots use the `SearchInfo` dictionary shape. Text and video query methods return a `SearchResults` tuple containing a detached result list and the effective result limit.
+
+These aliases document the existing Version 1 in-process return shapes. They do not require runtime wrapper objects and are not automatically Version 2 network contracts.
+
 ### Assistant
 
 The engine owns live assistant implementations and their `ToolkitOps` dependency.
