@@ -1,6 +1,6 @@
 import os.path
 
-from storytoolkitai.core.logger import *
+from storytoolkitai.core.logger import logger
 
 import spacy
 from spacy.language import Language

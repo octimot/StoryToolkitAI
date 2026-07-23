@@ -27,5 +27,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-test.txt
 
-      - name: Run tests
-        run: python -m pytest
+      - name: Run architecture checks
+        run: python -m pytest tests/architecture -q
+
+      - name: Run remaining tests
+        run: python -m pytest --ignore=tests/architecture -q

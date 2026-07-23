@@ -22,6 +22,7 @@ class RuntimeOptions:
     mode: Literal["gui", "cli"]
     debug: bool
     disable_resolve: bool
+    skip_python_check: bool
     resume_queue: bool
     check_api_key: bool
     check_updates: bool
@@ -52,6 +53,7 @@ def runtime_options_from_args(args: Any) -> RuntimeOptions:
         mode=args.mode,
         debug=bool(args.debug),
         disable_resolve=bool(args.noresolve),
+        skip_python_check=bool(args.skip_python_check),
         resume_queue=args.mode != "cli",
         check_api_key=args.mode != "cli",
         check_updates=check_updates,
@@ -89,6 +91,7 @@ def build_runtime(options: RuntimeOptions):
     toolkit_ops = ToolkitOps(
         stAI=stAI,
         disable_resolve_api=options.disable_resolve,
+        skip_python_check=options.skip_python_check,
         resume_queue=options.resume_queue,
     )
 

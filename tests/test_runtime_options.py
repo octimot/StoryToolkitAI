@@ -17,6 +17,7 @@ def _args(**overrides):
         'mode': 'gui',
         'debug': False,
         'noresolve': False,
+        'skip_python_check': False,
         'skip_update_check': False,
         'force_update_check': False,
     }
@@ -34,6 +35,7 @@ def test_gui_runtime_defaults():
         mode='gui',
         debug=False,
         disable_resolve=False,
+        skip_python_check=False,
         resume_queue=True,
         check_api_key=True,
         check_updates=True,
@@ -49,22 +51,24 @@ def test_cli_runtime_defaults():
         mode='cli',
         debug=False,
         disable_resolve=False,
+        skip_python_check=False,
         resume_queue=False,
         check_api_key=False,
         check_updates=False,
     )
 
-
-def test_debug_and_noresolve_are_copied_to_runtime_options():
+def test_direct_runtime_flags_are_copied_to_runtime_options():
     options = runtime_options_from_args(
         _args(
             debug=True,
             noresolve=True,
+            skip_python_check=True,
         )
     )
 
     assert options.debug is True
     assert options.disable_resolve is True
+    assert options.skip_python_check is True
 
 
 def test_skip_update_check_disables_gui_update_check():

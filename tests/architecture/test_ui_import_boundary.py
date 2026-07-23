@@ -1,21 +1,16 @@
-"""Prevent new direct imports from processing code into the UI package.
+"""Prevent processing-owned packages from importing the UI package.
 
-This is intentionally a narrow architecture guard.
+This is intentionally a narrow architecture guard. It protects the dependency
+direction established for Version 1:
 
-The current code still has object-level coupling through ``toolkit_UI_obj``,
-observers and callbacks. Those relationships are documented separately and
-will be removed incrementally. This test protects the import direction that is
-already intended to stay clean:
-
-    UI -> engine/processing
+    UI -> StoryToolkitEngine -> processing
 
 and never:
 
-    engine/processing -> UI
+    processing -> UI
 
-Place this file at:
-
-    tests/architecture/test_ui_import_boundary.py
+In-process Version 1 bridges that remain intentionally supported are recorded
+in ``docs/architecture/current-ui-coupling.md``.
 """
 
 from __future__ import annotations

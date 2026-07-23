@@ -123,6 +123,7 @@ class ToolkitOps:
         self,
         stAI=None,
         disable_resolve_api=False,
+        skip_python_check=False,
         resume_queue=True,
         event_emitter=None,
     ):
@@ -234,7 +235,11 @@ class ToolkitOps:
         self.resolve_api_disabled_for_runtime = bool(disable_resolve_api)
 
         # use this to know whether the Resolve API is disabled for this session
-        self.disable_resolve_api = self.resolve_api_disabled_for_runtime
+        self.disable_resolve_api = disable_resolve_api
+
+        # keep the Python compatibility decision explicit so the Resolve
+        # integration does not need to inspect command-line flags itself
+        self.skip_python_check = bool(skip_python_check)
 
         # if this is True, it means that there is a polling thread running
         self.polling_resolve = False
@@ -3208,7 +3213,10 @@ class ToolkitOps:
 
         # initialize a resolve object
         if not self.resolve_api or self.resolve_api is None:
-            self.resolve_api = MotsResolve(logger=logger)
+            self.resolve_api = MotsResolve(
+                logger=logger,
+                skip_python_check=self.skip_python_check,
+            )
 
         self.disable_resolve_api = False
 

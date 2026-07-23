@@ -1,12 +1,12 @@
 """
 UI-independent entry point for StoryToolkitAI operations.
 
-The engine provides a small public interface between user interfaces and the
-existing processing implementation. During the version 1 migration, methods
-will be added here one feature at a time.
+The engine provides the public in-process boundary between first-party user
+interfaces and the processing implementation.
 
 User interfaces should call this object instead of accessing ToolkitOps,
-ProcessingQueue, or other processing internals directly.
+ProcessingQueue, search processors, assistant implementations, Resolve
+integration objects or other processing internals directly.
 """
 
 from __future__ import annotations
@@ -213,13 +213,16 @@ class AssistantSession:
 
 class StoryToolkitEngine:
     """
-    Small public facade for UI-independent StoryToolkitAI operations.
+    Public in-process boundary for StoryToolkitAI processing operations.
 
-    The initial facade exposes only queue inspection and cancellation. More
-    operations should be added only when a UI feature is migrated to use them.
+    First-party interfaces use this object instead of accessing ToolkitOps,
+    ProcessingQueue, search processors, assistant implementations or Resolve
+    integration objects directly.
 
-    ToolkitOps remains the underlying implementation during the migration, but
-    it is intentionally kept private so callers do not depend on its internals.
+    ToolkitOps remains the private processing coordinator for Version 1.
+    Returned values may include documented in-process objects; a future
+    process-based API will define separate serializable request and result
+    shapes.
     """
 
     def __init__(self, toolkit_ops_obj: Any) -> None:

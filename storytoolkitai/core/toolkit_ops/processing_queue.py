@@ -1,16 +1,17 @@
-import time
 import json
+import os
+import time
+from threading import Thread
+
+import torch
 
 from storytoolkitai import USER_DATA_PATH
-from storytoolkitai.core.logger import *
 from storytoolkitai.core.events import (
     EngineEvent,
     EventEmitter,
     create_job_task_completed_event,
 )
-
-import torch
-from threading import Thread
+from storytoolkitai.core.logger import logger
 
 
 QUEUE_FILE_PATH = os.path.join(USER_DATA_PATH, 'queue.json')
