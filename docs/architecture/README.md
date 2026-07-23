@@ -2,7 +2,7 @@
 
 This directory contains practical documents explaining structural decisions in StoryToolkitAI.
 
-The documentation avoids formal architecture terminology where a plain description is sufficient. Each document should explain:
+The documentation prefers plain language over formal architecture terminology. Each document should explain:
 
 - the problem being solved;
 - the decision that was made;
@@ -12,25 +12,25 @@ The documentation avoids formal architecture terminology where a plain descripti
 
 ## Current documents
 
-- [`engine-ui-separation.md`](./engine-ui-separation.md) — the Version 1 decision to separate UI-independent processing from Tkinter and other interfaces.
-- [`tk-engine-boundary.md`](./tk-engine-boundary.md) — the implemented first-party interface boundary after the Tk, CLI, Resolve, search, queue and assistant migrations.
-- [`current-ui-coupling.md`](./current-ui-coupling.md) — the current migration inventory, accepted Version 1 limits and remaining cleanup work.
-- [`known-refactor-issues.md`](./known-refactor-issues.md) — runtime behaviour noticed while the architecture work is in progress.
+- [`engine-ui-separation.md`](./engine-ui-separation.md) — the Version 1 decision to separate UI-independent processing from first-party interfaces.
+- [`tk-engine-boundary.md`](./tk-engine-boundary.md) — the implemented Tk, CLI and engine boundary that current code must preserve.
+- [`current-ui-coupling.md`](./current-ui-coupling.md) — the closed Version 1 coupling inventory and accepted in-process limits.
+- [`known-refactor-issues.md`](./known-refactor-issues.md) — runtime behaviour noticed during the migration that may still require compatibility monitoring.
 
 ## Document roles
 
-`engine-ui-separation.md` records the decision.
+`engine-ui-separation.md` records the architectural decision and its Version 1 scope.
 
-`tk-engine-boundary.md` records the implemented boundary that current code must preserve.
+`tk-engine-boundary.md` records the implemented first-party interface boundary and the checks that protect it.
 
-`current-ui-coupling.md` records remaining exceptions and follow-up work. It may change frequently until the Version 1 architecture work is complete.
+`current-ui-coupling.md` records the completed migration state, resolved coupling and accepted Version 1 limits. Version 2 work should use a separate migration plan instead of reopening this inventory.
 
-`known-refactor-issues.md` records behaviour that must be classified as a regression, compatibility issue or unrelated external problem before release.
+`known-refactor-issues.md` records behaviour that must remain classified as a regression, compatibility issue, monitoring item or unrelated external problem.
 
 ## Maintenance
 
-Update an architecture document when a rule, dependency direction or accepted boundary changes.
+Update an architecture document when a dependency direction, public boundary or accepted limitation changes. Small implementation details do not need architecture documentation.
 
-Small implementation details do not need architecture documentation. Add or revise a document only when the change affects several modules, first-party interfaces, compatibility, testing, packaging or future process separation.
+Add or revise a document only when a decision affects several modules, first-party interfaces, compatibility, testing, packaging or future process separation.
 
-When a boundary is enforced by a test, keep the document and test aligned. A documentation statement must not claim a stronger boundary than the tests and current code actually enforce.
+When a boundary is enforced by a test, keep the document and test aligned. A document must not claim a stronger boundary than the tests and current code enforce.
