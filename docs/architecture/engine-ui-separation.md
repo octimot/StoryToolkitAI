@@ -5,6 +5,7 @@
 **Scope:** Internal Python architecture for Version 1
 **Implemented boundary:** [`tk-engine-boundary.md`](./tk-engine-boundary.md)
 **Closed migration inventory:** [`current-ui-coupling.md`](./current-ui-coupling.md)
+**Version 1 architecture freeze:** [`version-1-architecture-freeze.md`](./version-1-architecture-freeze.md)
 
 ## Summary
 

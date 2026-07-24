@@ -65,7 +65,9 @@ def build_runtime(options: RuntimeOptions):
     Construct application state and its public processing interface.
 
     ToolkitOps remains the private processing implementation owned by
-    StoryToolkitEngine. First-party interfaces receive only the engine.
+    StoryToolkitEngine. Tk also receives StoryToolkitAI for application state
+    and lifecycle; first-party interfaces do not receive processing
+    implementation objects.
     """
 
     # keep FFmpeg discovery before the ToolkitOps import
