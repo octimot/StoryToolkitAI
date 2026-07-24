@@ -798,17 +798,11 @@ class StoryToolkitEngine:
             The generated queue ID.
         """
 
-        queue_id = self._toolkit_ops.processing_queue.generate_queue_id(
+        return self._toolkit_ops.processing_queue.create_placeholder(
             name=name,
-        )
-
-        self._toolkit_ops.processing_queue.update_queue_item(
-            queue_id=queue_id,
-            name=name or "",
             status="waiting user",
+            item_type="ingest",
         )
-
-        return queue_id
 
     def create_timeline_ingest_job(
         self,
@@ -824,17 +818,11 @@ class StoryToolkitEngine:
             The generated queue ID.
         """
 
-        queue_id = self._toolkit_ops.processing_queue.generate_queue_id(
-            name=name,
-        )
-
-        self._toolkit_ops.processing_queue.update_queue_item(
-            queue_id=queue_id,
+        return self._toolkit_ops.processing_queue.create_placeholder(
             name=name,
             status="waiting for render",
+            item_type="ingest",
         )
-
-        return queue_id
 
     def mark_ingest_job_waiting_for_user(
         self,

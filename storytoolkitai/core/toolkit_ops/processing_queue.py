@@ -98,7 +98,11 @@ class ProcessingQueue:
 
     def generate_queue_id(self, name: str = None) -> str:
         """
-        This function generates a queue id for a task
+        Generate an unused queue ID.
+
+        Generating an ID does not create queue history. Call
+        ``create_placeholder`` when a job must be visible before it becomes a
+        runnable queue item.
         """
 
         # keep generating a queue id until it's not similar to one that already exists in the queue history
@@ -113,21 +117,46 @@ class ProcessingQueue:
 
             # if the queue id doesn't return an item
             if not self.get_item(queue_id=queue_id):
-
-                queue_item = {
-                    'queue_id': queue_id,
-                    'name': '',
-                    'status': 'pending',
-                }
-
-                logger.debug(
-                    'Added queue id {} to queue history'.format(queue_id)
-                )
-
-                # publish the pending item through the engine event stream
-                self._emit_job_changed(queue_item)
-
                 return queue_id
+
+    def create_placeholder(
+        self,
+        name: str | None = None,
+        status: str = 'pending',
+        **kwargs,
+    ) -> str:
+        """
+        Create a non-runnable item in queue history and return its ID.
+
+        Placeholders make jobs such as ingest configuration and Resolve
+        rendering visible before their processing tasks are ready. They are
+        promoted to normal queue items when ``add_to_queue`` receives the same
+        queue ID.
+
+        :param name: human-readable queue item name
+        :param status: initial placeholder status
+        :param kwargs: additional queue-history values such as ``item_type``
+        :return: the generated queue ID
+        """
+
+        queue_id = self.generate_queue_id(name=name)
+        queue_item = {
+            **kwargs,
+            'queue_id': queue_id,
+            'name': name or '',
+            'status': status,
+        }
+
+        self.queue_history.append(queue_item)
+
+        logger.debug(
+            'Added placeholder item {} to queue history'.format(queue_id)
+        )
+
+        self._emit_job_changed(queue_item)
+        self.save_queue_to_file()
+
+        return queue_id
 
     def add_to_queue(self,
                      tasks: list or str = None,
@@ -410,14 +439,8 @@ class ProcessingQueue:
             logger.error('Unable to reorder queue - new queue order is not a list')
             return False
 
-        # first, reorder the QUEUE (then the queue history)
-
-        # start by removing all the items that are not in the queue
-        new_queue_order = [item for item in new_queue_order if item in self.queue]
-
-        # now check that the new queue is the same length as the old queue
-        if len(new_queue_order) != len(self.queue):
-            logger.error('Unable to reorder queue - new queue order is not the same length as the queue')
+        if not all(isinstance(queue_id, str) for queue_id in new_queue_order):
+            logger.error('Unable to reorder queue - queue order must contain queue IDs')
             return False
 
         # but if the queues are empty, just return True
@@ -425,46 +448,57 @@ class ProcessingQueue:
             logger.debug("Queue is empty, nothing to reorder.")
             return True
 
-        # re-order the queue
-        self.queue = new_queue_order
+        # The new order must contain every currently runnable queue ID exactly
+        # once. Filtering unknown values would hide caller errors and duplicate
+        # IDs could otherwise make valid items disappear.
+        if (
+            len(new_queue_order) != len(self.queue)
+            or set(new_queue_order) != set(self.queue)
+        ):
+            logger.error(
+                'Unable to reorder queue - new queue order must contain every queue item exactly once'
+            )
+            return False
 
-        # now re-order the QUEUE HISTORY
+        history_by_id = {
+            item.get('queue_id'): item
+            for item in self.queue_history
+            if isinstance(item, dict) and item.get('queue_id') is not None
+        }
 
-        # organize all the items that have the status 'processing', 'done', or 'failed' in a list
-        # these items will stay at the beginning of the queue history
-        # with their original order since they're finished
-        processed_items = [item for item in self.queue_history
-                           if 'queue_id' in item
-                           and 'status' in item
-                           and item['status'] in ['processing', 'done', 'failed', 'canceled', 'canceling']
-                           ]
+        missing_history_ids = [
+            queue_id
+            for queue_id in new_queue_order
+            if queue_id not in history_by_id
+        ]
 
-        # extract queue_ids of processed items
-        processed_ids = [item['queue_id'] for item in processed_items]
+        if missing_history_ids:
+            logger.error(
+                'Unable to reorder queue - queue items missing from history: {}'.format(
+                    ', '.join(missing_history_ids)
+                )
+            )
+            return False
 
-        # remove any processed items from the new_queue_order list by the 'queue_id' key in processed_items
-        new_queue_order = [item for item in new_queue_order if item['queue_id'] not in processed_ids]
+        queue_ids = set(new_queue_order)
 
-        # now create a list of dictionaries with the remaining items in the new_queue_order
-        # - keep their entire dictionary structure from the queue history
-        # - but use the order in the new_queue_order list
+        # Keep completed jobs, canceled jobs, waiting-user placeholders and any
+        # other non-runnable history entries in their existing relative order.
+        non_queued_history = [
+            item
+            for item in self.queue_history
+            if not isinstance(item, dict)
+            or item.get('queue_id') not in queue_ids
+        ]
 
-        # start the remaining items list with the processed items
-        queue_history = processed_items
-        for item in new_queue_order:
+        ordered_queue_history = [
+            history_by_id[queue_id]
+            for queue_id in new_queue_order
+        ]
 
-            # get the item from the queue history
-            queue_item = self.get_item(queue_id=item['queue_id'])
-
-            # if the item is not in the queue history, skip it
-            if queue_item is None:
-                continue
-
-            # add the item to the remaining items list
-            queue_history.append(queue_item)
-
-        # now replace the queue history with the remaining items list
-        self.queue_history = queue_history
+        self.queue = list(new_queue_order)
+        self.queue_history = non_queued_history + ordered_queue_history
+        self.save_queue_to_file()
 
         return True
 

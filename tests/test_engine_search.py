@@ -109,6 +109,7 @@ class FakeToolkitOps:
         self.video_search_item = FakeVideoSearch()
         self.index_text_calls: list[dict[str, Any]] = []
         self.index_text_queue_calls: list[dict[str, Any]] = []
+        self.index_text_queue_result: str | bool = "text-index-job"
 
     def create_search_items(
         self,
@@ -130,7 +131,7 @@ class FakeToolkitOps:
         queue_item_name: str,
         search_file_paths: list[str],
         use_analyzer: bool = False,
-    ) -> str:
+    ) -> str | bool:
         """
         Record the exact queue boundary used by SearchSessionManager.
 
@@ -146,7 +147,7 @@ class FakeToolkitOps:
             }
         )
 
-        return "text-index-job"
+        return self.index_text_queue_result
 
 def wait_for_search_status(
     engine: StoryToolkitEngine,
@@ -192,6 +193,35 @@ def wait_for_index_text_queue_call(
 
     raise AssertionError(
         "Search preparation did not add a text indexing job to the queue."
+    )
+
+
+def wait_for_video_search_status(
+    engine: StoryToolkitEngine,
+    search_id: str,
+    expected_status: str,
+    timeout: float = 2.0,
+) -> SearchInfo:
+    """Wait briefly for one video-search preparation state."""
+
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
+        search_info = engine.get_search(search_id)
+
+        if (
+            search_info is not None
+            and search_info["video_status"] == expected_status
+        ):
+            return search_info
+
+        time.sleep(0.01)
+
+    raise AssertionError(
+        "Search {!r} video component did not reach status {!r}".format(
+            search_id,
+            expected_status,
+        )
     )
 
 
@@ -337,6 +367,37 @@ def test_engine_queues_large_text_search_with_analyzer_setting():
         ],
         "use_analyzer": True,
     }
+
+
+def test_video_preparation_does_not_clear_text_queue_failure():
+    """Concurrent component updates preserve an earlier text-search error."""
+
+    toolkit_ops = FakeToolkitOps()
+    toolkit_ops.text_search_item.search_file_paths_size = 300001
+    toolkit_ops.text_search_item.cache_exists = False
+    toolkit_ops.index_text_queue_result = False
+
+    engine = StoryToolkitEngine(toolkit_ops)
+    search_info = engine.create_search(
+        search_file_paths=[
+            "/tmp/interview.transcription.json",
+        ],
+    )
+
+    engine.prepare_search(search_info["search_id"])
+
+    prepared_info = wait_for_video_search_status(
+        engine,
+        search_info["search_id"],
+        "ready",
+    )
+
+    assert prepared_info["status"] == "failed"
+    assert prepared_info["text_status"] == "failed"
+    assert prepared_info["video_status"] == "ready"
+    assert prepared_info["error"] == (
+        "The text search could not be added to the processing queue."
+    )
 
 def test_engine_runs_text_search_with_detached_results():
     """Text search results must not expose processor-owned dictionaries."""

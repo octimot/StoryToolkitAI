@@ -397,10 +397,10 @@ def test_queue_keeps_only_explicit_task_handlers(
     assert processing_queue.task_handlers == TEST_TASK_HANDLERS
     assert not hasattr(processing_queue, "toolkit_ops_obj")
 
-def test_generated_queue_id_emits_pending_job_event(
+def test_generated_queue_id_does_not_create_a_queue_item(
     processing_queue,
 ) -> None:
-    """Creating an ingest placeholder publishes its pending state."""
+    """Generating an ID alone must not create phantom queue history."""
 
     received_events: list[EngineEvent] = []
     processing_queue.events.subscribe(received_events.append)
@@ -409,17 +409,141 @@ def test_generated_queue_id_emits_pending_job_event(
         name="Example ingest",
     )
 
+    assert processing_queue.get_item(queue_id) is None
+    assert processing_queue.queue_history == []
+    assert received_events == []
+
+
+def test_placeholder_is_stored_and_emits_its_real_initial_status(
+    processing_queue,
+) -> None:
+    """A non-runnable ingest placeholder is visible and persisted."""
+
+    received_events: list[EngineEvent] = []
+    processing_queue.events.subscribe(received_events.append)
+
+    queue_id = processing_queue.create_placeholder(
+        name="Example ingest",
+        status="waiting user",
+        item_type="ingest",
+    )
+
+    assert processing_queue.queue == []
+    assert processing_queue.get_item(queue_id) == {
+        "queue_id": queue_id,
+        "name": "Example ingest",
+        "status": "waiting user",
+        "item_type": "ingest",
+    }
     assert received_events == [
         EngineEvent(
             type="job.changed",
             data={
                 "job_id": queue_id,
-                "status": "pending",
+                "status": "waiting user",
                 "progress": None,
-                "item_type": None,
+                "item_type": "ingest",
             },
         )
     ]
+
+    reloaded_queue = ProcessingQueue(
+        task_handlers=TEST_TASK_HANDLERS,
+    )
+    loaded_history = reloaded_queue.load_queue_from_file()
+
+    assert loaded_history == [{
+        "queue_id": queue_id,
+        "name": "Example ingest",
+        "status": "waiting user",
+        "item_type": "ingest",
+    }]
+
+
+def test_placeholder_is_promoted_when_tasks_are_submitted(
+    processing_queue,
+) -> None:
+    """Submitting tasks with a placeholder ID updates the existing history."""
+
+    queue_id = processing_queue.create_placeholder(
+        name="Example ingest",
+        status="waiting user",
+        item_type="ingest",
+    )
+
+    added_queue_id = processing_queue.add_to_queue(
+        tasks="test_task",
+        queue_id=queue_id,
+        item_type="test",
+        task_data={"value": 42},
+        device="cpu",
+        ping=False,
+        name="Example job",
+    )
+
+    assert added_queue_id == queue_id
+    assert processing_queue.queue == [queue_id]
+    assert len(processing_queue.queue_history) == 1
+    assert processing_queue.get_item(queue_id)["status"] == "queued"
+    assert processing_queue.get_item(queue_id)["name"] == "Example job"
+
+
+def test_queue_can_be_reordered_by_queue_id(
+    processing_queue,
+) -> None:
+    """Runnable jobs follow the requested ID order without losing history."""
+
+    placeholder_id = processing_queue.create_placeholder(
+        name="Waiting ingest",
+        status="waiting user",
+        item_type="ingest",
+    )
+    _add_test_job(processing_queue, "job-1")
+    _add_test_job(processing_queue, "job-2")
+    _add_test_job(processing_queue, "job-3")
+
+    result = processing_queue.reorder_queue(
+        ["job-3", "job-1", "job-2"],
+    )
+
+    assert result is True
+    assert processing_queue.queue == ["job-3", "job-1", "job-2"]
+    assert [
+        item["queue_id"]
+        for item in processing_queue.queue_history
+    ] == [
+        placeholder_id,
+        "job-3",
+        "job-1",
+        "job-2",
+    ]
+
+
+@pytest.mark.parametrize(
+    "invalid_order",
+    [
+        ["job-1", "job-1"],
+        ["job-1", "missing-job"],
+        [{"queue_id": "job-1"}, {"queue_id": "job-2"}],
+    ],
+)
+def test_invalid_queue_order_is_rejected_without_mutation(
+    processing_queue,
+    invalid_order,
+) -> None:
+    """Duplicates, unknown IDs and queue dictionaries are rejected."""
+
+    _add_test_job(processing_queue, "job-1")
+    _add_test_job(processing_queue, "job-2")
+
+    original_queue = list(processing_queue.queue)
+    original_history = list(processing_queue.queue_history)
+
+    result = processing_queue.reorder_queue(invalid_order)
+
+    assert result is False
+    assert processing_queue.queue == original_queue
+    assert processing_queue.queue_history == original_history
 
 def test_successful_task_emits_explicit_completion_event(
     processing_queue,

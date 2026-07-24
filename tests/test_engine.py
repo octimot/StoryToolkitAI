@@ -62,6 +62,7 @@ class FakeProcessingQueue:
         self.last_not_status_filter: str | list[str] | None = None
         self.cancel_requests: list[str] = []
         self.generated_names: list[str | None] = []
+        self.placeholder_requests: list[dict[str, Any]] = []
         self.updated_items: list[dict[str, Any]] = []
 
     def get_item(self, queue_id: str) -> dict[str, Any] | None:
@@ -109,19 +110,31 @@ class FakeProcessingQueue:
         self,
         name: str | None = None,
     ) -> str:
-        """Create a pending queue item and return its generated ID."""
+        """Return a generated ID without creating queue history."""
 
         self.generated_names.append(name)
 
-        queue_id = "job-generated-{}".format(
+        return "job-generated-{}".format(
             len(self.generated_names),
         )
 
-        self.items[queue_id] = {
+    def create_placeholder(
+        self,
+        name: str | None = None,
+        status: str = "pending",
+        **kwargs: Any,
+    ) -> str:
+        """Create one non-runnable queue-history item."""
+
+        queue_id = self.generate_queue_id(name=name)
+        item = {
+            **kwargs,
             "queue_id": queue_id,
-            "name": "",
-            "status": "pending",
+            "name": name or "",
+            "status": status,
         }
+        self.items[queue_id] = item
+        self.placeholder_requests.append(item.copy())
 
         return queue_id
 
@@ -327,7 +340,16 @@ def test_create_ingest_job_owns_placeholder_status(
         "queue_id": job_id,
         "name": "",
         "status": "waiting user",
+        "item_type": "ingest",
     }
+    assert toolkit_ops.processing_queue.placeholder_requests == [
+        {
+            "queue_id": job_id,
+            "name": "",
+            "status": "waiting user",
+            "item_type": "ingest",
+        }
+    ]
 
 
 def test_create_timeline_ingest_job_waits_for_render(
@@ -348,6 +370,7 @@ def test_create_timeline_ingest_job_waits_for_render(
         "queue_id": job_id,
         "name": "Interview Timeline.wav",
         "status": "waiting for render",
+        "item_type": "ingest",
     }
 
 
