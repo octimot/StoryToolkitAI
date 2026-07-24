@@ -1,6 +1,7 @@
 # Separate processing from the user interface
 
-**Status:** Implemented for the StoryToolkitAI Version 1 architecture
+**Architecture status:** Implemented
+**Release status:** Pending concurrency and release-hardening fixes
 **Scope:** Internal Python architecture for Version 1
 **Implemented boundary:** [`tk-engine-boundary.md`](./tk-engine-boundary.md)
 **Closed migration inventory:** [`current-ui-coupling.md`](./current-ui-coupling.md)
@@ -9,7 +10,7 @@
 
 StoryToolkitAI separates processing from presentation.
 
-Processing works without importing or calling Tkinter or another user interface. The Tk interface and CLI start operations and read processing state through `StoryToolkitEngine`. Processing reports progress, completion, errors, warnings and state changes using UI-independent values and events. Each interface decides how those results are presented.
+Processing works without importing or calling Tkinter or another user interface. The Tk interface and CLI start operations and read processing state through `StoryToolkitEngine`. Processing returns UI-independent results and publishes events for progress and presentation-relevant state changes. Each interface decides how to display them.
 
 Version 1 keeps the application in one Python process. A local service, web UI, TUI, Tauri application and repository split remain Version 2 work.
 
@@ -50,7 +51,7 @@ Version 1 provides:
 - UI-independent processing;
 - simple event reporting;
 - tests that protect the dependency direction;
-- a codebase ready for a process boundary in Version 2.
+- a stable internal boundary that prepares the codebase for a separate process in Version 2.
 
 Version 1 does not require an HTTP API, a separate engine process or a new frontend.
 

@@ -1,6 +1,7 @@
 # Tk, CLI and engine boundary
 
-**Status:** Implemented for the StoryToolkitAI Version 1 architecture
+**Architecture status:** Implemented
+**Release status:** Pending concurrency and release-hardening fixes
 **Branch reviewed:** `dev`
 **Reviewed through:** `b37334263e8620d91365dc32d333e536d06c1a58`
 **Related decision:** [`engine-ui-separation.md`](./engine-ui-separation.md)
@@ -182,7 +183,7 @@ Live processing objects remain private unless explicitly documented as an accept
 
 Engine events indicate that something happened or state may have changed.
 
-For queue and search workflows, an interface retrieves a current engine snapshot after receiving an event or polling tick. Event payloads are not the only source of authoritative state when the engine provides a query method.
+For queue and search workflows, an interface retrieves a copied engine snapshot after receiving an event or polling tick. Snapshot synchronization remains a release-hardening requirement. Event payloads are not the only source of authoritative state when the engine provides a query method.
 
 ### Tk updates stay on the Tk thread
 
@@ -196,7 +197,7 @@ A Tk listener must schedule widget changes on the Tk event loop rather than upda
 
 Tk does not read or mutate `ProcessingQueue` directly.
 
-Queue IDs, placeholder jobs, status changes, submission and cancellation are owned by processing and exposed through engine methods. Queue queries return detached dictionaries and exclude runtime-only fields such as task callables.
+Queue IDs, placeholder jobs, status changes, submission and cancellation are owned by processing and exposed through engine methods. Queue queries return copied queue data, excluding runtime-only fields such as task callables. Queue snapshot synchronization remains a release-hardening requirement.
 
 ### Search
 
@@ -226,7 +227,7 @@ Command-line arguments are converted into `RuntimeOptions` before processing con
 
 ### Events
 
-Named engine events use detached, transport-safe payload data.
+Named event factories produce detached, transport-safe payload data. Some processing code constructs `EngineEvent` directly for no-payload Resolve change signals and simple queue summaries. Current direct events contain only transport-safe values, but the architecture test does not automatically inspect future direct construction. Maintain named factory functions or extend the test to cover new direct producers.
 
 Queue events expose stable job summaries rather than callables, threads or temporary processing objects.
 
@@ -276,7 +277,7 @@ The checks require that:
 - first-party search ownership remains behind the engine;
 - removed callback and action-event compatibility paths do not return;
 - processing does not read command-line policy from `sys.argv` or retained `cli_args`;
-- named engine events contain transport-safe payload data;
+- named event factories produce transport-safe payload data (direct `EngineEvent` construction is not yet covered by the automated check);
 - importing the engine boundary does not load Tkinter, CustomTkinter or `storytoolkitai.ui`.
 
 Run the focused architecture suite with:

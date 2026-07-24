@@ -47,3 +47,59 @@ If the connection failure returns:
     - scripting-module discovery;
     - another environment issue.
 11. Add the confirmed cause, affected versions and resolution to this entry.
+
+## R02 — Queue state and snapshot concurrency
+
+| Field | Detail |
+| --- | --- |
+| **First observed** | During the Version 1 architecture migration review. |
+| **Environment** | All platforms; exposed by the engine boundary change. |
+| **Original behaviour** | Queue snapshots were copied from live, unsynchronized internal state. A copy could fail or capture inconsistent data if another thread modified the queue mid-copy. |
+| **Current behaviour** | Snapshots are detached copies but remain non-atomic with respect to concurrent queue mutations. |
+| **Cause** | The `ProcessingQueue` internal state is not protected by a lock during snapshot construction. |
+| **Regression status** | Runtime correctness issue exposed by the new boundary, not a coupling regression. |
+| **Future action** | Add a queue-level lock for snapshot construction and concurrent access. This is classified as a release-hardening fix rather than an architecture migration item. |
+| **Status** | Open |
+
+## R03 — Tk event-thread scheduling and queue-refresh coalescing
+
+| Field | Detail |
+| --- | --- |
+| **First observed** | During the Version 1 architecture migration review. |
+| **Environment** | All platforms using the Tk interface. |
+| **Original behaviour** | Engine listeners may run on processing threads. Some listener paths schedule Tk work indirectly rather than first marshalling the complete event to the Tk event loop. Rapid job events can also enqueue redundant queue refreshes. |
+| **Current behaviour** | Queue refreshes use repeated `after(0, ...)` scheduling without coalescing, and event handling does not yet have one guaranteed Tk-thread entry point. |
+| **Cause** | Engine listeners run synchronously on the emitting thread, while the Tk interface does not yet centralize thread marshalling and refresh coalescing. |
+| **Regression status** | Runtime usability concern exposed by the new boundary and event-driven model. |
+| **Future action** | Marshal every engine event through one Tk event-loop entry point, then coalesce rapid queue refresh requests within a short window. This is classified as a release-hardening fix rather than an architecture migration item. |
+| **Status** | Open |
+
+## R04 — macOS notification command quoting
+
+| Field | Detail |
+| --- | --- |
+| **First observed** | During the Version 1 architecture migration review. |
+| **Environment** | macOS using `osascript` for native notifications. |
+| **Original behaviour** | Filenames containing single quotes or other shell-special characters in notification content can cause `osascript` to fail with a syntax error. |
+| **Current behaviour** | Notification strings are interpolated through the shell and into AppleScript without sufficient escaping... |
+| **Cause** | The macOS notification helper does not perform proper AppleScript string escaping. |
+| **Regression status** | Runtime correctness issue, not caused by the refactor but worth tracking before release candidate. |
+| **Future action** | Fix AppleScript quoting in the macOS notification helper; add a test with quote characters in a sample filename. This is classified as a release-hardening fix rather than an architecture migration item. |
+| **Status** | Open |
+
+## R05 — Tuple identity comparison warning
+
+| Field | Detail |
+| --- | --- |
+| **First observed** | During the Version 1 architecture migration review. |
+| **Environment** | All platforms and supported Python versions. Some Python versions or warning configurations surface a `SyntaxWarning` during compilation. |
+| **Original behaviour** | At least one tuple is compared using identity (`is not`) rather than value equality (`!=`). Identity checks whether two references point to the same object, not whether the tuples contain equal values. |
+| **Current behaviour** | The known comparison can produce an incorrect result for a separately created `(None, None)` tuple and produces a compilation warning in the reviewed environment. |
+| **Cause** | Historical use of an identity comparison where a value comparison was intended. |
+| **Regression status** | Potential correctness concern, not caused by the refactor but worth tracking before release candidate. |
+| **Future action** | Replace the known comparison and audit the source for any additional tuple-literal identity comparisons. This is classified as a release-hardening fix rather than an architecture migration item. |
+| **Status** | Open |
+
+## Release issue tracking
+
+The entries above are brief records to prevent these concerns from being lost while the architecture migration finishes. Before the release candidate, each should have a dedicated GitHub issue with reproduction steps and acceptance criteria. The release checklist should link to those issues rather than duplicating detail here.

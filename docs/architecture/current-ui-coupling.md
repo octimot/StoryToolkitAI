@@ -73,7 +73,7 @@ The direct processing-to-UI dependency has been removed.
 | C07 | Queue and compatibility workflows used implicit UI action strings | Resolved | Queue and named processing events use structured event data; removed compatibility paths are guarded by tests. |
 | C08 | `ProcessingQueue` depended on the complete `ToolkitOps` object | Resolved | The queue receives explicit task handlers and the shared event emitter. |
 | C09 | UI read and mutated queue implementation details | Resolved | Queue queries and mutations go through engine methods. |
-| C10 | Queue and search UI relied on timing workarounds around callbacks | Resolved | Engine snapshots are authoritative; events and polling indicate that state may have changed. |
+| C10 | Queue and search UI relied on timing workarounds around callbacks | Resolved | Engine queries return copied queue data; snapshot synchronization remains a release-hardening requirement. Events and polling indicate that state may have changed. |
 | C11 | UI constructed search processors and owned search workers | Resolved for Version 1 | The engine owns search sessions, processors and workers. |
 | C12 | Search classes received the complete operations object | Resolved for Version 1 | Search receives narrow explicit configuration. |
 | C13 | Assistant copied a hidden UI reference | Resolved | Assistant implementations remain processing-owned and UI-independent. |
