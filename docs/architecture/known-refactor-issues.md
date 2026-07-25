@@ -23,8 +23,66 @@ An entry here does not establish that the refactor caused the issue. Recording i
 | **Current behaviour** | The current development branch establishes the Resolve API connection successfully in the same development environment. |
 | **Cause** | Unknown. No specific code or configuration change has been confirmed as the cause of either the original failure or its disappearance. |
 | **Regression status** | There is no current evidence of a persistent refactor regression. |
-| **Future action** | Reopen the investigation if the connection failure returns. Record exact Resolve, macOS, Python and StoryToolkitAI versions and compare the same environment against the relevant stable branch. |
-| **Status** | Monitoring |
+| **Automated coverage** | Fake-backed tests cover engine delegation, detached Resolve state, connection-result isolation, polling control, disabling, render-monitor validation and Resolve operations. These tests cannot exercise Blackmagic's scripting module, Fusion library loading, external-scripting configuration or the live `scriptapp("Resolve")` handshake. |
+| **Version 1 decision** | Do not make a speculative connection-code change while the current branch connects successfully. A safe fix requires a reproduced failure and diagnostics from a live Resolve environment. |
+| **Future action** | Complete the manual verification below before the release candidate. If the connection failure returns, capture the exact environment and logs, then compare the same environment against the stable branch before changing the integration. |
+| **Status** | Deferred — live Resolve verification required |
+
+### Step 6C assessment
+
+The only recorded failure is the top-level outcome that StoryToolkitAI did not
+establish a connection. No exception, log output, failed discovery path or
+unexpected Resolve API return value was captured when it occurred. The failure
+therefore cannot currently be assigned to application orchestration, scripting
+module discovery, Fusion library loading, Resolve configuration or a Resolve
+20 compatibility change.
+
+The Version 1 call path is:
+
+```text
+Tk / CLI
+   -> StoryToolkitEngine.ensure_resolve_connection()
+   -> ToolkitOps.ensure_resolve_connection()
+   -> ToolkitOps.resolve_enable()
+   -> MotsResolve.get_resolve()
+   -> DaVinciResolveScript.scriptapp("Resolve")
+```
+
+`ToolkitOps` then publishes connection state after its polling thread receives
+live Resolve data. The UI reads that state through the engine and does not
+recover `MotsResolve`, the raw Resolve API wrapper or `NLE`.
+
+The development and stable branches use the same macOS module-discovery paths
+and the same `scriptapp("Resolve")` handshake. Development-branch differences
+in this area make runtime flags explicit and route connection state through the
+engine; they do not identify a Resolve-20-specific failure. A fake scripting
+module could confirm that these Python calls occur, but it could not reproduce
+the external process, permissions, native library or version compatibility
+conditions at issue. Changing the integration without that evidence could
+regress the currently working environment.
+
+### Manual Version 1 verification
+
+Before the release candidate:
+
+1. On an Intel or Apple silicon Mac with Resolve 20 or newer, record the exact
+   macOS version, architecture, Resolve version and edition, Python version,
+   StoryToolkitAI commit, and whether the source checkout or packaged
+   application is being tested.
+2. Enable Resolve external scripting, open a project and timeline, and launch
+   StoryToolkitAI with debug logging.
+3. Confirm startup logs show successful scripting-module discovery and that
+   the UI reports a connection without accessing Resolve internals.
+4. Start StoryToolkitAI once before Resolve, then open Resolve and use the
+   manual connection command; confirm connection state recovers.
+5. Confirm the active project and timeline appear, then read existing timeline
+   markers and write a reversible test marker.
+6. Disable and reconnect the integration once, confirming that displayed
+   project, timeline and marker state clears and repopulates correctly.
+7. Repeat the connection and marker smoke test with the packaged application.
+8. Record logs and results. If any connection attempt fails, follow the reopen
+   checklist below in the same environment before attributing the failure to
+   StoryToolkitAI.
 
 ### Reopen checklist
 

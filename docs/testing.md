@@ -66,7 +66,9 @@ Before cutting a release candidate on macOS, verify:
 1. **Tk startup** — launch the application from the build or installed package; confirm the main window opens without traceback.
 2. **Transcription smoke test** — transcribe a short sample audio file and confirm it completes successfully.
 3. **Queue restart/recovery** — start processing, terminate the application forcefully (or close normally), reopen and confirm queued jobs are recoverable or reported consistently.
-4. **Resolve connection** — on a machine with Resolve running, confirm StoryToolkitAI connects and can read/write timeline markers.
+4. **Resolve connection** — complete the source and packaged-application
+   connection lifecycle and marker checks in
+   [R01's manual Version 1 verification](architecture/known-refactor-issues.md#manual-version-1-verification).
 5. **Cancellation** — cancel a running transcription or search job; confirm it stops within a reasonable time and the queue state updates.
 6. **OS notification with special characters** — trigger a completion notification for a file whose name contains double quotes, apostrophes, backslashes, newlines, Unicode and shell metacharacters; confirm the title and message appear unchanged and no traceback occurs.
 7. **Existing project and transcription compatibility** — open a project created with the previous stable version; confirm all transcriptions load correctly without migration errors.
