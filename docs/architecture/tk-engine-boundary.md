@@ -189,7 +189,9 @@ For queue and search workflows, an interface retrieves a copied engine snapshot 
 
 Engine listeners may be called from worker threads.
 
-A Tk listener must schedule widget changes on the Tk event loop rather than updating widgets directly from a processing thread.
+The Tk listener only places events into a thread-safe Python queue. A bounded callback scheduled by the Tk-owning thread polls that queue and performs event handling. Processing threads therefore do not call Tk methods or wait for Tk to process an event.
+
+Shutdown stops the Tk poller, and listener calls that observe the shutdown state return without enqueueing. Rejection is intentionally best-effort rather than atomic with queue insertion: an event already entering concurrently may reach the abandoned queue after polling stops. It is discarded safely when the UI object is released and cannot update Tk.
 
 ## Implemented feature boundaries
 

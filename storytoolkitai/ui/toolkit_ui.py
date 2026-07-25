@@ -22021,6 +22021,11 @@ class toolkit_UI():
 
         Processing listeners can run on worker threads. The Tk-owned poll
         callback handles queued events later on the UI thread.
+
+        Shutdown rejection is best-effort. A listener already between the
+        acceptance check and ``put`` may enqueue an event after polling stops.
+        That event is safely abandoned with the UI object and never reaches
+        Tk.
         """
 
         if not self._accept_engine_events:
@@ -22072,7 +22077,11 @@ class toolkit_UI():
 
     def _stop_engine_event_polling(self):
         """
-        Stop accepting events and cancel the Tk-owned polling callback.
+        Stop polling and reject events that observe the shutdown state.
+
+        This does not make rejection atomic with a concurrent listener's
+        queue write. An event already entering the inbox may be discarded
+        after polling stops.
         """
 
         was_accepting_events = self._accept_engine_events

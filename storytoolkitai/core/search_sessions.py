@@ -150,43 +150,35 @@ class SearchSessionManager:
     def _update_session(
         self,
         search_id: str,
+        expected_session: dict[str, Any],
         **changes: Any,
     ) -> bool:
         """
-        Update session state while holding the registry lock.
+        Update one still-current session under the registry lock.
 
         Worker threads use this helper instead of mutating a session dictionary
-        after the lookup lock has been released. Returning ``False`` is useful
-        when a search was closed while preparation was still running.
+        after the lookup lock has been released. Checking object identity keeps
+        a late worker from updating a replacement that reused the same ID.
         """
 
         with self._sessions_lock:
             session = self._sessions.get(search_id)
 
-            if session is None:
+            if session is not expected_session:
                 return False
 
             session.update(changes)
             return True
 
-    def _copy_search_info(
+    def _session_is_current(
         self,
         search_id: str,
-        *,
-        refresh_job: bool = False,
-    ) -> SearchInfo | None:
-        """Return one detached session snapshot under the registry lock."""
+        expected_session: dict[str, Any],
+    ) -> bool:
+        """Return whether the registry still owns the captured session."""
 
         with self._sessions_lock:
-            session = self._sessions.get(search_id)
-
-            if session is None:
-                return None
-
-            if refresh_job:
-                self._refresh_job_status(session)
-
-            return self._copy_info(session)
+            return self._sessions.get(search_id) is expected_session
 
     @staticmethod
     def _get_status(
@@ -249,7 +241,9 @@ class SearchSessionManager:
             "error": session.get("error"),
         }
 
-        return deepcopy(search_info)
+        # Path collections were copied above and every other field is scalar,
+        # so another recursive copy would only extend the registry lock scope.
+        return search_info
 
     def create_search(
         self,
@@ -301,12 +295,12 @@ class SearchSessionManager:
                 ),
                 "text_job_id": None,
                 "preparation_thread": None,
+                "preparation_active": False,
                 "error": None,
             }
 
             self._sessions[search_id] = session
-
-        return self._copy_info(session)
+            return self._copy_info(session)
 
     def _refresh_job_status(
         self,
@@ -326,6 +320,14 @@ class SearchSessionManager:
             return
 
         job = self._get_job(text_job_id)
+        self._apply_job_status(session, job)
+
+    @staticmethod
+    def _apply_job_status(
+        session: dict[str, Any],
+        job: dict[str, Any] | None,
+    ) -> None:
+        """Apply a previously retrieved queue snapshot to session state."""
 
         if job is None:
             session["text_status"] = "failed"
@@ -382,10 +384,34 @@ class SearchSessionManager:
             does not exist.
         """
 
-        return self._copy_search_info(
-            search_id,
-            refresh_job=True,
+        with self._sessions_lock:
+            session = self._sessions.get(search_id)
+
+            if session is None:
+                return None
+
+            text_job_id = session.get("text_job_id")
+
+        # Queue snapshots can take their own locks and copy mutable state.
+        # Never call into the queue while holding the session registry lock.
+        job = (
+            self._get_job(text_job_id)
+            if text_job_id
+            else None
         )
+
+        with self._sessions_lock:
+            if self._sessions.get(search_id) is not session:
+                return None
+
+            # Preparation may have assigned a newer job while the callback ran.
+            if (
+                text_job_id
+                and session.get("text_job_id") == text_job_id
+            ):
+                self._apply_job_status(session, job)
+
+            return self._copy_info(session)
 
     def _find_text_index_job(
         self,
@@ -411,55 +437,62 @@ class SearchSessionManager:
     def _prepare_worker(
         self,
         search_id: str,
+        session: dict[str, Any],
         queue_item_name: str | None,
     ) -> None:
         """Prepare text and video search processors outside the UI thread."""
 
-        with self._sessions_lock:
-            session = self._sessions.get(search_id)
-
-            if session is None:
-                return
-
-            text_search_item = session["text_search_item"]
-            video_search_item = session["video_search_item"]
+        text_search_item = session["text_search_item"]
+        video_search_item = session["video_search_item"]
 
         try:
             # TEXT SEARCH
             if text_search_item.search_file_paths_count:
-                self._update_session(
+                if not self._update_session(
                     search_id,
+                    session,
                     text_status="preparing",
                     error=None,
-                )
+                ):
+                    return
 
                 # corpus preparation is needed both for direct indexing and for
                 # deciding which cache belongs to this set of source files
                 text_search_item.prepare_search_corpus()
 
+                if not self._session_is_current(search_id, session):
+                    return
+
                 existing_job = self._find_text_index_job(
                     list(text_search_item.search_file_paths),
                 )
+
+                if not self._session_is_current(search_id, session):
+                    return
 
                 if existing_job is not None:
                     existing_job_id, existing_job_info = existing_job
                     existing_status = existing_job_info.get("status")
 
                     if existing_status in _SEARCH_DONE_JOB_STATUSES:
-                        self._update_session(
+                        if not self._update_session(
                             search_id,
+                            session,
                             text_job_id=existing_job_id,
                             text_status="ready",
                             error=None,
-                        )
+                        ):
+                            return
 
                     elif existing_status in _SEARCH_ACTIVE_JOB_STATUSES:
-                        self._update_session(
+                        if not self._update_session(
                             search_id,
+                            session,
                             text_job_id=existing_job_id,
                             text_status="waiting_for_job",
                             error=None,
-                        )
+                        ):
+                            return
 
                     # failed and canceled jobs do not prevent a new attempt
                     elif existing_status in _SEARCH_FAILED_JOB_STATUSES:
@@ -494,21 +527,25 @@ class SearchSessionManager:
                     )
 
                     if not text_job_id:
-                        self._update_session(
+                        if not self._update_session(
                             search_id,
+                            session,
                             text_status="failed",
                             error=(
                                 "The text search could not be added to the "
                                 "processing queue."
                             ),
-                        )
+                        ):
+                            return
                     else:
-                        self._update_session(
+                        if not self._update_session(
                             search_id,
+                            session,
                             text_job_id=text_job_id,
                             text_status="waiting_for_job",
                             error=None,
-                        )
+                        ):
+                            return
 
                 elif existing_job is None:
                     # small corpora and existing caches can be prepared in the
@@ -519,32 +556,41 @@ class SearchSessionManager:
                         ),
                         use_analyzer=text_search_item.use_analyzer,
                     )
-                    self._update_session(
+                    if not self._update_session(
                         search_id,
+                        session,
                         text_status="ready",
                         error=None,
-                    )
+                    ):
+                        return
 
             # VIDEO SEARCH
             if video_search_item.search_file_paths_count:
-                self._update_session(
+                if not self._update_session(
                     search_id,
+                    session,
                     video_status="preparing",
-                )
+                ):
+                    return
 
                 video_search_item.load_index_paths()
+
+                if not self._session_is_current(search_id, session):
+                    return
+
                 video_search_item.load_model()
 
                 self._update_session(
                     search_id,
+                    session,
                     video_status="ready",
                 )
 
         except Exception as exc:
             with self._sessions_lock:
-                session = self._sessions.get(search_id)
+                current_session = self._sessions.get(search_id)
 
-                if session is None:
+                if current_session is not session:
                     return
 
                 session["error"] = str(exc)
@@ -554,6 +600,12 @@ class SearchSessionManager:
 
                 if session["video_status"] == "preparing":
                     session["video_status"] = "failed"
+        finally:
+            self._update_session(
+                search_id,
+                session,
+                preparation_active=False,
+            )
 
     def prepare_search(
         self,
@@ -582,12 +634,7 @@ class SearchSessionManager:
             if session is None:
                 return None
 
-            preparation_thread = session.get("preparation_thread")
-
-            if (
-                preparation_thread is not None
-                and preparation_thread.is_alive()
-            ):
+            if session["preparation_active"]:
                 return self._copy_info(session)
 
             if self._get_status(session) in {"ready", "failed"}:
@@ -597,6 +644,7 @@ class SearchSessionManager:
                 target=self._prepare_worker,
                 kwargs={
                     "search_id": search_id,
+                    "session": session,
                     "queue_item_name": queue_item_name,
                 },
                 name="search-preparation-{}".format(search_id[:8]),
@@ -604,9 +652,24 @@ class SearchSessionManager:
             )
 
             session["preparation_thread"] = preparation_thread
-            preparation_thread.start()
+            session["preparation_active"] = True
+            search_info = self._copy_info(session)
 
-            return self._copy_info(session)
+        # Starting a thread can involve the runtime and operating system. The
+        # active marker above makes concurrent requests deterministic without
+        # keeping the registry lock held across Thread.start().
+        try:
+            preparation_thread.start()
+        except Exception:
+            self._update_session(
+                search_id,
+                session,
+                preparation_thread=None,
+                preparation_active=False,
+            )
+            raise
+
+        return search_info
 
     def load_search_model(
         self,
@@ -635,11 +698,16 @@ class SearchSessionManager:
             model_name=model_name,
         )
 
-        return getattr(
+        selected_model_name = getattr(
             text_search_item,
             "model_name",
             model_name,
         )
+
+        if not self._session_is_current(search_id, session):
+            return None
+
+        return selected_model_name
 
     def search_text(
         self,
@@ -666,7 +734,24 @@ class SearchSessionManager:
             if session is None:
                 return [], max_results
 
-            self._refresh_job_status(session)
+            text_job_id = session.get("text_job_id")
+
+        # Queue access may copy state under the queue's own lock.
+        job = (
+            self._get_job(text_job_id)
+            if text_job_id
+            else None
+        )
+
+        with self._sessions_lock:
+            if self._sessions.get(search_id) is not session:
+                return [], max_results
+
+            if (
+                text_job_id
+                and session.get("text_job_id") == text_job_id
+            ):
+                self._apply_job_status(session, job)
 
             if session["text_status"] != "ready":
                 return [], max_results
@@ -686,7 +771,13 @@ class SearchSessionManager:
         if not isinstance(search_results, list):
             search_results = []
 
-        return deepcopy(search_results), int(effective_max_results)
+        detached_results = deepcopy(search_results)
+        effective_max_results = int(effective_max_results)
+
+        if not self._session_is_current(search_id, session):
+            return [], max_results
+
+        return detached_results, effective_max_results
 
     def search_video(
         self,
@@ -729,7 +820,13 @@ class SearchSessionManager:
         if not isinstance(search_results, list):
             search_results = []
 
-        return deepcopy(search_results), int(effective_max_results)
+        detached_results = deepcopy(search_results)
+        effective_max_results = int(effective_max_results)
+
+        if not self._session_is_current(search_id, session):
+            return [], max_results
+
+        return detached_results, effective_max_results
 
     def get_search_video_frame(
         self,
@@ -753,10 +850,15 @@ class SearchSessionManager:
 
             video_search_item = session["video_search_item"]
 
-        return video_search_item.video_frame(
+        video_frame = video_search_item.video_frame(
             full_path,
             frame,
         )
+
+        if not self._session_is_current(search_id, session):
+            return None
+
+        return video_frame
 
     def close_search(
         self,
@@ -767,6 +869,9 @@ class SearchSessionManager:
 
         SearchItem currently keeps its own corpus cache, so closing a session
         does not unload a reusable model or delete an embedding cache.
+        Processor code already executing is allowed to return normally. Its
+        result and any later state updates are ignored once this registry entry
+        has been removed or replaced.
 
         Args:
             search_id: ID returned by ``create_search``.

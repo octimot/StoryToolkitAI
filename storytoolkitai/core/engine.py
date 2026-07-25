@@ -1163,6 +1163,8 @@ class StoryToolkitEngine:
 
         SearchItem currently keeps its own corpus cache, so closing a session
         does not unload a reusable model or delete an embedding cache.
+        Processor code already running is not forcibly interrupted, but its
+        result is discarded after the session is removed.
 
         Args:
             search_id: ID returned by ``create_search``.

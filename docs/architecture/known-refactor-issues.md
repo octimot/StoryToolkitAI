@@ -68,11 +68,11 @@ If the connection failure returns:
 | **First observed** | During the Version 1 architecture migration review. |
 | **Environment** | All platforms using the Tk interface. |
 | **Original behaviour** | Engine listeners may run on processing threads. Some listener paths schedule Tk work indirectly rather than first marshalling the complete event to the Tk event loop. Rapid job events can also enqueue redundant queue refreshes. |
-| **Current behaviour** | Queue refreshes use repeated `after(0, ...)` scheduling without coalescing, and event handling does not yet have one guaranteed Tk-thread entry point. |
-| **Cause** | Engine listeners run synchronously on the emitting thread, while the Tk interface does not yet centralize thread marshalling and refresh coalescing. |
+| **Current behaviour** | Engine listeners only place events into a thread-safe Python queue. A bounded callback owned by the Tk thread drains that queue, and rapid `job.changed` events share one pending idle refresh. Shutdown stops polling; an event already entering concurrently may remain in the abandoned queue but cannot reach Tk. |
+| **Cause** | Engine listeners run synchronously on the emitting thread, while the original Tk listener did not centralize thread marshalling or refresh coalescing. |
 | **Regression status** | Runtime usability concern exposed by the new boundary and event-driven model. |
-| **Future action** | Marshal every engine event through one Tk event-loop entry point, then coalesce rapid queue refresh requests within a short window. This is classified as a release-hardening fix rather than an architecture migration item. |
-| **Status** | Open |
+| **Future action** | Retain the worker-thread delivery, pre-mainloop retention, bounded polling, refresh-coalescing and shutdown lifecycle tests. No lock is required solely to make event rejection atomic during teardown. |
+| **Status** | Fixed |
 
 ## R04 — macOS notification command quoting
 
