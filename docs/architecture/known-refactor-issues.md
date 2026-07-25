@@ -81,11 +81,11 @@ If the connection failure returns:
 | **First observed** | During the Version 1 architecture migration review. |
 | **Environment** | macOS using `osascript` for native notifications. |
 | **Original behaviour** | Filenames containing single quotes or other shell-special characters in notification content can cause `osascript` to fail with a syntax error. |
-| **Current behaviour** | Notification strings are interpolated through the shell and into AppleScript without sufficient escaping... |
-| **Cause** | The macOS notification helper does not perform proper AppleScript string escaping. |
+| **Current behaviour** | Notification messages and titles are passed to a fixed AppleScript program as process arguments. No shell parses the values, and AppleScript receives them through its `run` handler. The legacy still-render notification is presented by the Tk caller rather than the Resolve integration. |
+| **Cause** | The historical macOS notification helper interpolated text into both a shell command and AppleScript source instead of passing it as data. |
 | **Regression status** | Runtime correctness issue, not caused by the refactor but worth tracking before release candidate. |
-| **Future action** | Fix AppleScript quoting in the macOS notification helper; add a test with quote characters in a sample filename. This is classified as a release-hardening fix rather than an architecture migration item. |
-| **Status** | Open |
+| **Future action** | Retain command-construction tests for quotes, backslashes, newlines, Unicode and shell metacharacters. Before a release candidate, manually trigger a macOS notification with the same characters to verify native presentation. |
+| **Status** | Resolved |
 
 ## R05 — Tuple identity comparison warning
 

@@ -67,6 +67,7 @@ from storytoolkitai.ui.menu import UImenus
 from storytoolkitai.ui.notifications import (
     NotificationMessage,
     NotificationService,
+    notify_via_macos,
 )
 
 # this prevents circular imports when using type hints
@@ -22281,9 +22282,7 @@ class toolkit_UI():
         # notify the user depending on which platform they're on
         try:
             if platform.system() == 'Darwin':  # macOS
-                os.system("""
-                                                        osascript -e 'display notification "{}" with title "{}"'
-                                                        """.format(text, title))
+                notify_via_macos(title, text)
 
             elif platform.system() == 'Windows':  # Windows
                 return

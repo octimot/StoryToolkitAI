@@ -68,7 +68,7 @@ Before cutting a release candidate on macOS, verify:
 3. **Queue restart/recovery** — start processing, terminate the application forcefully (or close normally), reopen and confirm queued jobs are recoverable or reported consistently.
 4. **Resolve connection** — on a machine with Resolve running, confirm StoryToolkitAI connects and can read/write timeline markers.
 5. **Cancellation** — cancel a running transcription or search job; confirm it stops within a reasonable time and the queue state updates.
-6. **OS notification with special characters** — trigger a completion notification for a file whose name contains single quotes or other shell-special characters (e.g., `test'file.wav`); confirm no traceback.
+6. **OS notification with special characters** — trigger a completion notification for a file whose name contains double quotes, apostrophes, backslashes, newlines, Unicode and shell metacharacters; confirm the title and message appear unchanged and no traceback occurs.
 7. **Existing project and transcription compatibility** — open a project created with the previous stable version; confirm all transcriptions load correctly without migration errors.
 
 Record any failures and their environment in the release notes before merging to the stable branch.

@@ -1,6 +1,11 @@
+from unittest.mock import patch
+
 from storytoolkitai.ui.notifications import (
+    MACOS_NOTIFICATION_SCRIPT,
     NotificationMessage,
     NotificationService,
+    build_macos_notification_command,
+    notify_via_macos,
 )
 
 
@@ -44,3 +49,36 @@ def test_notification_service_rejects_unknown_receiver_type() -> None:
         assert 'unknown' in str(error)
     else:
         raise AssertionError('Expected ValueError')
+
+
+def test_macos_notification_command_passes_text_as_arguments() -> None:
+    title = 'Title "double" and \'single\' \\ slash\n新しい 🚀; $(touch nope)'
+    message = '-Message "double" and \'single\' \\ slash\nRésumé; `touch nope`'
+
+    command = build_macos_notification_command(title, message)
+
+    assert command == [
+        'osascript',
+        '-e',
+        MACOS_NOTIFICATION_SCRIPT,
+        '--',
+        message,
+        title,
+    ]
+    assert title not in MACOS_NOTIFICATION_SCRIPT
+    assert message not in MACOS_NOTIFICATION_SCRIPT
+
+
+def test_notify_via_macos_executes_argument_list_without_shell() -> None:
+    with patch(
+        'storytoolkitai.ui.notifications.subprocess.run'
+    ) as run:
+        notify_via_macos('A "quoted" title', "filename's\nsecond line")
+
+    run.assert_called_once_with(
+        build_macos_notification_command(
+            'A "quoted" title',
+            "filename's\nsecond line",
+        ),
+        check=False,
+    )

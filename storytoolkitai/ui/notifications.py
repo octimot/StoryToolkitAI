@@ -1,8 +1,43 @@
+import subprocess
 from typing import Optional
 
 from pydantic import BaseModel
 
 from storytoolkitai.core.logger import logger
+
+
+MACOS_NOTIFICATION_SCRIPT = """\
+on run argv
+    display notification (item 1 of argv) with title (item 2 of argv)
+end run
+"""
+
+
+def build_macos_notification_command(title, message) -> list[str]:
+    """
+    Build an osascript command without adding notification text to its source.
+
+    ``--`` ends option parsing so leading hyphens in either value are handled
+    as notification content.
+    """
+
+    return [
+        'osascript',
+        '-e',
+        MACOS_NOTIFICATION_SCRIPT,
+        '--',
+        str(message),
+        str(title),
+    ]
+
+
+def notify_via_macos(title, message) -> None:
+    """Present a native macOS notification without invoking a shell."""
+
+    subprocess.run(
+        build_macos_notification_command(title, message),
+        check=False,
+    )
 
 
 class NotificationMessage(BaseModel):

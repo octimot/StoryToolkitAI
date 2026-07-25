@@ -853,6 +853,15 @@ class UImenus:
         if not result.get('ok'):
             return self._show_resolve_operation_error(result)
 
+        if (
+            render_stills
+            and result.get('data', {}).get('result')
+        ):
+            self.toolkit_UI_obj.notify_via_os(
+                'Stills Rendered',
+                'Stills based on Markers exported to JPEG.',
+            )
+
         return True
 
     def _load_integrations_menu(self):

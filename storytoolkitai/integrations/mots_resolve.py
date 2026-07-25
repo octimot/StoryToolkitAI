@@ -1217,14 +1217,6 @@ class MotsResolve:
                             ['ffmpeg', '-y', '-i', rendered_clip, '-qmin', '1', '-qscale:v', '1', rendered_clip + ".jpg"],
                             capture_output=True)
 
-                    def notify(title, text):
-                        os.system("""
-                                                                osascript -e 'display notification "{}" with title "{}"'
-                                                                """.format(text, title))
-
-                    # when done notify via mac os notifications
-                    notify("Stills Rendered", "Stills based on Markers exported to JPEG.")
-
                 # tiff conversion on other platforms
                 # since ffmpeg is required, we should pass the conversion to it
                 '''
@@ -1310,4 +1302,3 @@ class MotsResolve:
 if __name__ == '__main__':
 
     print('Mots Resolve API needs to be called from another script.')
-
