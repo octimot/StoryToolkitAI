@@ -93,12 +93,12 @@ If the connection failure returns:
 | --- | --- |
 | **First observed** | During the Version 1 architecture migration review. |
 | **Environment** | All platforms and supported Python versions. Some Python versions or warning configurations surface a `SyntaxWarning` during compilation. |
-| **Original behaviour** | At least one tuple is compared using identity (`is not`) rather than value equality (`!=`). Identity checks whether two references point to the same object, not whether the tuples contain equal values. |
-| **Current behaviour** | The known comparison can produce an incorrect result for a separately created `(None, None)` tuple and produces a compilation warning in the reviewed environment. |
-| **Cause** | Historical use of an identity comparison where a value comparison was intended. |
+| **Original behaviour** | One tuple and two lists were compared using identity (`is` or `is not`) rather than value equality. Identity checks whether two references point to the same object, not whether the containers contain equal values. |
+| **Current behaviour** | The timecode sentinel checks use value equality, separately created `(None, None)` and `[None, None]` values take the intended fallback paths, and compilation no longer emits the tuple-literal `SyntaxWarning`. |
+| **Cause** | Historical use of identity comparisons where value comparisons were intended. |
 | **Regression status** | Potential correctness concern, not caused by the refactor but worth tracking before release candidate. |
-| **Future action** | Replace the known comparison and audit the source for any additional tuple-literal identity comparisons. This is classified as a release-hardening fix rather than an architecture migration item. |
-| **Status** | Open |
+| **Future action** | Retain the focused missing-timecode behavior test and the source audit that rejects identity comparisons against container literals. |
+| **Status** | Resolved |
 
 ## Release issue tracking
 

@@ -8960,7 +8960,7 @@ class toolkit_UI():
             window_transcription = self.get_window_transcription(window_id=window_id)
             timecode_data = window_transcription.get_timecode_data()
 
-            if timecode_data is not False and timecode_data is not [None, None]:
+            if timecode_data is not False and timecode_data != [None, None]:
                 segment_start = TranscriptionUtils.seconds_to_timecode(
                     seconds=segment.start, fps=timecode_data[0], start_tc_offset=timecode_data[1])
 
@@ -11445,7 +11445,7 @@ class toolkit_UI():
             # if the transcription data is False, it means that the transcription exists
             # but it doesn't contain timecode data
             # so the user will be asked if they want to enter the timecode data manually (remember his choice)
-            if (timecode_data is False or timecode_data is [None, None]) \
+            if (timecode_data is False or timecode_data == [None, None]) \
                     and (ask_again or not getattr(window, 'asked_for_timecode', False)):
 
                 # ask the user if they want to enter the timecode data manually
@@ -17072,7 +17072,7 @@ class toolkit_UI():
                 # use timecode if available
                 timecode_data = transcription.get_timecode_data()
 
-                if timecode_data is not False and timecode_data is not (None, None):
+                if timecode_data is not False and timecode_data != (None, None):
                     segment_start = TranscriptionUtils.seconds_to_timecode(
                         seconds=clicked_story_line['source_start'], fps=timecode_data[0], start_tc_offset=timecode_data[1])
 
