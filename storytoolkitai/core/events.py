@@ -12,6 +12,7 @@ event framework.
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any
@@ -28,8 +29,8 @@ class EngineEvent:
     JSON: strings, numbers, booleans, None, lists, and dictionaries.
 
     The dataclass is frozen so the event's type and data reference cannot be
-    replaced after publication. The contents of ``data`` should still be
-    treated as read-only by listeners.
+    replaced after publication. The emitter also gives each listener a deep
+    copy so mutable payload values are isolated during delivery.
     """
 
     type: str
@@ -210,8 +211,9 @@ class EventEmitter:
         listener to subscribe or unsubscribe while an event is being handled
         without changing the iteration in progress.
 
-        Listener failures are logged but do not interrupt processing or stop
-        other listeners from receiving the event.
+        Each listener receives a deep copy of the event. Listener failures or
+        payload mutations therefore do not interrupt processing, change the
+        producer's event, or affect other listeners.
         """
 
         with self._lock:
@@ -219,7 +221,7 @@ class EventEmitter:
 
         for listener in listeners:
             try:
-                listener(event)
+                listener(deepcopy(event))
             except Exception:
                 logger.exception(
                     "Engine event listener failed while handling %s.",

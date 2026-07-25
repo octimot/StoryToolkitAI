@@ -30,7 +30,7 @@ def test_subscriber_receives_event() -> None:
 
 
 def test_multiple_subscribers_receive_event() -> None:
-    """All subscribed listeners receive the same event."""
+    """All subscribed listeners receive an equivalent event."""
 
     emitter = EventEmitter()
     first_listener_events: list[EngineEvent] = []
@@ -44,6 +44,62 @@ def test_multiple_subscribers_receive_event() -> None:
 
     assert first_listener_events == [event]
     assert second_listener_events == [event]
+
+
+def test_nested_listener_mutation_is_isolated_between_listeners() -> None:
+    """Nested payload changes by one listener are private to that listener."""
+
+    emitter = EventEmitter()
+    second_listener_events: list[EngineEvent] = []
+
+    def mutating_listener(event: EngineEvent) -> None:
+        event.data["details"]["items"].append("listener-a")
+        event.data["details"]["metadata"]["changed"] = True
+
+    emitter.subscribe(mutating_listener)
+    emitter.subscribe(second_listener_events.append)
+
+    event = EngineEvent(
+        type="test.event",
+        data={
+            "details": {
+                "items": ["producer"],
+                "metadata": {"changed": False},
+            },
+        },
+    )
+    emitter.emit(event)
+
+    assert second_listener_events == [event]
+    assert second_listener_events[0] is not event
+
+
+def test_listener_mutation_does_not_change_producer_payload() -> None:
+    """Listener mutations cannot escape into the producer's source data."""
+
+    emitter = EventEmitter()
+    producer_payload = {
+        "details": {
+            "items": ["producer"],
+        },
+    }
+    event = EngineEvent(
+        type="test.event",
+        data=producer_payload,
+    )
+
+    def mutating_listener(delivered_event: EngineEvent) -> None:
+        delivered_event.data["details"]["items"].append("listener")
+
+    emitter.subscribe(mutating_listener)
+    emitter.emit(event)
+
+    assert producer_payload == {
+        "details": {
+            "items": ["producer"],
+        },
+    }
+    assert event.data == producer_payload
 
 
 def test_duplicate_subscription_is_ignored() -> None:
