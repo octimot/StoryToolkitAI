@@ -375,7 +375,8 @@ The Version 1 architecture boundary is ready for release when:
 - the documented source audits produce no unexpected matches;
 - Tk and CLI use `StoryToolkitEngine` for processing;
 - accepted in-process bridges remain explicitly documented;
-- the macOS release smoke test completes successfully;
+- every macOS and Windows artifact selected for publication completes its
+  applicable platform release checklist;
 - known runtime issues have a current classification.
 
 ## Migration closure

@@ -158,6 +158,20 @@ If the connection failure returns:
 | **Future action** | Retain the focused missing-timecode behavior test and the source audit that rejects identity comparisons against container literals. |
 | **Status** | Resolved |
 
+## R06 — Persisted transcription completion flag was discarded after load
+
+| Field | Detail |
+| --- | --- |
+| **First observed** | While adding the sanitized `v0.25.1` transcription round-trip fixture for Version 1 compatibility verification. |
+| **Environment** | All platforms when loading and later saving a transcription containing the boolean `incomplete` field. |
+| **Original behaviour** | `Transcription.__init__` loaded the persisted value and then reset `_incomplete` to `None`. A later save omitted the field, silently changing the existing transcription schema. |
+| **Current behaviour** | `_incomplete` is initialized before file loading, so `false` and `true` values survive load/save cycles. Saving still refreshes the existing `last_modified` metadata as before. |
+| **Cause** | Initialization order overwrote the value after `_load_json_into_attributes()` had restored it. |
+| **Regression status** | Historical data-compatibility bug found during release hardening; no migration is required. |
+| **Automated coverage** | `tests/test_compatibility.py` loads the sanitized stable-release shape, requires the original dictionary before edits, and requires the same key set and unrelated nested values after saving. |
+| **Future action** | Retain the fixture round-trip test and manually check copied stable-release transcriptions before the release candidate. |
+| **Status** | Resolved |
+
 ## Release issue tracking
 
 The entries above are brief records to prevent these concerns from being lost while the architecture migration finishes. Before the release candidate, each should have a dedicated GitHub issue with reproduction steps and acceptance criteria. The release checklist should link to those issues rather than duplicating detail here.
