@@ -170,8 +170,10 @@ class EventEmitter:
     therefore protected by a small lock.
 
     Listeners are called synchronously in the thread that emits the event.
-    Graphical UIs remain responsible for moving widget updates onto their own
-    UI thread, for example with Tk's ``window.after(...)``.
+    Graphical UIs remain responsible for moving events onto their own UI
+    thread. A Tk listener should enqueue events in a thread-safe Python queue
+    and let a callback scheduled by the Tk thread drain that queue; processing
+    threads must not call Tk methods directly.
     """
 
     def __init__(self) -> None:

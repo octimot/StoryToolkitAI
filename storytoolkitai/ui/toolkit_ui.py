@@ -11,6 +11,7 @@ import time
 import webbrowser
 import yaml
 
+from queue import Empty, SimpleQueue
 from threading import Thread
 from typing import TYPE_CHECKING, List, Union
 
@@ -1462,8 +1463,25 @@ class toolkit_UI():
         # we need to keep track of the current loaded project
         self.current_project = None
 
+        # Engine listeners may run on processing worker threads. They only
+        # write to this thread-safe inbox and never call Tk directly.
+        self._accept_engine_events = True
+        self._engine_events = SimpleQueue()
+        self._engine_event_poll_id = None
+
+        # Queue-refresh scheduling is owned and used only by the Tk thread.
+        self._queue_refresh_pending = False
+
         # initialize tkinter as the main GUI
         self.root = ctk.CTk()
+
+        # Schedule this while still on the thread that created Tk. Events
+        # received before mainloop starts remain queued until this callback
+        # can run.
+        self._engine_event_poll_id = self.root.after(
+            25,
+            self._poll_engine_events,
+        )
 
         # what happens when the user tries to close the main window
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
@@ -1994,6 +2012,8 @@ class toolkit_UI():
             if not quit_anyway:
                 return
 
+        self._stop_engine_event_polling()
+
         # if a before_exit function is defined, call it
         if self.before_exit is not None:
             self.before_exit()
@@ -2364,21 +2384,75 @@ class toolkit_UI():
             if not callable(callback):
                 continue
 
-            # marshal the callback onto the Tk thread
-            window.after(
+            # Engine events have already reached the Tk thread. Schedule the
+            # presentation callback on the root so it can revalidate the
+            # target window immediately before it runs.
+            self.root.after(
                 1,
-                callback,
+                lambda l_window_id=window_id,
+                l_action=action,
+                l_callback=callback: self._run_window_observer(
+                    window_id=l_window_id,
+                    action=l_action,
+                    callback=l_callback,
+                ),
             )
 
             notified = True
 
-            if observer.get('dettach_after_call'):
+        return notified
+
+    def _run_window_observer(self, window_id, action, callback):
+        """
+        Run a scheduled observer only while its target window still exists.
+        """
+
+        if not self._accept_engine_events:
+            return False
+
+        actions = self.windows_observers.get(window_id)
+        observer = actions.get(action) if actions is not None else None
+
+        # The window may have closed or replaced its callback while this
+        # observer was waiting in the Tk event loop.
+        if observer is None or observer.get('callback') is not callback:
+            return False
+
+        window = self.get_window_by_id(window_id=window_id)
+        if window is None:
+            self.remove_observer_from_window(window_id=window_id)
+            return False
+
+        try:
+            if not window.winfo_exists():
+                self.remove_observer_from_window(window_id=window_id)
+                return False
+        except tk.TclError:
+            self.remove_observer_from_window(window_id=window_id)
+            return False
+
+        try:
+            callback()
+        finally:
+            # Detach the observer that was invoked, but do not remove a
+            # replacement that the callback registered for the same action.
+            current_actions = self.windows_observers.get(window_id)
+            current_observer = (
+                current_actions.get(action)
+                if current_actions is not None
+                else None
+            )
+
+            if (
+                observer.get('dettach_after_call')
+                and current_observer is observer
+            ):
                 self.remove_observer_from_window(
                     window_id=window_id,
                     action=action,
                 )
 
-        return notified
+        return True
 
     def remove_observer_from_window(
         self,
@@ -17855,15 +17929,6 @@ class toolkit_UI():
         if queue_window is None:
             return
 
-        # add the last_update attribute to the queue window if it doesn't exist
-        if not hasattr(queue_window, 'last_update'):
-            queue_window.last_update = time.time()
-
-        elif hasattr(queue_window, 'last_update') and not force_redraw:
-            # don't update the queue window if it was updated less than 0.5 seconds ago
-            if time.time() - queue_window.last_update < 0.5:
-                return
-
         # load all the queue items
         all_queue_items = self.engine.list_jobs()
 
@@ -21950,7 +22015,100 @@ class toolkit_UI():
             button.config(text="Keep on top")
             return False
 
-    def _refresh_queue_window_from_engine(self):
+    def receive_engine_event(self, event: EngineEvent):
+        """
+        Accept one engine event without touching Tk state.
+
+        Processing listeners can run on worker threads. The Tk-owned poll
+        callback handles queued events later on the UI thread.
+        """
+
+        if not self._accept_engine_events:
+            return False
+
+        self._engine_events.put(event)
+        return True
+
+    def _poll_engine_events(self):
+        """
+        Handle a bounded batch of queued engine events on the Tk thread.
+        """
+
+        self._engine_event_poll_id = None
+
+        if not self._accept_engine_events:
+            return False
+
+        # Bound each cycle so an event burst cannot starve input and redraws.
+        for _ in range(100):
+            try:
+                event = self._engine_events.get_nowait()
+            except Empty:
+                break
+
+            try:
+                self._handle_engine_event(event)
+            except Exception:
+                logger.exception(
+                    "Tk engine event handler failed while handling %s.",
+                    event.type,
+                )
+
+        if not self._accept_engine_events:
+            return False
+
+        try:
+            self._engine_event_poll_id = self.root.after(
+                25,
+                self._poll_engine_events,
+            )
+        except (tk.TclError, RuntimeError):
+            # Do not let workers fill an inbox that Tk can no longer drain.
+            self._accept_engine_events = False
+            self._engine_event_poll_id = None
+            return False
+
+        return True
+
+    def _stop_engine_event_polling(self):
+        """
+        Stop accepting events and cancel the Tk-owned polling callback.
+        """
+
+        was_accepting_events = self._accept_engine_events
+        self._accept_engine_events = False
+
+        poll_id = self._engine_event_poll_id
+        self._engine_event_poll_id = None
+
+        if poll_id is not None:
+            try:
+                self.root.after_cancel(poll_id)
+            except (tk.TclError, RuntimeError):
+                # Tk may already be destroyed or the callback may have run.
+                pass
+
+        return was_accepting_events or poll_id is not None
+
+    def request_queue_refresh(self):
+        """
+        Request one authoritative queue redraw on the next idle cycle.
+        """
+
+        if not self._accept_engine_events or self._queue_refresh_pending:
+            return False
+
+        self._queue_refresh_pending = True
+
+        try:
+            self.root.after_idle(self._refresh_queue)
+        except (tk.TclError, RuntimeError):
+            self._queue_refresh_pending = False
+            return False
+
+        return True
+
+    def _refresh_queue(self):
         """
         Refresh the Queue window from the latest engine snapshot.
 
@@ -21958,34 +22116,37 @@ class toolkit_UI():
         authoritative if several updates happen before Tk redraws the window.
         """
 
+        # Clear this before any early return so a later event can request a
+        # fresh redraw, including after the Queue window is reopened.
+        self._queue_refresh_pending = False
+
+        if not self._accept_engine_events:
+            return False
+
         queue_window = self.get_window_by_id('queue')
         if queue_window is None:
-            return
+            return False
 
         try:
             if not queue_window.winfo_exists():
-                return
-        except tk.TclError:
+                return False
+        except (tk.TclError, RuntimeError):
             # the window may have been destroyed after the event was queued
-            return
+            return False
 
         self.update_queue_window()
+        return True
 
-    def handle_engine_event(self, event: EngineEvent):
+    def _handle_engine_event(self, event: EngineEvent):
         """
-        Handle engine events that have a Tk presentation.
+        Handle one engine event after it reaches the Tk thread.
         """
+
+        if not self._accept_engine_events:
+            return
 
         if event.type == 'job.changed':
-
-            # processing events may arrive on worker threads
-            # always schedule Tk widget access on the Tk event loop
-            if getattr(self, 'root', None) is not None:
-                self.root.after(
-                    0,
-                    self._refresh_queue_window_from_engine,
-                )
-
+            self.request_queue_refresh()
             return
 
         if event.type == 'job.task_completed':
@@ -22262,8 +22423,12 @@ def run_gui(stAI, engine):
         engine=engine,
     )
 
-    # subscribe the Tk UI through the public engine interface
-    engine.subscribe(app_UI.handle_engine_event)
+    # subscribe the Tk UI through its scheduling-only event entry point
+    engine.subscribe(app_UI.receive_engine_event)
 
-    # create the main window
-    app_UI.create_main_window()
+    try:
+        # create the main window
+        app_UI.create_main_window()
+    finally:
+        engine.unsubscribe(app_UI.receive_engine_event)
+        app_UI._stop_engine_event_polling()
