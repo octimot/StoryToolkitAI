@@ -95,6 +95,21 @@ class FakeProcessingQueue:
     def get_all_queue_items(self, status=None, not_status=None):
         return {}
 
+    def get_item_snapshot(
+        self,
+        queue_id: str,
+        exclude_keys=None,
+    ):
+        return None
+
+    def get_all_queue_items_snapshot(
+        self,
+        status=None,
+        not_status=None,
+        exclude_keys=None,
+    ):
+        return {}
+
     def set_to_canceled(self, queue_id: str):
         return False
 

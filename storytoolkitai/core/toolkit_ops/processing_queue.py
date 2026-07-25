@@ -1,7 +1,9 @@
 import json
 import os
 import time
-from threading import Thread
+from copy import deepcopy
+from functools import wraps
+from threading import RLock, Thread, local
 
 import torch
 
@@ -15,6 +17,51 @@ from storytoolkitai.core.logger import logger
 
 
 QUEUE_FILE_PATH = os.path.join(USER_DATA_PATH, 'queue.json')
+
+
+def _synchronized(method):
+    """Run a short queue-state operation while holding its state lock.
+
+    ``job.changed`` events raised by nested queue calls are collected for the
+    current thread and emitted only after the outermost synchronized call has
+    released the queue lock.
+    """
+
+    @wraps(method)
+    def synchronized(self, *args, **kwargs):
+        pending_events = None
+
+        try:
+            with self._state_lock:
+                depth = getattr(self._synchronization_state, 'depth', 0)
+
+                if depth == 0:
+                    self._synchronization_state.pending_events = []
+
+                self._synchronization_state.depth = depth + 1
+
+                try:
+                    result = method(self, *args, **kwargs)
+
+                finally:
+                    self._synchronization_state.depth -= 1
+
+                    if self._synchronization_state.depth == 0:
+                        pending_events = (
+                            self._synchronization_state.pending_events
+                        )
+                        self._synchronization_state.pending_events = []
+
+        finally:
+            # Tk listeners may marshal events to the main thread. Emitting here,
+            # after the lock has been released, prevents a worker/Tk lock cycle.
+            if pending_events:
+                for event in pending_events:
+                    self.events.emit(event)
+
+        return result
+
+    return synchronized
 
 
 class ProcessingQueue:
@@ -44,6 +91,16 @@ class ProcessingQueue:
             if event_emitter is not None
             else EventEmitter()
         )
+
+        # Queue management runs from the UI thread and processing workers.
+        # RLock is required because queue methods call other synchronized
+        # queue methods. Long-running task callables are intentionally not
+        # executed while this lock is held.
+        self._state_lock = RLock()
+
+        # Synchronization state is thread-local so nested queue calls can defer
+        # their events until the outermost call releases the queue lock.
+        self._synchronization_state = local()
 
         # this holds the queue ids of the items that need to be processed next
         # once the item is sent for processing, it is removed from this list and only remains in the queue history
@@ -82,20 +139,24 @@ class ProcessingQueue:
         if not isinstance(item, dict):
             return False
 
-        self.events.emit(
-            EngineEvent(
-                type='job.changed',
-                data={
-                    'job_id': item.get('queue_id'),
-                    'status': item.get('status'),
-                    'progress': item.get('progress'),
-                    'item_type': item.get('item_type'),
-                },
-            )
+        event = EngineEvent(
+            type='job.changed',
+            data={
+                'job_id': item.get('queue_id'),
+                'status': item.get('status'),
+                'progress': item.get('progress'),
+                'item_type': item.get('item_type'),
+            },
         )
+
+        if getattr(self._synchronization_state, 'depth', 0) > 0:
+            self._synchronization_state.pending_events.append(event)
+        else:
+            self.events.emit(event)
 
         return True
 
+    @_synchronized
     def generate_queue_id(self, name: str = None) -> str:
         """
         Generate an unused queue ID.
@@ -119,6 +180,7 @@ class ProcessingQueue:
             if not self.get_item(queue_id=queue_id):
                 return queue_id
 
+    @_synchronized
     def create_placeholder(
         self,
         name: str | None = None,
@@ -158,6 +220,7 @@ class ProcessingQueue:
 
         return queue_id
 
+    @_synchronized
     def add_to_queue(self,
                      tasks: list or str = None,
                      queue_id: str = None,
@@ -299,6 +362,7 @@ class ProcessingQueue:
         # return the queue id if we reached this point
         return queue_id
 
+    @_synchronized
     def add_dependency(self, queue_id, dependency_id=None):
         """
         This adds the dependency_id to the list of dependencies of the queue_id
@@ -326,6 +390,7 @@ class ProcessingQueue:
         # return the item
         return item
 
+    @_synchronized
     def pass_dependency_data(self, queue_id, dependency_id, override=False, save_to_file=False, only_done=True):
         """
         This passes all the data from the item with the dependency_id to the item with the queue_id
@@ -372,6 +437,7 @@ class ProcessingQueue:
         # update the item
         self.update_queue_item(**item, save_to_file=save_to_file)
 
+    @_synchronized
     def update_queue_item(self, queue_id, save_to_file=True, **kwargs):
         """
         This function updates a queue item in the queue history
@@ -425,6 +491,7 @@ class ProcessingQueue:
         # let's hope this doesn't happen...
         return False
 
+    @_synchronized
     def reorder_queue(self, new_queue_order) -> bool:
         """
         This function takes the new queue order and re-orders the queue and the queue history accordingly,
@@ -502,6 +569,7 @@ class ProcessingQueue:
 
         return True
 
+    @_synchronized
     def cancel_item(self, queue_id: str):
         """
         This function removes a task from the queue of items to be processed
@@ -550,6 +618,7 @@ class ProcessingQueue:
         # so we can remove it from the queue history
         return self.update_queue_item(queue_id=queue_id, status='canceled')
 
+    @_synchronized
     def cancel_if_canceled(self, queue_id):
         """
         Checks if the queue item has been canceled and cancels it if it has
@@ -580,6 +649,7 @@ class ProcessingQueue:
         # the item was not canceled
         return False
 
+    @_synchronized
     def set_to_canceled(self, queue_id):
         """
         Request safe cancellation of a queue item.
@@ -632,6 +702,7 @@ class ProcessingQueue:
             )
         )
 
+    @_synchronized
     def get_item(self, queue_id: str) -> dict or None:
         """
         This function checks if a queue id is in the queue history and returns the item if it is
@@ -654,6 +725,7 @@ class ProcessingQueue:
 
         return found_item
 
+    @_synchronized
     def get_status(self, queue_id: str) -> str or None:
         """
         This function checks if a queue id is in the queue history and returns the status if it is
@@ -668,6 +740,7 @@ class ProcessingQueue:
 
         return None
 
+    @_synchronized
     def get_progress(self, queue_id: str) -> str or None:
         """
         This function returns the 'progress' of a queue item,
@@ -685,6 +758,7 @@ class ProcessingQueue:
         else:
             return '0'
 
+    @_synchronized
     def get_all_queue_items(self, status: str or list or None = None, not_status: str or list or None = None) \
             -> dict:
         """
@@ -719,6 +793,49 @@ class ProcessingQueue:
             all_queue_items[item['queue_id']] = item
 
         return all_queue_items
+
+    @_synchronized
+    def get_item_snapshot(
+        self,
+        queue_id: str,
+        exclude_keys=None,
+    ) -> dict or None:
+        """Return one detached queue item copied under the state lock."""
+
+        item = self.get_item(queue_id=queue_id)
+        if not isinstance(item, dict):
+            return None
+
+        snapshot = {
+            key: value
+            for key, value in item.items()
+            if not exclude_keys or key not in exclude_keys
+        }
+        return deepcopy(snapshot)
+
+    @_synchronized
+    def get_all_queue_items_snapshot(
+        self,
+        status: str or list or None = None,
+        not_status: str or list or None = None,
+        exclude_keys=None,
+    ) -> dict:
+        """Return detached queue items copied under one state lock."""
+
+        items = self.get_all_queue_items(
+            status=status,
+            not_status=not_status,
+        )
+        snapshots = {
+            queue_id: {
+                key: value
+                for key, value in item.items()
+                if not exclude_keys or key not in exclude_keys
+            }
+            for queue_id, item in items.items()
+            if isinstance(item, dict)
+        }
+        return deepcopy(snapshots)
 
     def task_dispatcher(self, tasks: list or str) -> list or bool:
         """
@@ -877,6 +994,7 @@ class ProcessingQueue:
         # if we get here, the execution was successful
         return executed
 
+    @_synchronized
     def update_status(self, queue_id, status, fail_error=None):
         """
         This function updates the status of a queue item
@@ -901,6 +1019,7 @@ class ProcessingQueue:
 
         self.update_queue_item(**item)
 
+    @_synchronized
     def update_output(self, queue_id, output, append=True):
         """
         This function adds output to the queue item
@@ -924,6 +1043,7 @@ class ProcessingQueue:
         # since the output will not get saved anyway
         self.update_queue_item(save_to_file=False, **item)
 
+    @_synchronized
     def ping_queue(self):
         """
         Checks if there are items left in the queue and executes the first one if there are
@@ -1035,6 +1155,7 @@ class ProcessingQueue:
 
         return True
 
+    @_synchronized
     def _get_item_queue_index(self, queue_id):
         """
         This returns the index of a queue item in the queue list based on its queue_id
@@ -1049,6 +1170,7 @@ class ProcessingQueue:
         except ValueError:
             return None
 
+    @_synchronized
     def _item_can_start(self, queue_id, item_data=None):
         """
         This determines if a certain item can start based on its dependencies
@@ -1104,6 +1226,7 @@ class ProcessingQueue:
 
         return True
 
+    @_synchronized
     def add_thread_to_queue_threads(self, device, queue_id, thread):
         """
         This function adds a thread to the queue_threads dict
@@ -1115,6 +1238,7 @@ class ProcessingQueue:
 
         return self.queue_threads
 
+    @_synchronized
     def remove_thread_from_queue_threads(self, device):
         """
         This function removes a thread from the queue_threads dict
@@ -1129,6 +1253,7 @@ class ProcessingQueue:
 
         return self.queue_threads
 
+    @_synchronized
     def is_device_available(self, device):
         """
         This function checks if a device is busy processing something by checking the queue_threads dict.
@@ -1151,6 +1276,7 @@ class ProcessingQueue:
 
         return True
 
+    @_synchronized
     def is_item_in_thread(self, queue_id):
         """
         This function checks if a queue item is in the queue_threads dict
@@ -1162,6 +1288,7 @@ class ProcessingQueue:
 
         return False
 
+    @_synchronized
     def save_queue_to_file(self):
         """
         This function saves the queue history to the queue file
@@ -1212,6 +1339,7 @@ class ProcessingQueue:
 
         return queue_history
 
+    @_synchronized
     def resume_queue_from_file(
         self,
         ignore_finished=True,

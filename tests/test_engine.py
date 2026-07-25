@@ -106,6 +106,51 @@ class FakeProcessingQueue:
 
         return selected_items
 
+    def get_item_snapshot(
+        self,
+        queue_id: str,
+        exclude_keys=None,
+    ) -> dict[str, Any] | None:
+        """Return one detached item using the production queue API."""
+
+        from copy import deepcopy
+
+        item = self.get_item(queue_id)
+        if not isinstance(item, dict):
+            return None
+
+        snapshot = {
+            key: value
+            for key, value in item.items()
+            if not exclude_keys or key not in exclude_keys
+        }
+        return deepcopy(snapshot)
+
+    def get_all_queue_items_snapshot(
+        self,
+        status: str | list[str] | None = None,
+        not_status: str | list[str] | None = None,
+        exclude_keys=None,
+    ) -> dict[str, dict[str, Any]]:
+        """Return detached filtered items using the production queue API."""
+
+        from copy import deepcopy
+
+        items = self.get_all_queue_items(
+            status=status,
+            not_status=not_status,
+        )
+        snapshots = {
+            job_id: {
+                key: value
+                for key, value in item.items()
+                if not exclude_keys or key not in exclude_keys
+            }
+            for job_id, item in items.items()
+            if isinstance(item, dict)
+        }
+        return deepcopy(snapshots)
+
     def generate_queue_id(
         self,
         name: str | None = None,

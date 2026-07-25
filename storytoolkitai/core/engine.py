@@ -1207,8 +1207,9 @@ class StoryToolkitEngine:
             A copied public job dictionary, or ``None`` when no job exists.
         """
 
-        item = self._toolkit_ops.processing_queue.get_item(
+        item = self._toolkit_ops.processing_queue.get_item_snapshot(
             queue_id=job_id,
+            exclude_keys=_RUNTIME_JOB_FIELDS,
         )
 
         if not isinstance(item, dict):
@@ -1237,9 +1238,10 @@ class StoryToolkitEngine:
             A dictionary keyed by job ID.
         """
 
-        items = self._toolkit_ops.processing_queue.get_all_queue_items(
+        items = self._toolkit_ops.processing_queue.get_all_queue_items_snapshot(
             status=status,
             not_status=not_status,
+            exclude_keys=_RUNTIME_JOB_FIELDS,
         )
 
         if not isinstance(items, dict):
