@@ -229,7 +229,7 @@ Command-line arguments are converted into `RuntimeOptions` before processing con
 
 ### Events
 
-Named event factories produce detached, transport-safe payload data. Some processing code constructs `EngineEvent` directly for no-payload Resolve change signals and simple queue summaries. Current direct events contain only transport-safe values, but the architecture test does not automatically inspect future direct construction. Maintain named factory functions or extend the test to cover new direct producers.
+Named event factories produce detached, transport-safe payload data. The architecture test requires a representative simple-data sample for every public factory. It also inventories direct `EngineEvent` construction: direct producers use literal event names, and the only reviewed direct payload is the fixed simple `job.changed` queue summary. Add a named factory and sample before introducing another payload shape.
 
 Queue events expose stable job summaries rather than callables, threads or temporary processing objects.
 
@@ -279,8 +279,11 @@ The checks require that:
 - first-party search ownership remains behind the engine;
 - removed callback and action-event compatibility paths do not return;
 - processing does not read command-line policy from `sys.argv` or retained `cli_args`;
-- named event factories produce transport-safe payload data (direct `EngineEvent` construction is not yet covered by the automated check);
-- importing the engine boundary does not load Tkinter, CustomTkinter or `storytoolkitai.ui`.
+- named event factories and reviewed direct event producers use simple payload data;
+- importing and constructing the runtime boundary does not load or start Tkinter, CustomTkinter or `storytoolkitai.ui`;
+- `receive_engine_event(...)`, the listener registered with the engine, only accepts or rejects an event and writes accepted events to the thread-safe inbox.
+
+These architecture tests enforce the reviewed first-party coding patterns rather than attempting to prove every possible runtime behaviour. They detect normal imports, supported literal dynamic imports, known private attribute access, runtime object wiring and reviewed event payload construction. New reflection, computed imports, plugin-loading patterns or direct event-construction styles must be accompanied by an appropriate extension to the architecture tests.
 
 Run the focused architecture suite with:
 

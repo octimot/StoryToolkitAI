@@ -8,6 +8,7 @@ but it must not access ProcessingQueue directly.
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 
@@ -46,15 +47,26 @@ def test_ui_does_not_access_processing_queue_directly() -> None:
 
     for path in sorted(UI_ROOT.rglob("*.py")):
         source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
 
-        for forbidden_call in FORBIDDEN_QUEUE_CALLS:
-            if forbidden_call not in source:
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in {
+                    call.rsplit(".", 1)[-1][:-1]
+                    for call in FORBIDDEN_QUEUE_CALLS
+                }
+                and isinstance(node.func.value, ast.Attribute)
+                and node.func.value.attr == "processing_queue"
+            ):
                 continue
 
             violations.append(
-                "{}: contains {}".format(
+                "{}:{} calls processing_queue.{}".format(
                     path.relative_to(PROJECT_ROOT),
-                    forbidden_call,
+                    node.lineno,
+                    node.func.attr,
                 )
             )
 

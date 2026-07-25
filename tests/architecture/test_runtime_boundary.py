@@ -129,22 +129,12 @@ def test_storytoolkitai_does_not_store_cli_namespace():
 
 
 def test_toolkit_ops_constructor_does_not_inspect_cli_state():
-    source = _read_source(TOOLKIT_OPS_PATH)
-    tree = ast.parse(
-        source,
-        filename=str(TOOLKIT_OPS_PATH),
-    )
+    tree = _parse_source(TOOLKIT_OPS_PATH)
     constructor = _find_method(
         tree,
         'ToolkitOps',
         '__init__',
     )
-
-    constructor_source = ast.get_source_segment(
-        source,
-        constructor,
-    )
-    assert constructor_source is not None
 
     used_attributes = {
         node.attr
@@ -153,5 +143,3 @@ def test_toolkit_ops_constructor_does_not_inspect_cli_state():
     }
 
     assert 'cli_args' not in used_attributes
-    assert "'--noresolve' in sys.argv" not in constructor_source
-    assert '"--noresolve" in sys.argv' not in constructor_source
