@@ -145,9 +145,6 @@ class SearchItem(ToolkitSearch):
         # to keep track if the search corpus is indexed
         self._is_indexed = False
 
-        # to keep track if there's a cache file
-        self._has_file_cache = False
-
         self._initialized = True
 
         # initialize the shared search configuration last so all subclasses use
@@ -250,9 +247,6 @@ class TextSearch(SearchItem):
 
         self._search_corpus_phrases = None
         self._search_corpus_assoc = None
-
-        self._search_results = None
-        self._top_k = None
 
         # use the configured semantic search model by default
         self.model_name = kwargs.get('model_name', self.search_config.semantic_search_model_name)
@@ -1178,9 +1172,6 @@ class TextSearch(SearchItem):
                         score=score
                     )
 
-        self._search_results = search_results
-        self._top_k = top_k
-
         return search_results, top_k
 
     @staticmethod
@@ -1289,6 +1280,9 @@ class TextSearch(SearchItem):
 class SearchablePhrase:
     """
     This class represents a searchable phrase.
+
+    Retained for Version 1 import compatibility despite having no first-party
+    callers. Review it with the public processing API for Version 2.
     """
 
     def __init__(self, search_phrase, corpus_idx, source_file_path, source_file_type):

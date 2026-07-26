@@ -144,6 +144,9 @@ class MediaItem:
 class AudioItem(MediaItem):
     """
     This handles all the audio items that are used in the toolkit.
+
+    Retained for Version 1 import compatibility despite having no first-party
+    callers. Review it with the public processing API for Version 2.
     """
 
     def __init__(self, path: str):
@@ -155,6 +158,9 @@ class AudioItem(MediaItem):
 class VideoItem(MediaItem, ClipIndex):
     """
     This handles all the video items that are used in the toolkit.
+
+    Retained for Version 1 import compatibility despite having no first-party
+    callers. Review it with the public processing API for Version 2.
     """
 
     def __init__(self, path: str):

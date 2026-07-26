@@ -118,11 +118,6 @@ class ProcessingQueue:
         # for eg. {'cuda:0': {'queue_id': queue_id, 'thread': <Thread(Thread-1, started 1234567890123)>}, ...}
         self.queue_threads = {}
 
-        # this holds other variables that don't need to be part of the queue history,
-        # but can be shared between threads
-        # the key is the queue id and the value is a dict variable names and values
-        self.queue_variables = {}
-
         # how much to wait until checking if there are items in the queue that can be processed
         # disabled for now - if we activate this we need to make sure that the device is not used by another thread
         # by checking the queue_threads dict

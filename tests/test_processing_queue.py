@@ -380,6 +380,15 @@ def test_queue_keeps_only_explicit_task_handlers(
     assert processing_queue.task_handlers == TEST_TASK_HANDLERS
     assert not hasattr(processing_queue, "toolkit_ops_obj")
 
+
+def test_queue_does_not_create_unused_shared_variable_store(
+    processing_queue,
+) -> None:
+    """Queue state must not restore the obsolete per-job variable store."""
+
+    assert not hasattr(processing_queue, "queue_variables")
+
+
 def test_generated_queue_id_does_not_create_a_queue_item(
     processing_queue,
 ) -> None:

@@ -1571,9 +1571,6 @@ class toolkit_UI():
         # currently focused window (id only)
         self.current_focused_window = None
 
-        # last focused window (id only)
-        self.last_focused_window = None
-
         # what to call before exiting the app
         self.before_exit = None
 
@@ -1602,9 +1599,6 @@ class toolkit_UI():
         self.default_font_size = self.UI_scale(self.ctk_default_font_size)
         self.transcript_font_size = self.UI_scale(self.stAI.get_app_setting('transcript_font_size', default_if_none=15)
                                                   * font_scale)
-        self.console_font_size = self.UI_scale(self.stAI.get_app_setting('console_font_size', default_if_none=13)
-                                               * font_scale)
-
         # set platform independent transcript font
         self.transcript_font = ctk.CTkFont(family=courier_font_family, size=self.transcript_font_size)
 
@@ -1615,8 +1609,7 @@ class toolkit_UI():
         self.ctk_font_small_label = (
             ctk.CTkFont(family=self.ctk_default_font_family, size=int(self.transcript_font_size*0.7)))
 
-        # set the platform independent fixed font (for console)
-        # self.console_font = ctk.CTkFont(family='TkFixedFont', size=self.console_font_size)
+        # use the transcript font for the console too
         self.console_font = self.transcript_font
 
         # set the default font size
@@ -1638,9 +1631,6 @@ class toolkit_UI():
         else:
             self.ctrl_cmd_bind = "Control"
             self.alt_bind = "Alt"
-
-        # use this variable to remember if the user said it's ok that resolve is not available to continue a process
-        self.no_resolve_ok = False
 
         # handling of api key validity
         if not self.stAI.api_key_valid:
@@ -2516,9 +2506,6 @@ class toolkit_UI():
         # if the previous focus trigger was on the same window, ignore
         if self.current_focused_window == window_id:
             return
-
-        # change the last focused window variable
-        self.last_focused_window = self.current_focused_window
 
         # change the focused window variable
         self.current_focused_window = window_id
@@ -5319,7 +5306,7 @@ class toolkit_UI():
     def _tag_find_results(self, text_widget: tk.Text = None, text_index: str = None, window_id: str = None):
         """
         Another handy function that tags the search results directly on the transcript inside the transcript window
-        This is also used to show on which of the search results is the user right now according to search_result_pos
+        This is also used to show which find result is active according to find_result_pos.
         :param text_element:
         :param text_index:
         :param window_id:
@@ -8456,17 +8443,6 @@ class toolkit_UI():
             self.stAI = toolkit_UI_obj.stAI
 
             self.root = toolkit_UI_obj.root
-
-            # search results indexes stored here
-            # we're making it a dict so that we can store result indexes for each window individually
-            self.search_result_indexes = {}
-
-            # when searching for text, you may want the user to cycle through the results, so this keep track
-            # keeps track on which search result is the user currently on (in each transcript window)
-            self.search_result_pos = {}
-
-            # to keep track of what is being searched on each window
-            self.search_strings = {}
 
             # to stop certain events while typing,
             # we keep track if we have typing going on in any of the windows
