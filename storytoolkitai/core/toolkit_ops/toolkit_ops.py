@@ -2,7 +2,6 @@ import os
 import sys
 import time
 import json
-import yaml
 import subprocess
 import platform
 from copy import deepcopy
@@ -16,7 +15,6 @@ from whisper import tokenizer as whisper_tokenizer
 from transformers import pipeline
 
 import librosa
-import soundfile
 
 import tqdm
 
@@ -32,19 +30,15 @@ from storytoolkitai.core.events import (
 
 from storytoolkitai.integrations.mots_resolve import MotsResolve
 
-from storytoolkitai import USER_DATA_PATH
 
-from .projects import Project, get_projects_from_path, ProjectUtils
+from .projects import Project
 from .transcription import Transcription, TranscriptionSegment, TranscriptionUtils
-from .story import Story, StoryLine, StoryUtils
-from .document import Document
 from .processing_queue import ProcessingQueue
-from .search import SearchConfig, ToolkitSearch, SearchItem, TextSearch, VideoSearch, cv2
+from .search import SearchConfig, TextSearch, VideoSearch
 from .assistant import ToolkitAssistant, AssistantUtils
 from .assistant import DEFAULT_SYSTEM_MESSAGE as ASSISTANT_DEFAULT_SYSTEM_MESSAGE
-from .media import MediaUtils
 from .speaker_diarization import detect_speaker_changes
-from .timecode import sec_to_tc, tc_to_sec
+from .timecode import sec_to_tc
 
 from .ingest import IngestSettings, TranscriptionSettings, VideoIndexingSettings
 
@@ -128,9 +122,6 @@ class ToolkitOps:
         event_emitter=None,
     ):
 
-        # this will be used to store all the transcripts that are ready to be transcribed
-        self.transcription_queue = {}
-
         # keep a reference to the StoryToolkitAI object here if one was passed
         self.stAI = stAI
 
@@ -149,13 +140,6 @@ class ToolkitOps:
             if event_emitter is not None
             else EventEmitter()
         )
-
-        # this is used to get fast the name of what is being transcribed currently
-        self.transcription_queue_current_name = None
-
-        # this is to keep track of the current transcription item
-        # the format is {queue_id: transcription_item_attributes}
-        self.transcription_queue_current_item = {}
 
         # use this to store the whisper model later
         self.whisper_model = None
@@ -184,12 +168,6 @@ class ToolkitOps:
             default_if_none='msmarco-distilbert-base-v4',
         )
 
-        # for now define an empty model here which should be loaded the first
-        # time it's needed
-        # it's very likely that the model will not be loaded here, but in the
-        # SearchItem, for each search
-        self.s_semantic_search_model = None
-
         # expose only the settings and callbacks required by search processing
         self.search_config = SearchConfig(
             get_torch_device=lambda: self.torch_device,
@@ -198,11 +176,6 @@ class ToolkitOps:
             ),
             get_app_setting=self.stAI.get_app_setting,
             save_config=self.stAI.save_config,
-        )
-
-        # keep the existing shared search helper during the version 1 migration
-        self.t_search_obj = ToolkitSearch(
-            search_config=self.search_config,
         )
 
         # this mapping tells the queue which functions belong to each task
@@ -2745,7 +2718,7 @@ class ToolkitOps:
             # get the id of the questions group
             questions_group_id = list(questions_group.keys())[0]
 
-            # push this change to the toolkit_ops_obj
+            # apply the new group to the transcription
             transcription.set_transcript_groups(group_id=questions_group_id, transcript_groups=questions_group)
 
             # save the transcription now, not soon

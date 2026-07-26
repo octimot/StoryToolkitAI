@@ -23,7 +23,7 @@ from PIL import Image, ImageTk
 from pydantic import ValidationError
 from requests import get
 from timecode import Timecode
-from tkinter import filedialog, font, messagebox, simpledialog
+from tkinter import filedialog, font, messagebox
 from whisper import available_models as whisper_available_models
 
 from storytoolkitai.core.events import EngineEvent
@@ -35,10 +35,7 @@ from storytoolkitai.core.toolkit_ops.ingest import (
     TranscriptionSettings,
     VideoIndexingSettings,
 )
-from storytoolkitai.core.toolkit_ops.media import (
-    MediaItem,
-    MediaUtils,
-)
+from storytoolkitai.core.toolkit_ops.media import MediaUtils
 from storytoolkitai.core.toolkit_ops.projects import (
     Project,
     ProjectUtils,
@@ -51,13 +48,9 @@ from storytoolkitai.core.toolkit_ops.search_paths import (
 )
 from storytoolkitai.core.toolkit_ops.story import (
     Story,
-    StoryLine,
     StoryUtils,
 )
-from storytoolkitai.core.toolkit_ops.timecode import (
-    sec_to_tc,
-    tc_to_sec,
-)
+from storytoolkitai.core.toolkit_ops.timecode import tc_to_sec
 from storytoolkitai.core.toolkit_ops.transcription import (
     Transcription,
     TranscriptionSegment,
@@ -11633,8 +11626,6 @@ class toolkit_UI():
                 end_segment = None
                 start_sec = 0
                 end_sec = 0
-
-                from operator import itemgetter
 
                 # first sort the selected segments by start time
                 # (but we are losing the line numbers which are normally in the dict keys!)

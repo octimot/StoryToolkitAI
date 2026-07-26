@@ -13,11 +13,6 @@ from tkinter import (
     messagebox,
 )
 
-from customtkinter import (
-    AppearanceModeTracker,
-    ThemeManager,
-)
-
 from storytoolkitai import USER_DATA_PATH
 from storytoolkitai.core.logger import logger
 
