@@ -232,6 +232,7 @@ def test_create_assistant_returns_public_session():
     assert session.model_provider == 'Provider'
     assert session.model_name == 'model-one'
     assert session.model_description == 'model-one description'
+    assert not hasattr(session, 'assistant_id')
 
 
 def test_replace_assistant_preserves_session_and_history():
@@ -248,7 +249,6 @@ def test_replace_assistant_preserves_session_and_history():
     )
 
     original_session_id = session.session_id
-    original_assistant_id = session.assistant_id
 
     replacement = engine.replace_assistant(
         session_id=session.session_id,
@@ -259,7 +259,6 @@ def test_replace_assistant_preserves_session_and_history():
 
     assert replacement is not None
     assert replacement.session_id == original_session_id
-    assert replacement.assistant_id != original_assistant_id
     assert replacement.model_name == 'model-two'
     assert replacement.context == 'Transcript'
     assert replacement.chat_history_length == 4

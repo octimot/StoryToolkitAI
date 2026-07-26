@@ -121,17 +121,6 @@ class AssistantSession:
         return self._item().last_assistant_message_idx
 
     @property
-    def assistant_id(self) -> str:
-        """
-        Return the implementation-specific assistant ID.
-
-        UI code should use ``session_id`` for lifecycle operations. This
-        property remains available for existing presentation behaviour.
-        """
-
-        return self._item().assistant_id
-
-    @property
     def chat_history_length(self) -> int:
         """
         Return the number of private assistant-history entries.

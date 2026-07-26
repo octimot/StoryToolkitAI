@@ -3389,7 +3389,7 @@ class ToolkitOps:
                     #  but if the polled data does not contain the key, also set the NLE variable to None
                     #  also, if the global variable is not None and the polled data doesn't contain the key,
                     #  set the global variable to None
-                    # also, make sure you notify the relevant observers that the data has changed
+                    # emit the relevant engine events when the data changes
 
                     # RESOLVE OBJECT CHANGE
                     # if the resolve object has changed (for eg. from None to an object)
@@ -4545,4 +4545,3 @@ class ToolkitOps:
                 'result': operation_result,
             },
         )
-
