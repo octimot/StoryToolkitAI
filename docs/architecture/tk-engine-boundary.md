@@ -1,9 +1,10 @@
 # Tk, CLI and engine boundary
 
 **Architecture status:** Implemented
-**Release status:** Pending concurrency and release-hardening fixes
+**Release status:** Architecture hardening implemented; release verification pending
 **Branch reviewed:** `dev`
-**Reviewed through:** `b37334263e8620d91365dc32d333e536d06c1a58`
+**Reviewed through:** `f62b7877936902615a5cf62f46c73d48b4bdd5d1`
+**Intended release candidate:** `v1.0.0-rc.1`
 **Related decision:** [`engine-ui-separation.md`](./engine-ui-separation.md)
 **Closed migration inventory:** [`current-ui-coupling.md`](./current-ui-coupling.md)
 
@@ -26,20 +27,21 @@ command-line arguments
           |
           +--> StoryToolkitAI
           |
-          +--> ToolkitOps
-          |       |
-          |       +--> ProcessingQueue
-          |       +--> search processors
-          |       +--> assistant implementations
-          |       +--> Resolve integration
-          |       +--> processing models and settings
-          |
           +--> StoryToolkitEngine
+                  |
+                  +--> private ToolkitOps
+                  |       |
+                  |       +--> ProcessingQueue
+                  |       +--> processing task handlers
+                  |       +--> Resolve integration
+                  |       +--> processing models and settings
                   |
                   +--> public processing operations
                   +--> detached queue and search state
-                  +--> engine-owned search sessions
-                  +--> engine-owned assistant sessions
+                  +--> engine-owned search-session manager
+                  |       +--> private search processors and workers
+                  +--> engine-owned assistant registry
+                  |       +--> private assistant implementations
                   +--> Resolve commands and state snapshots
                   +--> processing events
 
@@ -54,11 +56,15 @@ StoryToolkitEngine
                  CLI
 ```
 
-`ToolkitOps` is constructed inside `build_runtime(...)` and remains private behind `StoryToolkitEngine`.
+`ToolkitOps` is constructed inside `build_runtime(...)`, passed into
+`StoryToolkitEngine`, and retained only as a private engine implementation
+dependency. It is not returned separately.
 
 The Tk interface receives `StoryToolkitAI` for existing application, settings and lifecycle behaviour. It receives `StoryToolkitEngine` for processing.
 
-The CLI receives `StoryToolkitEngine` as its processing entry point.
+The CLI receives the parsed arguments and parser for command-line presentation
+and `StoryToolkitEngine` as its processing entry point. It does not receive
+`StoryToolkitAI` or `ToolkitOps`.
 
 ## Public object graph
 
@@ -183,13 +189,36 @@ Live processing objects remain private unless explicitly documented as an accept
 
 Engine events indicate that something happened or state may have changed.
 
-For queue and search workflows, an interface retrieves a copied engine snapshot after receiving an event or polling tick. Snapshot synchronization remains a release-hardening requirement. Event payloads are not the only source of authoritative state when the engine provides a query method.
+For queue and search workflows, an interface retrieves a copied engine
+snapshot after receiving an event or polling tick. Queue snapshots are copied
+while the queue state lock is held, and search snapshots are copied during a
+short session-registry lock section. Event payloads are not the only source of
+authoritative state when the engine provides a query method.
+
+Event emission is synchronous in the emitter's thread. The emitter snapshots
+its listener list under its listener lock, releases that lock, and gives each
+listener a separate deep copy of the event. A listener may therefore mutate a
+nested list or dictionary without changing the producer's event or the copy
+delivered to another listener. Listener exceptions are logged and do not stop
+later listeners.
 
 ### Tk updates stay on the Tk thread
 
 Engine listeners may be called from worker threads.
 
-The Tk listener only places events into a thread-safe Python queue. A bounded callback scheduled by the Tk-owning thread polls that queue and performs event handling. Processing threads therefore do not call Tk methods or wait for Tk to process an event.
+The Tk listener, `receive_engine_event(...)`, only checks whether events are
+still accepted and puts accepted events into a `SimpleQueue`. The Tk-owning
+thread schedules `_poll_engine_events()` when the UI object is constructed,
+before `mainloop()` starts. Each poll handles at most 100 events and schedules
+the next poll 25 milliseconds later. Events received before `mainloop()` stay
+in the inbox until the poll callback can run. Processing threads therefore do
+not call Tk methods or wait for Tk to process an event.
+
+One handler failure is logged without stopping the rest of the current batch
+or the next poll. Repeated `job.changed` events share one pending idle queue
+refresh, and that refresh reads a fresh engine snapshot. Delayed window
+observers revalidate the target window and shutdown state before calling UI
+code.
 
 Shutdown stops the Tk poller, and listener calls that observe the shutdown state return without enqueueing. Rejection is intentionally best-effort rather than atomic with queue insertion: an event already entering concurrently may reach the abandoned queue after polling stops. It is discarded safely when the UI object is released and cannot update Tk.
 
@@ -199,13 +228,44 @@ Shutdown stops the Tk poller, and listener calls that observe the shutdown state
 
 Tk does not read or mutate `ProcessingQueue` directly.
 
-Queue IDs, placeholder jobs, status changes, submission and cancellation are owned by processing and exposed through engine methods. Queue queries return copied queue data, excluding runtime-only fields such as task callables. Queue snapshot synchronization remains a release-hardening requirement.
+Queue IDs, placeholder jobs, status changes, submission and cancellation are
+owned by processing and exposed through engine methods. Queue queries return
+copied queue data, excluding runtime-only fields such as task callables.
+
+`ProcessingQueue` uses one re-entrant state lock because synchronized queue
+methods call one another. Shared runnable-queue, history, and worker-thread
+registry changes go through synchronized methods. `get_item_snapshot(...)`
+copies one item while holding that lock; `get_all_queue_items_snapshot(...)`
+filters and copies the complete result under one lock acquisition. Both return
+deeply detached values. The engine excludes `task_queue`, `last_task`, and
+`output`, then copies the public result again, so worker callables and temporary
+processing output do not reach Tk or CLI job snapshots.
+
+`job.changed` events raised during a synchronized queue operation are deferred
+per thread until the outermost synchronized call has released the queue lock.
+Long-running task callables execute in queue worker threads outside that lock.
 
 ### Search
 
 The engine owns live text and video search processors, preparation workers and search-session state.
 
 Tk stores a search ID and uses engine methods to prepare, inspect, query and close a search session.
+
+The session registry lock protects short lookups, identity checks, state
+updates, and detached status snapshots. Queue status reads, thread startup,
+corpus preparation, indexing, model loading, text/video search, and frame
+retrieval run outside that lock. This keeps `get_search(...)` responsive while
+third-party work is active and avoids nesting the search registry lock with the
+queue lock.
+
+Setting `preparation_active` under the lock makes duplicate concurrent prepare
+requests reuse one worker. Closing removes the session under the same lock, so
+requests that begin after close see an unknown session and do no work.
+Third-party work already accepted before close is allowed to finish; it is not
+forcibly interrupted. Before publishing a state update or returning a model,
+search result, or frame, the manager checks that the registry still contains
+the same session object. A result from a closed session, or from an older
+session replaced under the same ID, is discarded.
 
 ### Assistant
 
@@ -229,7 +289,18 @@ Command-line arguments are converted into `RuntimeOptions` before processing con
 
 ### Events
 
-Named event factories produce detached, transport-safe payload data. The architecture test requires a representative simple-data sample for every public factory. It also inventories direct `EngineEvent` construction: direct producers use literal event names, and the only reviewed direct payload is the fixed simple `job.changed` queue summary. Add a named factory and sample before introducing another payload shape.
+Named event factories produce payloads made from simple, future-serializable
+values. The architecture test requires a representative simple-data sample
+for every public factory. It also inventories direct `EngineEvent`
+construction: direct producers use literal event names, and the only reviewed
+direct payload is the fixed simple `job.changed` queue summary. Add a named
+factory and sample before introducing another payload shape.
+
+`EventEmitter.emit(...)` deep-copies the complete event separately for each
+listener. This isolates nested mutable payload values from the producer and
+from other listeners. It does not make event delivery a transport: delivery is
+still synchronous and in-process, and Version 1 defines no encoding, wire
+version, replay, or remote subscription behavior.
 
 Queue events expose stable job summaries rather than callables, threads or temporary processing objects.
 
@@ -266,9 +337,14 @@ tests/architecture/test_legacy_event_boundary.py
 tests/architecture/test_processing_boundary.py
 tests/architecture/test_event_data_boundary.py
 tests/architecture/test_headless_engine_import.py
+tests/test_processing_queue_event_locking.py
+tests/test_search_sessions.py
+tests/test_engine_search.py
+tests/test_events.py
+tests/test_tk_engine_events.py
 ```
 
-The checks require that:
+Together, the architecture suite and focused behavior tests require that:
 
 - processing does not import UI modules;
 - UI and processing-boundary modules do not use wildcard imports;
@@ -280,6 +356,7 @@ The checks require that:
 - removed callback and action-event compatibility paths do not return;
 - processing does not read command-line policy from `sys.argv` or retained `cli_args`;
 - named event factories and reviewed direct event producers use simple payload data;
+- nested event payload mutation is isolated between listeners and from the producer;
 - importing and constructing the runtime boundary does not load or start Tkinter, CustomTkinter or `storytoolkitai.ui`;
 - `receive_engine_event(...)`, the listener registered with the engine, only accepts or rejects an event and writes accepted events to the thread-safe inbox.
 
@@ -385,7 +462,11 @@ The first-party Tk and CLI processing boundary is complete through:
 
 - the queue, event, search, CLI and runtime-option migrations;
 - the final Tk engine-boundary commits;
-- `b37334263e8620d91365dc32d333e536d06c1a58`, which closes the remaining Version 1 architecture guard gaps.
+- queue synchronization, search-session lifecycle hardening, per-listener
+  event payload isolation, compatibility fixtures, and migration-leftover
+  removal;
+- `f62b7877936902615a5cf62f46c73d48b4bdd5d1`, the code reviewed for this
+  final documentation alignment.
 
 Further cleanup may simplify `ToolkitOps`, `StoryToolkitAI` or operation-specific return values, but it must not weaken the implemented dependency direction.
 

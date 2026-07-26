@@ -1,5 +1,8 @@
 # Testing StoryToolkitAI
 
+**Code reviewed through:** `f62b7877936902615a5cf62f46c73d48b4bdd5d1`
+**Intended release candidate:** `v1.0.0-rc.1`
+
 StoryToolkitAI uses three explicit verification categories:
 
 - **Automated** — deterministic tests that run in the normal pytest suite.
@@ -47,6 +50,39 @@ Run all tests together, including architecture checks and application tests. Use
 ```bash
 .venv-test/bin/python -m pytest -q
 ```
+
+## Run Version 1 boundary-hardening checks
+
+The following focused command covers the queue snapshot/event lock, search
+session API, event payload isolation, Tk inbox/poll cycle, known correctness
+fixes, and compatibility fixtures:
+
+```bash
+.venv-test/bin/python -m pytest \
+  tests/architecture \
+  tests/test_processing_queue_event_locking.py \
+  tests/test_engine.py \
+  tests/test_search_sessions.py \
+  tests/test_engine_search.py \
+  tests/test_events.py \
+  tests/test_tk_engine_events.py \
+  tests/test_ui_notifications.py \
+  tests/test_timecode.py \
+  tests/test_compatibility.py \
+  -q
+```
+
+This focused command is useful for quick feedback but does not replace the
+complete suite or the manual release checklists.
+
+The current suite covers search status mapping, detached results, normal
+prepare/search/close behavior, and unknown session IDs. It does not yet contain
+all deterministic lifecycle-race tests called for by the Version 1 hardening
+plan: blocked status reads during preparation/search, close during blocked
+preparation/search/frame retrieval, duplicate simultaneous prepare calls, and
+late completion after removal or same-ID replacement. The implementation uses
+short registry-lock sections and identity revalidation for these cases, but
+the missing focused regression tests remain release-hardening work.
 
 ## Run Version 1 compatibility checks
 
@@ -102,6 +138,36 @@ Run these manually before a release candidate. Record the environment (OS
 version, architecture, Python version, application commit/build, model names,
 FFmpeg version and Resolve version/edition when applicable) alongside each
 result.
+
+## Current manual release status
+
+The repository contains no completed manual result record for the intended
+`v1.0.0-rc.1` candidate. Both platform checklists are deliberately initialized
+to **Not run**. Until the release owner attaches environment- and
+artifact-specific evidence, all applicable checks below remain open:
+
+- source and packaged startup and clean shutdown;
+- installation, upgrade, signing/notarization or SmartScreen behavior, and
+  uninstall for each published artifact;
+- FFmpeg discovery and a controlled invalid-path failure;
+- CPU and every advertised MPS/Metal or CUDA processing path, with evidence
+  that accelerated work did not silently fall back;
+- native macOS notification presentation with quotes, newlines, Unicode,
+  backslashes, and shell metacharacters;
+- one representative end-to-end transcription, including cancellation, save,
+  reopen, and export;
+- queue progress, queued and active cancellation, dependencies, persistence,
+  and recovery;
+- text and video search, UI responsiveness during preparation/search, and
+  close-during-work behavior;
+- Assistant setup and a live provider request, including a safe failure case;
+- Resolve connection and reversible timeline operations in both source and
+  packaged applications where that platform artifact supports Resolve;
+- copied stable-release projects, transcriptions, stories, settings, and queue
+  data, with unintended format changes ruled out.
+
+An item that does not apply to the publication plan must be marked as such in
+the release issue. Leaving it unchecked is not evidence that it was waived.
 
 If a heavyweight automated test is added later, keep it out of the default
 suite behind an explicit opt-in command or marker, use repository-external

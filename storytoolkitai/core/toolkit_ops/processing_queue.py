@@ -20,7 +20,7 @@ QUEUE_FILE_PATH = os.path.join(USER_DATA_PATH, 'queue.json')
 
 
 def _synchronized(method):
-    """Run a short queue-state operation while holding its state lock.
+    """Run a queue-state operation while holding its state lock.
 
     ``job.changed`` events raised by nested queue calls are collected for the
     current thread and emitted only after the outermost synchronized call has

@@ -4,14 +4,26 @@ This file records runtime behaviour noticed during the StoryToolkitAI Version 1 
 
 An entry here does not establish that the refactor caused the issue. Recording it prevents the observation from being lost while architecture and release work continues.
 
+**Code reviewed through:** `f62b7877936902615a5cf62f46c73d48b4bdd5d1`
+**Intended release candidate:** `v1.0.0-rc.1`
+
 ## Status legend
 
-- **Open** — ready to investigate.
-- **Deferred** — intentionally postponed until a stated milestone.
-- **Investigating** — active comparison or diagnosis is underway.
-- **Monitoring** — no longer reproducible, but the cause remains unconfirmed.
-- **Resolved** — cause and resolution have been confirmed.
-- **Not a regression** — reproduced independently of the refactor.
+- **Fixed** — the implementation is corrected and has focused automated
+  coverage where practical.
+- **Accepted for Version 1** — no speculative code change is justified by the
+  current evidence, but any stated manual release condition still applies.
+- **Deferred to Version 2** — intentionally outside the Version 1 release.
+- **Reopen if reproduced** — the current branch does not reproduce the issue;
+  capture diagnostics before changing code.
+
+## Current disposition
+
+| Disposition | Entries |
+| --- | --- |
+| **Fixed** | R02 queue synchronization; R03 Tk event marshalling; R04 macOS notification arguments; R05 container equality comparisons; R06 transcription `incomplete` persistence. |
+| **Accepted for Version 1** | R01: retain the current Resolve connection code while it works, subject to the required live source and packaged-application checks. A failed check is a release issue, not an accepted pass. |
+| **Deferred to Version 2** | None of R01-R06. Transport conversion for accepted in-process boundary values is Version 2 work documented in `tk-engine-boundary.md`; it is not an unresolved Version 1 correctness bug. |
 
 ## R01 — DaVinci Resolve API temporarily failed to connect on macOS with Resolve 20+
 
@@ -24,9 +36,9 @@ An entry here does not establish that the refactor caused the issue. Recording i
 | **Cause** | Unknown. No specific code or configuration change has been confirmed as the cause of either the original failure or its disappearance. |
 | **Regression status** | There is no current evidence of a persistent refactor regression. |
 | **Automated coverage** | Fake-backed tests cover engine delegation, detached Resolve state, connection-result isolation, polling control, disabling, render-monitor validation and Resolve operations. These tests cannot exercise Blackmagic's scripting module, Fusion library loading, external-scripting configuration or the live `scriptapp("Resolve")` handshake. |
-| **Version 1 decision** | Do not make a speculative connection-code change while the current branch connects successfully. A safe fix requires a reproduced failure and diagnostics from a live Resolve environment. |
+| **Version 1 decision** | Do not make a speculative connection-code change while the current branch connects successfully. A safe fix requires a reproduced failure and diagnostics from a live Resolve environment. The source and packaged Resolve checks remain release conditions. |
 | **Future action** | Complete the manual verification below before the release candidate. If the connection failure returns, capture the exact environment and logs, then compare the same environment against the stable branch before changing the integration. |
-| **Status** | Deferred — live Resolve verification required |
+| **Status** | Accepted for Version 1; reopen if reproduced; live Resolve verification required |
 
 ### Step 6C assessment
 
@@ -113,11 +125,12 @@ If the connection failure returns:
 | **First observed** | During the Version 1 architecture migration review. |
 | **Environment** | All platforms; exposed by the engine boundary change. |
 | **Original behaviour** | Queue snapshots were copied from live, unsynchronized internal state. A copy could fail or capture inconsistent data if another thread modified the queue mid-copy. |
-| **Current behaviour** | Snapshots are detached copies but remain non-atomic with respect to concurrent queue mutations. |
-| **Cause** | The `ProcessingQueue` internal state is not protected by a lock during snapshot construction. |
+| **Current behaviour** | `ProcessingQueue` protects shared runnable-queue, history and worker-thread registry operations with a re-entrant state lock. One-item and all-item snapshots are deep-copied while that lock is held. Engine job reads exclude `task_queue`, `last_task` and `output`, then return another detached copy. `job.changed` events collected by synchronized operations are emitted after the outermost lock section ends. |
+| **Cause** | The historical implementation copied queue state without synchronizing snapshot construction with worker and UI mutations. |
 | **Regression status** | Runtime correctness issue exposed by the new boundary, not a coupling regression. |
-| **Future action** | Add a queue-level lock for snapshot construction and concurrent access. This is classified as a release-hardening fix rather than an architecture migration item. |
-| **Status** | Open |
+| **Automated coverage** | Queue and engine tests cover detached nested values, filters and runtime-field exclusion. The event-locking regression test proves a listener can read a snapshot from another thread because queue events are emitted after the state lock is released. |
+| **Future action** | Retain the snapshot and event-locking regression tests. Do not expose the queue's internal reference-returning helpers through the engine. |
+| **Status** | Fixed |
 
 ## R03 — Tk event-thread scheduling and queue-refresh coalescing
 
@@ -143,7 +156,7 @@ If the connection failure returns:
 | **Cause** | The historical macOS notification helper interpolated text into both a shell command and AppleScript source instead of passing it as data. |
 | **Regression status** | Runtime correctness issue, not caused by the refactor but worth tracking before release candidate. |
 | **Future action** | Retain command-construction tests for quotes, backslashes, newlines, Unicode and shell metacharacters. Before a release candidate, manually trigger a macOS notification with the same characters to verify native presentation. |
-| **Status** | Resolved |
+| **Status** | Fixed |
 
 ## R05 — Tuple identity comparison warning
 
@@ -156,7 +169,7 @@ If the connection failure returns:
 | **Cause** | Historical use of identity comparisons where value comparisons were intended. |
 | **Regression status** | Potential correctness concern, not caused by the refactor but worth tracking before release candidate. |
 | **Future action** | Retain the focused missing-timecode behavior test and the source audit that rejects identity comparisons against container literals. |
-| **Status** | Resolved |
+| **Status** | Fixed |
 
 ## R06 — Persisted transcription completion flag was discarded after load
 
@@ -170,8 +183,12 @@ If the connection failure returns:
 | **Regression status** | Historical data-compatibility bug found during release hardening; no migration is required. |
 | **Automated coverage** | `tests/test_compatibility.py` loads the sanitized stable-release shape, requires the original dictionary before edits, and requires the same key set and unrelated nested values after saving. |
 | **Future action** | Retain the fixture round-trip test and manually check copied stable-release transcriptions before the release candidate. |
-| **Status** | Resolved |
+| **Status** | Fixed |
 
 ## Release issue tracking
 
-The entries above are brief records to prevent these concerns from being lost while the architecture migration finishes. Before the release candidate, each should have a dedicated GitHub issue with reproduction steps and acceptance criteria. The release checklist should link to those issues rather than duplicating detail here.
+The entries above preserve the decisions made during release hardening. Manual
+results belong in the applicable release issue using the macOS or Windows
+checklist. Create a focused release issue with logs and reproduction steps for
+any failed or blocked check; do not convert an unchecked manual row into a pass
+based on automated or mocked coverage.

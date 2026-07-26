@@ -1,8 +1,10 @@
 # Separate processing from the user interface
 
 **Architecture status:** Implemented
-**Release status:** Pending concurrency and release-hardening fixes
+**Release status:** Architecture hardening implemented; release verification pending
 **Scope:** Internal Python architecture for Version 1
+**Code reviewed through:** `f62b7877936902615a5cf62f46c73d48b4bdd5d1`
+**Intended release candidate:** `v1.0.0-rc.1`
 **Implemented boundary:** [`tk-engine-boundary.md`](./tk-engine-boundary.md)
 **Closed migration inventory:** [`current-ui-coupling.md`](./current-ui-coupling.md)
 **Version 1 architecture freeze:** [`version-1-architecture-freeze.md`](./version-1-architecture-freeze.md)
@@ -14,6 +16,12 @@ StoryToolkitAI separates processing from presentation.
 Processing works without importing or calling Tkinter or another user interface. The Tk interface and CLI start operations and read processing state through `StoryToolkitEngine`. Processing returns UI-independent results and publishes events for progress and presentation-relevant state changes. Each interface decides how to display them.
 
 Version 1 keeps the application in one Python process. A local service, web UI, TUI, Tauri application and repository split remain Version 2 work.
+
+`build_runtime(...)` constructs `StoryToolkitAI`, the private `ToolkitOps`, and
+`StoryToolkitEngine`. Tk receives `StoryToolkitAI` for existing settings,
+paths, application state, and lifecycle work, plus the engine for processing.
+The CLI receives its parsed arguments and parser for command-line presentation,
+plus the engine for processing. Neither interface receives `ToolkitOps`.
 
 ## Why this change was needed
 
@@ -159,13 +167,20 @@ Preferred boundary values include:
 - lists and dictionaries;
 - IDs;
 - file paths;
-- immutable snapshots;
+- detached snapshots that callers may mutate safely;
 - dataclasses;
 - small Pydantic models where validation is useful.
 
 Do not pass UI objects, UI callbacks, worker threads, open file handles or live model implementations through the engine boundary.
 
 Version 1 remains in-process and does not require every value to be serializable. Accepted in-process values are documented in `tk-engine-boundary.md`.
+
+Engine events are also in-process in Version 1. Emission is synchronous in the
+emitter's thread, but each listener receives its own deep copy of the event.
+This prevents a listener from changing nested payload data seen by the
+producer or another listener. Named payloads use simple values to ease a
+future transport migration; this is not a wire protocol or a claim that the
+rest of the engine boundary is transport-ready.
 
 ### 6. Long-running processing is represented as jobs
 
@@ -256,6 +271,12 @@ The Version 1 restructuring is complete when:
 - architecture tests and source audits protect the implemented rules;
 - accepted in-process Version 1 bridges are documented;
 - the implemented boundary is described in `tk-engine-boundary.md`.
+
+The architecture completion criteria above are separate from the release
+gate. Real source and packaged-application checks for startup, shutdown,
+processing devices, FFmpeg, notifications, queue workflows, search,
+Assistant, Resolve, and copied stable-release data remain recorded as manual
+work in [`docs/testing.md`](../testing.md).
 
 ## Consequences
 

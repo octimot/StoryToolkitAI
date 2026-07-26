@@ -2,7 +2,8 @@
 
 **Status:** Closed Version 1 architecture inventory
 **Branch reviewed:** `dev`
-**Reviewed through:** `b37334263e8620d91365dc32d333e536d06c1a58`
+**Reviewed through:** `f62b7877936902615a5cf62f46c73d48b4bdd5d1`
+**Intended release candidate:** `v1.0.0-rc.1`
 **Related decision:** [`engine-ui-separation.md`](./engine-ui-separation.md)
 **Implemented boundary:** [`tk-engine-boundary.md`](./tk-engine-boundary.md)
 **Runtime issues:** [`known-refactor-issues.md`](./known-refactor-issues.md)
@@ -28,25 +29,23 @@ command-line arguments
           |
           +--> StoryToolkitAI
           |
-          +--> private ToolkitOps
-          |       |
-          |       +--> ProcessingQueue
-          |       +--> search processors
-          |       +--> assistant implementations
-          |       +--> Resolve integration
-          |       +--> processing models and settings
-          |
           +--> StoryToolkitEngine
+                  |
+                  +--> private ToolkitOps
+                  |       +--> ProcessingQueue
+                  |       +--> processing task handlers
+                  |       +--> Resolve integration
+                  |       +--> processing models and settings
                   |
                   +--> public processing operations
                   +--> detached queue and search state
-                  +--> engine-owned search sessions
-                  +--> engine-owned assistant sessions
+                  +--> engine-owned search sessions and workers
+                  +--> engine-owned assistant registry
                   +--> Resolve operations and snapshots
                   +--> processing events
 
 Tk receives:  StoryToolkitAI + StoryToolkitEngine
-CLI receives: StoryToolkitEngine
+CLI receives: parsed args + parser + StoryToolkitEngine
 ```
 
 The direct processing-to-UI dependency has been removed.
@@ -73,7 +72,7 @@ The direct processing-to-UI dependency has been removed.
 | C07 | Queue and compatibility workflows used implicit UI action strings | Resolved | Queue and named processing events use structured event data; removed compatibility paths are guarded by tests. |
 | C08 | `ProcessingQueue` depended on the complete `ToolkitOps` object | Resolved | The queue receives explicit task handlers and the shared event emitter. |
 | C09 | UI read and mutated queue implementation details | Resolved | Queue queries and mutations go through engine methods. |
-| C10 | Queue and search UI relied on timing workarounds around callbacks | Resolved | Engine queries return copied queue data; snapshot synchronization remains a release-hardening requirement. Events and polling indicate that state may have changed. |
+| C10 | Queue and search UI relied on timing workarounds around callbacks | Resolved | Queue snapshots are deep-copied under the queue state lock; search snapshots are copied during short registry-lock sections. Events only indicate that state may have changed. |
 | C11 | UI constructed search processors and owned search workers | Resolved for Version 1 | The engine owns search sessions, processors and workers. |
 | C12 | Search classes received the complete operations object | Resolved for Version 1 | Search receives narrow explicit configuration. |
 | C13 | Assistant copied a hidden UI reference | Resolved | Assistant implementations remain processing-owned and UI-independent. |
@@ -94,6 +93,7 @@ The following are not release blockers:
 - Tk receives `StoryToolkitAI` for existing settings, paths and lifecycle behaviour.
 - UI-independent project and content models remain live in the same process.
 - `AssistantSession` is an in-process handle rather than a network contract.
+- `IngestSettings` remains the argument passed to `start_ingest(...)`;
 - some Resolve workflows use existing `Timecode` and render-monitor objects;
 - video-search presentation may use an image array;
 - engine methods may retain operation-specific return shapes;
@@ -101,6 +101,10 @@ The following are not release blockers:
 - internal Resolve state may continue to use `NLE`.
 
 These limits must be revisited before a separate engine process or independently released API is introduced.
+
+They do not mean the engine is ready for HTTP, WebSocket, or remote clients.
+Version 1 has no wire encoding, request versioning, remote event subscription,
+reconnect contract, or replacement for the live values listed above.
 
 ## Repeatable local audit
 

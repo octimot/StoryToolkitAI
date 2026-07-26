@@ -1,6 +1,8 @@
 # Version 1 architecture freeze
 
 **Status:** Active until the Version 1 release
+**Code reviewed through:** `f62b7877936902615a5cf62f46c73d48b4bdd5d1`
+**Intended release candidate:** `v1.0.0-rc.1`
 
 ## Purpose
 
@@ -30,6 +32,11 @@ and Resolve implementation objects remain private behind
 The Tk application may also receive `StoryToolkitAI` for existing application
 state and lifecycle responsibilities. It must not use that object to recover or
 bypass private processing implementation objects.
+
+At runtime, `build_runtime(...)` returns only `(StoryToolkitAI,
+StoryToolkitEngine)`. `run_gui(...)` receives both objects. `run_cli(...)`
+receives the parsed arguments and parser for CLI presentation plus
+`StoryToolkitEngine`; it does not receive `StoryToolkitAI` or `ToolkitOps`.
 
 ## Changes allowed before Version 1
 
