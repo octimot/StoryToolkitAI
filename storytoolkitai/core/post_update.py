@@ -197,7 +197,7 @@ def post_update_0_22_0(is_standalone=False):
     import json
 
     # we're doing this on the raw file (not through the storytoolkitai class)
-    from storytoolkitai import APP_CONFIG_FILE_PATH, USER_DATA_PATH
+    from storytoolkitai import APP_CONFIG_FILE_PATH
 
     if os.path.isfile(APP_CONFIG_FILE_PATH):
 

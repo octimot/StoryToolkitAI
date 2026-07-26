@@ -10,7 +10,6 @@ import subprocess
 import os
 import platform
 import json
-from threading import Timer
 import re
 
 from timecode import Timecode

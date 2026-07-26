@@ -5,7 +5,6 @@ import json
 import hashlib
 import shutil
 import time
-from datetime import datetime
 import re
 from threading import Timer
 
@@ -14,7 +13,7 @@ from timecode import Timecode
 from storytoolkitai.core.logger import logger
 from .transcription import Transcription
 from .media import MediaItem
-from storytoolkitai.core.toolkit_ops.timecode import sec_to_tc, tc_to_sec
+from storytoolkitai.core.toolkit_ops.timecode import sec_to_tc
 
 
 class Story:

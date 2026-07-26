@@ -3288,7 +3288,7 @@ class toolkit_UI():
         # update the window after it's been created
         self.root.after(500, self.update_main_window())
 
-        # add the window observer that will update the main window if the NLE status changes
+        # update the main window when Resolve connection state changes
         def add_main_window_observers():
 
             # this updates the window when the project was changed
@@ -11290,7 +11290,7 @@ class toolkit_UI():
                             .sync_current_tc_to_transcript(window_id=window_id,
                                                            timecode=goto_timecode, fps=fps, start_tc=start_tc)
 
-                        # if the NLE is connected, move the playhead to the new timecode
+                        # if Resolve is connected, move the playhead to the new timecode
                         if self.engine.is_resolve_connected():
                             self.engine.move_resolve_playhead(
                                 seconds=tc_to_sec(str(goto_timecode)),
@@ -13786,8 +13786,8 @@ class toolkit_UI():
             # add an observer to this window
             # for the action, we'll use  update_transcription_ + the transcription id
             # for the callback, we'll use the update_transcription_window function
-            # so whenever the observer is notified from toolkit the ops object,
-            # it will call the update_transcription_window function
+            # engine events notify this UI-local observer, which then updates
+            # the transcription window
             self.add_observer_to_window(
                 window_id=t_window_id,
                 action='{}_{}'
@@ -14207,18 +14207,18 @@ class toolkit_UI():
                 # this gets into an endless loop if the transcript_sec is not precise
                 # so we keep them disabled - if it's needed, 
                 # we'll have to trigger go_to_time from caller function
-                # and move the NLE playhead (if any)
+                # and move the Resolve playhead (if any)
 
                 break
 
             # if we passed all possible segments that could match the transcript_sec
-            # don't make any selection, but move the NLE playhead (if any)
+            # don't make any selection, but move the Resolve playhead (if any)
             elif float(segment.end) > transcript_sec:
 
                 # this gets into an endless loop if the transcript_sec is not precise
                 # so we keep them disabled - if it's needed, 
                 # we'll have to trigger go_to_time from caller function
-                # just move the NLE playhead (if any)
+                # just move the Resolve playhead (if any)
 
                 # this notification might be annoying, so maybe remove it
                 # toolkit_UI_obj.notify_via_messagebox(

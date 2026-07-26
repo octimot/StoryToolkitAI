@@ -42,23 +42,6 @@ TEST_TASK_HANDLERS = {
     "test_task": [_run_test_task],
 }
 
-class FakeToolkitOps:
-    """
-    Small replacement for ToolkitOps containing only what ProcessingQueue
-    currently needs for the lifecycle operations covered by these tests.
-    """
-
-    def __init__(self) -> None:
-        self.queue_tasks = {
-            "test_task": [_run_test_task],
-        }
-        self.notifications: list[str] = []
-
-    def notify_observers(self, action: str) -> None:
-        """Record observer notifications without starting any UI code."""
-
-        self.notifications.append(action)
-
 
 @pytest.fixture
 def processing_queue(tmp_path, monkeypatch):

@@ -6,7 +6,7 @@ import hashlib
 
 from dataclasses import dataclass
 from typing import Any, Callable, List, Union
-from torch import nn, Tensor, device
+from torch import Tensor, device
 import numpy as np
 from numpy import ndarray
 
@@ -25,10 +25,10 @@ from .search_paths import (
     is_video_search_file,
 )
 
-from .transcription import Transcription, TranscriptionSegment, TranscriptionUtils
+from .transcription import Transcription, TranscriptionUtils
 from .textanalysis import TextAnalysis
 
-from .videoanalysis import ClipIndex, cv2
+from .videoanalysis import ClipIndex
 
 @dataclass(frozen=True)
 class SearchConfig:
@@ -860,9 +860,6 @@ class TextSearch(SearchItem):
                        start_search_time=None):
 
         # WORK IN PROGRESS
-
-        from transformers import AutoTokenizer, AutoModelForSequenceClassification
-        import torch
 
         # reset the search results
         search_results = []
