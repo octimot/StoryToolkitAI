@@ -7,7 +7,6 @@ from openai.types import CompletionUsage
 import json
 import os
 import copy
-import requests
 from pydantic import BaseModel, model_validator
 from typing import Optional
 import re
@@ -27,9 +26,6 @@ class ToolkitAssistant:
 
         # load the stAI object
         self.stAI = self.toolkit_ops_obj.stAI
-
-        # load the toolkit UI object
-        self.toolkit_UI_obj = self.toolkit_ops_obj.toolkit_UI_obj
 
     @staticmethod
     def copy_context_and_chat(assistant_from, assistant_to):

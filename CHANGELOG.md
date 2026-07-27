@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file, starting with version 0.17.7.
 
+## [1.0.0] - 2026-07-27
+
+StoryToolkitAI 1.0 introduces a major internal reorganization that separates
+the application interface from its processing functionality. This prepares
+the project for future web, terminal and desktop interfaces while preserving
+the current UI and existing project formats.
+
+This release also establishes a more flexible foundation for maintaining
+the application and producing future standalone releases.
+
+### Changes
+
+- Improved reliability of background processing, queue updates and cancellation.
+- Improved responsiveness and lifecycle handling for advanced text and video searches.
+- Improved version and update handling for development and stable releases.
+
+### Fixes
+
+- Fixed macOS notifications when filenames or messages contain quotes, Unicode
+  or other special characters.
+- Fixed the transcription `incomplete` value being lost after loading and
+  saving an existing transcription.
+- Fixed several queue, timecode and background UI update edge cases.
+- Other bug fixes and stability improvements.
+
+### Maintainers
+
+The Version 1 internal architecture and maintenance rules are summarized in
+[`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+
 ## [0.25.1] - 2025-02-17
 
 ### Changes

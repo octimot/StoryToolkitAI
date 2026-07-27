@@ -4,8 +4,9 @@ import json
 import re
 import hashlib
 
-from typing import List, Union, Callable
-from torch import nn, Tensor, device
+from dataclasses import dataclass
+from typing import Any, Callable, List, Union
+from torch import Tensor, device
 import numpy as np
 from numpy import ndarray
 
@@ -16,27 +17,49 @@ from sentence_transformers import SentenceTransformer, util
 from sentence_transformers.SentenceTransformer import logging, batch_to_device, trange
 import torch
 
-from .transcription import Transcription, TranscriptionSegment, TranscriptionUtils
+from .search_paths import (
+    calculate_search_file_paths_size,
+    create_search_file_path_id,
+    filter_search_file_paths,
+    is_text_search_file,
+    is_video_search_file,
+)
+
+from .transcription import Transcription, TranscriptionUtils
 from .textanalysis import TextAnalysis
 
-from .videoanalysis import ClipIndex, cv2
+from .videoanalysis import ClipIndex
 
+@dataclass(frozen=True)
+class SearchConfig:
+    """
+    Values and callbacks required by search processing.
+
+    Search receives only the application settings it actually uses instead of
+    receiving the complete ToolkitOps object. The callbacks keep settings and
+    device selection current without making search responsible for application
+    configuration.
+    """
+
+    get_torch_device: Callable[[], Any]
+    semantic_search_model_name: str
+    get_app_setting: Callable[..., Any]
+    save_config: Callable[..., Any]
+
+    @property
+    def torch_device(self) -> Any:
+        """Return the Torch device currently selected by ToolkitOps."""
+
+        return self.get_torch_device()
 
 class ToolkitSearch:
     """
     This is the main class for the search engine
     """
 
-    def __init__(self, toolkit_ops_obj):
-
-        # todo replace toolkit_ops_obj and stAI with better object initialization
-        #  that has all the required parameters: device, search type etc.
-
-        # load the toolkit ops object
-        self.toolkit_ops_obj = toolkit_ops_obj
-
-        # load the stAI object
-        self.stAI = self.toolkit_ops_obj.stAI
+    def __init__(self, search_config: SearchConfig):
+        # keep only the settings and callbacks required by search processing
+        self.search_config = search_config
 
         # define the possible search types here
         self.available_search_types = ['semantic']
@@ -88,13 +111,13 @@ class SearchItem(ToolkitSearch):
         # add the new search_file_path_id to the instances dict
         self._instances[self._search_file_path_id] = self
 
-    def __init__(self, toolkit_ops_obj, **kwargs):
+    def __init__(self, search_config: SearchConfig, **kwargs):
 
         # prevent initializing the instance more than once if it was already initialized
         if hasattr(self, '_initialized') and self._initialized:
-            return
-
-        super().__init__(toolkit_ops_obj=toolkit_ops_obj)
+            # cached search items may be reused after the application changed its
+            # device or settings, so always refresh their narrow configuration
+            return super().__init__(search_config=search_config)
 
         # get all the attributes that were passed at init
         self.search_type = kwargs.get('search_type', None)
@@ -122,10 +145,11 @@ class SearchItem(ToolkitSearch):
         # to keep track if the search corpus is indexed
         self._is_indexed = False
 
-        # to keep track if there's a cache file
-        self._has_file_cache = False
-
         self._initialized = True
+
+        # initialize the shared search configuration last so all subclasses use
+        # the current settings even when the search item came from the cache
+        super().__init__(search_config=search_config)
 
     @property
     def search_file_path_id(self):
@@ -140,98 +164,59 @@ class SearchItem(ToolkitSearch):
         return self._is_indexed
 
     @staticmethod
-    def get_search_file_path_id(search_file_paths: list):
+    def get_search_file_path_id(
+        search_file_paths: list[str] | tuple[str, ...] | None,
+    ) -> str:
         """
-        We need the search_file_path_id to identify the search corpus
-        and to pick-up the search item from different places (cache, queue, etc.)
+        Return the identifier used for one set of search paths.
+
+        The lightweight implementation lives outside the model-processing
+        module so path handling can be tested without importing Torch.
         """
 
-        # if the search_file_paths is empty, we'll return a hash of the current time
-        if not search_file_paths:
-            return hashlib.md5(('empty_' + str(time.time())).encode('utf-8')).hexdigest()
-
-        # turn the list of file paths into a string
-        search_file_paths = '__'.join(search_file_paths)
-
-        return hashlib.md5(search_file_paths.encode('utf-8')).hexdigest()
+        return create_search_file_path_id(search_file_paths)
 
     @classmethod
-    def filter_file_paths(cls, search_paths: str or list = None, file_validator: callable = None) -> list or None:
+    def filter_file_paths(
+        cls,
+        search_paths: str | list[str] | tuple[str, ...] | None = None,
+        file_validator: Callable[[str], bool] | None = None,
+    ) -> list[str]:
         """
-        This function will filter all the file paths and directories that are passed to it,
-        do a recursive walk through the directories to include all the valid files (by extension)
-        and return a list of file paths the are valid.
+        Return sorted unique paths supported by this search class.
 
-        It also sorts them and removes duplicates.
-
-        :param search_paths: list of file paths or directories
-        :param file_validator: a function that will be used to validate the file paths,
-                               by default it will use the is_file_searchable function from SearchItem
-        :return: list of file paths
-
+        ``file_validator`` remains optional so TextSearch and VideoSearch keep
+        their existing class-specific extension handling.
         """
 
         if file_validator is None:
             file_validator = cls.is_file_searchable
 
-        filtered_search_file_paths = []
-
-        # is this a search for a single file or a directory?
-        # if it's a single file, we'll just add it to the search_file_paths list
-        if search_paths is not None and type(search_paths) is str and os.path.isfile(search_paths) \
-                and file_validator(search_paths):
-            filtered_search_file_paths = [search_paths]
-
-        # if it's a list of files, we'll just add it to the search_file_paths list
-        elif search_paths is not None and (type(search_paths) is list or type(search_paths) is tuple):
-
-            # but we only add the path if it's a file
-            for search_path in search_paths:
-                if os.path.isfile(search_path) and file_validator(search_path):
-                    filtered_search_file_paths.append(search_path)
-
-        # if it's a directory, we'll process all the files in the directory
-        elif search_paths is not None and type(search_paths) is str and os.path.isdir(search_paths):
-
-            for root, dirs, files in os.walk(search_paths):
-
-                # skip if the directory starts with a dot
-                if os.path.basename(root).startswith('.'):
-                    continue
-
-                for file in files:
-                    if file_validator(file):
-                        filtered_search_file_paths.append(os.path.join(root, file))
-
-        # remove duplicates
-        filtered_search_file_paths = list(set(filtered_search_file_paths))
-
-        # sort the list of file paths
-        filtered_search_file_paths.sort()
-
-        return filtered_search_file_paths
+        return filter_search_file_paths(
+            search_paths=search_paths,
+            file_validator=file_validator,
+        )
 
     @staticmethod
-    def is_file_searchable(file_path):
+    def is_file_searchable(file_path: str) -> bool:
         """
-        Used in the process_file_paths function to identify the searchable files
+        Return whether the path is supported by this search processor.
+
+        SearchItem does not define supported file types itself. Subclasses must
+        implement this method for their respective search data.
         """
-        pass
+
+        raise NotImplementedError(
+            'SearchItem subclasses must implement is_file_searchable().'
+        )
 
     @staticmethod
-    def calculate_total_file_size(files: list):
-        """
-        This function will calculate the total size of all the files that are being used for the search
-        """
+    def calculate_total_file_size(
+        files: list[str] | tuple[str, ...] | None,
+    ) -> int:
+        """Return the combined size of the selected search files."""
 
-        if not files:
-            return 0
-
-        total_size = 0
-        for file in files:
-            total_size += os.path.getsize(file)
-
-        return total_size
+        return calculate_search_file_paths_size(files)
 
     @property
     def search_file_paths_size(self):
@@ -253,6 +238,8 @@ class TextSearch(SearchItem):
 
         # prevent initializing the instance more than once if it was already initialized
         if hasattr(self, '_initialized') and self._initialized:
+            # SearchItem refreshes SearchConfig for a cached processor.
+            super().__init__(**kwargs)
             return
 
         # initialize search file paths, hashes etc. in the parent class
@@ -261,11 +248,8 @@ class TextSearch(SearchItem):
         self._search_corpus_phrases = None
         self._search_corpus_assoc = None
 
-        self._search_results = None
-        self._top_k = None
-
-        # we're using self.toolkit_ops_obj.s_semantic_search_model_name as default for now
-        self.model_name = kwargs.get('model_name', self.toolkit_ops_obj.s_semantic_search_model_name)
+        # use the configured semantic search model by default
+        self.model_name = kwargs.get('model_name', self.search_config.semantic_search_model_name)
         self.search_model = None
 
         self._embedder = None
@@ -286,7 +270,7 @@ class TextSearch(SearchItem):
 
         # if there is a search corpus cache directory set in the config, use that
         default_search_cache_dir = \
-            self.stAI.get_app_setting(setting_name='default_search_cache_dir', default_if_none='')
+            self.search_config.get_app_setting(setting_name='default_search_cache_dir', default_if_none='')
 
         # but only if it exists and is not empty
         if default_search_cache_dir != '' and os.path.isdir(default_search_cache_dir):
@@ -308,13 +292,10 @@ class TextSearch(SearchItem):
         return len(self._search_corpus_phrases) if self._search_corpus_phrases is not None else 0
 
     @staticmethod
-    def is_file_searchable(file_path):
-        """
-        This identifies the searchable files and returns True if the file is searchable
-        """
-        # for now,
-        # just check if the file ends with one of the extensions we're looking for
-        return file_path.endswith(('.transcription.json', '.txt', 'project.json'))
+    def is_file_searchable(file_path: str) -> bool:
+        """Return whether the path is supported by text search."""
+
+        return is_text_search_file(file_path)
 
     def prepare_search_corpus(self, force=False):
         """
@@ -360,7 +341,7 @@ class TextSearch(SearchItem):
 
             # load the TextAnalysis object
             if self._use_analyzer:
-                ta = TextAnalysis(torch_device_name=self.toolkit_ops_obj.torch_device)
+                ta = TextAnalysis(torch_device_name=self.search_config.torch_device)
             else:
                 ta = None
 
@@ -437,7 +418,7 @@ class TextSearch(SearchItem):
                 # try to see if we know which model to use for this language
                 # (if not the TextAnalysis will try to get the model itself)
                 spacy_models_per_language \
-                    = self.stAI.get_app_setting(setting_name='spacy_models_per_language',
+                    = self.search_config.get_app_setting(setting_name='spacy_models_per_language',
                                                 default_if_none={})
 
                 if transcription_language in spacy_models_per_language:
@@ -463,8 +444,10 @@ class TextSearch(SearchItem):
                     # and if it's not empty, add it to the config so we know it for next time
                     if selected_model_name is not None:
                         spacy_models_per_language[transcription_language] = selected_model_name
-                        self.stAI.save_config(setting_name='spacy_models_per_language',
-                                              setting_value=spacy_models_per_language)
+                        self.search_config.save_config(
+                            setting_name='spacy_models_per_language',
+                            setting_value=spacy_models_per_language
+                        )
 
             # if we're not using the analyzer, just use the segments as they are
             else:
@@ -625,7 +608,7 @@ class TextSearch(SearchItem):
             # but only if it's longer than x characters
             # to avoid adding stuff that is most likely meaningless
             # like punctuation marks
-            if len(phrase) > self.stAI.get_app_setting(
+            if len(phrase) > self.search_config.get_app_setting(
                     setting_name='search_corpus_min_length', default_if_none=2):
 
                 # remember the text file path and the phrase number
@@ -804,12 +787,12 @@ class TextSearch(SearchItem):
         if self.search_model is None:
             logger.info(
                 'Loading sentence transformer model "{}" on {}.'
-                .format(self.model_name, self.toolkit_ops_obj.torch_device)
+                .format(self.model_name, self.search_config.torch_device)
             )
 
             # if the sentence transformer model was never downloaded, log that we're downloading it
             model_downloaded_before = True
-            if self.stAI.get_app_setting(setting_name='s_semantic_search_model_downloaded_{}'
+            if self.search_config.get_app_setting(setting_name='s_semantic_search_model_downloaded_{}'
                     .format(self.model_name), default_if_none=False) is False:
                 logger.warning('The sentence transformer model {} may need to be downloaded and could take a while '
                                'depending on the Internet connection speed. '
@@ -821,15 +804,17 @@ class TextSearch(SearchItem):
             self.search_model = ToolkitSentenceTransformer(self.model_name)
 
             # set the torch device to the same device as the toolkit
-            self.search_model.to(self.toolkit_ops_obj.torch_device)
+            self.search_model.to(self.search_config.torch_device)
 
             # once the model has been loaded, we can note that in the app settings
             # this is a wat to keep track if the model has been downloaded or not
             # but it's not 100% reliable and we may need to find a better way to do this in the future
             if not model_downloaded_before:
-                self.stAI.save_config(setting_name='s_semantic_search_model_downloaded_{}'
-                                      .format(self.model_name),
-                                      setting_value=True)
+                self.search_config.save_config(
+                    setting_name='s_semantic_search_model_downloaded_{}'
+                    .format(self.model_name),
+                    setting_value=True
+                )
 
             return self.search_model
 
@@ -869,9 +854,6 @@ class TextSearch(SearchItem):
                        start_search_time=None):
 
         # WORK IN PROGRESS
-
-        from transformers import AutoTokenizer, AutoModelForSequenceClassification
-        import torch
 
         # reset the search results
         search_results = []
@@ -1190,9 +1172,6 @@ class TextSearch(SearchItem):
                         score=score
                     )
 
-        self._search_results = search_results
-        self._top_k = top_k
-
         return search_results, top_k
 
     @staticmethod
@@ -1301,6 +1280,9 @@ class TextSearch(SearchItem):
 class SearchablePhrase:
     """
     This class represents a searchable phrase.
+
+    Retained for Version 1 import compatibility despite having no first-party
+    callers. Review it with the public processing API for Version 2.
     """
 
     def __init__(self, search_phrase, corpus_idx, source_file_path, source_file_type):
@@ -1335,6 +1317,8 @@ class VideoSearch(SearchItem, ClipIndex):
 
         # prevent initializing the instance more than once if it was already initialized
         if hasattr(self, '_initialized') and self._initialized:
+            # refresh SearchConfig when a cached video search processor is reused
+            SearchItem.__init__(self, *args, **kwargs)
             return
 
         # load the video indexing paths from the search file paths
@@ -1345,22 +1329,18 @@ class VideoSearch(SearchItem, ClipIndex):
         # Initialize both supers
         SearchItem.__init__(self, *args, **kwargs)
 
-        # remove toolkit_ops_obj from kwargs
-        kwargs.pop('toolkit_ops_obj', None)
+        # ClipIndex does not use the StoryToolkitAI search configuration.
+        kwargs.pop('search_config', None)
 
         kwargs.pop('search_file_paths', None)
 
         ClipIndex.__init__(self, *args, **kwargs)
 
     @staticmethod
-    def is_file_searchable(file_path):
-        """
-        This identifies the searchable files and returns True if the file is searchable
-        """
-        # for now,
-        # just check if the file ends with one of the extensions we're looking for
+    def is_file_searchable(file_path) -> bool:
+        """Return whether the path can provide a video-search index."""
 
-        return file_path.endswith('.transcription.json')
+        return is_video_search_file(file_path)
 
     @staticmethod
     def set_video_index_paths(self, search_file_paths: List[str] = None):

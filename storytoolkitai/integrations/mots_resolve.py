@@ -10,7 +10,6 @@ import subprocess
 import os
 import platform
 import json
-from threading import Timer
 import re
 
 from timecode import Timecode
@@ -20,9 +19,13 @@ import logging
 # this logger will not be used within MotsResolve class if a logger is passed on init
 log_resolve = logging.getLogger('MotsResolve')
 
+# The application passes its configured logger to MotsResolve. Keep the
+# standalone fallback deterministic instead of reading command-line flags here.
+log_resolve.setLevel(logging.INFO)
+
 # add formatter to show the levelname and message in the log
-log_resolve.setLevel(logging.INFO if '--debug' not in sys.argv else logging.DEBUG)
 formatter = logging.Formatter("%(levelname)s: %(message)s (%(filename)s:%(lineno)d)")
+
 # add the formatter to the handler
 ch = logging.StreamHandler()
 ch.setFormatter(formatter)
@@ -30,17 +33,25 @@ log_resolve.addHandler(ch)
 
 class MotsResolve:
 
-    def __init__(self, logger=None):
+    def __init__(
+        self,
+        logger=None,
+        *,
+        skip_python_check=False,
+    ):
 
         # use the logging object if one was passed
-        self.logger = logger
+        self.logger = logger or log_resolve
 
         # if no logger was passed, use the default logger
         if logger is None:
-            self.logger = log_resolve
             self.logger.warning("No logger was passed to the MotsResolve class, using default logger.")
 
         self.logger.debug("MotsResolve module initialized.")
+
+        # Runtime policy is supplied by the application constructor. The
+        # integration must not inspect sys.argv to decide how it starts.
+        self.skip_python_check = bool(skip_python_check)
 
         # initialize the main objects
         self.resolve \
@@ -61,9 +72,9 @@ class MotsResolve:
         # this is where we hold the fusionscript module
         self.bmd = None
 
-        # only initialize the Resolve API if the Python version check is successful
-        # (if the user did not pass --skip-python-check via the command line)
-        if '--skip-python-check' in sys.argv or self.python_check():
+        # Initialize the Resolve API only when the caller explicitly bypasses
+        # the compatibility check or the active Python version is supported.
+        if self.skip_python_check or self.python_check():
 
             # initialize the Resolve API
             self.api = self.get_resolve()
@@ -1205,14 +1216,6 @@ class MotsResolve:
                             ['ffmpeg', '-y', '-i', rendered_clip, '-qmin', '1', '-qscale:v', '1', rendered_clip + ".jpg"],
                             capture_output=True)
 
-                    def notify(title, text):
-                        os.system("""
-                                                                osascript -e 'display notification "{}" with title "{}"'
-                                                                """.format(text, title))
-
-                    # when done notify via mac os notifications
-                    notify("Stills Rendered", "Stills based on Markers exported to JPEG.")
-
                 # tiff conversion on other platforms
                 # since ffmpeg is required, we should pass the conversion to it
                 '''
@@ -1298,4 +1301,3 @@ class MotsResolve:
 if __name__ == '__main__':
 
     print('Mots Resolve API needs to be called from another script.')
-

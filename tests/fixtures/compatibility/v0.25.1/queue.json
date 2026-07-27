@@ -1,0 +1,54 @@
+[
+    {
+        "queue_id": "stable-transcribe",
+        "name": "Compatibility transcription",
+        "status": "processing",
+        "progress": "42%",
+        "tasks": "transcribe",
+        "item_type": "transcription",
+        "source_file_path": "/sanitized/interview.wav",
+        "device": "cpu",
+        "transcription_task": "transcribe",
+        "whisper_options": {
+            "language": "en"
+        }
+    },
+    {
+        "queue_id": "stable-speaker-detection",
+        "name": "Compatibility speaker detection",
+        "status": "queued",
+        "tasks": "speaker_detection",
+        "item_type": "speaker_detection",
+        "task_data": {
+            "transcription_file_path": "/sanitized/interview.transcription.json",
+            "time_intervals": [
+                {
+                    "start": 0.0,
+                    "end": 2.5
+                }
+            ]
+        },
+        "device": "cpu",
+        "dependencies": [
+            "stable-transcribe"
+        ]
+    },
+    {
+        "queue_id": "stable-canceling",
+        "name": "Interrupted cancellation",
+        "status": "canceling",
+        "tasks": "transcribe",
+        "item_type": "transcription",
+        "source_file_path": "/sanitized/canceled.wav",
+        "device": "cpu"
+    },
+    {
+        "queue_id": "stable-done",
+        "name": "Completed compatibility job",
+        "status": "done",
+        "tasks": "transcribe",
+        "item_type": "transcription",
+        "source_file_path": "/sanitized/completed.wav",
+        "device": "cpu"
+    }
+]

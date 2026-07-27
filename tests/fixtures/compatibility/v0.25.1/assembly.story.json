@@ -1,0 +1,38 @@
+{
+    "name": "Compatibility Assembly",
+    "lines": [
+        {
+            "text": "Opening note",
+            "type": "text"
+        },
+        {
+            "text": "Interview selection.",
+            "type": "transcription_segment",
+            "source_start": 0.0,
+            "source_end": 2.5,
+            "transcription_file_path": "/sanitized/interview.transcription.json",
+            "source_file_path": "/sanitized/interview.wav",
+            "source_fps": 24,
+            "source_start_tc": "01:00:00:00",
+            "line_extension": {
+                "preserve": true
+            }
+        },
+        {
+            "text": "Closing note\n",
+            "type": "text"
+        }
+    ],
+    "language": "en",
+    "timeline_fps": 24,
+    "timeline_start_tc": "01:00:00:00",
+    "last_modified": "1700000000",
+    "compatibility_extension": {
+        "nested": [
+            "keep",
+            {
+                "value": true
+            }
+        ]
+    }
+}

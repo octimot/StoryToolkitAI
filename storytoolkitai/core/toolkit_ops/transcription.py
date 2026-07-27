@@ -115,14 +115,15 @@ class Transcription:
         # this will be empty once the data is loaded into attributes
         self._data = None
 
+        # this is used to keep track if the transcription is complete or not
+        # initialize it before loading so a persisted value is not overwritten
+        self._incomplete = None
+
         # use the passed transcription file path
         self.load_from_file(file_path=transcription_file_path)
 
         # we use this to keep track if we updated, deleted, added, or changed anything
         self._dirty = False
-
-        # this is used to keep track if the transcription is complete or not
-        self._incomplete = None
 
         # this is used to keep track of the last time the transcription was saved
         self._last_save_time = None

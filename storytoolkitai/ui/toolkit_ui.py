@@ -1,34 +1,71 @@
-from storytoolkitai.core.toolkit_ops.toolkit_ops import *
-
 import copy
+import hashlib
+import json
 import os.path
 import platform
-import subprocess
-import webbrowser
-import sys
 import random
-
-from requests import get
-import time
 import re
-import hashlib
+import subprocess
+import sys
+import time
+import webbrowser
+import yaml
 
-from typing import Union, List
+from queue import Empty, SimpleQueue
+from threading import Thread
+from typing import TYPE_CHECKING, List, Union
 
-from timecode import Timecode
-
-import tkinter as tk
 import customtkinter as ctk
+import cv2
+import tkinter as tk
+
 from PIL import Image, ImageTk
-
 from pydantic import ValidationError
-
-from tkinter import filedialog, simpledialog, messagebox, font
-
+from requests import get
+from timecode import Timecode
+from tkinter import filedialog, font, messagebox
 from whisper import available_models as whisper_available_models
 
-from ..core.toolkit_ops.ingest import MetadataSettings, TranscriptionSettings, VideoIndexingSettings, IngestSettings
-from .menu import UImenus
+from storytoolkitai.core.events import EngineEvent
+from storytoolkitai.core.logger import logger
+from storytoolkitai.core.toolkit_ops.document import Document
+from storytoolkitai.core.toolkit_ops.ingest import (
+    IngestSettings,
+    MetadataSettings,
+    TranscriptionSettings,
+    VideoIndexingSettings,
+)
+from storytoolkitai.core.toolkit_ops.media import MediaUtils
+from storytoolkitai.core.toolkit_ops.projects import (
+    Project,
+    ProjectUtils,
+    get_projects_from_path,
+)
+from storytoolkitai.core.toolkit_ops.search_paths import (
+    filter_search_file_paths,
+    is_text_search_file,
+    is_video_search_file,
+)
+from storytoolkitai.core.toolkit_ops.story import (
+    Story,
+    StoryUtils,
+)
+from storytoolkitai.core.toolkit_ops.timecode import tc_to_sec
+from storytoolkitai.core.toolkit_ops.transcription import (
+    Transcription,
+    TranscriptionSegment,
+    TranscriptionUtils,
+)
+from storytoolkitai.ui.menu import UImenus
+from storytoolkitai.ui.notifications import (
+    NotificationMessage,
+    NotificationService,
+    notify_via_macos,
+)
+
+# this prevents circular imports when using type hints
+if TYPE_CHECKING:
+    from storytoolkitai.core.engine import StoryToolkitEngine
 
 class CTkToplevelExt(ctk.CTkToplevel):
     """
@@ -143,8 +180,8 @@ class toolkit_UI():
 
     ctk_main_paddings = {'padx': 10, 'pady': 10}
 
-    # these are the marker colors used in Resolve
-    resolve_marker_colors = MotsResolve.RESOLVE_MARKER_COLORS
+    # this is populated from the engine when the UI instance is created
+    resolve_marker_colors = {}
 
     class AppItemsUI:
         """
@@ -157,9 +194,9 @@ class toolkit_UI():
                 logger.error('No toolkit_UI_obj provided for AppItemsUI.')
                 raise Exception('No toolkit_UI_obj provided.')
 
-            # declare the UI, ops and app objects for easier access
+            # keep the public processing interface and application state
             self.toolkit_UI_obj = toolkit_UI_obj
-            self.toolkit_ops_obj = toolkit_UI_obj.toolkit_ops_obj
+            self.engine = toolkit_UI_obj.engine
             self.stAI = toolkit_UI_obj.stAI
             self.UI_menus = UImenus
 
@@ -772,7 +809,7 @@ class toolkit_UI():
                     if kwargs.get('assistant_provider', None) is not None \
                     else self.toolkit_UI_obj.stAI.get_app_setting('assistant_provider', default_if_none='OpenAI')
 
-            assistant_provider_list = AssistantUtils.assistant_available_providers()
+            assistant_provider_list = self.engine.get_assistant_providers()
 
             form_vars['assistant_provider_var'] = \
                 assistant_provider_var = tk.StringVar(assistant_prefs_frame, value=assistant_provider)
@@ -789,7 +826,9 @@ class toolkit_UI():
                 if kwargs.get('assistant_model', None) is not None \
                 else self.toolkit_UI_obj.stAI.get_app_setting('assistant_model', default_if_none='gpt-3.5-turbo-1106')
 
-            assistant_model_list = AssistantUtils.assistant_available_models(assistant_provider)
+            assistant_model_list = self.engine.get_assistant_models(
+                provider=assistant_provider,
+            )
 
             form_vars['assistant_model_var'] = \
                 assistant_model_var = tk.StringVar(assistant_prefs_frame, value=assistant_model)
@@ -816,18 +855,24 @@ class toolkit_UI():
 
                 # Check if the provider has actually changed
                 if current_provider != assistant_provider_var.previous_provider or f_kwargs.get('online', False):
-                    # Update the model list based on the current provider
-                    if f_kwargs.get('online', False):
-                        new_model_list = AssistantUtils.assistant_available_models(
-                            current_provider, toolkit_ops_obj=self.toolkit_ops_obj)
-                    else:
-                        new_model_list = AssistantUtils.assistant_available_models(current_provider)
 
-                    # Update the OptionMenu with new models
+                    # ask the engine for either the cached models or a live
+                    # provider refresh when the user pressed Reload
+                    new_model_list = self.engine.get_assistant_models(
+                        provider=current_provider,
+                        refresh_provider=f_kwargs.get('online', False),
+                    )
+
+                    # Update the OptionMenu with the available models
                     assistant_model_input.configure(values=new_model_list)
 
-                    # Optionally, set the assistant_model_var to a default value
-                    assistant_model_var.set(new_model_list[0])
+                    # Select the first available model or clear the selection
+                    # when the provider returned no models
+                    assistant_model_var.set(
+                        new_model_list[0]
+                        if new_model_list
+                        else ''
+                    )
 
                     # Update the previous provider for the next change
                     assistant_provider_var.previous_provider = current_provider
@@ -843,8 +888,10 @@ class toolkit_UI():
             system_prompt = \
                 kwargs.get('assistant_system_prompt', None) \
                     if kwargs.get('assistant_system_prompt', None) is not None \
-                    else self.toolkit_UI_obj.stAI.get_app_setting('assistant_system_prompt',
-                                                                  default_if_none=ASSISTANT_DEFAULT_SYSTEM_MESSAGE)
+                    else self.toolkit_UI_obj.stAI.get_app_setting(
+                            'assistant_system_prompt',
+                            default_if_none=(self.engine.get_assistant_default_system_message())
+                    )
 
             # create the system prompt variable, label and input
             form_vars['assistant_system_prompt_var'] = \
@@ -1389,10 +1436,20 @@ class toolkit_UI():
 
             return
 
-    def __init__(self, toolkit_ops_obj=None, stAI=None, **other_options):
+    def __init__(
+        self,
+        stAI,
+        engine: 'StoryToolkitEngine',
+        **other_options,
+    ):
 
-        # make a reference to toolkit ops obj
-        self.toolkit_ops_obj = toolkit_ops_obj
+        # use the public processing interface
+        self.engine = engine
+
+        # keep Resolve integration constants behind the engine boundary
+        self.resolve_marker_colors = (
+            self.engine.get_resolve_marker_color_palette()
+        )
 
         # make a reference to StoryToolkitAI obj
         self.stAI = stAI
@@ -1400,8 +1457,25 @@ class toolkit_UI():
         # we need to keep track of the current loaded project
         self.current_project = None
 
+        # Engine listeners may run on processing worker threads. They only
+        # write to this thread-safe inbox and never call Tk directly.
+        self._accept_engine_events = True
+        self._engine_events = SimpleQueue()
+        self._engine_event_poll_id = None
+
+        # Queue-refresh scheduling is owned and used only by the Tk thread.
+        self._queue_refresh_pending = False
+
         # initialize tkinter as the main GUI
         self.root = ctk.CTk()
+
+        # Schedule this while still on the thread that created Tk. Events
+        # received before mainloop starts remain queued until this callback
+        # can run.
+        self._engine_event_poll_id = self.root.after(
+            25,
+            self._poll_engine_events,
+        )
 
         # what happens when the user tries to close the main window
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
@@ -1497,9 +1571,6 @@ class toolkit_UI():
         # currently focused window (id only)
         self.current_focused_window = None
 
-        # last focused window (id only)
-        self.last_focused_window = None
-
         # what to call before exiting the app
         self.before_exit = None
 
@@ -1528,9 +1599,6 @@ class toolkit_UI():
         self.default_font_size = self.UI_scale(self.ctk_default_font_size)
         self.transcript_font_size = self.UI_scale(self.stAI.get_app_setting('transcript_font_size', default_if_none=15)
                                                   * font_scale)
-        self.console_font_size = self.UI_scale(self.stAI.get_app_setting('console_font_size', default_if_none=13)
-                                               * font_scale)
-
         # set platform independent transcript font
         self.transcript_font = ctk.CTkFont(family=courier_font_family, size=self.transcript_font_size)
 
@@ -1541,8 +1609,7 @@ class toolkit_UI():
         self.ctk_font_small_label = (
             ctk.CTkFont(family=self.ctk_default_font_family, size=int(self.transcript_font_size*0.7)))
 
-        # set the platform independent fixed font (for console)
-        # self.console_font = ctk.CTkFont(family='TkFixedFont', size=self.console_font_size)
+        # use the transcript font for the console too
         self.console_font = self.transcript_font
 
         # set the default font size
@@ -1564,9 +1631,6 @@ class toolkit_UI():
         else:
             self.ctrl_cmd_bind = "Control"
             self.alt_bind = "Alt"
-
-        # use this variable to remember if the user said it's ok that resolve is not available to continue a process
-        self.no_resolve_ok = False
 
         # handling of api key validity
         if not self.stAI.api_key_valid:
@@ -1614,7 +1678,7 @@ class toolkit_UI():
         Thread(target=self.update_wait).start()
 
         # open the Queue window if something is up in the transcription queue
-        if len(self.toolkit_ops_obj.processing_queue.get_all_queue_items()) > 0:
+        if self.engine.list_jobs():
             self.open_queue_window()
 
     def update_wait(self):
@@ -1912,8 +1976,14 @@ class toolkit_UI():
         # check if there are any items left in the queue
         # if there are, ask the user if they want to quit anyway
 
-        queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items(
-            not_status=['failed', 'done', 'canceled', 'canceling'])
+        queue_items = self.engine.list_jobs(
+            not_status=[
+                'failed',
+                'done',
+                'canceled',
+                'canceling',
+            ],
+        )
 
         if queue_items is not None and len(queue_items) > 0:
 
@@ -1925,6 +1995,8 @@ class toolkit_UI():
             # if the user doesn't want to quit anyway, return
             if not quit_anyway:
                 return
+
+        self._stop_engine_event_polling()
 
         # if a before_exit function is defined, call it
         if self.before_exit is not None:
@@ -2088,29 +2160,54 @@ class toolkit_UI():
 
                     def push_higher_if_too_low():
                         """
-                        This makes sure that after the window is created, it is not too low on the screen.
+                        Make sure a newly created window remains inside the screen.
+
+                        The callback runs after a short delay. The window may have
+                        already been closed because startup or preparation failed, so
+                        it must not access the window registry without checking it.
                         """
 
-                        # get the window's height
-                        window_height = self.windows[window_id].winfo_height()
+                        window = self.windows.get(window_id)
 
-                        # get the screen height
-                        screen_height = self.windows[window_id].winfo_screenheight()
+                        # stop when the delayed callback outlives the window
+                        if window is None:
+                            return
 
-                        # get the window's y position
-                        window_y = self.windows[window_id].winfo_y()
+                        try:
+                            if not window.winfo_exists():
+                                return
 
-                        # if the window is too low, push it up so that it fits the screen,
-                        # just don't push it higher than the top of the screen
-                        if window_y + window_height > screen_height:
-                            # push the window up by the difference
-                            self.windows[window_id].geometry("+{}+{}".format(
-                                self.windows[window_id].winfo_x(),
-                                window_y - (window_y + window_height - screen_height) if window_y > 20 else 20
-                            ))
+                            # get the current window and screen geometry
+                            window_height = window.winfo_height()
+                            screen_height = window.winfo_screenheight()
+                            window_y = window.winfo_y()
 
-                        # but also bring it back down if it's too high
-                        self._bring_window_inside_screen(self.windows[window_id])
+                            # push the window up when its bottom is outside the screen,
+                            # without moving it above the top margin
+                            if window_y + window_height > screen_height:
+                                window.geometry(
+                                    "+{}+{}".format(
+                                        window.winfo_x(),
+                                        (
+                                            window_y
+                                            - (
+                                                window_y
+                                                + window_height
+                                                - screen_height
+                                            )
+                                            if window_y > 20
+                                            else 20
+                                        ),
+                                    )
+                                )
+
+                            # also bring the window back down when it is too high
+                            self._bring_window_inside_screen(window)
+
+                        except tk.TclError:
+                            # Tk may destroy the underlying widget between the
+                            # existence check and a geometry call.
+                            return
 
                     # after the window is created, push it up if it's too low
                     self.windows[window_id].after(200, push_higher_if_too_low)
@@ -2207,96 +2304,168 @@ class toolkit_UI():
         # then remove its reference
         del windows_dict[window_id]
 
-    def add_observer_to_window(self, window_id, action, callback, dettach_after_call=False):
+    def add_observer_to_window(
+        self,
+        window_id,
+        action,
+        callback,
+        dettach_after_call=False,
+    ):
         """
-        This adds an observer to a window, so that the callback can be called
-        when the action is triggered from toolkit_ops_obj
-        :param window_id: The window id
-        :param action: The action to be observed
-        :param callback: The callback function to be called when the Observer is notified
-        :param dettach_after_call: If True, the observer will be dettached after the callback is called
+        Register a UI callback for an engine action
         """
 
-        # if the window_id is not in the windows_observers dictionary, add it
+        if not window_id or not action or not callable(callback):
+            return False
+
+        # create the callback collection for the window
         if window_id not in self.windows_observers:
             self.windows_observers[window_id] = {}
 
-        # if the action is already in the windows_observers dictionary, return
+        # keep one callback per action and window
         if action in self.windows_observers[window_id]:
             return False
 
-        # add an Observer to the window
-        window_observer = Observer()
+        self.windows_observers[window_id][action] = {
+            'callback': callback,
+            'dettach_after_call': dettach_after_call,
+        }
 
-        # wrap the call with after() so that all notifications are executed sequentially and not in parallel
-        # this is important,
-        # otherwise widgets might be destroyed by some threads while other threads are trying to access them
-        # triggering a _tkinter.TclError: invalid command name exception
-        def callback_after(*args, **kwargs):
+        return callback
 
-            # get the window
-            window = self.get_window_by_id(window_id=window_id)
+    def _notify_window_observers(self, action):
+        """
+        Schedule callbacks registered for an engine action
+        """
 
-            window.after(1, callback, *args, **kwargs)
+        if not action:
+            return False
 
-        # if the dettach_after_call is True, execute the callback and then dettach the observer
-        if dettach_after_call:
+        notified = False
 
-            # create a new callback which contains the callback and the dettach function
-            def callback_with_dettach(*args, **kwargs):
+        # use a copy because callbacks may remove their own registration
+        for window_id, actions in list(
+            self.windows_observers.items()
+        ):
+            observer = actions.get(action)
 
-                # call the callback through after()
-                callback_after(*args, **kwargs)
+            if observer is None:
+                continue
 
-                # dettach the observer
-                self.toolkit_ops_obj.dettach_observer(action=action, observer=window_observer)
+            window = self.get_window_by_id(
+                window_id=window_id,
+            )
 
-            # set the new callback
-            window_observer.update = callback_with_dettach
+            # remove registrations for windows that no longer exist
+            if not window:
+                self.remove_observer_from_window(
+                    window_id=window_id,
+                )
+                continue
 
-        else:
-            window_observer.update = callback_after
+            callback = observer.get('callback')
 
-        # attach the observer to the action
-        self.toolkit_ops_obj.attach_observer(action=action, observer=window_observer)
+            if not callable(callback):
+                continue
 
-        # add the observer to the windows_observers dictionary
-        self.windows_observers[window_id][action] = window_observer
+            # Engine events have already reached the Tk thread. Schedule the
+            # presentation callback on the root so it can revalidate the
+            # target window immediately before it runs.
+            self.root.after(
+                1,
+                lambda l_window_id=window_id,
+                l_action=action,
+                l_callback=callback: self._run_window_observer(
+                    window_id=l_window_id,
+                    action=l_action,
+                    callback=l_callback,
+                ),
+            )
 
-        return window_observer
+            notified = True
 
-    def remove_observer_from_window(self, window_id, action=None):
+        return notified
 
-        # first, dettach the observer from the toolkit_ops_obj
-        # but if no action was specified, remove all actions (check them in the windows_observers dictionary)
+    def _run_window_observer(self, window_id, action, callback):
+        """
+        Run a scheduled observer only while its target window still exists.
+        """
+
+        if not self._accept_engine_events:
+            return False
+
+        actions = self.windows_observers.get(window_id)
+        observer = actions.get(action) if actions is not None else None
+
+        # The window may have closed or replaced its callback while this
+        # observer was waiting in the Tk event loop.
+        if observer is None or observer.get('callback') is not callback:
+            return False
+
+        window = self.get_window_by_id(window_id=window_id)
+        if window is None:
+            self.remove_observer_from_window(window_id=window_id)
+            return False
+
+        try:
+            if not window.winfo_exists():
+                self.remove_observer_from_window(window_id=window_id)
+                return False
+        except tk.TclError:
+            self.remove_observer_from_window(window_id=window_id)
+            return False
+
+        try:
+            callback()
+        finally:
+            # Detach the observer that was invoked, but do not remove a
+            # replacement that the callback registered for the same action.
+            current_actions = self.windows_observers.get(window_id)
+            current_observer = (
+                current_actions.get(action)
+                if current_actions is not None
+                else None
+            )
+
+            if (
+                observer.get('dettach_after_call')
+                and current_observer is observer
+            ):
+                self.remove_observer_from_window(
+                    window_id=window_id,
+                    action=action,
+                )
+
+        return True
+
+    def remove_observer_from_window(
+        self,
+        window_id,
+        action=None,
+    ):
+        """
+        Remove callbacks registered for a window
+        """
+
+        if window_id not in self.windows_observers:
+            return False
+
+        # remove every callback belonging to the window
         if action is None:
+            del self.windows_observers[window_id]
+            return True
 
-            # if the action is not in the windows_observers dictionary, return
-            if window_id not in self.windows_observers:
-                return
+        # return when the requested action is not registered
+        if action not in self.windows_observers[window_id]:
+            return False
 
-            # remove all actions related to this window
-            for removable_action in self.windows_observers[window_id]:
-                self.toolkit_ops_obj.dettach_observer(action=removable_action,
-                                                      observer=self.windows_observers[window_id][removable_action])
+        del self.windows_observers[window_id][action]
 
-        # if we do have an action, remove only that action
-        else:
-            self.toolkit_ops_obj.dettach_observer(action=action, observer=self.windows_observers[window_id][action])
+        # remove the empty window entry
+        if not self.windows_observers[window_id]:
+            del self.windows_observers[window_id]
 
-        # if the window_id is in the windows_observers dictionary
-        if window_id in self.windows_observers:
-
-            # if an action was specified, only remove that action
-            if action is not None and action in self.windows_observers[window_id]:
-                del self.windows_observers[window_id][action]
-
-            # otherwise, remove the entire window from the dictionary
-            else:
-                del self.windows_observers[window_id]
-
-        return
-
+        return True
     def get_window_type(self, window_id: str) -> str or None:
         """
         This function returns the type of a window based on the window_id
@@ -2337,9 +2506,6 @@ class toolkit_UI():
         # if the previous focus trigger was on the same window, ignore
         if self.current_focused_window == window_id:
             return
-
-        # change the last focused window variable
-        self.last_focused_window = self.current_focused_window
 
         # change the focused window variable
         self.current_focused_window = window_id
@@ -2587,7 +2753,7 @@ class toolkit_UI():
         main_window = self.windows['main']
 
         # make the resolve buttons visible if resolve is connected
-        # if NLE.is_connected():
+        # if resolve_state.get("connected", False):
         #    main_window.resolve_buttons_frame.pack(fill='x')
 
         # otherwise, make sure they're hidden
@@ -3003,27 +3169,39 @@ class toolkit_UI():
         )
 
         main_window.r_copy_markers_clip = ctk.CTkButton(
-            resolve_buttons_frame, **self.ctk_main_button_size,
+            resolve_buttons_frame,
+            **self.ctk_main_button_size,
             text="Timeline Markers to Same Clip",
-            command=lambda: self.toolkit_ops_obj.execute_resolve_operation('copy_markers_timeline_to_clip', self)
+            command=lambda: self.main_menu.copy_resolve_markers(
+                source='timeline',
+            ),
         )
 
         main_window.r_copy_markers_timeline = ctk.CTkButton(
-            resolve_buttons_frame, **self.ctk_main_button_size,
+            resolve_buttons_frame,
+            **self.ctk_main_button_size,
             text="Clip Markers to Same Timeline",
-            command=lambda: self.toolkit_ops_obj.execute_resolve_operation('copy_markers_clip_to_timeline', self)
+            command=lambda: self.main_menu.copy_resolve_markers(
+                source='clip',
+            ),
         )
 
-        main_window.r_render_marker_stils = ctk.CTkButton(
-            resolve_buttons_frame, **self.ctk_main_button_size,
+        main_window.r_render_marker_stills = ctk.CTkButton(
+            resolve_buttons_frame,
+            **self.ctk_main_button_size,
             text="Render Markers to Stills",
-            command=lambda: self.toolkit_ops_obj.execute_resolve_operation('render_markers_to_stills', self)
+            command=lambda: self.main_menu.render_resolve_markers(
+                render_stills=True,
+            ),
         )
 
         main_window.r_render_marker_clips = ctk.CTkButton(
-            resolve_buttons_frame, **self.ctk_main_button_size,
+            resolve_buttons_frame,
+            **self.ctk_main_button_size,
             text="Render Markers to Clips",
-            command=lambda: self.toolkit_ops_obj.execute_resolve_operation('render_markers_to_clips', self)
+            command=lambda: self.main_menu.render_resolve_markers(
+                render_stills=False,
+            ),
         )
 
         # TOOL BUTTONS
@@ -3087,7 +3265,7 @@ class toolkit_UI():
         # main_window.r_transcribe.grid(row=1, column=1, **self.ctk_main_paddings)
         # main_window.r_copy_markers_clip.grid(row=1, column=2, **self.ctk_main_paddings)
         # main_window.r_copy_markers_timeline.grid(row=1, column=3, **self.ctk_main_paddings)
-        # main_window.r_render_marker_stils.grid(row=1, column=4, **self.ctk_main_paddings)
+        # main_window.r_render_marker_stills.grid(row=1, column=4, **self.ctk_main_paddings)
         # main_window.r_render_marker_clips.grid(row=1, column=5, **self.ctk_main_paddings)
 
         # make the window resizable only on the height
@@ -3097,7 +3275,7 @@ class toolkit_UI():
         # update the window after it's been created
         self.root.after(500, self.update_main_window())
 
-        # add the window observer that will update the main window if the NLE status changes
+        # update the main window when Resolve connection state changes
         def add_main_window_observers():
 
             # this updates the window when the project was changed
@@ -3105,64 +3283,116 @@ class toolkit_UI():
             self.add_observer_to_window(
                 window_id='main',
                 action='project_changed',
-                callback=lambda: self.update_main_window()
+                callback=self.update_main_window,
             )
 
             # this updates the buttons in the main window
             self.add_observer_to_window(
                 window_id='main',
                 action='update_NLE_status',
-                callback=lambda: self.update_main_window()
+                callback=self.update_main_window,
             )
+
+            # observer callbacks fetch a fresh detached Resolve snapshot when
+            # they run instead of closing over processing globals
+            def get_resolve_timeline_snapshot():
+                resolve_state = self.engine.get_resolve_state()
+                resolve_timeline = resolve_state.get(
+                    'current_timeline'
+                )
+
+                if not isinstance(resolve_timeline, dict):
+                    resolve_timeline = None
+
+                return resolve_state, resolve_timeline
 
             # this also checks if we need to automatically switch projects
             def change_project_wrapper(project_name):
                 if not self.stAI.get_app_setting('ignore_project_switch', default_if_none=False):
                     self.change_project(project_name=project_name)
 
-            # this deals with NLE project changes in relation to the UI
+            def handle_resolve_project_changed():
+                resolve_state = self.engine.get_resolve_state()
+                change_project_wrapper(
+                    project_name=resolve_state.get('current_project')
+                )
+
+            def handle_resolve_timeline_changed():
+                _, resolve_timeline = get_resolve_timeline_snapshot()
+                self.open_active_transcription_windows(
+                    timeline_name=(
+                        resolve_timeline.get('name')
+                        if resolve_timeline
+                        else None
+                    ),
+                )
+
+            def handle_resolve_timecode_data_changed():
+                resolve_state, resolve_timeline = (
+                    get_resolve_timeline_snapshot()
+                )
+                self.update_timeline_timecode_data(
+                    timeline_name=(
+                        resolve_timeline.get('name')
+                        if resolve_timeline
+                        else None
+                    ),
+                    timeline_fps=resolve_state.get(
+                        'current_timeline_fps'
+                    ),
+                    start_tc=resolve_state.get(
+                        'current_start_tc'
+                    ),
+                )
+
+            def handle_resolve_markers_changed():
+                _, resolve_timeline = get_resolve_timeline_snapshot()
+                self.update_timeline_markers(
+                    timeline_name=(
+                        resolve_timeline.get('name')
+                        if resolve_timeline
+                        else None
+                    ),
+                    markers=(
+                        resolve_timeline.get('markers')
+                        if resolve_timeline
+                        else None
+                    ),
+                )
+
+            # this deals with Resolve project changes in relation to the UI
             self.add_observer_to_window(
                 window_id='main',
                 action='NLE_project_changed',
-                callback=lambda: change_project_wrapper(project_name=NLE.current_project)
+                callback=handle_resolve_project_changed,
             )
 
-            # this opens the relevant transcriptions if the NLE timeline changed
-            # - it only works if the relevant app settings are enabled - see open_active_transcription_windows()
+            # this opens relevant transcriptions when the Resolve timeline changes
             self.add_observer_to_window(
                 window_id='main',
                 action='NLE_timeline_changed',
-                callback=lambda l_NLE=NLE: self.open_active_transcription_windows(
-                    timeline_name=l_NLE.current_timeline.get('name', None) if l_NLE.current_timeline else None,
-                )
+                callback=handle_resolve_timeline_changed,
             )
 
-            # this syncs the relevant transcriptions if the NLE timecode changed
+            # this syncs relevant transcriptions when the timecode changes
             self.add_observer_to_window(
                 window_id='main',
                 action='NLE_tc_changed',
-                callback=lambda: self.sync_all_transcription_windows()
+                callback=self.sync_all_transcription_windows,
             )
 
-            # this updates the timecode data of the timeline if the NLE timeline timecode data changed
+            # this updates timeline timecode data when Resolve reports a change
             self.add_observer_to_window(
                 window_id='main',
                 action='NLE_timecode_data_changed',
-                callback=lambda l_NLE=NLE: self.update_timeline_timecode_data(
-                    timeline_name=l_NLE.current_timeline.get('name', None) if l_NLE.current_timeline else None,
-                    timeline_fps=l_NLE.current_timeline_fps if l_NLE.current_timeline else None,
-                    start_tc=l_NLE.current_start_tc if l_NLE.current_start_tc else None,
-                )
+                callback=handle_resolve_timecode_data_changed,
             )
 
-            # this updates the markers of the timeline if the NLE timeline markers changed
+            # this updates timeline markers when Resolve reports a change
             self.add_observer_to_window(
                 window_id='main',
                 action='NLE_markers_changed',
-                callback=lambda l_NLE=NLE: self.update_timeline_markers(
-                    timeline_name=l_NLE.current_timeline.get('name', None) if l_NLE.current_timeline else None,
-                    markers=l_NLE.current_timeline.get('markers', None) if l_NLE.current_timeline else None
-                )
+                callback=handle_resolve_markers_changed,
             )
 
         # add the observer after half a second
@@ -5076,7 +5306,7 @@ class toolkit_UI():
     def _tag_find_results(self, text_widget: tk.Text = None, text_index: str = None, window_id: str = None):
         """
         Another handy function that tags the search results directly on the transcript inside the transcript window
-        This is also used to show on which of the search results is the user right now according to search_result_pos
+        This is also used to show which find result is active according to find_result_pos.
         :param text_element:
         :param text_index:
         :param window_id:
@@ -5574,9 +5804,12 @@ class toolkit_UI():
                                       resizable=(False, True)
                                       ):
 
-            # update the queue item status to 'waiting user'
+            # let processing own the ingest job status
+            # the UI only keeps the queue id returned by the engine
             if queue_id is not None:
-                self.toolkit_ops_obj.processing_queue.update_queue_item(queue_id=queue_id, status='waiting user')
+                self.engine.mark_ingest_job_waiting_for_user(
+                    job_id=queue_id,
+                )
 
                 # add the queue id to the kwargs
                 kwargs['queue_id'] = queue_id
@@ -6147,7 +6380,9 @@ class toolkit_UI():
 
         # SOURCE LANGUAGE DROPDOWN
         # get the available languages from whisper, and the default language from the app settings
-        languages_available = self.toolkit_ops_obj.get_whisper_available_languages()
+        languages_available = (
+            self.engine.get_whisper_available_languages()
+        )
 
         # use either the language selected from the kwargs, or the default language from the app settings
         language_selected = \
@@ -6241,7 +6476,10 @@ class toolkit_UI():
 
         # DEVICE DROPDOWN
         # get the available devices from the toolkit, and the default device from the app settings
-        devices_available = ['auto'] + list(self.toolkit_ops_obj.queue_devices)
+        devices_available = (
+            ['auto']
+            + self.engine.get_processing_devices()
+        )
         device_selected = \
             kwargs.get('device_selected', None) \
                 if kwargs.get('device_selected', None) is not None \
@@ -7603,7 +7841,7 @@ class toolkit_UI():
             return None
 
         # add the ingest job(s) to the queue
-        if self.toolkit_ops_obj.add_media_to_queue(ingest_settings):
+        if self.engine.start_ingest(ingest_settings):
 
             # if we reached this point safely, just open the queue window
             self.open_queue_window()
@@ -7628,8 +7866,11 @@ class toolkit_UI():
                 parent=self.windows[window_id]
         ):
 
+            # use the same safe cancellation path as the queue window
             if queue_id is not None:
-                self.toolkit_ops_obj.processing_queue.update_queue_item(queue_id=queue_id, status='canceled')
+                self.engine.cancel_job(
+                    job_id=queue_id,
+                )
 
             # call the default destroy window function
             self.destroy_window_(windows_dict=self.windows, window_id=window_id)
@@ -7787,9 +8028,10 @@ class toolkit_UI():
         # add it to the transcription list
         if target_files:
 
-            # a unique id is also useful to keep track
+            # create the ingest placeholder through the engine
+            # this keeps queue id generation out of the UI
             if 'queue_id' not in kwargs:
-                kwargs['queue_id'] = self.toolkit_ops_obj.processing_queue.generate_queue_id()
+                kwargs['queue_id'] = self.engine.create_ingest_job()
 
             # now open up the transcription settings window
             self.open_ingest_window(
@@ -7805,110 +8047,151 @@ class toolkit_UI():
 
     def button_nle_transcribe_timeline(self, transcription_task='transcribe', **kwargs):
         """
-        Used to render a timeline in Resolve and add it to the ingest window, once it's rendered
+        Render the current Resolve timeline and open the rendered files in the
+        ingest workflow.
         """
 
-        # get the current NLE timeline if it exists
-        nle_current_timeline_name = NLE.current_timeline.get('name', None) \
-            if NLE and hasattr(NLE, 'current_timeline') else None
+        resolve_state = self.engine.get_resolve_state()
+        resolve_timeline = resolve_state.get(
+            'current_timeline'
+        )
 
-        # set an empty target directory for future use
+        if (
+            not resolve_state.get('connected', False)
+            or not isinstance(resolve_timeline, dict)
+        ):
+            logger.warning(
+                'Cannot transcribe a Resolve timeline because no timeline is active.'
+            )
+            return False
+
+        timeline_name = resolve_timeline.get('name')
+
+        if not timeline_name:
+            logger.warning(
+                'Cannot transcribe a Resolve timeline without a timeline name.'
+            )
+            return False
+
         target_dir = ''
         file_name = None
 
-        if nle_current_timeline_name:
+        # use the project target directory first, then the application default
+        initial_target_dir = self.get_project_last_target_dir(
+            self.current_project
+        )
 
-            # use the initial dir of the project if we are in one
-            initial_target_dir = self.get_project_last_target_dir(self.current_project)
+        if not initial_target_dir:
+            initial_target_dir = self.stAI.initial_target_dir
 
-            # or use the initial target dir of the app
-            if not initial_target_dir:
-                initial_target_dir = self.stAI.initial_target_dir
-
-            # ask the user where to save the files
-            while target_dir == '' or not os.path.exists(os.path.join(target_dir)):
-                logger.debug("Ingesting NLE timeline - Prompting user for render path.")
-                # target_dir = self.ask_for_target_dir(target_dir=last_target_dir)
-
-                target_file = self.ask_for_save_file(target_dir=initial_target_dir,
-                                                     initialfile=nle_current_timeline_name
-                                                     )
-                if target_file:
-                    # get the file_name
-                    target_dir = os.path.dirname(target_file)
-
-                    # get the file_name
-                    file_name = os.path.basename(target_file)
-
-                # update the last target dir of the project and the app
-                self.update_project_last_target_dir(project=self.current_project, dir_path=target_dir)
-                self.stAI.update_initial_target_dir(target_dir)
-
-                # cancel if the user presses cancel
-                if not target_dir:
-                    logger.debug("Ingesting NLE timeline stopped - User canceled operation.")
-                    return
-
-            # suspend NLE polling while we're rendering
-            NLE.suspend_polling = True
-
-            # and wait for a second to make sure that the last poll was executed
-            time.sleep(1)
-
-            if not file_name:
-                logger.warning("Ingesting NLE timeline stopped - File name not defined.")
-                return
-
-            # generate a unique id to keep track of this file in the queue and transcription log
-            if kwargs.get('queue_id', None) is None:
-                kwargs['queue_id'] = self.toolkit_ops_obj.processing_queue.generate_queue_id(name=file_name)
-
-            # update the transcription log
-            self.toolkit_ops_obj.processing_queue.update_queue_item(
-                name=file_name, queue_id=kwargs['queue_id'], status='waiting for render')
-
-            # open the queue window
-            self.open_queue_window()
-
-            # use transcription_WAV render preset if it exists
-            # transcription_WAV is an audio only custom render preset that renders Linear PCM codec in a Wave format
-            # instead of Quicktime mp4; this is just to work with wav files instead of mp4 to improve compatibility.
-            # but the user needs to add it manually to resolve in order for it to work since the Resolve API
-            # doesn't permit choosing the audio format (only the codec)
-            render_preset = self.stAI.get_app_setting(setting_name='transcription_render_preset',
-                                                      default_if_none='transcription_WAV')
-
-            # let the user know that we're starting the render
-            self.notify_via_os("Starting Render", "Starting Render in Resolve",
-                               "Saving into {} and starting render.".format(target_dir))
-
-            render_monitor, render_file_paths = \
-                self.toolkit_ops_obj.start_resolve_render_and_monitor(
-                    target_dir=target_dir, render_preset=render_preset, start_render=False,
-                    add_file_suffix=False, add_date=False, add_timestamp=True, file_name=file_name,
-                )
-
-            # turn the rendered files into a string separated by commas with each element between double quotes,
-            # so they fit the files input in the ingest window
-            if len(render_file_paths) > 1:
-                render_file_paths = ', '.join(['"{}"'.format(f) for f in render_file_paths])
-            else:
-                # add double quotes to the file path if it contains spaces or commas
-                if ' ' in render_file_paths[0] or ',' in render_file_paths[0]:
-                    render_file_paths = '"{}"'.format(render_file_paths[0])
-
-                else:
-                    render_file_paths = '{}'.format(render_file_paths[0])
-
-            # add the done function to the render monitor
-            # - when the monitor reaches the done state, it will call the function button_transcribe
-            render_monitor.add_done_callback(
-                lambda l_render_file_paths=render_file_paths:
-                self.button_ingest(target_files=l_render_file_paths, transcription_task=transcription_task, **kwargs)
+        # keep asking until the user selects a valid target or cancels
+        while target_dir == '' or not os.path.exists(target_dir):
+            logger.debug(
+                'Ingesting Resolve timeline - Prompting user for render path.'
             )
 
-            # resume polling
-            NLE.suspend_polling = False
+            target_file = self.ask_for_save_file(
+                target_dir=initial_target_dir,
+                initialfile=timeline_name,
+            )
+
+            if not target_file:
+                logger.debug(
+                    'Ingesting Resolve timeline stopped - User canceled operation.'
+                )
+                return False
+
+            target_dir = os.path.dirname(target_file)
+            file_name = os.path.basename(target_file)
+
+            self.update_project_last_target_dir(
+                project=self.current_project,
+                dir_path=target_dir,
+            )
+            self.stAI.update_initial_target_dir(target_dir)
+
+        if not file_name:
+            logger.warning(
+                'Ingesting Resolve timeline stopped - File name not defined.'
+            )
+            return False
+
+        # processing owns the queue id and its initial waiting-for-render state
+        if kwargs.get('queue_id') is None:
+            kwargs['queue_id'] = self.engine.create_timeline_ingest_job(
+                name=file_name,
+            )
+
+        self.open_queue_window()
+
+        # transcription_WAV is an optional audio-only preset that improves
+        # compatibility by producing a Wave file instead of a QuickTime file
+        render_preset = self.stAI.get_app_setting(
+            setting_name='transcription_render_preset',
+            default_if_none='transcription_WAV',
+        )
+
+        self.notify_via_os(
+            'Starting Render',
+            'Starting Render in Resolve',
+            'Saving into {} and starting render.'.format(target_dir),
+        )
+
+        # pause polling only while the render monitor is being created; always
+        # restore polling when setup fails or raises
+        self.engine.set_resolve_polling_suspended(True)
+
+        try:
+            time.sleep(1)
+
+            render_result = (
+                self.engine.start_resolve_render_and_monitor(
+                    target_dir=target_dir,
+                    render_preset=render_preset,
+                    start_render=False,
+                    add_file_suffix=False,
+                    add_date=False,
+                    add_timestamp=True,
+                    file_name=file_name,
+                )
+            )
+
+            if render_result is None:
+                logger.error(
+                    'Unable to start the Resolve render monitor.'
+                )
+                return False
+
+            render_monitor, render_file_paths = render_result
+
+            if len(render_file_paths) > 1:
+                ingest_target_files = ', '.join(
+                    '"{}"'.format(file_path)
+                    for file_path in render_file_paths
+                )
+            else:
+                ingest_target_files = render_file_paths[0]
+
+                # quote a single path when the ingest parser would otherwise
+                # split it on spaces or commas
+                if ' ' in ingest_target_files or ',' in ingest_target_files:
+                    ingest_target_files = '"{}"'.format(
+                        ingest_target_files
+                    )
+
+            # start ingest only after Resolve reports that the render is done
+            render_monitor.add_done_callback(
+                lambda l_render_file_paths=ingest_target_files: self.button_ingest(
+                    target_files=l_render_file_paths,
+                    transcription_task=transcription_task,
+                    **kwargs,
+                )
+            )
+
+            return True
+
+        finally:
+            self.engine.set_resolve_polling_suspended(False)
 
     def convert_text_to_time_intervals(self, text, **kwargs):
         """
@@ -8153,24 +8436,13 @@ class toolkit_UI():
             # keep a reference to the toolkit_UI object here
             self.toolkit_UI_obj = toolkit_UI_obj
 
+            # use the same public processing interface as the parent UI
+            self.engine: 'StoryToolkitEngine' = toolkit_UI_obj.engine
+
             # keep a reference to the StoryToolkitAI object here
             self.stAI = toolkit_UI_obj.stAI
 
-            # keep a reference to the toolkit_ops_obj object here
-            self.toolkit_ops_obj = toolkit_UI_obj.toolkit_ops_obj
-
             self.root = toolkit_UI_obj.root
-
-            # search results indexes stored here
-            # we're making it a dict so that we can store result indexes for each window individually
-            self.search_result_indexes = {}
-
-            # when searching for text, you may want the user to cycle through the results, so this keep track
-            # keeps track on which search result is the user currently on (in each transcript window)
-            self.search_result_pos = {}
-
-            # to keep track of what is being searched on each window
-            self.search_strings = {}
 
             # to stop certain events while typing,
             # we keep track if we have typing going on in any of the windows
@@ -8219,12 +8491,24 @@ class toolkit_UI():
 
             current_project = self.toolkit_UI_obj.current_project
 
-            # if no timeline name was passed, try to use the current timeline
+            # if no timeline name was passed, use the current Resolve snapshot
             if timeline_name is None:
-                try:
-                    timeline_name = NLE.current_timeline.get('name', None)
-                except AttributeError:
-                    logger.error('No timeline name was passed and no current timeline was found. ')
+                resolve_timeline = (
+                    self.engine.get_resolve_state().get(
+                        'current_timeline'
+                    )
+                )
+
+                timeline_name = (
+                    resolve_timeline.get('name')
+                    if isinstance(resolve_timeline, dict)
+                    else None
+                )
+
+                if not timeline_name:
+                    logger.error(
+                        'No timeline name was passed and no current timeline was found.'
+                    )
                     return None
 
             # if the link action wasn't passed, decide here whether to link or unlink
@@ -8308,7 +8592,12 @@ class toolkit_UI():
                     return
 
                 # if we reached this point, import the srt file to the bin
-                self.toolkit_ops_obj.resolve_api.import_media(full_srt_file_path)
+                if not self.engine.import_resolve_media(
+                    file_path=full_srt_file_path,
+                ):
+                    logger.error(
+                        "Unable to import the subtitle file into Resolve."
+                    )
 
                 # and delete the temporary file
                 os.remove(full_srt_file_path)
@@ -8590,8 +8879,16 @@ class toolkit_UI():
                         window_id=window_id, line=line, meta=True),
                 )
 
-            # NLE-SPECIFIC BUTTONS
-            if NLE.is_connected() and NLE.current_timeline is not None:
+            # RESOLVE-SPECIFIC BUTTONS
+            resolve_state = self.engine.get_resolve_state()
+            resolve_timeline = resolve_state.get(
+                'current_timeline'
+            )
+
+            if (
+                resolve_state.get('connected', False)
+                and isinstance(resolve_timeline, dict)
+            ):
 
                 context_menu.add_separator()
 
@@ -8632,7 +8929,7 @@ class toolkit_UI():
             window_transcription = self.get_window_transcription(window_id=window_id)
             timecode_data = window_transcription.get_timecode_data()
 
-            if timecode_data is not False and timecode_data is not [None, None]:
+            if timecode_data is not False and timecode_data != [None, None]:
                 segment_start = TranscriptionUtils.seconds_to_timecode(
                     seconds=segment.start, fps=timecode_data[0], start_tc_offset=timecode_data[1])
 
@@ -8917,8 +9214,18 @@ class toolkit_UI():
             # CMD/CTRL+M key event (select all segments between markers)
             if event.keysym == 'm' or event.keysym == 'M':
 
-                # this only works if resolve is connected
-                if NLE.resolve and NLE.current_timeline is not None and 'name' in NLE.current_timeline:
+                # read Resolve state only for marker-related shortcuts
+                resolve_state = self.engine.get_resolve_state()
+                resolve_timeline = resolve_state.get(
+                    'current_timeline'
+                )
+
+                # this only works if Resolve is connected to a named timeline
+                if (
+                    resolve_state.get('connected', False)
+                    and isinstance(resolve_timeline, dict)
+                    and resolve_timeline.get('name')
+                ):
 
                     # if CMD/CTRL+M was pressed
                     # select segments based on current timeline markers
@@ -8942,7 +9249,6 @@ class toolkit_UI():
             # Shift+L key event (link current timeline to this transcription)
             if event.keysym == 'L':
                 # link transcription to file
-                # self.toolkit_ops_obj.link_transcription_to_timeline(self.transcription_file_paths[window_id])
                 self.link_to_timeline_button(window_id=window_id)
 
             # s key event (sync transcript cursor with playhead)
@@ -9653,10 +9959,25 @@ class toolkit_UI():
             This function selects all the segments between certain markers
             """
 
-            # first, see if there are any markers on the timeline
-            if not NLE.is_connected() or 'markers' not in NLE.current_timeline:
-                logger.debug('No markers found on the timeline.')
-                return
+            # use one detached timeline snapshot for this conversion
+            resolve_state = self.engine.get_resolve_state()
+            resolve_timeline = resolve_state.get(
+                "current_timeline"
+            )
+            resolve_timeline_fps = resolve_state.get(
+                "current_timeline_fps"
+            )
+
+            if (
+                not resolve_state.get("connected", False)
+                or not isinstance(resolve_timeline, dict)
+                or "markers" not in resolve_timeline
+            ):
+                logger.error(
+                    "Cannot convert Resolve markers because no timeline "
+                    "with markers is available."
+                )
+                return False
 
             # if no text_element is provided, try to get it from the window
             if text_element is None:
@@ -9664,8 +9985,8 @@ class toolkit_UI():
                     .nametowidget('middle_frame.text_form_frame.transcript_text')
 
             # get the marker colors from all the markers in the current_timeline['markers'] dict
-            marker_colors = [' '] + sorted(list(set([NLE.current_timeline['markers'][marker]['color']
-                                                     for marker in NLE.current_timeline['markers']])))
+            marker_colors = [' '] + sorted(list(set([resolve_timeline["markers"][marker]['color']
+                                                     for marker in resolve_timeline["markers"]])))
 
             # create a list of widgets for the input dialogue
             input_widgets = [
@@ -9691,28 +10012,34 @@ class toolkit_UI():
                 selected_markers = {}
 
                 # go through the markers on the timeline
-                for marker in NLE.current_timeline['markers']:
+                for marker in resolve_timeline["markers"]:
 
                     # if the marker starts with the text the user entered (if not empty)
                     # and the marker color matches the color the user selected (if not empty)
                     if (starts_with == ''
-                        or NLE.current_timeline['markers'][marker]['name'].startswith(starts_with)) \
-                            and (color == ' ' or NLE.current_timeline['markers'][marker]['color'] == color):
+                        or resolve_timeline["markers"][marker]['name'].startswith(starts_with)) \
+                            and (color == ' ' or resolve_timeline["markers"][marker]['color'] == color):
                         # add the marker to the marker_groups dictionary
-                        selected_markers[marker] = NLE.current_timeline['markers'][marker]
+                        selected_markers[marker] = resolve_timeline["markers"][marker]
 
                 # if there are markers in the selection
                 if len(selected_markers) > 0:
 
                     time_intervals = []
 
+                    if not resolve_timeline_fps:
+                        logger.error(
+                            "Cannot convert Resolve markers without a timeline FPS."
+                        )
+                        return False
+
                     # add them to the transcript group, based on their start time and duration
                     # the start time (marker) and duration are in frames
                     for marker in selected_markers:
                         # convert the frames to seconds
-                        start_time = int(marker) / NLE.current_timeline_fps
+                        start_time = int(marker) / resolve_timeline_fps
                         duration = int(
-                            NLE.current_timeline['markers'][marker]['duration']) / NLE.current_timeline_fps
+                            resolve_timeline["markers"][marker]['duration']) / resolve_timeline_fps
                         end_time = start_time + duration
 
                         # add the time interval to the list of time intervals
@@ -9729,10 +10056,30 @@ class toolkit_UI():
 
         def button_segments_to_markers(self, window_id, text_element=None, prompt=False):
 
-            # first, see if there are any markers on the timeline
-            if not NLE.is_connected() or NLE.current_timeline is None:
-                logger.debug('No timeline available.')
-                return
+            # use one detached timeline snapshot for this marker operation
+            resolve_state = self.engine.get_resolve_state()
+            resolve_timeline = resolve_state.get(
+                "current_timeline"
+            )
+
+            if (
+                not resolve_state.get("connected", False)
+                or not isinstance(resolve_timeline, dict)
+            ):
+                logger.error(
+                    "Cannot add markers because no Resolve timeline is available."
+                )
+                return False
+
+            resolve_timeline_name = resolve_timeline.get(
+                "name"
+            )
+
+            if not resolve_timeline_name:
+                logger.error(
+                    "Cannot add markers because the Resolve timeline has no name."
+                )
+                return False
 
             # if no text_element is provided, try to get it from the window
             if text_element is None:
@@ -9756,7 +10103,7 @@ class toolkit_UI():
             # to a timeline that is not connected to the transcription in this window
             is_linked = current_project.is_transcription_linked_to_timeline(
                 transcription_file_path=self.get_window_transcription(window_id).transcription_file_path,
-                timeline_name=NLE.current_timeline['name'])
+                timeline_name=resolve_timeline_name)
 
             # if the transcription is not linked to the timeline
             if not is_linked:
@@ -9827,13 +10174,19 @@ class toolkit_UI():
 
             # calculate the start timecode of the timeline (simply use second 0 for the conversion)
             # we will use this to calculate the text_chunk durations
-            timeline_start_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(0)
+            timeline_start_tc = (
+                self.engine.resolve_seconds_to_timecode(0)
+            )
 
             # now take all the text chunks
             for text_chunk in text:
 
                 # calculate the end timecodes for each text chunk
-                end_tc = self.toolkit_ops_obj.calculate_sec_to_resolve_timecode(text_chunk['end'])
+                end_tc = (
+                    self.engine.resolve_seconds_to_timecode(
+                        text_chunk["end"]
+                    )
+                )
 
                 # get the start_tc from the text_chunk but place it back into a Timecode object
                 # using the timeline framerate
@@ -9861,7 +10214,7 @@ class toolkit_UI():
                 index_blocked = True
                 while index_blocked:
 
-                    if 'markers' in NLE.current_timeline and marker_index in NLE.current_timeline['markers']:
+                    if 'markers' in resolve_timeline and marker_index in resolve_timeline['markers']:
 
                         # give up if the duration is under a frame:
                         if marker_duration_tc.frames <= 1:
@@ -9911,9 +10264,14 @@ class toolkit_UI():
                 marker_data[marker_index]['customData'] = ''
 
                 # pass the marker add request to resolve
-                self.toolkit_ops_obj.resolve_api.add_timeline_markers(NLE.current_timeline['name'],
-                                                                      marker_data,
-                                                                      False)
+                if not self.engine.add_resolve_timeline_markers(
+                    timeline_name=resolve_timeline_name,
+                    markers=marker_data,
+                ):
+                    logger.error(
+                        "Unable to add markers to the Resolve timeline."
+                    )
+                    return False
 
         def button_export_as(self, window_id, export_file_path=None):
             """
@@ -10446,8 +10804,16 @@ class toolkit_UI():
                 user_input = toolkit_UI.AskDialog(
                     title='Speaker Detection Settings',
                     input_widgets=[
-                        {'name': 'device_name', 'label': 'Device', 'type': 'option_menu', 'default_value': 'auto',
-                            'options': ['auto'] + list(self.toolkit_ops_obj.queue_devices)},
+                        {
+                            'name': 'device_name',
+                            'label': 'Device',
+                            'type': 'option_menu',
+                            'default_value': 'auto',
+                            'options': (
+                                ['auto']
+                                + self.engine.get_processing_devices()
+                            ),
+                        },
                         {'name': 'transcription_speaker_detection_threshold',
                          'label': 'Detection Threshold', 'type': 'entry_float',
                          'default_value': threshold,
@@ -10485,11 +10851,11 @@ class toolkit_UI():
 
             queue_item_name = '{} {}'.format(window_transcription.name, '(Speaker Detection)')
 
-            queue_item_id = self.toolkit_ops_obj.add_speaker_detection_to_queue(
+            queue_item_id = self.engine.start_speaker_detection(
                 queue_item_name=queue_item_name,
                 transcription_file_path=transcription_file_path,
                 device_name=user_input['device_name'],
-                time_intervals=selected_time_intervals
+                time_intervals=selected_time_intervals,
             )
 
             # attach a queue item observer that updates the window when the queue item is done
@@ -10556,8 +10922,11 @@ class toolkit_UI():
             queue_item_name = '{} {}'.format(window_transcription.name, '(Group Questions)')
             group_name = user_input['group_name']
 
-            self.toolkit_ops_obj.add_group_questions_to_queue(
-                queue_item_name=queue_item_name, transcription_file_path=transcription_file_path, group_name=group_name)
+            self.engine.start_group_questions(
+                queue_item_name=queue_item_name,
+                transcription_file_path=transcription_file_path,
+                group_name=group_name,
+            )
 
             # open the queue window
             self.toolkit_UI_obj.open_queue_window()
@@ -10727,7 +11096,7 @@ class toolkit_UI():
                 # try to get the line from the active segment
                 line_index = self.get_active_segment(window_id)
 
-            if NLE.is_connected() is None:
+            if not self.engine.is_resolve_connected():
                 logger.error('Resolve is not connected.')
                 return False
 
@@ -10743,7 +11112,9 @@ class toolkit_UI():
                 return False
 
             # convert the current_tc to seconds
-            current_tc_sec = self.toolkit_ops_obj.calculate_resolve_timecode_to_sec()
+            current_tc_sec = (
+                self.engine.get_resolve_playhead_seconds()
+            )
 
             # check if we actually have a timecode
             if current_tc_sec is None:
@@ -10895,11 +11266,12 @@ class toolkit_UI():
                             .sync_current_tc_to_transcript(window_id=window_id,
                                                            timecode=goto_timecode, fps=fps, start_tc=start_tc)
 
-                        # if the NLE is connected, move the playhead to the new timecode
-                        if NLE.is_connected():
-                            # convert the entered timecode to seconds,
-                            # but use the tc_to_sec method to remove one frame
-                            self.toolkit_ops_obj.go_to_time(seconds=tc_to_sec(str(goto_timecode), fps=float(fps)))
+                        # if Resolve is connected, move the playhead to the new timecode
+                        if self.engine.is_resolve_connected():
+                            self.engine.move_resolve_playhead(
+                                seconds=tc_to_sec(str(goto_timecode)),
+                                fps=float(fps),
+                            )
 
                         goto_time = True
 
@@ -11042,7 +11414,7 @@ class toolkit_UI():
             # if the transcription data is False, it means that the transcription exists
             # but it doesn't contain timecode data
             # so the user will be asked if they want to enter the timecode data manually (remember his choice)
-            if (timecode_data is False or timecode_data is [None, None]) \
+            if (timecode_data is False or timecode_data == [None, None]) \
                     and (ask_again or not getattr(window, 'asked_for_timecode', False)):
 
                 # ask the user if they want to enter the timecode data manually
@@ -11230,8 +11602,6 @@ class toolkit_UI():
                 end_segment = None
                 start_sec = 0
                 end_sec = 0
-
-                from operator import itemgetter
 
                 # first sort the selected segments by start time
                 # (but we are losing the line numbers which are normally in the dict keys!)
@@ -11496,7 +11866,7 @@ class toolkit_UI():
                 seconds = start_sec
 
             # move playhead to seconds
-            self.toolkit_ops_obj.go_to_time(seconds=seconds)
+            self.engine.move_resolve_playhead(seconds=seconds,)
 
             # update the transcription window
             # this triggers an endless playhead sync loop if "sync" is on
@@ -11925,7 +12295,7 @@ class toolkit_UI():
             text_widget.unbind('<FocusOut>')
 
             # if resolve is connected, get the timecode from resolve
-            if NLE.is_connected():
+            if self.engine.is_resolve_connected():
 
                 # ask the user to move the playhead in Resolve to where the split should happen via info dialog
                 move_playhead = messagebox.askokcancel(title='Move playhead',
@@ -11942,7 +12312,9 @@ class toolkit_UI():
                     return 'break'
 
                 # convert the current resolve timecode to seconds
-                split_time_seconds = self.toolkit_ops_obj.calculate_resolve_timecode_to_sec()
+                split_time_seconds = (
+                    self.engine.get_resolve_playhead_seconds()
+                )
 
             # if resolve isn't connected, ask the user to enter the timecode manually
             else:
@@ -12695,8 +13067,10 @@ class toolkit_UI():
             if window := self.toolkit_UI_obj.get_window_by_id(window_id=window_id):
                 setattr(window, 'transcription', transcription)
 
-                # notify observers of the transcription update
-                self.toolkit_ops_obj.notify_observers(action='update_transcription_{}'.format(window_id))
+                # publish the transcription update
+                self.engine.publish_transcription_changed(
+                    transcription_id=window_id,
+                )
 
                 return True
 
@@ -13299,7 +13673,7 @@ class toolkit_UI():
                     )
                 import_srt_button.pack(side=ctk.TOP, fill='x', **self.ctk_side_frame_button_paddings, anchor='sw')
 
-                if not NLE.is_connected():
+                if not self.engine.is_resolve_connected():
                     import_srt_button.pack_forget()
 
                 # SYNC BUTTON
@@ -13388,8 +13762,8 @@ class toolkit_UI():
             # add an observer to this window
             # for the action, we'll use  update_transcription_ + the transcription id
             # for the callback, we'll use the update_transcription_window function
-            # so whenever the observer is notified from toolkit the ops object,
-            # it will call the update_transcription_window function
+            # engine events notify this UI-local observer, which then updates
+            # the transcription window
             self.add_observer_to_window(
                 window_id=t_window_id,
                 action='{}_{}'
@@ -13513,6 +13887,20 @@ class toolkit_UI():
         if not t_window:
             return
 
+        # read one detached Resolve snapshot for this window refresh
+        resolve_state = self.engine.get_resolve_state()
+        resolve_timeline = resolve_state.get(
+            'current_timeline'
+        )
+        resolve_timeline_name = (
+            resolve_timeline.get('name')
+            if isinstance(resolve_timeline, dict)
+            else None
+        )
+        resolve_current_tc = resolve_state.get(
+            'current_tc'
+        )
+
         # get the transcription object
         transcription = self.t_edit_obj.get_window_transcription(window_id=window_id)
 
@@ -13569,9 +13957,12 @@ class toolkit_UI():
                 # show the segment buttons
                 show_selection_buttons = True
 
-        # if NLE is connected and there is a current timeline
+        # show Resolve controls only when a named timeline is available
         show_resolve_buttons = False
-        if NLE.is_connected() and NLE.current_timeline is not None:
+        if (
+            resolve_state.get('connected', False)
+            and resolve_timeline_name
+        ):
 
             # if we still don't have a transcription file path by now,
             # assume there is no link between the window and the resolve timeline
@@ -13589,7 +13980,7 @@ class toolkit_UI():
                     # is there a link between the transcription and the resolve timeline?
                     link = self.current_project.is_transcription_linked_to_timeline(
                         transcription_file_path=update_attr['transcription_file_path'],
-                        timeline_name=NLE.current_timeline['name'])
+                        timeline_name=resolve_timeline_name)
 
             # update the import srt button if it was passed in the call
             if update_attr.get('import_srt_button', None) is not None:
@@ -13640,7 +14031,7 @@ class toolkit_UI():
             # only do this if the sync is on for this window
             # and if the timecode in resolve has changed compared to last time
             if t_window.sync_with_playhead \
-                    and self.t_edit_obj.current_window_tc[window_id] != NLE.current_tc:
+                    and self.t_edit_obj.current_window_tc[window_id] != resolve_current_tc:
                 update_attr = self.sync_current_tc_to_transcript(window_id=window_id, **update_attr)
 
             # update the resolve buttons frame if it was passed in the call
@@ -13674,55 +14065,95 @@ class toolkit_UI():
     def sync_current_tc_to_transcript(self, window_id, **update_attr):
 
         # get the window transcription object
-        transcription = self.get_window_by_id(window_id=window_id).transcription
+        transcription = self.get_window_by_id(
+            window_id=window_id
+        ).transcription
 
         # if no text was passed, get it from the window
         if 'text' not in update_attr or type(update_attr['text']) is not tk.Text:
-            # so get the link button from the window by using the hard-coded name
-            update_attr['text'] \
-                = self.windows[window_id].nametowidget('middle_frame.text_form_frame.transcript_text')
+            update_attr['text'] = self.windows[window_id].nametowidget(
+                'middle_frame.text_form_frame.transcript_text'
+            )
 
-        # how many lines does the transcript on this window contain?
-        max_lines = transcription.get_num_lines()
+        current_timecode = update_attr.get('timecode')
+        timeline_fps = update_attr.get('fps')
+        timeline_start_tc = update_attr.get('start_tc')
 
-        if 'timecode' in update_attr and 'fps' in update_attr and 'start_tc' in update_attr:
-            # initialize the timecode object for the current_tc
-            current_tc_obj = Timecode(update_attr['fps'], update_attr['timecode'])
+        # observer calls may pass explicit values. Otherwise, read one fresh
+        # Resolve snapshot through the engine.
+        if (
+            current_timecode is None
+            or timeline_fps is None
+            or timeline_start_tc is None
+        ):
+            resolve_state = self.engine.get_resolve_state()
+            resolve_timeline = resolve_state.get(
+                'current_timeline'
+            )
 
-            # initialize the timecode object for the timeline start_tc
-            timeline_start_tc_obj = Timecode(update_attr['fps'], update_attr['start_tc'])
+            current_timecode = resolve_state.get(
+                'current_tc'
+            )
+            timeline_fps = resolve_state.get(
+                'current_timeline_fps'
+            )
+            timeline_start_tc = resolve_state.get(
+                'current_start_tc'
+            )
 
-        elif NLE.current_timeline_fps is not None and NLE.current_tc is not None:
-            # initialize the timecode object for the current_tc
-            current_tc_obj = Timecode(NLE.current_timeline_fps, NLE.current_tc)
+            if (
+                timeline_start_tc is None
+                and isinstance(resolve_timeline, dict)
+            ):
+                timeline_start_tc = resolve_timeline.get(
+                    'startTC'
+                )
 
-            # initialize the timecode object for the timeline start_tc
-            timeline_start_tc_obj = Timecode(NLE.current_timeline_fps, NLE.current_timeline['startTC'])
-
-        else:
-            logger.warning('No timecode or fps passed to sync_current_tc_to_transcript()')
+        if (
+            current_timecode is None
+            or timeline_fps is None
+            or timeline_start_tc is None
+        ):
+            logger.warning(
+                'No complete Resolve timecode data was available for '
+                'sync_current_tc_to_transcript().'
+            )
             return None
 
-        # subtract the two timecodes to get the corresponding transcript seconds
+        try:
+            current_tc_obj = Timecode(
+                timeline_fps,
+                current_timecode,
+            )
+            timeline_start_tc_obj = Timecode(
+                timeline_fps,
+                timeline_start_tc,
+            )
+
+        except (TypeError, ValueError):
+            logger.error(
+                'Unable to convert Resolve timecode data.',
+                exc_info=True,
+            )
+            return None
+
+        # subtract the timeline start from the playhead to get transcript time
         if current_tc_obj > timeline_start_tc_obj:
             transcript_tc = current_tc_obj - timeline_start_tc_obj
-
-            # so we can now convert the current tc into seconds
             transcript_sec = transcript_tc.float
-
-        # but if the current_tc_obj is at 0 or less
         else:
             transcript_sec = 0
 
         self.set_active_segment_by_time(
-            transcript_sec=transcript_sec, window_id=window_id,
-            text_widget=update_attr['text'], transcription=transcription, toolkit_UI_obj=self)
+            transcript_sec=transcript_sec,
+            window_id=window_id,
+            text_widget=update_attr['text'],
+            transcription=transcription,
+            toolkit_UI_obj=self,
+        )
 
-        # highlight current line on transcript
-        # update_attr['text'].tag_add('current_time')
-
-        # now remember that we did the update for the current timecode
-        self.t_edit_obj.current_window_tc[window_id] = NLE.current_tc
+        # remember the timecode used for this synchronization pass
+        self.t_edit_obj.current_window_tc[window_id] = current_timecode
 
         return update_attr
 
@@ -13752,20 +14183,18 @@ class toolkit_UI():
                 # this gets into an endless loop if the transcript_sec is not precise
                 # so we keep them disabled - if it's needed, 
                 # we'll have to trigger go_to_time from caller function
-                # and move the NLE playhead (if any)
-                # toolkit_UI_obj.toolkit_ops_obj.go_to_time(seconds=transcript_sec)
+                # and move the Resolve playhead (if any)
 
                 break
 
             # if we passed all possible segments that could match the transcript_sec
-            # don't make any selection, but move the NLE playhead (if any)
+            # don't make any selection, but move the Resolve playhead (if any)
             elif float(segment.end) > transcript_sec:
 
                 # this gets into an endless loop if the transcript_sec is not precise
                 # so we keep them disabled - if it's needed, 
                 # we'll have to trigger go_to_time from caller function
-                # just move the NLE playhead (if any)
-                # toolkit_UI_obj.toolkit_ops_obj.go_to_time(seconds=transcript_sec)
+                # just move the Resolve playhead (if any)
 
                 # this notification might be annoying, so maybe remove it
                 # toolkit_UI_obj.notify_via_messagebox(
@@ -14094,7 +14523,6 @@ class toolkit_UI():
             # we will need these
             self.toolkit_UI_obj = toolkit_UI_obj
             self.t_edit_obj = toolkit_UI_obj.t_edit_obj
-            self.toolkit_ops_obj = toolkit_UI_obj.toolkit_ops_obj
             self.stAI = toolkit_UI_obj.stAI
 
             # create the CTKScrollableFrame
@@ -14776,7 +15204,7 @@ class toolkit_UI():
             :param: groups_data: the new groups data (must contain the all the groups, similar to self._groups_data)
             """
 
-            # push this change to the toolkit_ops_obj
+            # push this change to the transcription object
             self._window_transcription.set_transcript_groups(transcript_groups=groups_data)
 
             # ask the transcription for a save to file
@@ -15281,8 +15709,8 @@ class toolkit_UI():
         # destroy the settings window after 100ms
         t_settings_window.after(100, lambda: self.destroy_window_(window_id=window_id))
 
-        # if the name changed trigger notify the observers that the project has changed
-        self.toolkit_ops_obj.notify_observers('project_changed')
+        # if the name changed trigger publish that the project has changed
+        self.engine.publish_project_changed()
 
     # STORY EDITOR WINDOW FUNCTIONS
 
@@ -16611,7 +17039,7 @@ class toolkit_UI():
                 # use timecode if available
                 timecode_data = transcription.get_timecode_data()
 
-                if timecode_data is not False and timecode_data is not (None, None):
+                if timecode_data is not False and timecode_data != (None, None):
                     segment_start = TranscriptionUtils.seconds_to_timecode(
                         seconds=clicked_story_line['source_start'], fps=timecode_data[0], start_tc_offset=timecode_data[1])
 
@@ -17362,30 +17790,39 @@ class toolkit_UI():
     # QUEUE WINDOW
 
     def on_button_cancel_queue_item(self, queue_id, button_cancel):
+        # get a detached public snapshot through the engine
+        queue_item = self.engine.get_job(queue_id)
 
-        all_queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+        # is the queue id still available?
+        if queue_item is not None:
 
-        # is the queue id in the Queue?
-        if queue_id in all_queue_items:
-
-            # ask the user if they're sure they want to cancel the transcription
-            if not messagebox.askyesno('Cancel transcription',
-                                       'Are you sure you want to cancel this item?'):
+            # ask the user if they're sure they want to cancel the item
+            if not messagebox.askyesno(
+                'Cancel transcription',
+                'Are you sure you want to cancel this item?',
+            ):
                 return
 
-            # cancel via toolkit_ops
-            self.toolkit_ops_obj.processing_queue.set_to_canceled(queue_id=queue_id)
+            # request cancellation through the public engine interface
+            self.engine.cancel_job(job_id=queue_id)
 
-        # update the queue window
-        self.update_queue_window()
+            # update the queue window
+            self.update_queue_window()
 
     def on_click_queue_item(self, queue_id, button_cancel):
         """
         When the user clicks on a queue item, this will open the transcription window
         """
 
-        # get the queue item
-        queue_item = self.toolkit_ops_obj.processing_queue.get_item(queue_id=queue_id)
+        # get a detached public snapshot through the engine
+        queue_item = self.engine.get_job(queue_id)
+
+        if queue_item is None:
+            logger.warning(
+                'Unable to open queue item - queue id {} was not found.'
+                .format(queue_id)
+            )
+            return
 
         # if the status is done
         if queue_item['status'] == 'done':
@@ -17431,7 +17868,7 @@ class toolkit_UI():
 
     def on_button_cancel_queue(self):
 
-        all_queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+        all_queue_items = self.engine.list_jobs()
 
         if len(all_queue_items) == 0:
             return
@@ -17446,8 +17883,8 @@ class toolkit_UI():
 
             # if the transcription is not already done, canceled or failed
             if all_queue_items[queue_id]['status'] not in ['canceling', 'canceled', 'done', 'failed']:
-                # cancel via toolkit_ops
-                self.toolkit_ops_obj.processing_queue.set_to_canceled(queue_id=queue_id)
+                # request cancellation through the public engine interface
+                self.engine.cancel_job(job_id=queue_id)
 
         # update the queue window
         self.update_queue_window()
@@ -17457,17 +17894,11 @@ class toolkit_UI():
         # get the queue window
         queue_window = self.get_window_by_id('queue')
 
-        # add the last_update attribute to the queue window if it doesn't exist
-        if not hasattr(queue_window, 'last_update'):
-            queue_window.last_update = time.time()
-
-        elif hasattr(queue_window, 'last_update') and not force_redraw:
-            # don't update the queue window if it was updated less than 0.5 seconds ago
-            if time.time() - queue_window.last_update < 0.5:
-                return
+        if queue_window is None:
+            return
 
         # load all the queue items
-        all_queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+        all_queue_items = self.engine.list_jobs()
 
         # redraw the queue list if needed
         if force_redraw or \
@@ -17539,7 +17970,7 @@ class toolkit_UI():
 
         # get the queue
         if queue_items is None:
-            all_queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+            all_queue_items = self.engine.list_jobs()
         else:
             all_queue_items = queue_items
 
@@ -17697,20 +18128,6 @@ class toolkit_UI():
             # bind the button to the cancel_all_transcriptions function
             button_cancel_all.bind("<Button-1>", lambda e: self.on_button_cancel_queue())
 
-            # add an observer to the queue window to make sure it gets updated if any item changes
-            self.add_observer_to_window(
-                window_id='queue',
-                action='update_queue_item',
-                callback=lambda: self.update_queue_window()
-            )
-
-            # add an observer to the queue window to make sure it gets redrawn when the queue changes
-            self.add_observer_to_window(
-                window_id='queue',
-                action='update_queue',
-                callback=lambda: self.update_queue_window(force_redraw=True)
-            )
-
             # and then call the update function to fill the window up
             self.update_queue_window()
 
@@ -17721,589 +18138,742 @@ class toolkit_UI():
 
     # ADVANCED SEARCH WINDOW
 
-    def advanced_search_ask_for_paths(self, search_file_path=None,
-                                      transcription_window_id=None, select_dir=False, **kwargs):
+    def advanced_search_ask_for_paths(
+        self,
+        search_file_path=None,
+        transcription_window_id=None,
+        select_dir=False,
+        **kwargs
+    ):
+        """
+        Return the paths selected for an advanced search.
+
+        This method handles only UI file selection and lightweight extension
+        filtering. The engine performs the final text/video classification
+        when it creates the search session.
+        """
 
         # declare the empty list of search file paths
         search_file_paths = []
 
-        # if a transcription window id was passed, get the transcription object from it
+        # if a transcription window id was passed, get its transcription path
         if search_file_path is None and transcription_window_id is not None:
+            window_transcription = (
+                self.t_edit_obj.get_window_transcription(
+                    transcription_window_id
+                )
+            )
 
-            # get the transcription object, if a transcription window id was passed
-            window_transcription = self.t_edit_obj.get_window_transcription(transcription_window_id)
+            if window_transcription is not None:
+                search_file_path = (
+                    window_transcription.transcription_file_path
+                )
 
-            # and use the transcription file path as the searchable file path
-            search_file_path = window_transcription.transcription_file_path
-
-        # if we still don't have a searchable file path (or paths),
-        # ask the user to manually select the files
+        # ask the user to select paths if none were supplied by the caller
         if search_file_path is None and not search_file_paths:
+            # use the last project directory when one is available
+            initial_dir = self.get_project_last_target_dir(
+                self.current_project
+            )
 
-            # use the initial dir of the project if we are in one
-            initial_dir = self.get_project_last_target_dir(self.current_project)
-
-            # or use the initial target dir of the app
+            # otherwise use the application's last target directory
             if not initial_dir:
                 initial_dir = self.stAI.initial_target_dir
 
-            # if select_dir is true, allow the user to select a directory
             if select_dir:
-                # ask the user to select a directory with searchable files
-                selected_file_path = filedialog.askdirectory(initialdir=initial_dir,
-                                                             title='Select a directory to use in the search')
-
-                # if the user aborted the file selection, return False
-                if not selected_file_path:
-                    return None
-
-                # update the last selected dir
-                if selected_file_path:
-                    search_file_paths = selected_file_path
-
-                    # update the last target dir of the project and the app
-                    self.update_project_last_target_dir(project=self.current_project, dir_path=selected_file_path)
-                    self.stAI.update_initial_target_dir(selected_file_path)
-
-            else:
-                # ask the user to select the searchable files to use in the search corpus
-                selected_file_path \
-                    = filedialog.askopenfilenames(initialdir=initial_dir,
-                                                  title='Select files to use in the search',
-                                                  filetypes=[('Transcription files', '*.json'),
-                                                             ('Text files', '*.txt')
-                                                             ])
-
-                # if the user aborted the file selection, return False
-                if not selected_file_path:
-                    return None
-
-                # update the last selected dir
-                if selected_file_path:
-
-                    def validate_either(path):
-                        return TextSearch.is_file_searchable(path) or VideoSearch.is_file_searchable(path)
-
-                    # turn directories into files and filter out non-searchable files (by extension)
-                    search_file_paths = SearchItem.filter_file_paths(
-                        search_paths=selected_file_path,
-                        file_validator=validate_either
-                    )
-
-                    # update the last target dir of the project and the app
-                    self.update_project_last_target_dir(project=self.current_project, dir_path=selected_file_path[0])
-                    self.stAI.update_initial_target_dir(os.path.dirname(selected_file_path[0]))
-
-            # if we're in a project, save the last target dir
-            if self.current_project and search_file_paths \
-                    and isinstance(search_file_paths, list) and os.path.exists(search_file_paths[0]):
-                self.current_project.set(
-                    'last_target_dir', os.path.dirname(os.path.dirname(search_file_paths[0])), save_soon=True
+                # ask the user to select a directory containing search files
+                selected_file_path = filedialog.askdirectory(
+                    initialdir=initial_dir,
+                    title='Select a directory to use in the search'
                 )
 
-        # but if the call included a search file path, format it as a list if it isn't already
+                # stop when the user canceled the dialog
+                if not selected_file_path:
+                    return None
+
+                search_file_paths = selected_file_path
+
+                # remember the selected directory for future dialogs
+                self.update_project_last_target_dir(
+                    project=self.current_project,
+                    dir_path=selected_file_path
+                )
+                self.stAI.update_initial_target_dir(
+                    selected_file_path
+                )
+
+            else:
+                # ask the user to select individual searchable files
+                selected_file_path = filedialog.askopenfilenames(
+                    initialdir=initial_dir,
+                    title='Select files to use in the search',
+                    filetypes=[
+                        ('Transcription files', '*.json'),
+                        ('Text files', '*.txt')
+                    ]
+                )
+
+                # stop when the user canceled the dialog
+                if not selected_file_path:
+                    return None
+
+                def validate_search_file(path):
+                    """
+                    Accept paths supported by either text or video search.
+
+                    This validator deliberately uses the lightweight path
+                    module instead of importing the processing classes.
+                    """
+
+                    return (
+                        is_text_search_file(path)
+                        or is_video_search_file(path)
+                    )
+
+                # remove duplicates and unsupported files without constructing
+                # a TextSearch or VideoSearch processor in the UI
+                search_file_paths = filter_search_file_paths(
+                    search_paths=selected_file_path,
+                    file_validator=validate_search_file
+                )
+
+                # remember the selected directory for future dialogs
+                self.update_project_last_target_dir(
+                    project=self.current_project,
+                    dir_path=selected_file_path[0]
+                )
+                self.stAI.update_initial_target_dir(
+                    os.path.dirname(selected_file_path[0])
+                )
+
+                # persist the directory on the active project too
+                if (
+                    self.current_project
+                    and search_file_paths
+                    and os.path.exists(search_file_paths[0])
+                ):
+                    self.current_project.set(
+                        'last_target_dir',
+                        os.path.dirname(
+                            os.path.dirname(search_file_paths[0])
+                        ),
+                        save_soon=True
+                    )
+
+        # normalize a path supplied directly by another UI action
         elif search_file_path is not None:
-            search_file_paths = search_file_path if isinstance(search_file_path, list) else [search_file_path]
+            search_file_paths = (
+                search_file_path
+                if isinstance(search_file_path, list)
+                else [search_file_path]
+            )
 
         return search_file_paths
 
-    def open_advanced_search_window(self, project=None, transcription_window_id=None, search_file_path=None,
-                                    select_dir=False, **kwargs):
+    def open_advanced_search_window(
+        self,
+        project=None,
+        transcription_window_id=None,
+        search_file_path=None,
+        select_dir=False,
+        **kwargs
+    ):
+        """
+        Open an advanced-search window backed by an engine search session.
 
-        if self.toolkit_ops_obj is None or self.toolkit_ops_obj.t_search_obj is None:
-            logger.error('Cannot open advanced search window. A ToolkitSearch object is needed to continue.')
+        Tk owns file selection, window state and result presentation. The
+        engine owns the live search processors, preparation threads, indexing
+        jobs, models and query execution.
+        """
+
+        if self.engine is None:
+            logger.error(
+                'Cannot open advanced search window. '
+                'A StoryToolkitEngine object is needed to continue.'
+            )
             return False
 
-        # if a project was sent
+        # searches started from a project include all project documents,
+        # transcriptions and the project file containing timeline markers
         if project:
-
-            # load all the transcriptions and documents of the project
             transcription_paths = project.transcriptions
             document_paths = project.documents
 
-            # merge the two lists
-            search_file_path = transcription_paths + document_paths
+            search_file_path = (
+                transcription_paths
+                + document_paths
+            )
+            search_file_path.append(
+                os.path.join(
+                    project.project_path,
+                    'project.json'
+                )
+            )
 
-            # and add the project.json file too
-            search_file_path.append(os.path.join(project.project_path, 'project.json'))
-
-            # make sure we're not triggering the window_transcription behaviour later
+            # project searches are not attached to one transcription window
             window_transcription = None
             transcription_window_id = None
+
         else:
-            # get the transcription object, if a transcription window id was passed
-            window_transcription = self.t_edit_obj.get_window_transcription(transcription_window_id)
+            # get the transcription associated with the caller, if there is one
+            window_transcription = (
+                self.t_edit_obj.get_window_transcription(
+                    transcription_window_id
+                )
+            )
 
-        # process the selected paths and return only the files that are valid
-        # this works for both a single file path and a directory (depending what the user selected above)
-        # search_file_paths = search_item.process_file_paths(selected_file_path)
-
-        # process the search file paths or ask the user to select them
+        # use supplied paths or ask the user to select them
         search_file_paths = self.advanced_search_ask_for_paths(
             search_file_path=search_file_path,
             transcription_window_id=transcription_window_id,
             select_dir=select_dir
         )
 
-        # abort if we don't have any search file paths (but don't show the message if the user aborted - none)
+        # distinguish an empty selection from a canceled file dialog
         if search_file_paths is not None and not search_file_paths:
-           self.notify_via_messagebox(
-               level='info',
-               message='No valid files found for search.',
-               parent=self.get_window_by_id('main'))
-           return None
+            self.notify_via_messagebox(
+                level='info',
+                message='No valid files found for search.',
+                parent=self.get_window_by_id('main')
+            )
+            return None
 
         if not search_file_paths:
             return None
 
-        # if the call included a transcription window
-        # init the search window id, the title and the parent element
-        if window_transcription is not None and window_transcription.exists \
-                and transcription_window_id is not None and search_file_path is not None:
+        # prepare the title and parent for a transcription-window search
+        if (
+            window_transcription is not None
+            and window_transcription.exists
+            and transcription_window_id is not None
+            and search_file_path is not None
+        ):
+            parent_window = self.get_window_by_id(
+                transcription_window_id
+            )
 
-            search_window_id = transcription_window_id + '_search'
+            if parent_window is None:
+                parent_window = self.root
 
-            # don't open multiple search widows for the same transcription window
-            open_multiple = False
+            search_window_title_ext = (
+                window_transcription.name
+                if window_transcription.name
+                else os.path.basename(
+                    window_transcription.transcription_file_path
+                ).split('.transcription.json')[0]
+            )
 
-            # the transcription_file_paths has only one element
-            search_file_paths = [search_file_path]
-
-            # get the parent window
-            parent_window = self.get_window_by_id(transcription_window_id)
-
-            # use either the transcription name or the file name for the search window title
-            search_window_title_ext = \
-                window_transcription.name \
-                if window_transcription.name \
-                else os.path.basename(search_file_path).split('.transcription.json')[0]
-
-        # if there is no transcription window id or any search_file_path
         else:
-
+            # searches opened from the main window use the selected path for
+            # the title and remain parented to the main application window
+            parent_window = self.root
             search_window_title_ext = ''
 
-            # if we have a list of one, take the first element
-            if search_file_paths and isinstance(search_file_paths, list) and len(search_file_paths) == 1:
-                search_file_paths = search_file_paths[0]
+            if (
+                select_dir
+                and isinstance(search_file_paths, str)
+                and os.path.isdir(search_file_paths)
+            ):
+                search_window_title_ext = os.path.basename(
+                    search_file_paths
+                )
 
-            # if the user selected a directory and it exists
-            if select_dir and isinstance(search_file_paths, str) \
-                    and search_file_paths and os.path.isdir(search_file_paths):
+            elif (
+                isinstance(search_file_paths, str)
+                and os.path.isfile(search_file_paths)
+            ):
+                search_window_title_ext = os.path.basename(
+                    search_file_paths
+                )
 
-                # use the directory name as the title
-                search_window_title_ext = os.path.basename(search_file_paths)
+            elif isinstance(search_file_paths, (list, tuple)):
+                if search_file_paths:
+                    search_window_title_ext = os.path.basename(
+                        search_file_paths[0]
+                    )
 
-            # if we have a single file, use the file name as the title
-            elif search_file_paths and isinstance(search_file_paths, str) \
-                    and search_file_paths and os.path.isfile(search_file_paths):
+                    if len(search_file_paths) > 1:
+                        search_window_title_ext += ' and others'
 
-                search_window_title_ext = os.path.basename(search_file_paths)
-
-            # if we have multiple files, use the name of the first file as the title
-            elif search_file_paths and (isinstance(search_file_paths, list) or isinstance(search_file_paths, tuple)):
-
-                search_window_title_ext = os.path.basename(search_file_paths[0])
-
-                # if there are multiple files, show that there are others
-                if len(search_file_paths) > 1:
-                    search_window_title_ext += ' and others'
-
-            search_window_id = 'adv_search_{}'.format(str(time.time()))
-
-            # the parent is in this case the main window
-            parent_window = self.root
-
-            # since we're not coming from a transcription window,
-            # we can open multiple search windows at the same time
-            open_multiple = True
-
-        # format the full search window title
-        search_window_title = 'Search{}'.format(' - '+search_window_title_ext if search_window_title_ext else '')
-
-        # we need to filter out the files that are not searchable
-        # even if this was done before, just to make sure we're using the same TextSearch object
-
-        # filter the files that are not searchable (by extension) and turn directories into files
-        text_search_file_paths = TextSearch.filter_file_paths(search_file_paths)
-
-        # filter the video search file paths
-        video_search_file_paths = VideoSearch.filter_file_paths(search_file_paths)
-
-        # use_analyzer
-        use_analyzer = self.stAI.get_app_setting('search_preindexing_textanalysis', default_if_none=False)
-
-        # initialize the search item object
-        text_search_item = TextSearch(toolkit_ops_obj=self.toolkit_ops_obj, search_file_paths=text_search_file_paths,
-                                 search_type='semantic', use_analyzer=use_analyzer)
-
-        video_search_item = VideoSearch(toolkit_ops_obj=self.toolkit_ops_obj, search_file_paths=video_search_file_paths)
-
-        # if this search has a file path id,
-        if text_search_item.search_file_path_id is not None:
-
-            # let's use it in the search window's id
-            # this will help if we want to avoid re-opening it for the same file paths
-            search_window_id = 'adv_search_{}'.format(text_search_item.search_file_path_id)
-
-            open_multiple = False
-
-        # open a new console search window
-        search_window_id = self.open_text_window(window_id=search_window_id,
-                                                 title=search_window_title,
-                                                 can_find=True,
-                                                 user_prompt=True,
-                                                 close_action=lambda l_search_window_id=search_window_id:
-                                                 self.destroy_advanced_search_window(l_search_window_id),
-                                                 prompt_prefix='SEARCH > ',
-                                                 prompt_callback=self.advanced_search,
-                                                 prompt_callback_kwargs={
-                                                     'text_search_item': text_search_item,
-                                                     'video_search_item': video_search_item,
-                                                     'search_window_id': search_window_id},
-                                                 type='search',
-                                                 open_multiple=open_multiple,
-                                                 window_width=60,
-                                                 has_menubar=True
-                                                 )
-
-        # if the window was not created and is not in the list of windows, throw an error
-        if search_window_id and not self.get_window_by_id(search_window_id):
-            logger.error('Search window {} was not created.'.format(search_window_id))
-            return False
-
-        # if the window was not created, but it's in the list of windows, just return
-        # the window will be focused by now and the user will be able to use it
-        if not search_window_id:
-            return
-
-        help_console_info = "Type /help to see all available commands.\n\n"
-
-        def ready_for_search():
-            """
-            This updates the window with the "ready for search" prefix and message
-            """
-
-            text_widget = self.get_window_by_id(search_window_id).text_widget
-
-            # get the current prefix
-            current_prefix = self.text_windows[search_window_id].get('prompt_prefix', '')
-
-            # calculate the starting index of the last line
-            start_of_last_line = text_widget.index('end-1c linestart')
-
-            # get the text on the last line excluding the prefix
-            typed_text = text_widget.get(start_of_last_line, 'end-1c')
-
-            # optionally remove the prefix from the typed text (but only the first instance)
-            typed_text = typed_text.replace(current_prefix, '', 1)
-
-            # change the prefix back to SEARCH
-            self._text_window_set_prefix(window_id=search_window_id, prefix='SEARCH > ')
-
-            # update the text window
-            self._text_window_update(
-                search_window_id, help_console_info + 'Ready for search.', clear=True)
-
-            # insert the typed text back into the text window
-            text_widget.insert('end', typed_text)
-
-        # get this window object
-        search_window = self.get_window_by_id(search_window_id)
-
-        # change the prefix of the window from SEARCH to nothing until the processing is done
-        self._text_window_set_prefix(window_id=search_window_id, prefix=' > ')
-
-        # let the user know that we're now reading the files
-        self._text_window_update(
-            search_window_id,
-            text=help_console_info+'Reading {} {}...'.format(
-                text_search_item.search_file_paths_count,
-                'file' if text_search_item.search_file_paths_count == 1 else 'files'),
-            clear=True
+        search_window_title = 'Search{}'.format(
+            (
+                ' - ' + search_window_title_ext
+                if search_window_title_ext
+                else ''
+            )
         )
 
-        # TEXT SEARCH
-        # check if we have text files to search, otherwise this is video search only and we can skip this
-        if text_search_file_paths:
-            def process_text_items(thread):
-                """
-                This processes the indexing for this search window, either directly in a thread or through the queue.
-                """
+        use_analyzer = self.stAI.get_app_setting(
+            'search_preindexing_textanalysis',
+            default_if_none=False
+        )
 
-                # the preparation of the search corpus needs to happen before sending the search item to the queue
-                # this is the only way to find out if we have a cache or not
-                # but it also means that we're taking it through TextAnalysis which might be slow...
-                text_search_item.prepare_search_corpus()
+        # create the live text and video processors behind the engine boundary
+        search_info = self.engine.create_search(
+            search_file_paths=search_file_paths,
+            use_analyzer=use_analyzer
+        )
 
-                queue_items = self.toolkit_ops_obj.processing_queue.get_all_queue_items()
+        text_search_file_paths = search_info['text_file_paths']
+        video_search_file_paths = search_info['video_file_paths']
 
-                in_queue = False
-                # look through all the queue items and see if the search_file_paths match
-                for q_item_id, q_item in queue_items.items():
+        # stop when neither processor accepted any of the selected paths
+        if not text_search_file_paths and not video_search_file_paths:
+            self.engine.close_search(
+                search_info['search_id']
+            )
 
-                    # if the queue item is a search item
-                    if q_item.get('item_type', None) == 'search' \
-                            and q_item.get('search_file_paths', None) == text_search_file_paths:
+            self.notify_via_messagebox(
+                level='info',
+                message='No valid files found for search.',
+                parent=self.get_window_by_id('main')
+            )
+            return None
 
-                        # if the item is done, let the user know that he can search
-                        if q_item['status'] == 'done':
-                            ready_for_search()
+        search_id = search_info['search_id']
 
-                            # we're saying it is in the queue, just to avoid re-processing it
-                            in_queue = True
-                            break
+        # use the engine session ID to prevent duplicate windows for the same
+        # in-process search session
+        requested_search_window_id = 'adv_search_{}'.format(
+            search_id
+        )
 
-                        # if the item is still processing, let the user know that he has to wait
-                        elif q_item['status'] not in ['failed', 'canceled', 'canceling']:
-                            self._text_window_update(
-                                window_id=search_window_id,
-                                text=help_console_info + 'Waiting for queue to finish processing...', clear=True)
-                            in_queue = True
-                            break
+        search_window_id = self.open_text_window(
+            window_id=requested_search_window_id,
+            title=search_window_title,
+            can_find=True,
+            user_prompt=True,
+            close_action=(
+                lambda l_search_window_id=requested_search_window_id:
+                self.destroy_advanced_search_window(
+                    l_search_window_id
+                )
+            ),
+            prompt_prefix='SEARCH > ',
+            prompt_callback=self.advanced_search,
+            prompt_callback_kwargs={
+                'search_id': search_id,
+                'search_window_id': requested_search_window_id
+            },
+            type='search',
+            open_multiple=False,
+            window_width=60,
+            has_menubar=True
+        )
 
-                        # for any other status (failed, canceled, canceling), we can say it's not in the queue
-                        else:
-                            in_queue = False
-                            break
+        # a truthy ID without a corresponding window indicates a creation error
+        if (
+            search_window_id
+            and not self.get_window_by_id(search_window_id)
+        ):
+            logger.error(
+                'Search window {} was not created.'.format(
+                    search_window_id
+                )
+            )
+            self.engine.close_search(search_id)
+            return False
 
-                # if the search_file_paths_size is larger than 300kb and doesn't have a cache
-                if not in_queue \
-                        and text_search_item.search_file_paths_size > 300000 \
-                        and not text_search_item.cache_exists:
+        # an existing window was focused instead of creating another one
+        if not search_window_id:
+            return None
 
-                    # add the search item to the queue
-                    queue_id = self.toolkit_ops_obj.add_index_text_to_queue(
-                        queue_item_name='Indexing text of {}'.format(search_window_title_ext),
-                        search_file_paths=text_search_file_paths)
+        search_window = self.get_window_by_id(
+            search_window_id
+        )
 
-                    self._text_window_update(
-                        search_window_id, help_console_info+'Sent processing job to the queue...', clear=True)
+        if search_window is None:
+            self.engine.close_search(search_id)
+            return False
 
-                    if queue_id:
+        help_console_info = (
+            'Type /help to see all available commands.\n\n'
+        )
 
-                        # add the queue id as a processing item to the window
-                        #  - this will be removed when the observer is notified at the end of the processing
-                        self.add_window_processing(window_id=search_window_id, processing_item=queue_id)
+        # keep only detached engine data on the Tk window
+        search_window.search_id = search_id
+        search_window.search_info = search_info
+        search_window.search_ready = False
+        search_window.search_preparation_status = None
+        search_window.search_queue_window_opened = False
+        search_window.search_help_console_info = help_console_info
 
-                        def window_indexing_done():
-                            """
-                            We use this as a callback to update the text window when the done indexing observer is notified
-                            """
-
-                            # remove the processing queue item from the window
-                            self.remove_window_processing(window_id=search_window_id, processing_item=queue_id)
-
-                            # if the window is no longer processing anything, we can update the text window
-                            if not self.is_window_processing(window_id=search_window_id):
-                                ready_for_search()
-
-                        def window_indexing_failed():
-                            """
-                            We use this as a callback to update the text window
-                            when the failed indexing observer is notified
-                            """
-
-                            self.notify_via_messagebox(
-                                message="The indexing was either canceled or it failed for this search. \n"
-                                        "Please re-open this window if you want to try again."
-                                .format(search_window_title),
-                                level='error',
-                                parent=search_window,
-                                message_log="Indexing failed for search window {}.".format(search_window_title)
-                            )
-
-                            # close this window
-                            self.destroy_advanced_search_window(search_window_id)
-
-                        # add window observer to track when the queue is done processing
-                        self.add_observer_to_window(
-                            window_id=search_window_id,
-                            action='update_done_indexing_search_file_path_{}'
-                            .format(text_search_item.search_file_path_id),
-                            callback=window_indexing_done,
-                            dettach_after_call=True
-                        )
-
-                        # add window observer to track when the queue failed/canceled processing
-                        self.add_observer_to_window(
-                            window_id=search_window_id,
-                            action='update_fail_indexing_search_file_path_{}'
-                            .format(text_search_item.search_file_path_id),
-                            callback=window_indexing_failed,
-                            dettach_after_call=True
-                        )
-
-                        # open the queue window
-                        self.open_queue_window()
-
-                        # check if the processing isn't already done by the time we reach this
-                        # - sometimes the queue is so fast that we miss the observer notification
-                        queue_item = self.toolkit_ops_obj.processing_queue.get_item(queue_id)
-                        if queue_item['status'] == 'done':
-                            window_indexing_done()
-
-                # if the total file size is smaller than 150kb, process it now
-                elif not in_queue:
-
-                    self._text_window_update(
-                        search_window_id, help_console_info+'Processing for a moment...', clear=True)
-
-                    # use the toolkit method of indexing text
-                    self.toolkit_ops_obj.index_text(search_file_paths=text_search_file_paths)
-
-                # when this is done, remove the processing text item from the window
-                self.remove_window_processing(window_id=search_window_id, processing_item=thread)
-
-                # if the window is no longer processing anything, we're ready for search
-                if not self.is_window_processing(window_id=search_window_id):
-                    ready_for_search()
-
-            # create a new thread to prevent locking the window
-            processing_thread = Thread(target=lambda: process_text_items(processing_thread))
-            # start the thread
-            processing_thread.start()
-
-            # add the processing item to the window so it "knows" that it's processing something
-            self.add_window_processing(window_id=search_window_id, processing_item=processing_thread)
-
-        # VIDEO SEARCH
-        if video_search_file_paths and video_search_item.search_file_paths:
-
-            def process_video_items(thread):
-
-                self._text_window_update(
-                    search_window_id, help_console_info+'Processing for a moment...', clear=True)
-
-                # load the video search
-                video_search_item.load_index_paths()
-
-                self._text_window_update(
-                    search_window_id, help_console_info+'Loading video search...', clear=True)
-
-                # load the clip model
-                video_search_item.load_model()
-
-                # when this is done, remove the processing text item from the window
-                self.remove_window_processing(window_id=search_window_id, processing_item=thread)
-
-                # if the window is no longer processing anything, we're ready for search
-                if not self.is_window_processing(window_id=search_window_id):
-                    ready_for_search()
-
-            # create a new thread to prevent locking the window
-            processing_video_thread = Thread(target=lambda: process_video_items(processing_video_thread))
-            # start the thread
-            processing_video_thread.start()
-
-            # add the processing item to the window so it "knows" that it's processing something
-            self.add_window_processing(window_id=search_window_id, processing_item=processing_video_thread)
-
-        # if the parent of the window is not the main window
+        # keep the parent/child window link used by transcription windows
         if parent_window != self.root:
-
-            # add this window to the parent window
             parent_window.search_window = search_window
 
-        # add the search item to the search window
-        search_window.text_search_item = text_search_item
+        # add the search-window actions
+        self._add_button_to_side_frames_of_window(
+            search_window_id,
+            side='left',
+            button_text='List files',
+            button_command=(
+                lambda l_search_window_id=search_window_id:
+                self.button_search_list_files(
+                    l_search_window_id
+                )
+            ),
+            sub_frame='Search'
+        )
 
-        # add the button to the left frame of the search window
+        # retain the current text/video selection variables used at query time
+        (
+            search_window.search_text_switch_var,
+            search_window.search_text_switch_input
+        ) = self._add_switch_to_side_frames_of_window(
+            search_window_id,
+            side='left',
+            label_text='Search text',
+            sub_frame='Search'
+        )
 
-        # SEARCH BUTTONS
-        # self._add_button_to_side_frames_of_window(search_window_id, side='left',
-        #                                           button_text='Change model',
-        #                                           button_command=
-        #                                           lambda search_window_id=search_window_id:
-        #                                           self.button_search_change_model(search_window_id),
-        #                                           sub_frame="Search")
+        (
+            search_window.search_video_switch_var,
+            search_window.search_video_switch_input
+        ) = self._add_switch_to_side_frames_of_window(
+            search_window_id,
+            side='left',
+            label_text='Search video',
+            sub_frame='Search'
+        )
 
-        self._add_button_to_side_frames_of_window(search_window_id, side='left',
-                                                  button_text='List files',
-                                                  button_command=
-                                                  lambda l_search_window_id=search_window_id:
-                                                  self.button_search_list_files(l_search_window_id),
-                                                  sub_frame="Search")
+        search_window.search_text_switch_var.set(
+            bool(text_search_file_paths)
+        )
+        search_window.search_video_switch_var.set(
+            bool(video_search_file_paths)
+        )
 
-        search_window.search_text_switch_var, search_window.search_text_switch_input = \
-            self._add_switch_to_side_frames_of_window(search_window_id, side='left',
-                                                      label_text='Search text',
-                                                      sub_frame="Search")
+        # the switches are currently retained as window state but hidden from
+        # the side panel, matching the existing search-window behavior
+        search_window.search_text_switch_input.pack_forget()
+        search_window.search_video_switch_input.pack_forget()
 
-        if text_search_item.search_file_paths:
-            search_window.search_text_switch_var.set(True)
-        else:
-            search_window.search_text_switch_var.set(False)
-            search_window.search_text_switch_input.pack_forget()
-            search_window.search_video_switch_input.pack_forget()
-
-        search_window.search_video_switch_var, search_window.search_video_switch_input =\
-            self._add_switch_to_side_frames_of_window(search_window_id, side='left',
-                                                      label_text='Search video',
-                                                      sub_frame="Search")
-
-        if video_search_item.search_file_paths:
-            search_window.search_video_switch_var.set(True)
-        else:
-            search_window.search_video_switch_var.set(False)
-            search_window.search_video_switch_input.pack_forget()
-            search_window.search_text_switch_input.pack_forget()
-
-        # don't let both be off, so if one gets off, turn the other on
         def switch_search_text():
+            """Keep video search enabled when text search is switched off."""
 
-            if search_window.search_text_switch_var.get() == 0:
+            if (
+                search_window.search_text_switch_var.get() == 0
+                and video_search_file_paths
+            ):
                 search_window.search_video_switch_var.set(True)
 
         def switch_search_video():
+            """Keep text search enabled when video search is switched off."""
 
-            if search_window.search_video_switch_var.get() == 0:
+            if (
+                search_window.search_video_switch_var.get() == 0
+                and text_search_file_paths
+            ):
                 search_window.search_text_switch_var.set(True)
 
-        search_window.search_text_switch_var.trace('w', lambda *args: switch_search_text())
-        search_window.search_video_switch_var.trace('w', lambda *args: switch_search_video())
+        search_window.search_text_switch_var.trace(
+            'w',
+            lambda *args: switch_search_text()
+        )
+        search_window.search_video_switch_var.trace(
+            'w',
+            lambda *args: switch_search_video()
+        )
 
-        # SPACY BUTTONS
-        # self._add_switch_to_side_frames_of_window(search_window_id, side='left',
-        #                                               switch_text='Cluster phrases',
-        #                                               switch_command=
-        #                                               lambda search_window_id=search_window_id:
-        #                                                print(search_window_id),
-        #                                               sub_frame="Source Text")
+        # disable the prompt visually until engine preparation is complete
+        self._text_window_set_prefix(
+            window_id=search_window_id,
+            prefix=' > '
+        )
 
-        # TRANSCRIPT RESULTS BUTTONS
-        # self._add_button_to_side_frames_of_window(search_window_id, side='left',
-        #                                               button_text='Show results',
-        #                                               button_command=button_no_command,
-        #                                               sub_frame="Results")
+        source_file_count = max(
+            search_info['text_file_count'],
+            search_info['video_file_count']
+        )
 
-        # self._add_button_to_side_frames_of_window(search_window_id, side='left',
-        #                                               button_text='Select results',
-        #                                               button_command=button_no_command,
-        #                                               sub_frame="Results")
+        self._text_window_update(
+            search_window_id,
+            text=(
+                help_console_info
+                + 'Reading {} {}...'.format(
+                    source_file_count,
+                    (
+                        'file'
+                        if source_file_count == 1
+                        else 'files'
+                    )
+                )
+            ),
+            clear=True
+        )
 
-        # self._add_button_to_side_frames_of_window(search_window_id, side='left',
-        #                                               button_text='Select group results',
-        #                                               button_command=button_no_command,
-        #                                               sub_frame="Results")
+        # start corpus preparation, queued indexing and video model loading in
+        # the engine instead of creating processing threads in Tk
+        preparation_info = self.engine.prepare_search(
+            search_id=search_id,
+            queue_item_name='Indexing text of {}'.format(
+                search_window_title_ext
+            )
+        )
 
-        # add text to the search window
-        # self._text_window_update(search_window_id, 'Reading {} file{}.'
-        #                         .format(len(search_file_paths), 's' if len(search_file_paths) > 1 else ''))
+        if preparation_info is None:
+            self.notify_via_messagebox(
+                level='error',
+                message=(
+                    'The search session could not be prepared.'
+                ),
+                parent=search_window,
+                message_log=(
+                    'Advanced search preparation failed for {}.'
+                    .format(search_window_title)
+                )
+            )
+            self.destroy_advanced_search_window(
+                search_window_id
+            )
+            return False
 
-        # now prepare the search corpus
-        # (everything happens within the search item, that's why we don't really need to return anything)
-        # if the search corpus was prepared successfully, update the search window
+        search_window.search_info = preparation_info
 
-        self._text_window_update(search_window_id, help_console_info)
+        self._text_window_update(
+            search_window_id,
+            help_console_info
+            + 'Processing search files.\nPlease wait...'
+        )
 
-        # if the window is still processing, show this:
-        if self.is_window_processing(search_window_id):
-            self._text_window_update(search_window_id, 'Processing search files. Please wait...')
+        # Tk only polls detached status while processing runs in the engine
+        search_window.after(
+            100,
+            lambda: self._advanced_search_poll_preparation(
+                search_window_id
+            )
+        )
 
-        # focus in the text widget after 110 ms
-        search_window.after(110, lambda: self.text_windows[search_window_id]['text_widget'].focus_set())
+        def focus_search_input():
+            """
+            Focus the search prompt after the window has finished drawing.
 
+            Search preparation may fail before this delayed callback runs. In
+            that case the window and its text-widget entry have already been
+            removed and there is nothing left to focus.
+            """
+
+            text_window = self.text_windows.get(search_window_id)
+
+            if text_window is None:
+                return
+
+            text_widget = text_window.get('text_widget')
+
+            if text_widget is None:
+                return
+
+            try:
+                if text_widget.winfo_exists():
+                    text_widget.focus_set()
+
+            except tk.TclError:
+                # The widget may be destroyed between the existence check and
+                # the focus request.
+                return
+
+        # focus the text widget after the window has finished drawing
+        search_window.after(
+            110,
+            focus_search_input,
+        )
+
+        return search_window_id
+        return search_window_id
+
+    def _advanced_search_mark_ready(
+        self,
+        search_window_id: str
+    ):
+        """
+        Restore the search prompt after engine preparation completes.
+
+        Any text typed while preparation was running is kept on the final
+        prompt line.
+        """
+
+        search_window = self.get_window_by_id(
+            search_window_id
+        )
+
+        if search_window is None:
+            return False
+
+        if getattr(search_window, 'search_ready', False):
+            return True
+
+        text_widget = search_window.text_widget
+
+        # preserve anything the user typed on the temporary prompt line
+        current_prefix = self.text_windows[
+            search_window_id
+        ].get('prompt_prefix', '')
+
+        start_of_last_line = text_widget.index(
+            'end-1c linestart'
+        )
+        typed_text = text_widget.get(
+            start_of_last_line,
+            'end-1c'
+        )
+        typed_text = typed_text.replace(
+            current_prefix,
+            '',
+            1
+        )
+
+        search_window.search_ready = True
+
+        self._text_window_set_prefix(
+            window_id=search_window_id,
+            prefix='SEARCH > '
+        )
+
+        self._text_window_update(
+            search_window_id,
+            (
+                search_window.search_help_console_info
+                + 'Ready for search.'
+            ),
+            clear=True
+        )
+
+        if typed_text:
+            text_widget.insert(
+                'end',
+                typed_text
+            )
+
+        return True
+
+    def _advanced_search_poll_preparation(
+        self,
+        search_window_id: str
+    ):
+        """
+        Poll detached search status without performing processing in Tk.
+
+        The callback stops automatically when the search window is closed,
+        prepared successfully, or reports an error.
+        """
+
+        search_window = self.get_window_by_id(
+            search_window_id
+        )
+
+        if search_window is None:
+            return False
+
+        search_id = getattr(
+            search_window,
+            'search_id',
+            None
+        )
+
+        if not search_id:
+            return False
+
+        search_info = self.engine.get_search(
+            search_id
+        )
+
+        if search_info is None:
+            self.notify_via_messagebox(
+                level='error',
+                message=(
+                    'The search session is no longer available.'
+                ),
+                parent=search_window,
+                message_log=(
+                    'Search session {} disappeared while preparing.'
+                    .format(search_id)
+                )
+            )
+            self.destroy_advanced_search_window(
+                search_window_id
+            )
+            return False
+
+        search_window.search_info = search_info
+        current_status = search_info['status']
+        previous_status = getattr(
+            search_window,
+            'search_preparation_status',
+            None
+        )
+
+        # update the status text only when its state changes
+        if current_status != previous_status:
+            search_window.search_preparation_status = (
+                current_status
+            )
+
+            if current_status in ['created', 'preparing']:
+                self._text_window_update(
+                    search_window_id,
+                    (
+                        search_window.search_help_console_info
+                        + 'Processing search files.\n'
+                        + 'Please wait...'
+                    ),
+                    clear=True
+                )
+
+            elif current_status == 'waiting_for_job':
+                self._text_window_update(
+                    search_window_id,
+                    (
+                        search_window.search_help_console_info
+                        + 'Waiting for queue to finish processing...'
+                    ),
+                    clear=True
+                )
+
+                # show the queue once when preparation moves to a queue job
+                if not search_window.search_queue_window_opened:
+                    search_window.search_queue_window_opened = True
+                    self.open_queue_window()
+
+        if current_status == 'ready':
+            return self._advanced_search_mark_ready(
+                search_window_id
+            )
+
+        if current_status == 'failed':
+            error_message = (
+                search_info.get('error')
+                or 'The search files could not be prepared.'
+            )
+
+            self.notify_via_messagebox(
+                level='error',
+                message=(
+                    '{}\n\n'
+                    'Please re-open this window if you want '
+                    'to try again.'
+                ).format(error_message),
+                parent=search_window,
+                message_log=(
+                    'Advanced search preparation failed: {}'
+                    .format(error_message)
+                )
+            )
+
+            self.destroy_advanced_search_window(
+                search_window_id
+            )
+            return False
+
+        # continue polling while the engine prepares or waits for its job
+        search_window.after(
+            250,
+            lambda: self._advanced_search_poll_preparation(
+                search_window_id
+            )
+        )
+
+        return True
     def is_window_processing(self, window_id: str):
         """
         This checks if a window has any processing items
@@ -18355,202 +18925,440 @@ class toolkit_UI():
 
         return True
 
-    def _advanced_search_list_files_in_window(self, search_window_id: str, search_item=None, clear=False):
+    def _advanced_search_list_files_in_window(
+        self,
+        search_window_id: str,
+        search_id: str = None,
+        clear=False
+    ):
         """
-        This function lists the files that are loaded for search in the search window.
-        """
+        List the paths belonging to an engine-owned search session.
 
-        # load the search item using the window id if it wasn't passed
-        if search_item is None:
-            search_item = self.windows[search_window_id].search_item
-
-        search_file_list = ''
-
-        # prepare a list with all the files
-        for search_file_path in search_item.search_file_paths:
-            search_file_list = search_file_list + os.path.basename(search_file_path) + '\n'
-
-        search_file_list = search_file_list.strip()
-        self._text_window_update(search_window_id, 'Looking into {} {} for this search:'
-                                 .format(len(search_item.search_file_paths),
-                                         'file' if len(search_item.search_file_paths) == 1 else 'files'), clear=clear)
-
-        self._text_window_update(search_window_id, search_file_list)
-
-    def advanced_search(self, prompt, text_search_item=None, video_search_item=None, search_window_id=None):
-        """
-        This is the callback function for the advanced search window.
-        It calls the search function of the search item and passes the prompt as the search query.
-        Then it updates the search window with the results.
+        The UI reads a detached search snapshot instead of a live SearchItem.
         """
 
-        # the window object
-        search_window = self.get_window_by_id(search_window_id)
+        search_window = self.get_window_by_id(
+            search_window_id
+        )
 
         if search_window is None:
-            logger.error('Cannot search - the search window is not defined.')
             return False
 
-        # are we supposed to clear the window before each reply?
-        clear_before_reply = self.stAI.get_app_setting('search_clear_before_results', default_if_none=True)
+        if search_id is None:
+            search_id = getattr(
+                search_window,
+                'search_id',
+                None
+            )
 
-        # the search_prompt is what we actually send to the model
-        # and it might be different than the full prompt the user is sending
+        if not search_id:
+            return False
+
+        search_info = self.engine.get_search(
+            search_id
+        )
+
+        if search_info is None:
+            return False
+
+        # text paths represent the original source files; use video index paths
+        # only for a video-only search that has no text-search source paths
+        search_file_paths = (
+            search_info['text_file_paths']
+            or search_info['video_file_paths']
+        )
+
+        search_file_list = '\n'.join(
+            os.path.basename(search_file_path)
+            for search_file_path in search_file_paths
+        )
+
+        self._text_window_update(
+            search_window_id,
+            'Looking into {} {} for this search:'.format(
+                len(search_file_paths),
+                (
+                    'file'
+                    if len(search_file_paths) == 1
+                    else 'files'
+                )
+            ),
+            clear=clear
+        )
+
+        self._text_window_update(
+            search_window_id,
+            search_file_list
+        )
+
+        return True
+
+    def advanced_search(
+        self,
+        prompt,
+        search_id=None,
+        search_window_id=None
+    ):
+        """
+        Handle commands and run an engine-owned advanced search.
+
+        The callback keeps command parsing and result presentation in Tk while
+        all model and search execution goes through StoryToolkitEngine.
+        """
+
+        search_window = self.get_window_by_id(
+            search_window_id
+        )
+
+        if search_window is None:
+            logger.error(
+                'Cannot search - the search window is not defined.'
+            )
+            return False
+
+        # recover the session ID from the window when the callback omitted it
+        if search_id is None:
+            search_id = getattr(
+                search_window,
+                'search_id',
+                None
+            )
+
+        if not search_id:
+            logger.error(
+                'Cannot search - the engine search ID is not defined.'
+            )
+            return False
+
+        search_info = self.engine.get_search(
+            search_id
+        )
+
+        if search_info is None:
+            logger.error(
+                'Cannot search - engine session {} is unavailable.'
+                .format(search_id)
+            )
+            return False
+
+        search_window.search_info = search_info
+
+        clear_before_reply = self.stAI.get_app_setting(
+            'search_clear_before_results',
+            default_if_none=True
+        )
+
+        # this may differ from the full command entered by the user
         search_prompt = prompt
 
-        # throw a depreciation warning if we detect square brackets
-        if prompt.lower().startswith(('[help]', '[model', '[exit', '[list', '[clear')) \
-            or re.match(r'^\[\d+\]', prompt.strip()):
+        # preserve the existing warning for deprecated square-bracket commands
+        if (
+            prompt.lower().startswith(
+                (
+                    '[help]',
+                    '[model',
+                    '[exit',
+                    '[list',
+                    '[clear'
+                )
+            )
+            or re.match(
+                r'^\[\d+\]',
+                prompt.strip()
+            )
+        ):
             self._text_window_update(
                 search_window_id,
-                toolkit_UI.sq_brackets_depreciation(prompt, ''),
+                toolkit_UI.sq_brackets_depreciation(
+                    prompt,
+                    ''
+                ),
                 clear=clear_before_reply
             )
-            # reset this variable to see whatever comes next
             clear_before_reply = False
 
-        # is the user asking for help?
-        if prompt.lower() == '[help]' or prompt.lower() == '/help':
+        if prompt.lower() in ['[help]', '/help']:
+            help_reply = (
+                'Simply enter a search term and press enter.\n'
+                'For eg.: about life events\n\n'
+                'If you want to restrict the number of results, '
+                'just add /n to the beginning of the query, where n '
+                'is the maximum number of results.\n'
+                'For eg.: /10 about life events\n\n'
+                'If you want to perform multiple searches in the '
+                'same time, use the | character to split the search '
+                'terms\n'
+                'For eg.: about life events | about family\n\n'
+                'If you want to change the model, use /model:\n'
+                'For eg.: '
+                '/model:distiluse-base-multilingual-cased-v1\n\n'
+                'See list of models here: '
+                'https://www.sbert.net/docs/pretrained_models.html\n'
+            )
 
-            help_reply = 'Simply enter a search term and press enter.\n' \
-                         'For eg.: about life events\n\n' \
-                         'If you want to restrict the number of results, ' \
-                         'just add /n to the beginning of the query, where n is the maximum number of results.\n' \
-                         'For eg.: /10 about life events\n\n' \
-                         'If you want to perform multiple searches in the same time, ' \
-                         'use the | character to split the search terms\n' \
-                         'For eg.: about life events | about family\n\n' \
-                         'If you want to change the model, use /model:<model_name>\n' \
-                         'For eg.: /model:distiluse-base-multilingual-cased-v1\n\n' \
-                         'See list of models here: https://www.sbert.net/docs/pretrained_models.html\n'
-
-            # use this to make sure we have a new prompt prefix for the next search
-            self._text_window_update(search_window_id, help_reply, clear=clear_before_reply)
+            self._text_window_update(
+                search_window_id,
+                help_reply,
+                clear=clear_before_reply
+            )
             return
 
-        # if the user sent either [model] or [model:<model_name>] as the prompt
-        elif (prompt.lower().startswith('[model') and prompt.lower().endswith(']')) \
-                or prompt.lower().startswith('/model'):
+        elif (
+            (
+                prompt.lower().startswith('[model')
+                and prompt.lower().endswith(']')
+            )
+            or prompt.lower().startswith('/model')
+        ):
+            model_name = None
 
-            # if the model contains a colon, it means that the user wants to load a new model
-            if prompt.lower().startswith('[model:') or prompt.lower().startswith('/model:'):
+            if prompt.lower().startswith('[model:'):
+                model_match = re.search(
+                    r'\[model:(.*?)\]',
+                    prompt
+                )
 
-                # if a model was passed (eg.: [model:en_core_web_sm]), load it
-                # using regex to extract the model name
-                if prompt.lower().startswith('[model:'):
-                    model_name = re.search(r'\[model:(.*?)\]', prompt.lower()).group(1)
+                if model_match:
+                    model_name = model_match.group(1)
 
-                else:
-                    model_name = re.search(r'/model:([^\s]+)', prompt.lower()).group(1)
+            elif prompt.lower().startswith('/model:'):
+                model_match = re.search(
+                    r'/model:([^\s]+)',
+                    prompt
+                )
 
-                if model_name.strip() != '':
+                if model_match:
+                    model_name = model_match.group(1)
 
-                    # let the user know that we are loading the model
-                    self._text_window_update(
-                        search_window_id, 'Loading model {}...'.format(model_name), clear=clear_before_reply)
-
-                    # load the model
-                    try:
-                        text_search_item.load_model(model_name=model_name)
-                    except:
-                        self._text_window_update(search_window_id, 'Could not load model {}.'.format(model_name))
-                        return
-
-            if text_search_item.model_name:
+            if model_name and model_name.strip():
                 self._text_window_update(
-                    search_window_id, 'Using model {}'.format(text_search_item.model_name), clear=clear_before_reply)
+                    search_window_id,
+                    'Loading model {}...'.format(
+                        model_name
+                    ),
+                    clear=clear_before_reply
+                )
+
+                try:
+                    selected_model_name = (
+                        self.engine.load_search_model(
+                            search_id=search_id,
+                            model_name=model_name
+                        )
+                    )
+
+                except Exception:
+                    logger.error(
+                        'Could not load search model {}.'.format(
+                            model_name
+                        ),
+                        exc_info=True
+                    )
+                    selected_model_name = None
+
+                if selected_model_name is None:
+                    self._text_window_update(
+                        search_window_id,
+                        'Could not load model {}.'.format(
+                            model_name
+                        )
+                    )
+                    return
+
+                search_info = self.engine.get_search(
+                    search_id
+                )
+                search_window.search_info = search_info
+
+            current_model_name = (
+                search_info.get('model_name')
+                if search_info
+                else None
+            )
+
+            if current_model_name:
+                self._text_window_update(
+                    search_window_id,
+                    'Using model {}'.format(
+                        current_model_name
+                    ),
+                    clear=clear_before_reply
+                )
+
             else:
                 self._text_window_update(
                     search_window_id,
-                    'No model loaded.\n'
-                    'Perform a search first to load the default model.\n'
-                    'Or load a model with the [model:<model_name>] command and it will be used '
-                    'for all the searches in this window.',
+                    (
+                        'No model loaded.\n'
+                        'Perform a search first to load the default '
+                        'model.\n'
+                        'Or load a model with the /model: command and '
+                        'it will be used for all searches in this '
+                        'window.'
+                    ),
                     clear=clear_before_reply
                 )
+
             return
 
-        # this clears the search window
-        elif prompt.lower() == '[clear]' or prompt.lower() == '/clear':
-            self._text_window_update(search_window_id, '', clear=clear_before_reply)
-            return
-
-        elif prompt.lower() == '[listfiles]' or prompt.lower() == '[list files]' or prompt.lower() == '/listfiles':
-            self._advanced_search_list_files_in_window(search_window_id, text_search_item, clear=clear_before_reply)
-            return
-
-        # is the user trying to quit?
-        elif prompt.lower() == '[quit]' or prompt.lower() == '/quit':
-            self.destroy_advanced_search_window(search_window_id)
-            return
-
-        # is the user sending a prompt that starts with a slash, followed by a number and a space?
-        elif prompt.lower().startswith('/') and re.match(r'^/\d+ ', prompt.strip()):
-            # rewrite the prompt as [number][rest]
-            search_prompt = '[' + prompt[1:].split(' ', 1)[0] + '] ' + prompt[1:].split(' ', 1)[1]
-
-        elif prompt.lower().startswith('/'):
-            self._text_window_update(search_window_id, 'Unknown command. Use /help for a list of commands.')
-            return
-
-        # if we reached this point, we're sending the prompt to the search item
-        # but first, we need to make sure that the window is not processing
-        # if it is, we need to wait for it to finish
-        if self.is_window_processing(search_window_id):
-
-            # let the user know that the window is processing
+        elif prompt.lower() in ['[clear]', '/clear']:
             self._text_window_update(
-                window_id=search_window_id,
-                text="Cannot search yet - we're processing the search files. Try again later."
+                search_window_id,
+                '',
+                clear=clear_before_reply
             )
             return
 
-        # perform the text search if the user sent a text search item
-        # and if the search_window.search_text_switch_var exists and is set to True
-        if text_search_item is not None and hasattr(search_window, 'search_text_switch_var') \
-                and search_window.search_text_switch_var.get() is True:
+        elif prompt.lower() in [
+            '[listfiles]',
+            '[list files]',
+            '/listfiles'
+        ]:
+            self._advanced_search_list_files_in_window(
+                search_window_id=search_window_id,
+                search_id=search_id,
+                clear=clear_before_reply
+            )
+            return
 
+        elif prompt.lower() in [
+            '[quit]',
+            '/quit'
+        ]:
+            self.destroy_advanced_search_window(
+                search_window_id
+            )
+            return
+
+        elif (
+            prompt.lower().startswith('/')
+            and re.match(
+                r'^/\d+ ',
+                prompt.strip()
+            )
+        ):
+            # retain the current internal bracket syntax understood by search
+            result_limit = prompt[1:].split(
+                ' ',
+                1
+            )[0]
+            query_text = prompt[1:].split(
+                ' ',
+                1
+            )[1]
+            search_prompt = (
+                '['
+                + result_limit
+                + '] '
+                + query_text
+            )
+
+        elif prompt.lower().startswith('/'):
+            self._text_window_update(
+                search_window_id,
+                'Unknown command.\n'
+                'Use /help for a list of commands.'
+            )
+            return
+
+        # search execution is valid only after both available processors finish
+        search_info = self.engine.get_search(
+            search_id
+        )
+
+        if search_info is None:
+            self._text_window_update(
+                search_window_id,
+                'The search session is no longer available.'
+            )
+            return False
+
+        search_window.search_info = search_info
+
+        if search_info['status'] != 'ready':
+            if search_info['status'] == 'failed':
+                status_message = (
+                    search_info.get('error')
+                    or 'The search files could not be prepared.'
+                )
+            elif search_info['status'] == 'waiting_for_job':
+                status_message = (
+                    'Cannot search yet - the indexing job is still '
+                    'in the processing queue.'
+                )
+            else:
+                status_message = (
+                    'Cannot search yet - we are processing the '
+                    'search files.\nTry again later.'
+                )
+
+            self._text_window_update(
+                window_id=search_window_id,
+                text=status_message
+            )
+            return
+
+        text_search_used = False
+        video_search_used = False
+
+        if (
+            search_info['text_file_count'] > 0
+            and hasattr(
+                search_window,
+                'search_text_switch_var'
+            )
+            and bool(
+                search_window.search_text_switch_var.get()
+            )
+        ):
             self.advanced_search_text(
-                text_search_item=text_search_item, search_window_id=search_window_id, prompt=search_prompt,
-                clear_before_reply=clear_before_reply)
+                search_id=search_id,
+                search_window_id=search_window_id,
+                prompt=search_prompt,
+                clear_before_reply=clear_before_reply
+            )
+            text_search_used = True
 
-            # set this to false so that the video search doesn't clear the window
+            # video results must not clear text results from the same query
             clear_before_reply = False
 
-        else:
-            text_search_item = None
-
-        if video_search_item and hasattr(search_window, 'search_video_switch_var') \
-                and search_window.search_video_switch_var.get() is True:
-
-            # add some space between the text and video results
-            # if text_search_item is not None:
-
-            #     # get the search window text element
-            #     results_text_element = self.text_windows[search_window_id]['text_widget']
-
-            #     # add a new line to separate the text and video results
-            #     results_text_element.insert(ctk.END, "\n")
-
+        if (
+            search_info['video_file_count'] > 0
+            and hasattr(
+                search_window,
+                'search_video_switch_var'
+            )
+            and bool(
+                search_window.search_video_switch_var.get()
+            )
+        ):
             self.advanced_search_video(
-                video_search_item=video_search_item, search_window_id=search_window_id, prompt=search_prompt,
-                clear_before_reply=clear_before_reply)
+                search_id=search_id,
+                search_window_id=search_window_id,
+                prompt=search_prompt,
+                clear_before_reply=clear_before_reply
+            )
+            video_search_used = True
+
+        if text_search_used or video_search_used:
+            self._text_window_update(
+                search_window_id,
+                'Ready for new search.',
+                scroll_to='1.1'
+            )
 
         else:
-            video_search_item = None
-
-        # use this to make sure we have a new prompt prefix for the next search
-        if text_search_item is not None or video_search_item is not None:
-            self._text_window_update(search_window_id, 'Ready for new search.', scroll_to='1.1')
-        else:
-
-            if search_window.search_video_switch_var.get() is False \
-                    and search_window.search_text_switch_var.get() is False:
-
-                self.notify_via_messagebox('warning', message="Both text and video search are disabled.")
-
-            self._text_window_update(search_window_id, 'Ready for new search.', clear=clear_before_reply)
-
+            self.notify_via_messagebox(
+                'warning',
+                message=(
+                    'Both text and video search are disabled.'
+                )
+            )
+            self._text_window_update(
+                search_window_id,
+                'Ready for new search.',
+                clear=clear_before_reply
+            )
     def _format_time_for_search_results(self, time_in_seconds=None):
         """
         Formats the time in seconds to a human readable format
@@ -18563,12 +19371,21 @@ class toolkit_UI():
                     int((time_in_seconds % 1) * 1000)
                     )
 
-    def advanced_search_text(self, text_search_item, search_window_id, prompt, clear_before_reply=True):
-
+    def advanced_search_text(
+        self,
+        search_id,
+        search_window_id,
+        prompt,
+        clear_before_reply=True
+    ):
         # keep track of when we started the search
         start_search_time = time.time()
 
-        search_results, max_results = text_search_item.search(query=prompt)
+        # execute text search through the engine-owned processor
+        search_results, max_results = self.engine.search_text(
+            search_id=search_id,
+            query=prompt
+        )
 
         # get the search window text element
         results_text_element = self.text_windows[search_window_id]['text_widget']
@@ -19026,16 +19843,28 @@ class toolkit_UI():
 
         return tk_image
 
-    def advanced_search_video(self, video_search_item, search_window_id, prompt, clear_before_reply=True):
-
+    def advanced_search_video(
+        self,
+        search_id,
+        search_window_id,
+        prompt,
+        clear_before_reply=True
+    ):
         # get the search window
         window = self.get_window_by_id(search_window_id)
 
-        # whether to combine the patches of the same frame if they are similar
-        combine_patches = self.stAI.get_app_setting('clip_combine_patches', default_if_none=True)
+        # whether to combine patches from the same frame when they are similar
+        combine_patches = self.stAI.get_app_setting(
+            'clip_combine_patches',
+            default_if_none=True
+        )
 
-        # search
-        results, max_results = video_search_item.search(prompt, combine_patches=combine_patches)
+        # execute video search through the engine-owned processor
+        results, max_results = self.engine.search_video(
+            search_id=search_id,
+            query=prompt,
+            combine_patches=combine_patches
+        )
 
         if not results:
             return False
@@ -19065,7 +19894,21 @@ class toolkit_UI():
             # take all the results and convert them frames to seconds
             for result in results:
 
-                video_frame = video_search_item.video_frame(result['full_path'], result['frame'])
+                # request the result frame through the engine boundary
+                video_frame = self.engine.get_search_video_frame(
+                    search_id=search_id,
+                    full_path=result['full_path'],
+                    frame=result['frame']
+                )
+
+                if video_frame is None:
+                    logger.warning(
+                        'Could not load frame {} from {}.'.format(
+                            result['frame'],
+                            result['full_path']
+                        )
+                    )
+                    continue
 
                 tk_image = self.cv2_image_to_tkinter(window, video_frame)
 
@@ -19135,12 +19978,43 @@ class toolkit_UI():
             results_text_element.insert(ctk.END, 'No video results found for {}.\n\n'.format(prompt))
             results_text_element.insert(ctk.END, '--------------------------------------\n\n')
 
-    def destroy_advanced_search_window(self, window_id: str = None):
+    def destroy_advanced_search_window(
+        self,
+        window_id: str = None
+    ):
+        """
+        Close an advanced-search window and release its engine session.
 
-        logger.debug('Deleting caches of search window {}'.format(window_id))
+        SearchItem's reusable model and embedding caches remain managed by the
+        processing layer; this removes only the live engine session.
+        """
 
-        # call the default destroy window function
-        self.destroy_text_window(window_id=window_id)
+        logger.debug(
+            'Closing search window {}'.format(
+                window_id
+            )
+        )
+
+        search_window = self.get_window_by_id(
+            window_id
+        )
+
+        if search_window is not None:
+            search_id = getattr(
+                search_window,
+                'search_id',
+                None
+            )
+
+            if search_id:
+                self.engine.close_search(
+                    search_id
+                )
+
+        # call the default text-window cleanup
+        self.destroy_text_window(
+            window_id=window_id
+        )
 
     def _unhighlight_result_tag(self, parent_element, tag_name, initial_background_color=None, initial_cursor=None):
 
@@ -19181,63 +20055,103 @@ class toolkit_UI():
         self.inject_prompt(search_window_id, '[listfiles]')
         return
 
-    def button_search_change_model(self, search_window_id: str = None):
-        """
-        This opens up an AskDialog with a list of search models to choose from.
-        """
+    def button_search_change_model(
+        self,
+        search_window_id: str = None
+    ):
+        """Open a dialog for changing an engine-owned text search model."""
 
-        # get the search item from the search window
-        if not self.get_window_by_id(search_window_id):
-            logger.error('Cannot change search model. The search window ID is not valid.')
+        search_window = self.get_window_by_id(
+            search_window_id
+        )
+
+        if search_window is None:
+            logger.error(
+                'Cannot change search model.\n'
+                'The search window ID is not valid.'
+            )
             return False
 
-        search_window = self.get_window_by_id(search_window_id)
+        search_id = getattr(
+            search_window,
+            'search_id',
+            None
+        )
 
-        if not hasattr(search_window, 'text_search_item'):
-            logger.error('Cannot change search model. The search window does not have a search item.')
+        if not search_id:
+            logger.error(
+                'Cannot change search model.\n'
+                'The search window does not have an engine search ID.'
+            )
             return False
 
-        # get the current model name from the search item
-        current_model_name = search_window.text_search_item.model_name
+        search_info = self.engine.get_search(
+            search_id
+        )
 
-        # create a list of widgets for the input dialogue
+        if search_info is None:
+            logger.error(
+                'Cannot change search model.\n'
+                'The engine search session is unavailable.'
+            )
+            return False
+
+        current_model_name = (
+            search_info.get('model_name')
+            or ''
+        )
+
         input_widgets = [
-            {'name': 'model_name', 'label': 'Model:', 'type': 'entry', 'default_value': current_model_name}
+            {
+                'name': 'model_name',
+                'label': 'Model:',
+                'type': 'entry',
+                'default_value': current_model_name
+            }
         ]
 
-        # then we call the ask_dialogue function
-        user_input = self.AskDialog(title='Change Advanced Search Model',
-                                    input_widgets=input_widgets,
-                                    parent=search_window,
-                                    toolkit_UI_obj=self
-                                    ).value()
+        user_input = self.AskDialog(
+            title='Change Advanced Search Model',
+            input_widgets=input_widgets,
+            parent=search_window,
+            toolkit_UI_obj=self
+        ).value()
 
-        if not user_input or 'model_name' not in user_input or not user_input['model_name']:
+        if (
+            not user_input
+            or 'model_name' not in user_input
+            or not user_input['model_name']
+        ):
             return False
 
-        # bring the search window to the front
+        # return focus to the search window before injecting the command
         search_window.focus_force()
+        self.text_windows[
+            search_window_id
+        ]['text_widget'].focus_force()
 
-        # and select the text widget
-        self.text_windows[search_window_id]['text_widget'].focus_force()
+        self.inject_prompt(
+            search_window_id,
+            '/model:{}'.format(
+                user_input['model_name']
+            )
+        )
 
-        # inject the prompt that changes the model
-        self.inject_prompt(search_window_id, '[model:{}]'.format(user_input['model_name']))
+        return True
 
     # THE ASSISTANT WINDOW
 
-    def open_assistant_window(self, assistant_window_id: str = None,
-                              transcript_text: str = None,
-                              transcription_segments: list = None,
-                              transcription_file_path: str = None
-                              ):
-
-        if self.toolkit_ops_obj is None:
-            logger.error('Cannot open advanced search window. A ToolkitOps object is needed to continue.')
-            return False
+    def open_assistant_window(
+            self,
+            assistant_window_id: str = None,
+            transcript_text: str = None,
+            transcription_segments: list = None,
+            transcription_file_path: str = None
+    ):
 
         # open a new console assistant window
-        # only one assistant window can be open at a time for now, so we'll use a fixed window id
+        # only one assistant window can be open at a time for now, 
+        # so we'll use a fixed window id
         assistant_window_id = 'assistant'
         assistant_window_title = 'Assistant'
 
@@ -19246,7 +20160,10 @@ class toolkit_UI():
 
         assistant_settings = {
             'system_prompt': self.stAI.get_app_setting(
-                'assistant_system_prompt', default_if_none=ASSISTANT_DEFAULT_SYSTEM_MESSAGE),
+                'assistant_system_prompt', default_if_none=(
+                    self.engine.get_assistant_default_system_message()
+                )
+            ),
             "temperature": self.stAI.get_app_setting('assistant_temperature', default_if_none=1),
             "max_length": self.stAI.get_app_setting('assistant_max_length', default_if_none=512),
             "max_completion_length": self.stAI.get_app_setting('assistant_max_completion_length', default_if_none=512),
@@ -19295,12 +20212,12 @@ class toolkit_UI():
                 '<Button-2>', lambda e: self._assistant_window_context_menu(
                     e, window_id=assistant_window_id))
 
-            # initialize an assistant item if one doesn't already exist
+            # initialize an engine-owned assistant session if one doesn't
+            # already exist for this window
             if not hasattr(assistant_window, 'assistant_item'):
-                assistant_window.assistant_item = AssistantUtils.assistant_handler(
-                    toolkit_ops_obj=self.toolkit_ops_obj,
+                assistant_window.assistant_item = self.engine.create_assistant(
                     model_provider=default_model_provider,
-                    model_name=default_model_name
+                    model_name=default_model_name,
                 )
 
             if not assistant_window.assistant_item:
@@ -19476,22 +20393,20 @@ class toolkit_UI():
             and (assistant_settings.get('assistant_provider', None) != assistant_item.model_provider
                  or assistant_settings.get('assistant_model', None) != assistant_item.model_name):
 
-            # reset the assistant item
-            new_assistant_item = AssistantUtils.assistant_handler(
-                toolkit_ops_obj=self.toolkit_ops_obj,
+            # replace the private assistant implementation while preserving
+            # this window's engine-owned session and conversation state
+            new_assistant_item = self.engine.replace_assistant(
+                session_id=assistant_item.session_id,
                 model_provider=assistant_settings.get('assistant_provider'),
                 model_name=assistant_settings.get('assistant_model'),
-                strict=True
+                strict=True,
             )
 
             if new_assistant_item is None:
                 logger.error('Cannot change assistant model. The model provider or model name is invalid.')
                 return False
 
-            # copy the context and chat history from the old to the new assistant item
-            ToolkitAssistant.copy_context_and_chat(assistant_item, new_assistant_item)
-
-            # if the model is valid, replace the assistant item
+            # keep the public session handle on the assistant window
             assistant_window.assistant_item = new_assistant_item
             assistant_item = new_assistant_item
 
@@ -19658,9 +20573,13 @@ class toolkit_UI():
                     )
                     return
 
-                new_assistant_item = AssistantUtils.assistant_handler(
-                    toolkit_ops_obj=self.toolkit_ops_obj, model_provider=model_provider, model_name=model_name,
-                    strict=True
+                # replace the private assistant implementation while preserving
+                # this window's engine-owned session and conversation state
+                new_assistant_item = self.engine.replace_assistant(
+                    session_id=assistant_item.session_id,
+                    model_provider=model_provider,
+                    model_name=model_name,
+                    strict=True,
                 )
 
                 if new_assistant_item is None:
@@ -19672,10 +20591,7 @@ class toolkit_UI():
                     self._text_window_update(assistant_window_id, model_reply)
                     return
 
-                # copy the context and chat history from the old to the new assistant item
-                ToolkitAssistant.copy_context_and_chat(assistant_item, new_assistant_item)
-
-                # if the model is valid, replace the assistant item
+                # keep the public session handle on the assistant window
                 assistant_window.assistant_item = new_assistant_item
                 assistant_item = new_assistant_item
 
@@ -20058,7 +20974,7 @@ class toolkit_UI():
 
         # make sure we have a chat_history attribute on the window,
         # so we can keep track of what messages we see on the window,
-        # and which are referenced in the assistant_item.chat_history
+        # and which are referenced in the engine-owned assistant history
         # below, the chat_history is a dict with two keys:
         # - order (stores the order of the messages in the text widget) and
         # - items (stores the actual messages)
@@ -20186,7 +21102,7 @@ class toolkit_UI():
 
                 # if we didn't find anything,
                 # we return the length of the assistant chat history so that we insert at the end
-                return len(window.assistant_item.chat_history)
+                return window.assistant_item.chat_history_length
 
             def add_to_conversation(tag_id, item):
 
@@ -20213,8 +21129,12 @@ class toolkit_UI():
                             and current_chat_history_item['assistant_chat_history_index'] >= insert_index:
                         window.chat_history['items'][key]['assistant_chat_history_index'] += 1
 
-                # then, add the item to the assistant chat history
-                window.assistant_item.chat_history.insert(insert_index, assistant_chat_history_item)
+                # then, add the item through the engine-owned assistant
+                # session instead of mutating the private history directly
+                window.assistant_item.insert_chat_history(
+                    index=insert_index,
+                    item=assistant_chat_history_item,
+                )
 
                 # add the reference to the assistant chat history index to the item
                 item['assistant_chat_history_index'] = insert_index
@@ -20231,8 +21151,10 @@ class toolkit_UI():
                     logger.debug('Cannot remove from conversation. '
                                  'Item {} is already not in the conversation.'.format(tag_id))
 
-                # use the index to remove it from the assistant chat history
-                window.assistant_item.chat_history.pop(item['assistant_chat_history_index'])
+                # remove the item through the engine-owned assistant session
+                window.assistant_item.pop_chat_history(
+                    index=item['assistant_chat_history_index'],
+                )
 
                 past_item_index = item['assistant_chat_history_index']
 
@@ -20330,7 +21252,9 @@ class toolkit_UI():
         """
 
         # first, clean the response and try to parse it to json
-        assistant_response_dict = AssistantUtils.parse_response_to_dict(assistant_response=assistant_response)
+        assistant_response_dict = self.engine.parse_assistant_response(
+            assistant_response
+        )
 
         # if no parsing was possible, just return None
         if assistant_response_dict is None:
@@ -20725,7 +21649,7 @@ class toolkit_UI():
 
     def destroy_assistant_window(self, assistant_window_id: str):
         """
-        Destroys the assistant window
+        Destroy the assistant window and close its engine session.
         """
 
         # also remove any settings window it might have
@@ -20733,54 +21657,115 @@ class toolkit_UI():
         if settings_window_id in self.windows:
             self.destroy_window_(window_id=settings_window_id)
 
+        # close the private assistant implementation before removing the
+        # window that owns its public session handle
+        assistant_window = self.get_window_by_id(assistant_window_id)
+
+        if assistant_window is not None:
+            assistant_item = getattr(
+                assistant_window,
+                'assistant_item',
+                None,
+            )
+
+            if assistant_item is not None:
+                self.engine.close_assistant(
+                    assistant_item.session_id
+                )
+
         # destroy the assistant window
         self.destroy_text_window(assistant_window_id)
 
     # GENERAL FUNCTIONS
 
     def on_connect_resolve_api_press(self):
+        """
+        Connect processing to Resolve without exposing its API wrapper.
+        """
 
-        # update menu references
-        self.toolkit_ops_obj.resolve_enable()
+        # request the connection through the engine instead of waiting on the
+        # internal Resolve API object from the Tk thread
+        result = self.engine.ensure_resolve_connection()
 
-        # now wait for resolve to connect
-        while self.toolkit_ops_obj.resolve_api is None:
-            time.sleep(0.01)
+        if not result.get("ok", False):
+            error_message = (
+                result.get("message")
+                or "Unable to connect to the Resolve API."
+            )
 
-        # if the app config says that we should connect, ask the user if they still want that
-        if self.toolkit_ops_obj.stAI.get_app_setting('disable_resolve_api', default_if_none=False) is True:
+            logger.error(error_message)
 
-            # and ask the user if they want to always connect to Resolve API on startup
-            always_connect = messagebox.askyesno(title='Always Connect?',
-                                                 message='We\'re now connected to Resolve.\n\n'
-                                                         'Do you want to always connect to the Resolve API '
-                                                         'on tool startup?',
-                                                 parent=self.root
-                                                 )
+            messagebox.showerror(
+                title="Resolve Connection",
+                message=error_message,
+                parent=self.root,
+            )
+
+            return False
+
+        # when automatic connection was disabled, offer to remember this
+        # successful manual connection for future application starts
+        if self.stAI.get_app_setting(
+            "disable_resolve_api",
+            default_if_none=False,
+        ) is True:
+            always_connect = messagebox.askyesno(
+                title="Always Connect?",
+                message=(
+                    "We're now connected to Resolve.\n\n"
+                    "Do you want to always connect to the Resolve API "
+                    "on tool startup?"
+                ),
+                parent=self.root,
+            )
 
             time.sleep(0.1)
 
             if always_connect:
-                self.toolkit_ops_obj.stAI.save_config('disable_resolve_api', False)
+                self.stAI.save_config(
+                    "disable_resolve_api",
+                    False,
+                )
+
+        return True
 
     def on_disable_resolve_api_press(self):
+        """
+        Disable Resolve processing for the current runtime.
+        """
 
-        # disable resolve api
-        self.toolkit_ops_obj.resolve_disable()
+        resolve_disabled = (
+            self.engine.disable_resolve_connection()
+        )
 
-        # if the app config says that we should connect, ask the user if they still want that
-        if self.toolkit_ops_obj.stAI.get_app_setting('disable_resolve_api', default_if_none=False) is False:
+        if not resolve_disabled:
+            logger.warning(
+                "Resolve did not report a fully disconnected state."
+            )
 
-            # and ask the user if they want to connect to Resolve API on startup
-            always_connect = messagebox.askyesno(title='Connect back at startup?',
-                                                 message='Resolve API connection disabled.\n\n'
-                                                         'Do you want to still reconnect to the '
-                                                         'Resolve API at tool startup?',
-                                                 parent=self.root
-                                                 )
+        # when automatic connection is currently enabled, ask whether that
+        # preference should remain enabled for the next application start
+        if self.stAI.get_app_setting(
+            "disable_resolve_api",
+            default_if_none=False,
+        ) is False:
+            connect_at_startup = messagebox.askyesno(
+                title="Connect back at startup?",
+                message=(
+                    "Resolve API connection disabled.\n\n"
+                    "Do you want to still reconnect to the Resolve API "
+                    "at tool startup?"
+                ),
+                parent=self.root,
+            )
 
-            if not always_connect:
-                self.toolkit_ops_obj.stAI.save_config('disable_resolve_api', True)
+            if not connect_at_startup:
+                self.stAI.save_config(
+                    "disable_resolve_api",
+                    True,
+                )
+
+        return resolve_disabled
 
     def open_file_in_os(self, file_path):
         """
@@ -20998,7 +21983,256 @@ class toolkit_UI():
             button.config(text="Keep on top")
             return False
 
-    def notify_via_os(self, title, text, debug_message):
+    def receive_engine_event(self, event: EngineEvent):
+        """
+        Accept one engine event without touching Tk state.
+
+        Processing listeners can run on worker threads. The Tk-owned poll
+        callback handles queued events later on the UI thread.
+
+        Shutdown rejection is best-effort. A listener already between the
+        acceptance check and ``put`` may enqueue an event after polling stops.
+        That event is safely abandoned with the UI object and never reaches
+        Tk.
+        """
+
+        if not self._accept_engine_events:
+            return False
+
+        self._engine_events.put(event)
+        return True
+
+    def _poll_engine_events(self):
+        """
+        Handle a bounded batch of queued engine events on the Tk thread.
+        """
+
+        self._engine_event_poll_id = None
+
+        if not self._accept_engine_events:
+            return False
+
+        # Bound each cycle so an event burst cannot starve input and redraws.
+        for _ in range(100):
+            try:
+                event = self._engine_events.get_nowait()
+            except Empty:
+                break
+
+            try:
+                self._handle_engine_event(event)
+            except Exception:
+                logger.exception(
+                    "Tk engine event handler failed while handling %s.",
+                    event.type,
+                )
+
+        if not self._accept_engine_events:
+            return False
+
+        try:
+            self._engine_event_poll_id = self.root.after(
+                25,
+                self._poll_engine_events,
+            )
+        except (tk.TclError, RuntimeError):
+            # Do not let workers fill an inbox that Tk can no longer drain.
+            self._accept_engine_events = False
+            self._engine_event_poll_id = None
+            return False
+
+        return True
+
+    def _stop_engine_event_polling(self):
+        """
+        Stop polling and reject events that observe the shutdown state.
+
+        This does not make rejection atomic with a concurrent listener's
+        queue write. An event already entering the inbox may be discarded
+        after polling stops.
+        """
+
+        was_accepting_events = self._accept_engine_events
+        self._accept_engine_events = False
+
+        poll_id = self._engine_event_poll_id
+        self._engine_event_poll_id = None
+
+        if poll_id is not None:
+            try:
+                self.root.after_cancel(poll_id)
+            except (tk.TclError, RuntimeError):
+                # Tk may already be destroyed or the callback may have run.
+                pass
+
+        return was_accepting_events or poll_id is not None
+
+    def request_queue_refresh(self):
+        """
+        Request one authoritative queue redraw on the next idle cycle.
+        """
+
+        if not self._accept_engine_events or self._queue_refresh_pending:
+            return False
+
+        self._queue_refresh_pending = True
+
+        try:
+            self.root.after_idle(self._refresh_queue)
+        except (tk.TclError, RuntimeError):
+            self._queue_refresh_pending = False
+            return False
+
+        return True
+
+    def _refresh_queue(self):
+        """
+        Refresh the Queue window from the latest engine snapshot.
+
+        Engine events are only change signals. The engine snapshot remains
+        authoritative if several updates happen before Tk redraws the window.
+        """
+
+        # Clear this before any early return so a later event can request a
+        # fresh redraw, including after the Queue window is reopened.
+        self._queue_refresh_pending = False
+
+        if not self._accept_engine_events:
+            return False
+
+        queue_window = self.get_window_by_id('queue')
+        if queue_window is None:
+            return False
+
+        try:
+            if not queue_window.winfo_exists():
+                return False
+        except (tk.TclError, RuntimeError):
+            # the window may have been destroyed after the event was queued
+            return False
+
+        self.update_queue_window()
+        return True
+
+    def _handle_engine_event(self, event: EngineEvent):
+        """
+        Handle one engine event after it reaches the Tk thread.
+        """
+
+        if not self._accept_engine_events:
+            return
+
+        if event.type == 'job.changed':
+            self.request_queue_refresh()
+            return
+
+        if event.type == 'job.task_completed':
+
+            job_id = event.data.get('job_id')
+            item_type = event.data.get('item_type')
+
+            # these action names now remain local to Tk
+            # processing only publishes the structured task event above
+            if item_type:
+                self._notify_window_observers(
+                    '{}_queue_item_done'.format(item_type)
+                )
+
+            if job_id:
+                self._notify_window_observers(
+                    '{}_queue_item_done'.format(job_id)
+                )
+
+            return
+
+        if event.type == 'project.changed':
+            self._notify_window_observers(
+                'project_changed'
+            )
+            return
+
+        if event.type == 'transcriptions.changed':
+            self._notify_window_observers(
+                'update_all_transcriptions'
+            )
+            return
+
+        if event.type == 'transcription.changed':
+            transcription_id = event.data.get(
+                'transcription_id'
+            )
+
+            if transcription_id:
+                self._notify_window_observers(
+                    'update_transcription_{}'.format(
+                        transcription_id
+                    )
+                )
+            return
+
+        if event.type == 'transcription.groups.changed':
+            transcription_id = event.data.get(
+                'transcription_id'
+            )
+
+            if transcription_id:
+                self._notify_window_observers(
+                    'update_transcription_groups_{}'.format(
+                        transcription_id
+                    )
+                )
+            return
+
+        resolve_window_action = {
+            'resolve.connection.changed': 'update_NLE_status',
+            'resolve.project.changed': 'NLE_project_changed',
+            'resolve.timeline.changed': 'NLE_timeline_changed',
+            'resolve.markers.changed': 'NLE_markers_changed',
+            'resolve.bin.changed': 'NLE_bin_changed',
+            'resolve.playhead.changed': 'NLE_tc_changed',
+            'resolve.timecode_data.changed': (
+                'NLE_timecode_data_changed'
+            ),
+        }.get(event.type)
+
+        if resolve_window_action is not None:
+            self._notify_window_observers(
+                resolve_window_action
+            )
+            return
+
+        if event.type == "transcription.started":
+            name = event.data.get("name") or "audio file"
+
+            self.notify_via_os(
+                "Starting Transcription",
+                text="Transcribing {}".format(name),
+                debug_message=None,
+            )
+
+            return
+
+        if event.type == "transcription.completed":
+            name = event.data.get("name") or "audio file"
+            elapsed_seconds = event.data.get("elapsed_seconds", 0)
+
+            notification_msg = (
+                "Finished transcription for {} in {} seconds"
+                .format(name, elapsed_seconds)
+            )
+
+            self.notify_via_os(
+                "Finished Transcription",
+                text=notification_msg,
+                debug_message=None,
+            )
+
+    def notify_via_os(
+            self,
+            title,
+            text,
+            debug_message=None,
+    ):
         """
         Uses OS specific tools to notify the user
 
@@ -21009,14 +22243,13 @@ class toolkit_UI():
         """
 
         # log and print to console first
-        logger.info(debug_message)
+        if debug_message:
+            logger.info(debug_message)
 
         # notify the user depending on which platform they're on
         try:
             if platform.system() == 'Darwin':  # macOS
-                os.system("""
-                                                        osascript -e 'display notification "{}" with title "{}"'
-                                                        """.format(text, title))
+                notify_via_macos(title, text)
 
             elif platform.system() == 'Windows':  # Windows
                 return
@@ -21156,12 +22389,21 @@ class toolkit_UI():
             subprocess.call(['xdg-open', os.path.dirname(file_path)])
 
 
-def run_gui(toolkit_ops_obj, stAI):
-    # initialize GUI
-    app_UI = toolkit_UI(toolkit_ops_obj=toolkit_ops_obj, stAI=stAI)
+def run_gui(stAI, engine):
 
-    # connect app UI to operations object
-    toolkit_ops_obj.toolkit_UI_obj = app_UI
+    # initialize the GUI with application state
+    # and its public processing interface
+    app_UI = toolkit_UI(
+        stAI=stAI,
+        engine=engine,
+    )
 
-    # create the main window
-    app_UI.create_main_window()
+    # subscribe the Tk UI through its scheduling-only event entry point
+    engine.subscribe(app_UI.receive_engine_event)
+
+    try:
+        # create the main window
+        app_UI.create_main_window()
+    finally:
+        engine.unsubscribe(app_UI.receive_engine_event)
+        app_UI._stop_engine_event_polling()

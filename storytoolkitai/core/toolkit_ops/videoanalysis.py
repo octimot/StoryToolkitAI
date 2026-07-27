@@ -7,8 +7,6 @@ import math
 import numpy as np
 import cv2
 from PIL import Image
-from patchify import patchify
-import torch
 import clip
 import json
 
@@ -2112,4 +2110,3 @@ class ClipIndex:
     @staticmethod
     def get_available_clip_models():
         return clip.available_models()
-

@@ -1,0 +1,274 @@
+from __future__ import annotations
+
+from storytoolkitai.core.events import (
+    EngineEvent,
+    EventEmitter,
+    create_job_task_completed_event,
+    create_project_changed_event,
+    create_transcription_changed_event,
+    create_transcription_completed_event,
+    create_transcription_groups_changed_event,
+    create_transcription_started_event,
+)
+
+
+def test_subscriber_receives_event() -> None:
+    """A subscribed listener receives the emitted event."""
+
+    emitter = EventEmitter()
+    received: list[EngineEvent] = []
+
+    emitter.subscribe(received.append)
+
+    event = EngineEvent(
+        type="test.event",
+        data={"value": 42},
+    )
+    emitter.emit(event)
+
+    assert received == [event]
+
+
+def test_multiple_subscribers_receive_event() -> None:
+    """All subscribed listeners receive an equivalent event."""
+
+    emitter = EventEmitter()
+    first_listener_events: list[EngineEvent] = []
+    second_listener_events: list[EngineEvent] = []
+
+    emitter.subscribe(first_listener_events.append)
+    emitter.subscribe(second_listener_events.append)
+
+    event = EngineEvent(type="test.event")
+    emitter.emit(event)
+
+    assert first_listener_events == [event]
+    assert second_listener_events == [event]
+
+
+def test_nested_listener_mutation_is_isolated_between_listeners() -> None:
+    """Nested payload changes by one listener are private to that listener."""
+
+    emitter = EventEmitter()
+    second_listener_events: list[EngineEvent] = []
+
+    def mutating_listener(event: EngineEvent) -> None:
+        event.data["details"]["items"].append("listener-a")
+        event.data["details"]["metadata"]["changed"] = True
+
+    emitter.subscribe(mutating_listener)
+    emitter.subscribe(second_listener_events.append)
+
+    event = EngineEvent(
+        type="test.event",
+        data={
+            "details": {
+                "items": ["producer"],
+                "metadata": {"changed": False},
+            },
+        },
+    )
+    emitter.emit(event)
+
+    assert second_listener_events == [event]
+    assert second_listener_events[0] is not event
+
+
+def test_listener_mutation_does_not_change_producer_payload() -> None:
+    """Listener mutations cannot escape into the producer's source data."""
+
+    emitter = EventEmitter()
+    producer_payload = {
+        "details": {
+            "items": ["producer"],
+        },
+    }
+    event = EngineEvent(
+        type="test.event",
+        data=producer_payload,
+    )
+
+    def mutating_listener(delivered_event: EngineEvent) -> None:
+        delivered_event.data["details"]["items"].append("listener")
+
+    emitter.subscribe(mutating_listener)
+    emitter.emit(event)
+
+    assert producer_payload == {
+        "details": {
+            "items": ["producer"],
+        },
+    }
+    assert event.data == producer_payload
+
+
+def test_duplicate_subscription_is_ignored() -> None:
+    """The same listener is not registered more than once."""
+
+    emitter = EventEmitter()
+    received: list[EngineEvent] = []
+
+    emitter.subscribe(received.append)
+    emitter.subscribe(received.append)
+
+    event = EngineEvent(type="test.event")
+    emitter.emit(event)
+
+    assert received == [event]
+
+
+def test_unsubscribe_stops_event_delivery() -> None:
+    """An unsubscribed listener no longer receives events."""
+
+    emitter = EventEmitter()
+    received: list[EngineEvent] = []
+
+    emitter.subscribe(received.append)
+    emitter.unsubscribe(received.append)
+
+    emitter.emit(EngineEvent(type="test.event"))
+
+    assert received == []
+
+
+def test_failing_listener_does_not_stop_other_listeners() -> None:
+    """One broken listener cannot interrupt processing event delivery."""
+
+    emitter = EventEmitter()
+    received: list[EngineEvent] = []
+
+    def failing_listener(event: EngineEvent) -> None:
+        raise RuntimeError("Expected listener failure")
+
+    emitter.subscribe(failing_listener)
+    emitter.subscribe(received.append)
+
+    event = EngineEvent(type="test.event")
+    emitter.emit(event)
+
+    assert received == [event]
+
+
+def test_listener_can_unsubscribe_during_emit() -> None:
+    """Changing subscriptions during emit does not corrupt iteration."""
+
+    emitter = EventEmitter()
+    received: list[EngineEvent] = []
+
+    def one_time_listener(event: EngineEvent) -> None:
+        received.append(event)
+        emitter.unsubscribe(one_time_listener)
+
+    emitter.subscribe(one_time_listener)
+
+    first_event = EngineEvent(type="test.first")
+    second_event = EngineEvent(type="test.second")
+
+    emitter.emit(first_event)
+    emitter.emit(second_event)
+
+    assert received == [first_event]
+
+
+def test_transcription_started_event_contains_simple_data() -> None:
+    """Transcription start events contain only transport-safe data."""
+
+    event = create_transcription_started_event(
+        job_id="job-1",
+        name="interview.wav",
+        audio_file_path="/media/interview.wav",
+        task="transcribe",
+        time_intervals=[
+            (1, 2),
+            [3.5, 4.75],
+        ],
+    )
+
+    assert event == EngineEvent(
+        type="transcription.started",
+        data={
+            "job_id": "job-1",
+            "name": "interview.wav",
+            "audio_file_path": "/media/interview.wav",
+            "task": "transcribe",
+            "time_intervals": [
+                [1.0, 2.0],
+                [3.5, 4.75],
+            ],
+        },
+    )
+
+
+def test_transcription_completed_event_contains_output_details() -> None:
+    """Transcription completion events identify the saved output."""
+
+    event = create_transcription_completed_event(
+        job_id="job-1",
+        name="interview.wav",
+        audio_file_path="/media/interview.wav",
+        transcription_file_path="/media/interview.transcription.json",
+        task="transcribe",
+        elapsed_seconds=42,
+    )
+
+    assert event == EngineEvent(
+        type="transcription.completed",
+        data={
+            "job_id": "job-1",
+            "name": "interview.wav",
+            "audio_file_path": "/media/interview.wav",
+            "transcription_file_path": (
+                "/media/interview.transcription.json"
+            ),
+            "task": "transcribe",
+            "elapsed_seconds": 42,
+        },
+    )
+
+def test_job_task_completed_event_contains_simple_data() -> None:
+    """Queue task completion events identify the job and completed task."""
+
+    event = create_job_task_completed_event(
+        job_id="job-1",
+        item_type="transcription",
+        task_name="speaker_detection",
+    )
+
+    assert event == EngineEvent(
+        type="job.task_completed",
+        data={
+            "job_id": "job-1",
+            "item_type": "transcription",
+            "task_name": "speaker_detection",
+        },
+    )
+
+def test_project_changed_event_has_named_type() -> None:
+    """Project changes do not encode a UI callback name."""
+    assert create_project_changed_event() == EngineEvent(
+        type="project.changed",
+    )
+
+
+def test_transcription_changed_event_contains_identifier() -> None:
+    """A transcription change identifies the saved transcription."""
+    assert create_transcription_changed_event(
+        transcription_id="transcription-1",
+    ) == EngineEvent(
+        type="transcription.changed",
+        data={
+            "transcription_id": "transcription-1",
+        },
+    )
+
+
+def test_transcription_groups_changed_event_contains_identifier() -> None:
+    """A group change identifies the affected transcription."""
+    assert create_transcription_groups_changed_event(
+        transcription_id="transcription-1",
+    ) == EngineEvent(
+        type="transcription.groups.changed",
+        data={
+            "transcription_id": "transcription-1",
+        },
+    )

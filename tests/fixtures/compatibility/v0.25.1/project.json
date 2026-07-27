@@ -1,0 +1,27 @@
+{
+    "name": "Stable Compatibility Project",
+    "last_target_dir": "/sanitized/exports",
+    "timelines": {
+        "Assembly": {
+            "timeline_fps": 24,
+            "timeline_start_tc": "01:00:00:00",
+            "markers": {
+                "120": {
+                    "name": "Review",
+                    "color": "Blue",
+                    "duration": 1,
+                    "note": "Synthetic marker"
+                }
+            }
+        }
+    },
+    "transcriptions": [
+        "/sanitized/interview.transcription.json"
+    ],
+    "stories": [
+        "/sanitized/assembly.story.json"
+    ],
+    "documents": [
+        "/sanitized/notes.txt"
+    ]
+}

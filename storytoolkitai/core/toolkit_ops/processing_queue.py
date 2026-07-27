@@ -1,14 +1,67 @@
-import time
 import json
-
-from storytoolkitai import USER_DATA_PATH
-from storytoolkitai.core.logger import *
+import os
+import time
+from copy import deepcopy
+from functools import wraps
+from threading import RLock, Thread, local
 
 import torch
-from threading import Thread
+
+from storytoolkitai import USER_DATA_PATH
+from storytoolkitai.core.events import (
+    EngineEvent,
+    EventEmitter,
+    create_job_task_completed_event,
+)
+from storytoolkitai.core.logger import logger
 
 
 QUEUE_FILE_PATH = os.path.join(USER_DATA_PATH, 'queue.json')
+
+
+def _synchronized(method):
+    """Run a queue-state operation while holding its state lock.
+
+    ``job.changed`` events raised by nested queue calls are collected for the
+    current thread and emitted only after the outermost synchronized call has
+    released the queue lock.
+    """
+
+    @wraps(method)
+    def synchronized(self, *args, **kwargs):
+        pending_events = None
+
+        try:
+            with self._state_lock:
+                depth = getattr(self._synchronization_state, 'depth', 0)
+
+                if depth == 0:
+                    self._synchronization_state.pending_events = []
+
+                self._synchronization_state.depth = depth + 1
+
+                try:
+                    result = method(self, *args, **kwargs)
+
+                finally:
+                    self._synchronization_state.depth -= 1
+
+                    if self._synchronization_state.depth == 0:
+                        pending_events = (
+                            self._synchronization_state.pending_events
+                        )
+                        self._synchronization_state.pending_events = []
+
+        finally:
+            # Tk listeners may marshal events to the main thread. Emitting here,
+            # after the lock has been released, prevents a worker/Tk lock cycle.
+            if pending_events:
+                for event in pending_events:
+                    self.events.emit(event)
+
+        return result
+
+    return synchronized
 
 
 class ProcessingQueue:
@@ -16,9 +69,38 @@ class ProcessingQueue:
     This class handles the processing queue:
     """
 
-    def __init__(self, toolkit_ops_obj=None):
+    def __init__(
+        self,
+        task_handlers=None,
+        event_emitter=None,
+    ):
 
-        self.toolkit_ops_obj = toolkit_ops_obj
+        # the queue only needs the task names and their callables
+        # it must not keep a reference to the complete ToolkitOps object
+        self.task_handlers = (
+            task_handlers
+            if isinstance(task_handlers, dict)
+            else {}
+        )
+
+        # ToolkitOps passes its shared emitter here
+        # standalone queue instances, such as isolated tests,
+        # receive their own emitter by default
+        self.events = (
+            event_emitter
+            if event_emitter is not None
+            else EventEmitter()
+        )
+
+        # Queue management runs from the UI thread and processing workers.
+        # RLock is required because queue methods call other synchronized
+        # queue methods. Long-running task callables are intentionally not
+        # executed while this lock is held.
+        self._state_lock = RLock()
+
+        # Synchronization state is thread-local so nested queue calls can defer
+        # their events until the outermost call releases the queue lock.
+        self._synchronization_state = local()
 
         # this holds the queue ids of the items that need to be processed next
         # once the item is sent for processing, it is removed from this list and only remains in the queue history
@@ -36,19 +118,47 @@ class ProcessingQueue:
         # for eg. {'cuda:0': {'queue_id': queue_id, 'thread': <Thread(Thread-1, started 1234567890123)>}, ...}
         self.queue_threads = {}
 
-        # this holds other variables that don't need to be part of the queue history,
-        # but can be shared between threads
-        # the key is the queue id and the value is a dict variable names and values
-        self.queue_variables = {}
-
         # how much to wait until checking if there are items in the queue that can be processed
         # disabled for now - if we activate this we need to make sure that the device is not used by another thread
         # by checking the queue_threads dict
         # self.queue_check_interval = 30 # seconds
 
+    def _emit_job_changed(self, item):
+        """
+        Publish a stable summary after a queue item changes.
+
+        Queue items may contain Python callables and temporary processing
+        objects. Those implementation details must not be placed in events.
+        """
+
+        if not isinstance(item, dict):
+            return False
+
+        event = EngineEvent(
+            type='job.changed',
+            data={
+                'job_id': item.get('queue_id'),
+                'status': item.get('status'),
+                'progress': item.get('progress'),
+                'item_type': item.get('item_type'),
+            },
+        )
+
+        if getattr(self._synchronization_state, 'depth', 0) > 0:
+            self._synchronization_state.pending_events.append(event)
+        else:
+            self.events.emit(event)
+
+        return True
+
+    @_synchronized
     def generate_queue_id(self, name: str = None) -> str:
         """
-        This function generates a queue id for a task
+        Generate an unused queue ID.
+
+        Generating an ID does not create queue history. Call
+        ``create_placeholder`` when a job must be visible before it becomes a
+        runnable queue item.
         """
 
         # keep generating a queue id until it's not similar to one that already exists in the queue history
@@ -56,21 +166,56 @@ class ProcessingQueue:
 
             # use the name if one was provided
             # and a timestamp to make it as unique as possible
-            queue_id = "{}{}".format(((name.replace(' ', '') + '-') if name else ''), time.time())
+            queue_id = "{}{}".format(
+                ((name.replace(' ', '') + '-') if name else ''),
+                time.time(),
+            )
 
             # if the queue id doesn't return an item
             if not self.get_item(queue_id=queue_id):
-
-                # add it to the queue history
-                self.queue_history.append({'queue_id': queue_id, 'name': '', 'status': 'pending'})
-
-                logger.debug('Added queue id {} to queue history'.format(queue_id))
-
-                # notify the update_queue observers
-                self.toolkit_ops_obj.notify_observers('update_queue')
-
                 return queue_id
 
+    @_synchronized
+    def create_placeholder(
+        self,
+        name: str | None = None,
+        status: str = 'pending',
+        **kwargs,
+    ) -> str:
+        """
+        Create a non-runnable item in queue history and return its ID.
+
+        Placeholders make jobs such as ingest configuration and Resolve
+        rendering visible before their processing tasks are ready. They are
+        promoted to normal queue items when ``add_to_queue`` receives the same
+        queue ID.
+
+        :param name: human-readable queue item name
+        :param status: initial placeholder status
+        :param kwargs: additional queue-history values such as ``item_type``
+        :return: the generated queue ID
+        """
+
+        queue_id = self.generate_queue_id(name=name)
+        queue_item = {
+            **kwargs,
+            'queue_id': queue_id,
+            'name': name or '',
+            'status': status,
+        }
+
+        self.queue_history.append(queue_item)
+
+        logger.debug(
+            'Added placeholder item {} to queue history'.format(queue_id)
+        )
+
+        self._emit_job_changed(queue_item)
+        self.save_queue_to_file()
+
+        return queue_id
+
+    @_synchronized
     def add_to_queue(self,
                      tasks: list or str = None,
                      queue_id: str = None,
@@ -97,7 +242,7 @@ class ProcessingQueue:
 
         :param item_type: the main type of item that is being processed
                      - this could be used for UI purposes on the Queue window
-                     - this will also be used to notify the "{}_queue_item_done" observers
+                     - this is included in queue events so callers know what kind of item changed
 
         :param source_file_path: the path(s) to the source file(s) - if empty, we need to have the task_data
 
@@ -179,10 +324,14 @@ class ProcessingQueue:
             # add the kwargs to the queue history
             self.queue_history.append(kwargs)
 
-            logger.debug('Added item {} to queue history'.format(queue_id))
+            logger.debug(
+                'Added item {} to queue history'.format(
+                    queue_id
+                )
+            )
 
-            # notify the update_queue observers
-            self.toolkit_ops_obj.notify_observers('update_queue')
+            # publish the new queue item through the engine event stream
+            self._emit_job_changed(kwargs)
 
         else:
             # just update the item, but make sure that the queue id is not stripped
@@ -208,6 +357,7 @@ class ProcessingQueue:
         # return the queue id if we reached this point
         return queue_id
 
+    @_synchronized
     def add_dependency(self, queue_id, dependency_id=None):
         """
         This adds the dependency_id to the list of dependencies of the queue_id
@@ -235,6 +385,7 @@ class ProcessingQueue:
         # return the item
         return item
 
+    @_synchronized
     def pass_dependency_data(self, queue_id, dependency_id, override=False, save_to_file=False, only_done=True):
         """
         This passes all the data from the item with the dependency_id to the item with the queue_id
@@ -281,6 +432,7 @@ class ProcessingQueue:
         # update the item
         self.update_queue_item(**item, save_to_file=save_to_file)
 
+    @_synchronized
     def update_queue_item(self, queue_id, save_to_file=True, **kwargs):
         """
         This function updates a queue item in the queue history
@@ -321,8 +473,8 @@ class ProcessingQueue:
                 # replace the item in the queue history
                 self.queue_history[item_index] = new_item
 
-                # whenever the status is updated, make sure notify all the observers
-                self.toolkit_ops_obj.notify_observers('update_queue_item')
+                # publish a stable summary of the changed queue item
+                self._emit_job_changed(new_item)
 
                 # save the queue to a file
                 if save_to_file:
@@ -334,6 +486,7 @@ class ProcessingQueue:
         # let's hope this doesn't happen...
         return False
 
+    @_synchronized
     def reorder_queue(self, new_queue_order) -> bool:
         """
         This function takes the new queue order and re-orders the queue and the queue history accordingly,
@@ -348,14 +501,8 @@ class ProcessingQueue:
             logger.error('Unable to reorder queue - new queue order is not a list')
             return False
 
-        # first, reorder the QUEUE (then the queue history)
-
-        # start by removing all the items that are not in the queue
-        new_queue_order = [item for item in new_queue_order if item in self.queue]
-
-        # now check that the new queue is the same length as the old queue
-        if len(new_queue_order) != len(self.queue):
-            logger.error('Unable to reorder queue - new queue order is not the same length as the queue')
+        if not all(isinstance(queue_id, str) for queue_id in new_queue_order):
+            logger.error('Unable to reorder queue - queue order must contain queue IDs')
             return False
 
         # but if the queues are empty, just return True
@@ -363,49 +510,61 @@ class ProcessingQueue:
             logger.debug("Queue is empty, nothing to reorder.")
             return True
 
-        # re-order the queue
-        self.queue = new_queue_order
+        # The new order must contain every currently runnable queue ID exactly
+        # once. Filtering unknown values would hide caller errors and duplicate
+        # IDs could otherwise make valid items disappear.
+        if (
+            len(new_queue_order) != len(self.queue)
+            or set(new_queue_order) != set(self.queue)
+        ):
+            logger.error(
+                'Unable to reorder queue - new queue order must contain every queue item exactly once'
+            )
+            return False
 
-        # now re-order the QUEUE HISTORY
+        history_by_id = {
+            item.get('queue_id'): item
+            for item in self.queue_history
+            if isinstance(item, dict) and item.get('queue_id') is not None
+        }
 
-        # organize all the items that have the status 'processing', 'done', or 'failed' in a list
-        # these items will stay at the beginning of the queue history
-        # with their original order since they're finished
-        processed_items = [item for item in self.queue_history
-                           if 'queue_id' in item
-                           and 'status' in item
-                           and item['status'] in ['processing', 'done', 'failed', 'canceled', 'canceling']
-                           ]
+        missing_history_ids = [
+            queue_id
+            for queue_id in new_queue_order
+            if queue_id not in history_by_id
+        ]
 
-        # extract queue_ids of processed items
-        processed_ids = [item['queue_id'] for item in processed_items]
+        if missing_history_ids:
+            logger.error(
+                'Unable to reorder queue - queue items missing from history: {}'.format(
+                    ', '.join(missing_history_ids)
+                )
+            )
+            return False
 
-        # remove any processed items from the new_queue_order list by the 'queue_id' key in processed_items
-        new_queue_order = [item for item in new_queue_order if item['queue_id'] not in processed_ids]
+        queue_ids = set(new_queue_order)
 
-        # now create a list of dictionaries with the remaining items in the new_queue_order
-        # - keep their entire dictionary structure from the queue history
-        # - but use the order in the new_queue_order list
+        # Keep completed jobs, canceled jobs, waiting-user placeholders and any
+        # other non-runnable history entries in their existing relative order.
+        non_queued_history = [
+            item
+            for item in self.queue_history
+            if not isinstance(item, dict)
+            or item.get('queue_id') not in queue_ids
+        ]
 
-        # start the remaining items list with the processed items
-        queue_history = processed_items
-        for item in new_queue_order:
+        ordered_queue_history = [
+            history_by_id[queue_id]
+            for queue_id in new_queue_order
+        ]
 
-            # get the item from the queue history
-            queue_item = self.get_item(queue_id=item['queue_id'])
-
-            # if the item is not in the queue history, skip it
-            if queue_item is None:
-                continue
-
-            # add the item to the remaining items list
-            queue_history.append(queue_item)
-
-        # now replace the queue history with the remaining items list
-        self.queue_history = queue_history
+        self.queue = list(new_queue_order)
+        self.queue_history = non_queued_history + ordered_queue_history
+        self.save_queue_to_file()
 
         return True
 
+    @_synchronized
     def cancel_item(self, queue_id: str):
         """
         This function removes a task from the queue of items to be processed
@@ -445,8 +604,6 @@ class ProcessingQueue:
                     and 'queue_id' in thread \
                     and thread['queue_id'] == queue_id:
 
-                self._notify_on_stop_observer(item=item)
-
                 # set the status to 'canceling' in the queue history
                 # and hope that someone will be watching the status and cancel the item!
                 return self.update_queue_item(queue_id=queue_id, status='canceled')
@@ -454,9 +611,9 @@ class ProcessingQueue:
         # if we reached this point,
         # the item is not currently being processed,
         # so we can remove it from the queue history
-        self._notify_on_stop_observer(item=item)
         return self.update_queue_item(queue_id=queue_id, status='canceled')
 
+    @_synchronized
     def cancel_if_canceled(self, queue_id):
         """
         Checks if the queue item has been canceled and cancels it if it has
@@ -487,39 +644,60 @@ class ProcessingQueue:
         # the item was not canceled
         return False
 
+    @_synchronized
     def set_to_canceled(self, queue_id):
         """
-        This function sets the status of a queue item to 'canceling' in the queue history
-        This is useful if we want the queue item to finish processing the current task before it is canceled,
-        to avoid killing a process in the middle of a task
+        Request safe cancellation of a queue item.
 
-        Once it finishes it current task, the cancel_if_canceled function should wait before the next task
+        Items that have not started can be canceled immediately. Items that
+        are currently running are marked as ``canceling`` so the active task
+        can finish before the queue stops the remaining tasks.
 
-        :param queue_id: the queue id of the item to set to 'canceled'
-        :return: True if the item was set to 'canceled', False otherwise
+        :param queue_id: the queue id of the item to cancel
+        :return: True if cancellation was requested, False otherwise
         """
 
         # get the item from the queue history
         item = self.get_item(queue_id=queue_id)
-
         if not item or not isinstance(item, dict):
-            logger.warning('Unable to set item to canceled - queue id {} not found in queue history'.format(queue_id))
+            logger.warning(
+                'Unable to set item to canceled - queue id {} not found '
+                'in queue history'.format(queue_id)
+            )
             return False
 
-        # if the current status is 'done' or 'failed',
-        # it doesn't make sense to cancel it
-        if item['status'] in ['done', 'failed']:
-            logger.debug('Item {} is already done or failed, cannot cancel.'
-                         .format(queue_id))
+        # finished or already canceled items cannot be canceled again
+        if item.get('status') in ['done', 'failed', 'canceled']:
+            logger.debug(
+                'Item {} is already finished or canceled, cannot cancel.'
+                .format(queue_id)
+            )
+            return False
 
-        # if the item is not currently being processed by one of the threads,
-        # we can simply set the status to 'canceled'
+        # a canceling item may still be finishing its current task
+        if item.get('status') == 'canceling':
+
+            # finalize the cancellation once the item has left the thread pool
+            if not self.is_item_in_thread(queue_id=queue_id):
+                return bool(self.cancel_item(queue_id=queue_id))
+
+            return True
+
+        # items that have not started can be removed from the runnable queue
+        # and marked as canceled immediately
         if not self.is_item_in_thread(queue_id=queue_id):
-            self._notify_on_stop_observer(item=item)
-            return self.update_queue_item(queue_id=queue_id, status='canceled')
+            return bool(self.cancel_item(queue_id=queue_id))
 
-        return self.update_queue_item(queue_id=queue_id, status='canceling', progress='')
+        # running items must finish their current task before cancellation
+        return bool(
+            self.update_queue_item(
+                queue_id=queue_id,
+                status='canceling',
+                progress='',
+            )
+        )
 
+    @_synchronized
     def get_item(self, queue_id: str) -> dict or None:
         """
         This function checks if a queue id is in the queue history and returns the item if it is
@@ -542,6 +720,7 @@ class ProcessingQueue:
 
         return found_item
 
+    @_synchronized
     def get_status(self, queue_id: str) -> str or None:
         """
         This function checks if a queue id is in the queue history and returns the status if it is
@@ -556,6 +735,7 @@ class ProcessingQueue:
 
         return None
 
+    @_synchronized
     def get_progress(self, queue_id: str) -> str or None:
         """
         This function returns the 'progress' of a queue item,
@@ -573,6 +753,7 @@ class ProcessingQueue:
         else:
             return '0'
 
+    @_synchronized
     def get_all_queue_items(self, status: str or list or None = None, not_status: str or list or None = None) \
             -> dict:
         """
@@ -608,62 +789,98 @@ class ProcessingQueue:
 
         return all_queue_items
 
+    @_synchronized
+    def get_item_snapshot(
+        self,
+        queue_id: str,
+        exclude_keys=None,
+    ) -> dict or None:
+        """Return one detached queue item copied under the state lock."""
+
+        item = self.get_item(queue_id=queue_id)
+        if not isinstance(item, dict):
+            return None
+
+        snapshot = {
+            key: value
+            for key, value in item.items()
+            if not exclude_keys or key not in exclude_keys
+        }
+        return deepcopy(snapshot)
+
+    @_synchronized
+    def get_all_queue_items_snapshot(
+        self,
+        status: str or list or None = None,
+        not_status: str or list or None = None,
+        exclude_keys=None,
+    ) -> dict:
+        """Return detached queue items copied under one state lock."""
+
+        items = self.get_all_queue_items(
+            status=status,
+            not_status=not_status,
+        )
+        snapshots = {
+            queue_id: {
+                key: value
+                for key, value in item.items()
+                if not exclude_keys or key not in exclude_keys
+            }
+            for queue_id, item in items.items()
+            if isinstance(item, dict)
+        }
+        return deepcopy(snapshots)
+
     def task_dispatcher(self, tasks: list or str) -> list or bool:
         """
-        This function dispatches the tasks to the appropriate function(s)
-        This function should be called by the queue manager before a task is added to the queue.
+        Convert task names into the functions that execute those tasks.
 
-        Each task had a 'task_queue' key that holds a list of functions that need to be executed
-        in order to complete the task. The functions are executed in the order they are in the list.
+        The task-handler dictionary is supplied when the queue is created.
+        This keeps ProcessingQueue independent from ToolkitOps.
 
-        We will store possible tasks in a dictionary, where the key is the task name and the value is a list of
-        functions that need to be executed in order to complete the task.
-
-        The dictionary will be stored in the toolkit_ops_obj and will be called 'queue_tasks'
-
-        :param tasks: the list of tasks to dispatch, or a single task as a string
-        :return: The list of queue tasks that need to be executed, or False if there was an error
-
+        :param tasks: task names to dispatch, or a single task name
+        :return: ordered task functions, or False if none were found
         """
 
         task_queue = []
 
-        # take each task in the list of tasks
-        # and dispatch the appropriate function(s)
+        # no task names means there is nothing to dispatch
         if tasks is None:
-            logger.warning('Unable to dispatch tasks - no tasks were specified')
+            logger.warning(
+                'Unable to dispatch tasks - no tasks were specified'
+            )
             return False
 
-        # if the tasks is a string, convert it to a list of one item
+        # handle one task name in the same way as a list of task names
         if isinstance(tasks, str):
             tasks = [tasks]
 
-        # iterate through the list of tasks
         for task in tasks:
 
-            # if the task is not in the queue tasks, return False
-            if task not in self.toolkit_ops_obj.queue_tasks.keys():
-                logger.warning('Unable to dispatch task {} - task not in queue tasks'.format(task))
+            # skip unknown task names but continue checking the others
+            if task not in self.task_handlers:
+                logger.warning(
+                    'Unable to dispatch task {} - '
+                    'task not in task handlers'.format(task)
+                )
                 continue
 
-            # get the task queue from the queue tasks dictionary in the toolkit ops object
-            task_queue.extend(self.toolkit_ops_obj.queue_tasks[task])
+            handlers = self.task_handlers[task]
 
-            # if the task queue is empty, return False
-            if len(task_queue) == 0:
-                logger.error('Unable to dispatch task {} - task queue is empty'.format(task))
+            if not isinstance(handlers, list) or not handlers:
+                logger.error(
+                    'Unable to dispatch task {} - '
+                    'task handler list is empty'.format(task)
+                )
                 continue
+
+            task_queue.extend(handlers)
+
+        if not task_queue:
+            return False
 
         return task_queue
-
-    def _notify_on_stop_observer(self, item):
-        """
-        This is used to notify the on_stop observers
-        """
-
-        # notify on_stop observers
-        if 'on_stop_action_name' in item:
-            self.toolkit_ops_obj.notify_observers(item['on_stop_action_name'])
 
     def execute_item_tasks(self, queue_id, task_queue: list, **kwargs):
         """
@@ -706,15 +923,10 @@ class ProcessingQueue:
             if item['status'] == 'canceling':
                 self.update_status(queue_id=queue_id, status='canceled')
 
-                # notify on_stop observers
-                self._notify_on_stop_observer(item=item)
-
                 return False
 
             # stop also if something set the status to 'failed'
             if item['status'] == 'failed':
-                # notify on_stop observers
-                self._notify_on_stop_observer(item=item)
                 return False
 
             try:
@@ -743,11 +955,18 @@ class ProcessingQueue:
                 # wait a moment
                 time.sleep(0.1)
 
-                # notify the observers listening to specific queue item types
-                self.toolkit_ops_obj.notify_observers('{}_queue_item_done'.format(item['item_type']))
-
-                # notify the item observers that this specific item is done
-                self.toolkit_ops_obj.notify_observers('{}_queue_item_done'.format(queue_id))
+                # publish stable task details instead of a callback name
+                self.events.emit(
+                    create_job_task_completed_event(
+                        job_id=queue_id,
+                        item_type=item.get('item_type'),
+                        task_name=getattr(
+                            task,
+                            '__name__',
+                            None,
+                        ),
+                    )
+                )
 
                 executed = True
 
@@ -758,17 +977,11 @@ class ProcessingQueue:
                 # update the status of the queue item to 'failed'
                 self.update_status(queue_id=queue_id, status='failed')
 
-                # notify on_stop observers
-                self._notify_on_stop_observer(item=item)
-
                 # stop the execution
                 executed = False
 
         # remove the thread from the queue threads to free up the device
         self.remove_thread_from_queue_threads(device=device)
-
-        # notify all the observers that the queue has been updated
-        self.toolkit_ops_obj.notify_observers('update_queue')
 
         # then ping the queue again
         self.ping_queue()
@@ -776,6 +989,7 @@ class ProcessingQueue:
         # if we get here, the execution was successful
         return executed
 
+    @_synchronized
     def update_status(self, queue_id, status, fail_error=None):
         """
         This function updates the status of a queue item
@@ -800,6 +1014,7 @@ class ProcessingQueue:
 
         self.update_queue_item(**item)
 
+    @_synchronized
     def update_output(self, queue_id, output, append=True):
         """
         This function adds output to the queue item
@@ -823,6 +1038,7 @@ class ProcessingQueue:
         # since the output will not get saved anyway
         self.update_queue_item(save_to_file=False, **item)
 
+    @_synchronized
     def ping_queue(self):
         """
         Checks if there are items left in the queue and executes the first one if there are
@@ -934,6 +1150,7 @@ class ProcessingQueue:
 
         return True
 
+    @_synchronized
     def _get_item_queue_index(self, queue_id):
         """
         This returns the index of a queue item in the queue list based on its queue_id
@@ -948,6 +1165,7 @@ class ProcessingQueue:
         except ValueError:
             return None
 
+    @_synchronized
     def _item_can_start(self, queue_id, item_data=None):
         """
         This determines if a certain item can start based on its dependencies
@@ -1003,6 +1221,7 @@ class ProcessingQueue:
 
         return True
 
+    @_synchronized
     def add_thread_to_queue_threads(self, device, queue_id, thread):
         """
         This function adds a thread to the queue_threads dict
@@ -1014,6 +1233,7 @@ class ProcessingQueue:
 
         return self.queue_threads
 
+    @_synchronized
     def remove_thread_from_queue_threads(self, device):
         """
         This function removes a thread from the queue_threads dict
@@ -1028,6 +1248,7 @@ class ProcessingQueue:
 
         return self.queue_threads
 
+    @_synchronized
     def is_device_available(self, device):
         """
         This function checks if a device is busy processing something by checking the queue_threads dict.
@@ -1050,6 +1271,7 @@ class ProcessingQueue:
 
         return True
 
+    @_synchronized
     def is_item_in_thread(self, queue_id):
         """
         This function checks if a queue item is in the queue_threads dict
@@ -1061,6 +1283,7 @@ class ProcessingQueue:
 
         return False
 
+    @_synchronized
     def save_queue_to_file(self):
         """
         This function saves the queue history to the queue file
@@ -1111,9 +1334,20 @@ class ProcessingQueue:
 
         return queue_history
 
-    def resume_queue_from_file(self):
+    @_synchronized
+    def resume_queue_from_file(
+        self,
+        ignore_finished=True,
+    ):
         """
-        This loads the queue file and adds it to the queue and queue history
+        Load saved queue items and restore unfinished processing jobs.
+
+        Args:
+            ignore_finished: Whether completed, failed and canceled items
+                should be omitted from the restored queue history.
+
+        Returns:
+            True when unfinished queue items were restored, otherwise False.
         """
 
         queue_history = self.load_queue_from_file()
@@ -1124,9 +1358,9 @@ class ProcessingQueue:
         # if we have a list
         if isinstance(queue_history, list) and len(queue_history) > 0:
 
-            # first, rebuild the entire queue history from the queue file
-            # but only if we're supposed to see the finished items in the queue too
-            if not self.toolkit_ops_obj.stAI.get_app_setting('queue_ignore_finished', True):
+            # rebuild the complete history only when finished items
+            # should remain visible after restarting the application
+            if not ignore_finished:
                 self.queue_history = queue_history
 
             # take each item in the queue history and add it to the queue
@@ -1137,9 +1371,9 @@ class ProcessingQueue:
                 if not item.get('queue_id', None) \
                         or not (item.get('source_file_path', None) or item.get('task_data', None)):
 
-                    # remove the item from the queue history
-                    # removing this will make sure we don't add it next time we save the queue file
-                    if not self.toolkit_ops_obj.stAI.get_app_setting('queue_ignore_finished', True):
+                    # remove unusable items from the restored history
+                    # so they are not written back into the queue file
+                    if not ignore_finished:
                         self.queue_history.pop(idx)
 
                     continue

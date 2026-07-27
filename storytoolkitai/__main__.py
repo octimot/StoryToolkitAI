@@ -216,14 +216,10 @@ if not getattr(sys, 'frozen', False):
             except Exception as e:
                 logger.warning(f"An error occurred while trying to remove {windows_requirements_file_path}: {str(e)}")
 
-from storytoolkitai.core.storytoolkitai import StoryToolkitAI
-
-StoryToolkitAI.check_ffmpeg()
-
-from storytoolkitai.core.toolkit_ops.toolkit_ops import ToolkitOps
-
-from storytoolkitai.ui.toolkit_ui import run_gui
-from storytoolkitai.ui.toolkit_cli import run_cli
+from storytoolkitai.app import (
+    build_runtime,
+    runtime_options_from_args,
+)
 from storytoolkitai.core.parser import create_parser
 
 
@@ -232,24 +228,36 @@ def main():
     # create the command line parser and get the arguments
     parser, args = create_parser()
 
-    # init StoryToolkitAI object
-    stAI = StoryToolkitAI(args=args)
+    # convert argparse values into explicit application decisions
+    options = runtime_options_from_args(args)
 
-    # initialize operations object
-    toolkit_ops_obj = ToolkitOps(stAI=stAI)
+    # construct application state and its public processing interface
+    stAI, engine = build_runtime(options)
 
-    if '--debug' in sys.argv:
-        stAI.debug_mode = True
+    if options.mode == "gui":
+        # import the Tk UI only when the graphical interface was selected
+        from storytoolkitai.ui.toolkit_ui import run_gui
 
-    if args.mode == "gui":
-        run_gui(toolkit_ops_obj=toolkit_ops_obj, stAI=stAI)
+        run_gui(
+            stAI=stAI,
+            engine=engine,
+        )
 
-    elif args.mode == "cli":
-        run_cli(args, parser, toolkit_ops_obj=toolkit_ops_obj, stAI=stAI)
+    elif options.mode == "cli":
+
+        # CLI startup does not need to import the Tk interface
+        from storytoolkitai.ui.toolkit_cli import run_cli
+
+        run_cli(
+            args=args,
+            parser=parser,
+            engine=engine,
+        )
 
     else:
-        logger.error('Invalid mode selected. Please select a valid mode.')
-
+        logger.error(
+            'Invalid mode selected. Please select a valid mode.'
+        )
 
 if __name__ == '__main__':
     main()

@@ -2,9 +2,9 @@ import os
 import sys
 import time
 import json
-import yaml
 import subprocess
 import platform
+from copy import deepcopy
 
 from threading import Thread
 
@@ -15,30 +15,30 @@ from whisper import tokenizer as whisper_tokenizer
 from transformers import pipeline
 
 import librosa
-import soundfile
 
 import tqdm
 
-from pydantic import BaseModel
-from typing import Optional
-
 from storytoolkitai.core.logger import logger
+from storytoolkitai.core.events import (
+    EngineEvent,
+    EventEmitter,
+    create_transcription_changed_event,
+    create_transcription_completed_event,
+    create_transcription_groups_changed_event,
+    create_transcription_started_event,
+)
 
 from storytoolkitai.integrations.mots_resolve import MotsResolve
 
-from storytoolkitai import USER_DATA_PATH
 
-from .projects import Project, get_projects_from_path, ProjectUtils
+from .projects import Project
 from .transcription import Transcription, TranscriptionSegment, TranscriptionUtils
-from .story import Story, StoryLine, StoryUtils
-from .document import Document
 from .processing_queue import ProcessingQueue
-from .search import ToolkitSearch, SearchItem, TextSearch, VideoSearch, cv2
+from .search import SearchConfig, TextSearch, VideoSearch
 from .assistant import ToolkitAssistant, AssistantUtils
 from .assistant import DEFAULT_SYSTEM_MESSAGE as ASSISTANT_DEFAULT_SYSTEM_MESSAGE
-from .media import MediaUtils
 from .speaker_diarization import detect_speaker_changes
-from .timecode import sec_to_tc, tc_to_sec
+from .timecode import sec_to_tc
 
 from .ingest import IngestSettings, TranscriptionSettings, VideoIndexingSettings
 
@@ -111,167 +111,35 @@ class NLE:
             return True
 
 
-class Observer:
-    def update(self, subject):
-        pass
-
-
-class NotificationMessage(BaseModel):
-    # what gets logged
-    message: str
-
-    # what gets displayed
-    display_message: str
-
-    # the log level
-    level: str
-
-    # whether to include the exception info in the log or not
-    exc_info: Optional[bool] = None
-
-class NotificationService:
-    """
-    This takes care that any notification received gets dispatched to the right place on the UI
-
-    Syntax example:
-    To batch and send two notifications at once, use:
-    NotificationService("message1", level="warning").add("message2", level="info").push()
-
-    By default, the NotificationService pushes the messages to the logger.
-
-    To push the notification to a specific receiver, use:
-    NotificationService("message1", level="warning").to("window", window_object).push()
-
-    To push a different message to the frontend, compared to what is logged, use:
-    NotificationService("message1", display_message="message to display", level="warning").push()
-
-    This is useful if you want to push notifications from the backend (model, controller, adapter etc.) to the frontend.
-
-    """
-
-    # use here to define the known receiver types
-    RECEIVER_TYPES = ['window']
-
-    def __init__(self, message=None, *, display_message=None, level="info", exc_info=None):
-
-        # initialize the batch
-        self.batch = []
-
-        # if there's a message, add it to the batch
-        if message:
-            self.add_message(message, display_message=display_message, level=level, exc_info=exc_info)
-
-        # but we can't have a formatted_message without a message
-        elif display_message:
-            raise ValueError('display_message passed to NotificationService without a message.')
-
-        self.receivers = {}
-
-    def add_message(self, message, *, display_message=None, level="info", exc_info=None) -> 'NotificationService':
-
-        # add the message to the batch
-        # if no formatted message was passed, use the message to display
-        self.batch.append(
-            NotificationMessage(
-                message=message,
-                display_message=display_message or message,
-                level=level,
-                exc_info=exc_info
-            )
-        )
-
-        return self
-
-    def to(self, receiver_type, receiver_reference) -> 'NotificationService':
-        """
-        This adds a recipient to the notification service (for e.g. a specific UI window)
-        """
-
-        if receiver_type not in self.RECEIVER_TYPES:
-            raise ValueError('Notification receiver type: {} not in list of known types: {}'
-                             .format(receiver_type, self.RECEIVER_TYPES))
-
-        if receiver_type not in self.receivers:
-            self.receivers[receiver_type] = []
-
-        # add the receiver reference
-        # this should be an actual object that has a receive_notification() method!
-        self.receivers[receiver_type].append(receiver_reference)
-
-        return self
-
-    def _process_message(self, notification_message: NotificationMessage) -> bool:
-        """
-        Processes a single notification message
-        """
-
-        # by processing we mean, first logging the message and then dispatching it to all the receiver
-        try:
-            if notification_message.level == 'error':
-                logger.error(notification_message.message, exc_info=notification_message.exc_info)
-
-            elif notification_message.level == 'warning':
-                logger.warning(notification_message.message, exc_info=notification_message.exc_info)
-
-            elif notification_message.level == 'debug':
-                logger.debug(notification_message.message, exc_info=notification_message.exc_info)
-
-            else:
-                logger.info(notification_message.message, exc_info=notification_message.exc_info)
-
-            # important: the receivers should be actual objects that have a receive_notification() method!
-            # for e.g., if the receiver is a window object, it should have a window.receive_notification() method
-            for receiver_type, receiver_list in self.receivers.items():
-                for receiver in receiver_list:
-
-                    # here, we send the full NotificationMessage object to the receiver
-                    # the receiver has to decide which part of the message to use
-                    receiver.receive_notification(notification_message)
-
-        except Exception as e:
-            logger.error('Error processing notification message: {}'.format(e))
-            logger.debug("Error:", exc_info=True)
-
-            return False
-
-        return True
-
-    def push(self) -> 'NotificationService':
-        """
-        Processes all the notification messages in order
-        """
-        try:
-            for notification_message in self.batch:
-                self._process_message(notification_message)
-        except Exception as e:
-            logger.error('Error processing notification messages: {}'.format(e))
-            logger.debug("Error:", exc_info=True)
-
-        return self
-
 class ToolkitOps:
 
-    def __init__(self, stAI=None, disable_resolve_api=False):
-
-        # this will be used to store all the transcripts that are ready to be transcribed
-        self.transcription_queue = {}
+    def __init__(
+        self,
+        stAI=None,
+        disable_resolve_api=False,
+        skip_python_check=False,
+        resume_queue=True,
+        event_emitter=None,
+    ):
 
         # keep a reference to the StoryToolkitAI object here if one was passed
         self.stAI = stAI
 
-        # initialize the toolkit search engine
-        self.t_search_obj = ToolkitSearch(toolkit_ops_obj=self)
+        # Processing components share one UI-independent event emitter.
+        #
+        # An emitter can be supplied by tests or application startup.
+        # Normal construction creates one here.
+        # Processing code publishes events but does not know which UI,
+        # if any, is listening.
+        self.events = (
+            event_emitter
 
-        # this is used to get fast the name of what is being transcribed currently
-        self.transcription_queue_current_name = None
-
-        # this is to keep track of the current transcription item
-        # the format is {queue_id: transcription_item_attributes}
-        self.transcription_queue_current_item = {}
-
-        # todo: remove this and use observers instead
-        # declare this as none for now so we know it exists
-        self.toolkit_UI_obj = None
+            # using explicit is not None
+            # avoids accidentally replacing a custom emitter
+            # because it has a false-like behavior
+            if event_emitter is not None
+            else EventEmitter()
+        )
 
         # use this to store the whisper model later
         self.whisper_model = None
@@ -283,111 +151,194 @@ class ToolkitOps:
 
         # get the whisper device setting
         # currently, the setting may be cuda, cpu or auto
-        self.torch_device = stAI.get_app_setting('torch_device', default_if_none='auto')
+        self.torch_device = self.stAI.get_app_setting(
+            'torch_device',
+            default_if_none='auto',
+        )
 
-        self.torch_device = self.torch_device_type_select(self.torch_device)
+        self.torch_device = self.torch_device_type_select(
+            self.torch_device,
+        )
 
         # now let's deal with the sentence transformer model
-        # this is the transformer model name that we will use to search semantically
-        self.s_semantic_search_model_name \
-            = self.stAI.get_app_setting(setting_name='s_semantic_search_model_name',
-                                        default_if_none='msmarco-distilbert-base-v4')
+        # this is the transformer model name that we will use to search
+        # semantically
+        self.s_semantic_search_model_name = self.stAI.get_app_setting(
+            setting_name='s_semantic_search_model_name',
+            default_if_none='msmarco-distilbert-base-v4',
+        )
 
-        # for now define an empty model here which should be loaded the first time it's needed
-        # it's very likely that the model will not be loaded here, but in the SearchItem, for each search
-        self.s_semantic_search_model = None
+        # expose only the settings and callbacks required by search processing
+        self.search_config = SearchConfig(
+            get_torch_device=lambda: self.torch_device,
+            semantic_search_model_name=(
+                self.s_semantic_search_model_name
+            ),
+            get_app_setting=self.stAI.get_app_setting,
+            save_config=self.stAI.save_config,
+        )
 
-        # add observers so that we can trigger certain actions when something else happens
-        # this dictionary will hold all the actions and their observers (for e.g. from the UI)
-        self._observers = {}
-
-        self.processing_queue = ProcessingQueue(toolkit_ops_obj=self)
-
-        # this is used by the queue dispatcher to know which functions to call depending on the task
-        # the key is the name of the task, the value is a list of functions to call for that task
-        # the queue dispatcher may also merge multiple tasks into one (for eg. if transcribe+ingest is called)
+        # this mapping tells the queue which functions belong to each task
+        # it is passed explicitly so ProcessingQueue does not need access
+        # to the complete ToolkitOps object
         self.queue_tasks = {
             'transcribe': [self.whisper_transcribe],
             'translate': [self.whisper_transcribe],
             'group_questions': [self.group_questions],
             'index_text': [self.index_text],
             'index_video': [self.index_video],
-            'speaker_detection': [self.speaker_detection]
+            'speaker_detection': [self.speaker_detection],
         }
+
+        # initialize the processing queue
+        # use the shared event emitter to report queue changes
+        self.processing_queue = ProcessingQueue(
+            task_handlers=self.queue_tasks,
+            event_emitter=self.events,
+        )
 
         # use this to store all the devices that can be used for processing queue tasks
         self.queue_devices = self.get_torch_available_devices()
 
-        # use this to know whether the resolve API is disabled or not for this session
+        # remember whether Resolve was disabled explicitly for this runtime
+        #
+        # this is kept separate from the saved application setting because
+        # CLI render commands historically enable Resolve when needed, even
+        # when automatic Resolve polling is disabled in the user settings
+        self.resolve_api_disabled_for_runtime = bool(disable_resolve_api)
+
+        # use this to know whether the Resolve API is disabled for this session
         self.disable_resolve_api = disable_resolve_api
+
+        # keep the Python compatibility decision explicit so the Resolve
+        # integration does not need to inspect command-line flags itself
+        self.skip_python_check = bool(skip_python_check)
 
         # if this is True, it means that there is a polling thread running
         self.polling_resolve = False
 
-        # to hold the resolve API object
+        # to hold the Resolve API object
         self.resolve_api = None
 
-        # init Resolve but if...
+        # do not initialize Resolve when it was disabled for this runtime
+        if self.resolve_api_disabled_for_runtime:
+            logger.debug('Resolve API disabled for this runtime.')
 
-        # ... if --noresolve was passed as an argument, disable the resolve API
-        if '--noresolve' in sys.argv:
-            self.resolve_api = None
-            self.disable_resolve_api = True
-            logger.debug('Resolve API disabled via --noresolve argument.')
-
-        # ... and if the resolve API is disabled via config, disable the resolve API
-        elif self.stAI.get_app_setting('disable_resolve_api', default_if_none=True):
-            self.resolve_api = None
+        # otherwise honor the saved application setting
+        elif self.stAI.get_app_setting(
+            'disable_resolve_api',
+            default_if_none=True,
+        ):
             self.disable_resolve_api = True
             logger.debug('Resolve API disabled via config.')
 
-        # ... then, init Resolve
+        # initialize Resolve when it was not disabled
         if not self.disable_resolve_api:
             self.resolve_enable()
 
-        # if this is not the CLI
-        # resume the transcription queue if there's anything in it
-        if self.stAI.cli_args and self.stAI.cli_args.mode != 'cli' and self.processing_queue.resume_queue_from_file():
+        # restore queued work only when application startup requested it
+        if (
+            resume_queue
+            and self.processing_queue.resume_queue_from_file(
+                ignore_finished=self.stAI.get_app_setting(
+                    setting_name='queue_ignore_finished',
+                    default_if_none=True,
+                )
+            )
+        ):
             logger.info('Resuming queue from file')
 
-    def attach_observer(self, action, observer):
-        """
-        Attach an observer to an action
-        """
+    # ASSISTANT PROCESS MANAGEMENT
 
-        if action not in self._observers:
-            self._observers[action] = []
-
-        # add the observer to the list of observers for this action
-        self._observers[action].append(observer)
-
-    def dettach_observer(self, action, observer):
+    @staticmethod
+    def get_assistant_default_system_message() -> str:
         """
-        Dettach an observer from an action
+        Return the default system prompt used by assistant sessions.
         """
 
-        if action not in self._observers:
+        return ASSISTANT_DEFAULT_SYSTEM_MESSAGE
+
+    @staticmethod
+    def get_assistant_providers() -> list:
+        """
+        Return the configured assistant model providers.
+        """
+
+        return AssistantUtils.assistant_available_providers()
+
+    def get_assistant_models(
+        self,
+        *,
+        provider: str | None = None,
+        refresh_provider: bool = False,
+    ) -> list:
+        """
+        Return assistant models available for one provider.
+
+        The provider handler needs ToolkitOps only when a live provider refresh
+        was requested. Static model-list reads remain local and inexpensive.
+        """
+
+        return AssistantUtils.assistant_available_models(
+            provider=provider,
+            toolkit_ops_obj=(
+                self
+                if refresh_provider
+                else None
+            ),
+        )
+
+    def create_assistant(
+        self,
+        *,
+        model_provider: str,
+        model_name: str,
+        **assistant_options,
+    ):
+        """
+        Create one assistant using the configured processing environment.
+
+        Assistant instances remain internal processing objects. Interfaces
+        receive an engine-owned session handle instead of this object.
+        """
+
+        return AssistantUtils.assistant_handler(
+            toolkit_ops_obj=self,
+            model_provider=model_provider,
+            model_name=model_name,
+            **assistant_options,
+        )
+
+    @staticmethod
+    def copy_assistant_context_and_chat(
+        source_assistant,
+        target_assistant,
+    ) -> bool:
+        """
+        Copy conversation state between two assistant implementations.
+        """
+
+        if source_assistant is None or target_assistant is None:
             return False
 
-        # remove the observer from the list of observers for this action
-        self._observers[action].remove(observer)
+        ToolkitAssistant.copy_context_and_chat(
+            source_assistant,
+            target_assistant,
+        )
 
-        # if the list is empty, remove the action
-        if len(self._observers[action]) == 0:
-            del self._observers[action]
+        return True
 
-    def notify_observers(self, action):
+    @staticmethod
+    def parse_assistant_response(
+        assistant_response: str,
+    ) -> dict | None:
         """
-        Use this to notify all observers if a certain action has been performed
+        Parse a structured assistant response using the existing helper.
         """
 
-        # no observers for this action
-        if action not in self._observers:
-            return False
-
-        # notify all observers for this action
-        for observer in self._observers[action]:
-            observer.update()
+        return AssistantUtils.parse_response_to_dict(
+            assistant_response=assistant_response,
+        )
 
     def get_torch_available_devices(self) -> list or None:
 
@@ -1739,8 +1690,13 @@ class ToolkitOps:
         if kwargs.get('queue_id', None):
             self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='done')
 
-        # update all the observers that are listening for this transcription
-        self.notify_observers('update_transcription_{}'.format(transcription.transcription_path_id))
+        # publish the saved transcription change before the more specific
+        # transcription-groups change below
+        self.events.emit(
+            create_transcription_changed_event(
+                transcription_id=transcription.transcription_path_id,
+            )
+        )
 
         return speaker_segments
 
@@ -2145,8 +2101,16 @@ class ToolkitOps:
 
         return audio_segments, time_intervals
 
-    def whisper_transcribe(self, name: str = None, audio_file_path: str = None, task=None,
-                           target_dir=None, queue_id=None, return_path=False, **other_options) -> bool or str:
+    def whisper_transcribe(
+        self, name: str = None,
+        audio_file_path: str = None,
+        task=None,
+        target_dir=None,
+        queue_id=None,
+        return_path=False,
+        **other_options
+    ) -> bool or str:
+
         """
         This prepares and transcribes audio using Whisper
         :param name:
@@ -2232,18 +2196,33 @@ class ToolkitOps:
         # technically the transcription process starts here, so start a timer for statistics
         transcription_start_time = time.time()
 
-        # let the user know the transcription process has started
+        # log that the transcription process has started
         if isinstance(time_intervals, list):
-            time_intervals_str = ", ".join([f"{start}-{end}" for start, end in time_intervals])
-            debug_message = "Transcribing {} between: {}.".format(name, time_intervals_str)
+            time_intervals_str = ", ".join(
+                [
+                    f"{start}-{end}"
+                    for start, end in time_intervals
+                ]
+            )
+            debug_message = "Transcribing {} between: {}.".format(
+                name,
+                time_intervals_str,
+            )
         else:
             debug_message = "Transcribing {}.".format(name)
-        # logger.info(debug_message)
 
-        if self.toolkit_UI_obj:
-            self.toolkit_UI_obj.notify_via_os("Starting Transcription",
-                                              text="Transcribing {}".format(name),
-                                              debug_message=debug_message)
+        logger.info(debug_message)
+
+        # publish simple data without deciding how it should be displayed
+        self.events.emit(
+            create_transcription_started_event(
+                job_id=queue_id,
+                name=name,
+                audio_file_path=audio_file_path,
+                task=task,
+                time_intervals=time_intervals,
+            )
+        )
 
         # initialize empty result
         result = None
@@ -2289,17 +2268,12 @@ class ToolkitOps:
 
             return None
 
-        # let the user know that the speech was processed
-        notification_msg = "Finished transcription for {} in {} seconds" \
-            .format(name, round(time.time() - transcription_start_time))
-
-        if self.toolkit_UI_obj:
-            self.toolkit_UI_obj.notify_via_os("Finished Transcription", notification_msg, notification_msg)
-        else:
-            logger.info(notification_msg)
-
         # update the status of the item in the transcription log
-        self.processing_queue.update_queue_item(queue_id=queue_id, status='saving files', progress='')
+        self.processing_queue.update_queue_item(
+            queue_id=queue_id,
+            status='saving files',
+            progress=''
+        )
 
         # if we made it here, it means that the transcription is complete
         transcription.set('incomplete', False)
@@ -2355,7 +2329,36 @@ class ToolkitOps:
             transcription_file_path=transcription.transcription_file_path
         )
 
-        return True if not return_path else transcription.transcription_file_path
+        elapsed_seconds = round(
+            time.time() - transcription_start_time
+        )
+
+        notification_msg = (
+            "Finished transcription for {} in {} seconds"
+            .format(name, elapsed_seconds)
+        )
+
+        logger.info(notification_msg)
+
+        # publish completion after the output is saved and the job is done
+        self.events.emit(
+            create_transcription_completed_event(
+                job_id=queue_id,
+                name=name,
+                audio_file_path=audio_file_path,
+                transcription_file_path=(
+                    transcription.transcription_file_path
+                ),
+                task=task,
+                elapsed_seconds=elapsed_seconds,
+            )
+        )
+
+        return (
+            True
+            if not return_path
+            else transcription.transcription_file_path
+        )
 
     def process_transcription_metadata(self, other_options, transcription: Transcription | str):
         """
@@ -2408,8 +2411,12 @@ class ToolkitOps:
                 timeline_name=transcription.timeline_name
             )
 
-            # notify the observers that the project has changed
-            self.notify_observers('project_changed')
+            # publish the project-link change after the transcription is linked
+            self.events.emit(
+                EngineEvent(
+                    type='project.changed',
+                )
+            )
 
         # if a timeline_name wasn't set, but a project_name was set,
         # just link the transcription to the project
@@ -2419,8 +2426,12 @@ class ToolkitOps:
 
             project.link_to_project(object_type='transcription', file_path=transcription.transcription_file_path)
 
-            # notify the observers that the project has changed
-            self.notify_observers('project_changed')
+            # publish the project-link change after the transcription is linked
+            self.events.emit(
+                EngineEvent(
+                    type='project.changed',
+                )
+            )
 
         # save the transcription to file with all the added data
         transcription.save_soon(sec=0)
@@ -2707,23 +2718,33 @@ class ToolkitOps:
             # get the id of the questions group
             questions_group_id = list(questions_group.keys())[0]
 
-            # push this change to the toolkit_ops_obj
+            # apply the new group to the transcription
             transcription.set_transcript_groups(group_id=questions_group_id, transcript_groups=questions_group)
 
             # save the transcription now, not soon
-            # - this ensures that the transcription is saved before notifying observers
+            # - this ensures that the transcription is saved before publishing
+            # its change events
             transcription.save_soon(sec=0)
 
-        # if we have a queue_id, update the status to done
-        if kwargs.get('queue_id', None):
-            self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='done')
+            # if we have a queue_id, update the status to done
+            if kwargs.get('queue_id', None):
+                self.processing_queue.update_status(
+                    queue_id=kwargs.get('queue_id', None),
+                    status='done',
+                )
 
-        # update all the observers that are listening for this transcription
-        self.notify_observers('update_transcription_{}'.format(transcription.transcription_path_id))
-
-        # update all the observers that are listening for this transcription's groups
-        self.notify_observers('update_transcription_groups_{}'
-                              .format(transcription.transcription_path_id))
+            # publish the general transcription change first, followed by the
+            # more specific group change for interfaces that track both
+            self.events.emit(
+                create_transcription_changed_event(
+                    transcription_id=transcription.transcription_path_id,
+                )
+            )
+            self.events.emit(
+                create_transcription_groups_changed_event(
+                    transcription_id=transcription.transcription_path_id,
+                )
+            )
 
         return questions_group
 
@@ -2757,6 +2778,43 @@ class ToolkitOps:
 
         return self.processing_queue.add_to_queue(**queue_item)
 
+    def create_search_items(
+        self,
+        search_file_paths: str | list[str] | tuple[str, ...],
+        use_analyzer: bool = False,
+    ) -> tuple[TextSearch, VideoSearch]:
+        """
+        Create the text and video processors for one advanced search.
+
+        ToolkitOps owns construction because it has the current processing
+        configuration. StoryToolkitEngine keeps the returned processors private
+        and exposes only detached search information to user interfaces.
+        """
+
+        # classify the selected paths separately for text and video search
+        text_search_file_paths = TextSearch.filter_file_paths(
+            search_file_paths,
+        )
+        video_search_file_paths = VideoSearch.filter_file_paths(
+            search_file_paths,
+        )
+
+        # create or reuse the cached text search processor for these paths
+        text_search_item = TextSearch(
+            search_config=self.search_config,
+            search_file_paths=text_search_file_paths,
+            search_type='semantic',
+            use_analyzer=use_analyzer,
+        )
+
+        # create or reuse the cached video search processor for these paths
+        video_search_item = VideoSearch(
+            search_config=self.search_config,
+            search_file_paths=video_search_file_paths,
+        )
+
+        return text_search_item, video_search_item
+
     def index_text(self, search_file_paths: list = None, **kwargs):
         """
         This takes the search_file_paths through the TextSearch embedder and saves their cached embeddings to disk
@@ -2766,7 +2824,9 @@ class ToolkitOps:
             self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='reading files')
 
         search_item = TextSearch(
-            toolkit_ops_obj=self, search_file_paths=search_file_paths, search_type='semantic',
+            search_config=self.search_config,
+            search_file_paths=search_file_paths, 
+            search_type='semantic',
             use_analyzer=kwargs.get('use_analyzer', False)
         )
 
@@ -2809,14 +2869,16 @@ class ToolkitOps:
         if kwargs.get('queue_id', None):
             self.processing_queue.update_status(queue_id=kwargs.get('queue_id', None), status='done')
 
-        # search_item.search_file_path_id
-        # notify all observers that are listening for this search_file_path_id
-        self.notify_observers('update_done_indexing_search_file_path_{}'.format(search_item.search_file_path_id))
-
+        # The engine-owned search session reads the authoritative queue
+        # status, so indexing does not publish a callback-shaped action.
         return True
 
-    def add_index_text_to_queue(self, queue_item_name, search_file_paths):
-
+    def add_index_text_to_queue(
+        self,
+        queue_item_name,
+        search_file_paths,
+        use_analyzer=False,
+    ):
         # prepare the options for the processing queue
         queue_item = dict()
         queue_item['name'] = queue_item_name
@@ -2826,15 +2888,14 @@ class ToolkitOps:
         queue_item['item_type'] = 'search'
         queue_item['search_file_paths'] = search_file_paths
 
-        # get the search_file_path_id from the TextSearch object
-        search_item = TextSearch(toolkit_ops_obj=self, search_file_paths=search_file_paths, search_type='semantic')
+        # preserve the analyzer choice made when the search session was created
+        #
+        # The queue worker creates its own TextSearch instance later, so the
+        # selected value must be included in the queue item.
+        queue_item['use_analyzer'] = bool(use_analyzer)
 
-        queue_item['use_analyzer'] = search_item.use_analyzer
-
-        # this will be used to notify observers when the indexing has been stopped for any reason
-        queue_item['on_stop_action_name'] \
-            = 'update_fail_indexing_search_file_path_{}'.format(search_item.search_file_path_id)
-
+        # The engine-owned search session derives failure and cancellation
+        # from the queue snapshot; no callback name belongs on the job.
         return self.processing_queue.add_to_queue(**queue_item)
 
     def index_video(self, video_file_path, **kwargs):
@@ -3111,8 +3172,12 @@ class ToolkitOps:
         NLE.resolve = None
         NLE.reset_all()
 
-        # notify observers that the NLE has been reset
-        self.notify_observers('update_NLE_status')
+        # publish the connection change after the shared NLE state is reset
+        self.events.emit(
+            EngineEvent(
+                type='resolve.connection.changed',
+            )
+        )
 
     def resolve_enable(self):
         """
@@ -3121,7 +3186,10 @@ class ToolkitOps:
 
         # initialize a resolve object
         if not self.resolve_api or self.resolve_api is None:
-            self.resolve_api = MotsResolve(logger=logger)
+            self.resolve_api = MotsResolve(
+                logger=logger,
+                skip_python_check=self.skip_python_check,
+            )
 
         self.disable_resolve_api = False
 
@@ -3321,7 +3389,7 @@ class ToolkitOps:
                     #  but if the polled data does not contain the key, also set the NLE variable to None
                     #  also, if the global variable is not None and the polled data doesn't contain the key,
                     #  set the global variable to None
-                    # also, make sure you notify the relevant observers that the data has changed
+                    # emit the relevant engine events when the data changes
 
                     # RESOLVE OBJECT CHANGE
                     # if the resolve object has changed (for eg. from None to an object)
@@ -3334,17 +3402,34 @@ class ToolkitOps:
                             # set the resolve object to whatever it is now
                             NLE.resolve = resolve_data['resolve']
 
-                            # notify the observers that the resolve object has changed
-                            self.notify_observers('update_NLE_status')
-                            self.notify_observers('update_all_transcriptions')
+                            # publish connection and transcription availability
+                            # changes after the shared Resolve object is updated
+                            self.events.emit(
+                                EngineEvent(
+                                    type='resolve.connection.changed',
+                                )
+                            )
+                            self.events.emit(
+                                EngineEvent(
+                                    type='transcriptions.changed',
+                                )
+                            )
 
                             # if the resolve object is now None,
-                            # reset all and skip the rest of the polling
+                            # publish the cleared project and timeline state
                             if NLE.resolve is None:
-                                self.notify_observers('NLE_project_changed')
-                                self.notify_observers('NLE_timeline_changed')
-
+                                self.events.emit(
+                                    EngineEvent(
+                                        type='resolve.project.changed',
+                                    )
+                                )
+                                self.events.emit(
+                                    EngineEvent(
+                                        type='resolve.timeline.changed',
+                                    )
+                                )
                                 NLE.reset_all()
+
                     except:
                         import traceback
                         logger.debug('Fail detected in resolve object change check.')
@@ -3365,9 +3450,18 @@ class ToolkitOps:
                             NLE.current_project = resolve_data[
                                 'currentProject'] if 'currentProject' in resolve_data else None
 
-                            # notify the observers that the project has changed
-                            self.notify_observers('NLE_project_changed')
-                            self.notify_observers('update_all_transcriptions')
+                            # publish the Resolve project change and refresh the
+                            # transcription list that depends on the active project
+                            self.events.emit(
+                                EngineEvent(
+                                    type='resolve.project.changed',
+                                )
+                            )
+                            self.events.emit(
+                                EngineEvent(
+                                    type='transcriptions.changed',
+                                )
+                            )
 
                     except Exception as e:
                         logger.debug(e)
@@ -3398,7 +3492,12 @@ class ToolkitOps:
                                 # set the current timeline to None
                                 NLE.current_timeline = None
 
-                                self.notify_observers('NLE_timeline_changed')
+                                # publish the cleared timeline state
+                                self.events.emit(
+                                    EngineEvent(
+                                        type='resolve.timeline.changed',
+                                    )
+                                )
 
                             # if the polled data contains the currentTimeline key
                             elif 'currentTimeline' in resolve_data \
@@ -3416,9 +3515,18 @@ class ToolkitOps:
                                 NLE.current_timeline = resolve_data['currentTimeline'] \
                                     if 'currentTimeline' in resolve_data else None
 
-                                # and notify the observers that the timeline has changed
-                                self.notify_observers('NLE_timeline_changed')
-                                self.notify_observers('NLE_timecode_data_changed')
+                                # publish the Resolve project and transcription availability
+                                # changes after the shared project name is updated
+                                self.events.emit(
+                                    EngineEvent(
+                                        type='resolve.project.changed',
+                                    )
+                                )
+                                self.events.emit(
+                                    EngineEvent(
+                                        type='transcriptions.changed',
+                                    )
+                                )
 
                             # if the polled data contains the currentTimeline key,
                             # but the name of the timeline hasn't changed
@@ -3443,56 +3551,97 @@ class ToolkitOps:
 
                         # first compare the types
                         if type(NLE.current_timeline_markers) != type(resolve_data['currentTimeline']['markers']):
-                            # if the types are different, then the markers have changed
-                            self.notify_observers('NLE_markers_changed')
 
+                            # if the types are different, then the markers have changed
+                            self.events.emit(
+                                EngineEvent(
+                                    type='resolve.markers.changed',
+                                )
+                            )
                             NLE.current_timeline_markers = resolve_data['currentTimeline']['markers']
 
                         # also do a key compare only for speed
                         elif set(NLE.current_timeline_markers.keys()) != set(
                                 resolve_data['currentTimeline']['markers'].keys()):
-                            # if the keys are different, then the markers have changed
-                            self.notify_observers('NLE_markers_changed')
 
+                            # if the keys are different, then the markers have changed
+                            self.events.emit(
+                                EngineEvent(
+                                    type='resolve.markers.changed',
+                                )
+                            )
                             NLE.current_timeline_markers = resolve_data['currentTimeline']['markers']
 
                         # but if the marker keys are the same do a deeper compare
                         elif NLE.current_timeline_markers != resolve_data['currentTimeline']['markers']:
-                            # if the keys are the same, but the values are different, then the markers have changed
-                            self.notify_observers('NLE_markers_changed')
 
+                            # if the keys are the same, but the values are different,
+                            # then the markers have changed
+                            self.events.emit(
+                                EngineEvent(
+                                    type='resolve.markers.changed',
+                                )
+                            )
                             NLE.current_timeline_markers = resolve_data['currentTimeline']['markers']
-
                     else:
                         NLE.current_timeline_markers = None
 
-                    #  updates the currentBin
-                    if (NLE.current_bin is not None and NLE.current_bin != '' and 'currentBin' not in resolve_data) \
+                    # updates the currentBin
+                    if (NLE.current_bin is not None
+                            and NLE.current_bin != ''
+                            and 'currentBin' not in resolve_data) \
                             or NLE.current_bin != resolve_data['currentBin']:
+
                         NLE.current_bin = resolve_data['currentBin'] if 'currentBin' in resolve_data else ''
-                        self.notify_observers('NLE_bin_changed')
+
+                        # publish the updated Resolve-bin selection
+                        self.events.emit(
+                            EngineEvent(
+                                type='resolve.bin.changed',
+                            )
+                        )
 
                     # update current playhead timecode
                     if (NLE.current_tc is not None and 'currentTC' not in resolve_data) \
                             or NLE.current_tc != resolve_data['currentTC']:
+
                         NLE.current_tc = resolve_data['currentTC']
-                        self.notify_observers('NLE_tc_changed')
+
+                        # publish the updated Resolve playhead position
+                        self.events.emit(
+                            EngineEvent(
+                                type='resolve.playhead.changed',
+                            )
+                        )
 
                     # update current playhead timecode
                     if (NLE.current_timeline_fps is not None and 'currentTimelineFPS' not in resolve_data) \
                             or NLE.current_timeline_fps != resolve_data['currentTimelineFPS']:
                         NLE.current_timeline_fps = resolve_data['currentTimelineFPS']
-                        self.notify_observers('NLE_timecode_data_changed')
 
-                    # update start_tc timecode
+                        # publish the change
+                        self.events.emit(
+                            EngineEvent(
+                                type='resolve.timecode_data.changed',
+                            )
+                        )
+
+                    # update the current timeline start timecode
                     if (NLE.current_start_tc is not None
-                        and 'currentTimeline' not in resolve_data
-                        and 'startTC' not in resolve_data['currentTimeline']) \
-                            or (resolve_data['currentTimeline'] is not None \
-                            and NLE.current_start_tc != resolve_data['currentTimeline']['startTC']):
+                            and 'currentTimeline' not in resolve_data
+                            and 'startTC' not in resolve_data['currentTimeline']) \
+                            or (resolve_data['currentTimeline'] is not None
+                                and NLE.current_start_tc != resolve_data['currentTimeline']['startTC']):
+
                         NLE.current_start_tc = \
                             resolve_data['currentTimeline']['startTC'] if isinstance(resolve_data, dict) else None
-                        self.notify_observers('NLE_timecode_data_changed')
+
+                        # publish timecode data derived from the timeline start
+                        self.events.emit(
+                            EngineEvent(
+                                type='resolve.timecode_data.changed',
+                            )
+                        )
 
                     # was there a previous error?
                     if NLE.resolve is not None and NLE.resolve_error > 0:
@@ -3575,22 +3724,401 @@ class ToolkitOps:
                 # take a 0.5-second break before trying this again
                 time.sleep(0.5)
 
-    def resolve_check_timeline(self, resolve_data, toolkit_UI_obj):
-        '''
-        This checks if a timeline is available
-        :param resolve:
-        :return: bool
-        '''
+    @staticmethod
+    def resolve_check_timeline(resolve_data):
+        """
+        Check whether Resolve returned a current timeline
+        """
 
-        # trigger warning if there is no current timeline
-        if resolve_data['currentTimeline'] is None:
-            toolkit_UI_obj.notify_via_messagebox(
-                message='Timeline not available. Make sure that you\'ve opened a Timeline in Resolve.',
-                level='warning')
+        return (
+            isinstance(resolve_data, dict)
+            and resolve_data.get('currentTimeline') is not None
+        )
+
+    @staticmethod
+    def _resolve_operation_result(
+        ok,
+        *,
+        code=None,
+        message=None,
+        data=None,
+    ):
+        """
+        Create a simple result for a Resolve operation
+        """
+
+        result = {
+            'ok': bool(ok),
+        }
+
+        if code is not None:
+            result['code'] = code
+
+        if message is not None:
+            result['message'] = message
+
+        if data is not None:
+            result['data'] = data
+
+        return result
+
+    def is_resolve_connected(self):
+        """
+        Return whether the Resolve wrapper and active Resolve connection exist.
+        """
+
+        return bool(
+            self.resolve_api is not None
+            and NLE.is_connected()
+        )
+
+    def get_resolve_state(self) -> dict:
+        """
+        Return a detached snapshot of Resolve state needed by interfaces.
+
+        Resolve API objects are intentionally excluded. Interfaces receive only
+        names, timecode values and copied timeline data.
+        """
+
+        return {
+            "enabled": not bool(self.disable_resolve_api),
+            "connected": bool(NLE.is_connected()),
+            "current_project": deepcopy(NLE.current_project),
+            "current_timeline": deepcopy(NLE.current_timeline),
+            "current_timeline_fps": deepcopy(
+                NLE.current_timeline_fps
+            ),
+            "current_tc": deepcopy(NLE.current_tc),
+            "current_start_tc": deepcopy(NLE.current_start_tc),
+            "polling_suspended": bool(NLE.suspend_polling),
+        }
+
+    @staticmethod
+    def get_resolve_marker_color_palette() -> dict:
+        """
+        Return the Resolve marker-color palette used by UI controls.
+        """
+
+        return deepcopy(
+            MotsResolve.RESOLVE_MARKER_COLORS
+        )
+
+    @staticmethod
+    def set_resolve_polling_suspended(
+        suspended: bool,
+    ) -> bool:
+        """
+        Suspend or resume Resolve polling while Resolve is rendering.
+        """
+
+        NLE.suspend_polling = bool(suspended)
+
+        return NLE.suspend_polling
+
+    def import_resolve_media(
+        self,
+        file_path: str,
+    ) -> bool:
+        """
+        Import one media file into the current Resolve project.
+        """
+
+        if not file_path:
+            logger.error(
+                "Cannot import Resolve media without a file path."
+            )
             return False
 
-        else:
-            return True
+        if self.resolve_api is None:
+            logger.error(
+                "Cannot import media because Resolve is not connected."
+            )
+            return False
+
+        try:
+            result = self.resolve_api.import_media(
+                file_path
+            )
+
+        except Exception:
+            logger.error(
+                "Unable to import media into Resolve.",
+                exc_info=True,
+            )
+            return False
+
+        # Some Resolve API operations return None after completing
+        # successfully. Only an explicit False indicates rejection.
+        return result is not False
+
+    def add_resolve_timeline_markers(
+        self,
+        *,
+        timeline_name: str,
+        markers: dict,
+        delete_existing: bool = False,
+    ) -> bool:
+        """
+        Add marker data to one Resolve timeline.
+
+        Args:
+            timeline_name:
+                Name of the Resolve timeline that should receive the markers.
+
+            markers:
+                Marker data keyed by timeline frame.
+
+            delete_existing:
+                When True, remove all existing timeline markers before adding
+                the supplied markers. The default preserves existing markers.
+
+        Returns:
+            True when Resolve accepted the marker operation, otherwise False.
+        """
+
+        if not timeline_name:
+            logger.error(
+                "Cannot add Resolve markers without a timeline name."
+            )
+            return False
+
+        if not markers:
+            logger.error(
+                "Cannot add Resolve markers because no markers were provided."
+            )
+            return False
+
+        if self.resolve_api is None:
+            logger.error(
+                "Cannot add markers because Resolve is not connected."
+            )
+            return False
+
+        try:
+            result = self.resolve_api.add_timeline_markers(
+                timeline_name,
+                markers,
+                delete_timeline_markers=delete_existing,
+            )
+
+        except Exception:
+            logger.error(
+                "Unable to add markers to the Resolve timeline.",
+                exc_info=True,
+            )
+            return False
+
+        # Resolve operations may return None after completing successfully.
+        # Only an explicit False indicates that the operation was rejected.
+        return result is not False
+
+    def ensure_resolve_connection(
+        self,
+        timeout_seconds=5.0,
+        poll_interval=0.05,
+    ):
+        """
+        Enable Resolve when needed and wait briefly for a connection.
+
+        Connection polling belongs to processing. Callers receive a normal
+        operation result and do not inspect Resolve objects or polling state.
+        """
+
+        # an explicit --noresolve runtime decision must not be overridden
+        if self.resolve_api_disabled_for_runtime:
+            return self._resolve_operation_result(
+                False,
+                code='resolve_disabled',
+                message='Resolve is disabled for this runtime',
+            )
+
+        # return immediately when Resolve is already connected
+        if self.is_resolve_connected():
+            return self._resolve_operation_result(
+                True,
+                data={
+                    'connected': True,
+                },
+            )
+
+        # this also preserves the previous CLI behavior where a render command
+        # could enable Resolve even when automatic polling was disabled in the
+        # saved application settings
+        self.resolve_enable()
+
+        timeout_seconds = max(float(timeout_seconds), 0.0)
+        poll_interval = max(float(poll_interval), 0.01)
+        connection_deadline = time.monotonic() + timeout_seconds
+
+        while time.monotonic() < connection_deadline:
+
+            if self.is_resolve_connected():
+                return self._resolve_operation_result(
+                    True,
+                    data={
+                        'connected': True,
+                    },
+                )
+
+            time.sleep(poll_interval)
+
+        return self._resolve_operation_result(
+            False,
+            code='resolve_unavailable',
+            message='Resolve is not connected. Please open Resolve and try again.',
+            data={
+                'connected': False,
+            },
+        )
+
+    def render_resolve_timeline(
+        self,
+        *,
+        target_dir,
+        render_options,
+    ):
+        """
+        Render the current Resolve timeline using explicit render options.
+        """
+
+        if not target_dir or not isinstance(target_dir, str):
+            return self._resolve_operation_result(
+                False,
+                code='target_dir_required',
+                message='A valid output directory is required',
+            )
+
+        if not os.path.isdir(target_dir):
+            return self._resolve_operation_result(
+                False,
+                code='target_dir_not_found',
+                message='The output directory does not exist: {}'.format(
+                    target_dir,
+                ),
+            )
+
+        if not isinstance(render_options, dict):
+            return self._resolve_operation_result(
+                False,
+                code='invalid_render_options',
+                message='Resolve render options must be a dictionary',
+            )
+
+        if not self.is_resolve_connected():
+            return self._resolve_operation_result(
+                False,
+                code='resolve_unavailable',
+                message='Resolve is not connected. Please open Resolve and try again.',
+            )
+
+        try:
+            render_result = self.resolve_api.render_timeline(
+                target_dir=target_dir,
+                **render_options,
+            )
+
+        except Exception as exception:
+            logger.error(
+                'Error rendering Resolve timeline.',
+                exc_info=True,
+            )
+
+            return self._resolve_operation_result(
+                False,
+                code='resolve_render_failed',
+                message='Unable to render the Resolve timeline: {}'.format(
+                    exception,
+                ),
+            )
+
+        # some Resolve API versions return None after successfully starting
+        # a render, so only an explicit False is considered a failed request
+        if render_result is False:
+            return self._resolve_operation_result(
+                False,
+                code='resolve_render_failed',
+                message='Resolve rejected the timeline render request',
+            )
+
+        return self._resolve_operation_result(
+            True,
+            data={
+                'result': render_result,
+            },
+        )
+
+    def render_resolve_job(
+        self,
+        *,
+        job_id,
+        render_data=None,
+    ):
+        """
+        Render one existing job from the Resolve render queue.
+        """
+
+        if not job_id or not isinstance(job_id, str):
+            return self._resolve_operation_result(
+                False,
+                code='resolve_job_required',
+                message='A Resolve render job ID is required',
+            )
+
+        if render_data is None:
+            render_data = {}
+
+        if not isinstance(render_data, dict):
+            return self._resolve_operation_result(
+                False,
+                code='invalid_render_data',
+                message='Resolve render data must be a dictionary',
+            )
+
+        if not self.is_resolve_connected():
+            return self._resolve_operation_result(
+                False,
+                code='resolve_unavailable',
+                message='Resolve is not connected. Please open Resolve and try again.',
+            )
+
+        try:
+            render_result = self.resolve_api.render(
+                render_jobs=[job_id],
+                resolve_objects=None,
+                stills=False,
+                render_data=render_data,
+            )
+
+        except Exception as exception:
+            logger.error(
+                'Error rendering Resolve job.',
+                exc_info=True,
+            )
+
+            return self._resolve_operation_result(
+                False,
+                code='resolve_render_failed',
+                message='Unable to render Resolve job {}: {}'.format(
+                    job_id,
+                    exception,
+                ),
+            )
+
+        # only an explicit False indicates that Resolve rejected the request
+        if render_result is False:
+            return self._resolve_operation_result(
+                False,
+                code='resolve_render_failed',
+                message='Resolve rejected render job {}'.format(job_id),
+            )
+
+        return self._resolve_operation_result(
+            True,
+            data={
+                'job_id': job_id,
+                'result': render_result,
+            },
+        )
 
     def are_files_in_dir(self, dir, files_present):
         """
@@ -3763,129 +4291,257 @@ class ToolkitOps:
             logger.error("An error occurred while trying to render timeline via CLI.", exc_info=True)
             return False
 
-    def execute_resolve_operation(self, operation, toolkit_UI_obj):
+    def get_resolve_marker_colors(self):
         """
-        This executes a given Resolve API operation
+        Return marker colors available on the current Resolve timeline
         """
 
-        if not operation or operation == '':
-            return False
+        if self.resolve_api is None:
+            return self._resolve_operation_result(
+                False,
+                code='resolve_unavailable',
+                message='Resolve is not connected',
+            )
 
-        stAI = self.stAI
+        try:
+            resolve_data = self.resolve_api.get_resolve_data()
+        except Exception as error:
+            logger.error(
+                'Unable to read Resolve timeline data: {}'.format(error),
+                exc_info=True,
+            )
 
-        # get info from resolve for later
-        resolve_data = self.resolve_api.get_resolve_data()
+            return self._resolve_operation_result(
+                False,
+                code='resolve_operation_failed',
+                message='Unable to read Resolve timeline data',
+            )
 
-        # copy markers operation
-        if operation == 'copy_markers_timeline_to_clip' or operation == 'copy_markers_clip_to_timeline':
+        if not self.resolve_check_timeline(resolve_data):
+            return self._resolve_operation_result(
+                False,
+                code='timeline_unavailable',
+                message='Timeline not available',
+            )
 
-            # set source and destination depending on the operation
-            if operation == 'copy_markers_timeline_to_clip':
-                source = 'timeline'
-                destination = 'clip'
+        timeline = resolve_data.get('currentTimeline')
+        markers = None
 
-            elif operation == 'copy_markers_clip_to_timeline':
-                source = 'clip'
-                destination = 'timeline'
+        if isinstance(timeline, dict):
+            markers = timeline.get('markers')
 
-            # this else will never be triggered but let's leave it here for safety for now
-            else:
-                return False
+        # use the most recently polled timeline as a fallback
+        if not markers and isinstance(NLE.current_timeline, dict):
+            markers = NLE.current_timeline.get('markers')
 
-            # trigger warning and stop if there is no current timeline
-            if not self.resolve_check_timeline(resolve_data, toolkit_UI_obj):
-                return False
+        if not isinstance(markers, dict) or not markers:
+            return self._resolve_operation_result(
+                False,
+                code='markers_unavailable',
+                message='The timeline does not contain any markers',
+            )
 
-            # trigger warning and stop if there are no bin clips
-            if resolve_data['binClips'] is None:
-                toolkit_UI_obj.notify_via_messagebox(
-                    message='Bin clips not available. Make sure that a bin is opened in Resolve.\n\n'
-                            'This doesn\'t work if multiple bins or smart bins are selected due to API.',
-                    level='warning')
-                return False
+        marker_colors = sorted(
+            {
+                marker.get('color')
+                for marker in markers.values()
+                if (
+                    isinstance(marker, dict)
+                    and marker.get('color')
+                )
+            }
+        )
 
-            # execute operation without asking for any prompts
-            # this will delete the existing clip/timeline destination markers,
-            # but the user can undo the operation from Resolve
-            return self.resolve_api.copy_markers(source, destination,
-                                                 resolve_data['currentTimeline']['name'],
-                                                 resolve_data['currentTimeline']['name'],
-                                                 True)
+        if not marker_colors:
+            return self._resolve_operation_result(
+                False,
+                code='markers_unavailable',
+                message='The timeline does not contain any marker colors',
+            )
 
-        # render marker operation
-        elif operation == 'render_markers_to_stills' or operation == 'render_markers_to_clips':
+        return self._resolve_operation_result(
+            True,
+            data={
+                'marker_colors': marker_colors,
+            },
+        )
 
-            # ask user for marker color
-            # or what the marker name starts with
+    def copy_resolve_markers(self, source):
+        """
+        Copy markers between the current timeline and bin clip
+        """
 
-            # but first make a list of all the available marker colors based on the timeline markers
-            current_timeline_marker_colors = []
-            if self.resolve_check_timeline(resolve_data, toolkit_UI_obj) and \
-                    NLE.current_timeline and 'markers' in NLE.current_timeline:
-                # take each marker from timeline and get its color
-                # but also add a an empty string to the list to allow the user to render all markers
-                current_timeline_marker_colors = [' '] + sorted(
-                    list(set([NLE.current_timeline['markers'][marker]['color']
-                              for marker in NLE.current_timeline['markers']])))
+        if source not in ['timeline', 'clip']:
+            return self._resolve_operation_result(
+                False,
+                code='invalid_marker_source',
+                message='Invalid Resolve marker source',
+            )
 
-            # if no markers exist, cancel operation and let the user know that there are no markers to render
-            marker_color = None
-            starts_with = None
-            if current_timeline_marker_colors:
+        if self.resolve_api is None:
+            return self._resolve_operation_result(
+                False,
+                code='resolve_unavailable',
+                message='Resolve is not connected',
+            )
 
-                # create a list of widgets for the input dialogue
-                input_widgets = [
-                    {'name': 'starts_with', 'label': 'Starts With:', 'type': 'entry', 'default_value': ''},
-                    {'name': 'color', 'label': 'Color:', 'type': 'option_menu', 'default_value': 'Blue',
-                     'options': current_timeline_marker_colors}
-                ]
+        destination = (
+            'clip'
+            if source == 'timeline'
+            else 'timeline'
+        )
 
-                # then we call the ask_dialogue function
-                user_input = self.toolkit_UI_obj.AskDialog(title='Markers to Render',
-                                                           input_widgets=input_widgets,
-                                                           parent=self.toolkit_UI_obj.root,
-                                                           toolkit_UI_obj=self.toolkit_UI_obj,
-                                                           ).value()
+        try:
+            resolve_data = self.resolve_api.get_resolve_data()
+        except Exception as error:
+            logger.error(
+                'Unable to read Resolve timeline data: {}'.format(error),
+                exc_info=True,
+            )
 
-                # if the user didn't cancel the operation
-                if user_input:
-                    starts_with = user_input['starts_with'] if user_input['starts_with'] else None
-                    marker_color = user_input['color'] if user_input['color'] != ' ' else None
+            return self._resolve_operation_result(
+                False,
+                code='resolve_operation_failed',
+                message='Unable to read Resolve timeline data',
+            )
 
-            else:
-                no_markers_alert = 'The timeline doesn\'t contain any markers'
-                logger.warning(no_markers_alert)
-                return False
+        if not self.resolve_check_timeline(resolve_data):
+            return self._resolve_operation_result(
+                False,
+                code='timeline_unavailable',
+                message='Timeline not available',
+            )
 
-            if not marker_color and not starts_with:
-                logger.debug("User canceled Resolve render operation by mentioning which markers.")
-                return False
+        if resolve_data.get('binClips') is None:
+            return self._resolve_operation_result(
+                False,
+                code='bin_unavailable',
+                message='Bin clips not available',
+            )
 
-            if marker_color and marker_color not in current_timeline_marker_colors:
-                toolkit_UI_obj.notify_via_messagebox(title='Unavailable marker color',
-                                                     message='The marker color you\'ve entered doesn\'t exist on the timeline.',
-                                                     message_log="Aborting. User entered a marker color that doesn't exist on the timeline.",
-                                                     level='error'
-                                                     )
+        timeline_name = resolve_data['currentTimeline'].get('name')
 
-                return False
+        if not timeline_name:
+            return self._resolve_operation_result(
+                False,
+                code='timeline_unavailable',
+                message='Timeline name not available',
+            )
 
-            render_target_dir = toolkit_UI_obj.ask_for_target_dir()
+        try:
+            operation_result = self.resolve_api.copy_markers(
+                source,
+                destination,
+                timeline_name,
+                timeline_name,
+                True,
+            )
+        except Exception as error:
+            logger.error(
+                'Unable to copy Resolve markers: {}'.format(error),
+                exc_info=True,
+            )
 
-            if not render_target_dir or render_target_dir == '':
-                logger.debug("User canceled Resolve render operation")
-                return False
+            return self._resolve_operation_result(
+                False,
+                code='resolve_operation_failed',
+                message='Unable to copy Resolve markers',
+            )
 
-            if operation == 'render_markers_to_stills':
-                stills = True
-                render = True
-                render_preset = "Still_TIFF"
-            else:
-                stills = False
-                render = False
-                render_preset = False
+        if operation_result is False:
+            return self._resolve_operation_result(
+                False,
+                code='resolve_operation_failed',
+                message='Resolve did not copy the markers',
+            )
 
-            self.resolve_api.render_markers(marker_color, render_target_dir, False, stills, render, render_preset,
-                                            starts_with=starts_with)
+        return self._resolve_operation_result(
+            True,
+            data={
+                'result': operation_result,
+            },
+        )
 
-        return False
+    def render_resolve_markers(
+        self,
+        *,
+        marker_color,
+        target_dir,
+        starts_with=None,
+        render_stills=False,
+    ):
+        """
+        Render selected markers from the current Resolve timeline
+        """
+
+        if not target_dir:
+            return self._resolve_operation_result(
+                False,
+                code='target_dir_required',
+                message='A render target directory is required',
+            )
+
+        marker_color = marker_color or None
+        starts_with = starts_with or None
+
+        if not marker_color and not starts_with:
+            return self._resolve_operation_result(
+                False,
+                code='marker_filter_required',
+                message='A marker color or name prefix is required',
+            )
+
+        marker_colors_result = self.get_resolve_marker_colors()
+
+        if not marker_colors_result.get('ok'):
+            return marker_colors_result
+
+        marker_colors = marker_colors_result['data']['marker_colors']
+
+        if marker_color and marker_color not in marker_colors:
+            return self._resolve_operation_result(
+                False,
+                code='marker_color_invalid',
+                message=(
+                    'The selected marker color does not exist '
+                    'on the timeline'
+                ),
+            )
+
+        if render_stills:
+            stills = True
+            render = True
+            render_preset = 'Still_TIFF'
+        else:
+            stills = False
+            render = False
+            render_preset = False
+
+        try:
+            operation_result = self.resolve_api.render_markers(
+                marker_color,
+                target_dir,
+                False,
+                stills,
+                render,
+                render_preset,
+                starts_with=starts_with,
+            )
+        except Exception as error:
+            logger.error(
+                'Unable to render Resolve markers: {}'.format(error),
+                exc_info=True,
+            )
+
+            return self._resolve_operation_result(
+                False,
+                code='resolve_operation_failed',
+                message='Unable to render Resolve markers',
+            )
+
+        return self._resolve_operation_result(
+            True,
+            data={
+                'result': operation_result,
+            },
+        )

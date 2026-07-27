@@ -1,12 +1,6 @@
 # this module extends the whisper model for better StoryToolkitAI integration
 
-import whisper
-
-import argparse
-import os
-import traceback
-import warnings
-from typing import TYPE_CHECKING, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -20,26 +14,23 @@ from whisper.audio import (
     SAMPLE_RATE,
     log_mel_spectrogram,
     pad_or_trim,
-    load_audio,
 )
 from whisper.decoding import DecodingOptions, DecodingResult
 from whisper.timing import add_word_timestamps
-from whisper.tokenizer import LANGUAGES, TO_LANGUAGE_CODE, get_tokenizer
+from whisper.tokenizer import LANGUAGES, get_tokenizer
 from whisper.utils import (
     exact_div,
     format_timestamp,
     get_end,
-    get_writer,
     make_safe,
-    optional_float,
-    optional_int,
-    str2bool,
 )
-from whisper.model import Whisper, ModelDimensions
+from whisper.model import Whisper
 
+# ToolkitOps imports this module as its Whisper replacement. Keep the upstream
+# module exports available here even when the customized transcribe function
+# does not load them directly.
 from whisper import load_model, available_models, _download, _MODELS
 from whisper import audio, decoding, model, normalizers, tokenizer, utils
-from whisper.transcribe import transcribe
 from whisper.version import __version__
 
 # ADDITIONAL CONSTANTS
@@ -48,9 +39,6 @@ AUDIO_SAMPLES_PER_TOKEN = HOP_LENGTH * 2
 
 # define the audio time per token (most likely 0.02)
 AUDIO_TIME_PER_TOKEN = AUDIO_SAMPLES_PER_TOKEN / SAMPLE_RATE
-
-if TYPE_CHECKING:
-    from whisper.model import Whisper
 
 #from dtw import dtw
 #import string
