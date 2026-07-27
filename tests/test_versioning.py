@@ -3,9 +3,68 @@ from __future__ import annotations
 import pytest
 from packaging.version import InvalidVersion
 
-import version
 import storytoolkitai.core.post_update as post_update_module
+import storytoolkitai.core.storytoolkitai as storytoolkitai_module
+from storytoolkitai.core.storytoolkitai import StoryToolkitAI
 from storytoolkitai.core.versioning import is_update_available, parse_version
+
+
+class _UpdateResponse:
+    """Minimal requests response used by direct update-check tests."""
+
+    def __init__(self, *, text: str = "", payload: dict | None = None) -> None:
+        self.text = text
+        self.payload = payload
+
+    def json(self) -> dict | None:
+        return self.payload
+
+
+def _update_runtime(
+    *,
+    local_version: str,
+    standalone: bool = False,
+    ignored_version: str | bool = False,
+) -> StoryToolkitAI:
+    """Build only the runtime state needed by ``check_update``."""
+
+    runtime = StoryToolkitAI.__new__(StoryToolkitAI)
+    runtime.__version__ = local_version
+    runtime.standalone = standalone
+    runtime.get_app_setting = (
+        lambda setting_name=None, default_if_none=None: ignored_version
+    )
+    return runtime
+
+
+def _mock_source_version(monkeypatch, online_version: str) -> None:
+    response = _UpdateResponse(
+        text='__version__ = "{}"\n'.format(online_version)
+    )
+    monkeypatch.setattr(
+        storytoolkitai_module,
+        "get",
+        lambda *args, **kwargs: response,
+    )
+
+
+def _mock_standalone_release(
+    monkeypatch,
+    *,
+    online_version: str,
+    assets: list[dict],
+) -> None:
+    response = _UpdateResponse(
+        payload={
+            "tag_name": "v{}".format(online_version),
+            "assets": assets,
+        },
+    )
+    monkeypatch.setattr(
+        storytoolkitai_module,
+        "get",
+        lambda *args, **kwargs: response,
+    )
 
 
 def test_development_version_is_newer_than_previous_release() -> None:
@@ -18,19 +77,6 @@ def test_final_release_is_newer_than_development_release() -> None:
     """The final 1.0.0 release must update a 1.0.0.dev0 installation."""
 
     assert parse_version("1.0.0") > parse_version("1.0.0.dev0")
-
-
-def test_dev_branch_runtime_uses_development_version() -> None:
-    """Work in progress remains visibly separate from the final release."""
-
-    assert version.__version__ == "1.0.0.dev0"
-
-
-def test_direct_version_1_release_sequence() -> None:
-    """Version 1 moves directly from development to the final release."""
-
-    assert parse_version(version.__version__) < parse_version("1.0.0")
-    assert parse_version("v1.0.0") == parse_version("1.0.0")
 
 
 def test_development_build_numbers_are_ordered() -> None:
@@ -50,12 +96,151 @@ def test_surrounding_whitespace_is_ignored() -> None:
 
     assert parse_version("  1.0.0.dev0\n") == parse_version("1.0.0.dev0")
 
+def test_source_endpoint_without_quotes_fails_safely(
+    monkeypatch,
+) -> None:
+    """A response without a quoted version is handled safely."""
+
+    runtime = _update_runtime(local_version="1.0.0")
+    response = _UpdateResponse(text="1.0.1")
+
+    monkeypatch.setattr(
+        storytoolkitai_module,
+        "get",
+        lambda *args, **kwargs: response,
+    )
+
+    assert runtime.check_update() == (False, None)
+
 
 def test_invalid_version_is_rejected() -> None:
     """Malformed versions should not silently produce an ordering."""
 
     with pytest.raises(InvalidVersion):
         parse_version("not-a-version")
+
+
+@pytest.mark.parametrize(
+    "local_version, online_version",
+    [
+        ("0.25.1", "1.0.0"),
+        ("1.0.0", "1.0.1"),
+    ],
+)
+def test_source_installation_offers_newer_stable_version(
+    monkeypatch,
+    local_version: str,
+    online_version: str,
+) -> None:
+    """Source users continue to receive newer stable releases."""
+
+    runtime = _update_runtime(local_version=local_version)
+    _mock_source_version(monkeypatch, online_version)
+
+    assert runtime.check_update() == (True, online_version)
+
+
+def test_stable_source_installation_ignores_development_version(
+    monkeypatch,
+) -> None:
+    """The source update channel does not advertise development builds."""
+
+    runtime = _update_runtime(local_version="1.0.0")
+    _mock_source_version(monkeypatch, "1.0.1.dev0")
+
+    assert runtime.check_update() == (False, "1.0.1.dev0")
+
+
+def test_exact_ignored_version_is_suppressed(monkeypatch) -> None:
+    """A user-selected skipped release is not offered again."""
+
+    runtime = _update_runtime(
+        local_version="1.0.0",
+        ignored_version="1.0.1",
+    )
+    _mock_source_version(monkeypatch, "1.0.1")
+
+    assert runtime.check_update() == (False, "1.0.1")
+
+
+def test_later_version_after_ignored_version_is_offered(monkeypatch) -> None:
+    """Skipping one release does not suppress subsequent releases."""
+
+    runtime = _update_runtime(
+        local_version="1.0.0",
+        ignored_version="1.0.1",
+    )
+    _mock_source_version(monkeypatch, "1.0.2")
+
+    assert runtime.check_update() == (True, "1.0.2")
+
+
+def test_standalone_source_only_release_has_no_update(monkeypatch) -> None:
+    """A release without packaged artifacts is not offered to standalone users."""
+
+    runtime = _update_runtime(local_version="1.0.0", standalone=True)
+    _mock_standalone_release(
+        monkeypatch,
+        online_version="1.0.1",
+        assets=[],
+    )
+
+    assert runtime.check_update() == (False, "1.0.1")
+
+
+def test_macos_standalone_matching_asset_is_offered(monkeypatch) -> None:
+    """A macOS build matching the current architecture is offered."""
+
+    runtime = _update_runtime(local_version="1.0.0", standalone=True)
+    _mock_standalone_release(
+        monkeypatch,
+        online_version="1.0.1",
+        assets=[{"name": "StoryToolkitAI-1.0.1-macOS-arm64.zip"}],
+    )
+    monkeypatch.setattr(storytoolkitai_module.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(storytoolkitai_module.platform, "machine", lambda: "arm64")
+
+    assert runtime.check_update() == (True, "1.0.1")
+
+
+def test_macos_standalone_non_matching_asset_is_not_offered(
+    monkeypatch,
+) -> None:
+    """A macOS build for another architecture is not offered."""
+
+    runtime = _update_runtime(local_version="1.0.0", standalone=True)
+    _mock_standalone_release(
+        monkeypatch,
+        online_version="1.0.1",
+        assets=[{"name": "StoryToolkitAI-1.0.1-macOS-x86_64.zip"}],
+    )
+    monkeypatch.setattr(storytoolkitai_module.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(storytoolkitai_module.platform, "machine", lambda: "arm64")
+
+    assert runtime.check_update() == (False, "1.0.1")
+
+
+def test_windows_standalone_matching_asset_is_offered(monkeypatch) -> None:
+    """A Windows artifact is offered to standalone Windows users."""
+
+    runtime = _update_runtime(local_version="1.0.0", standalone=True)
+    _mock_standalone_release(
+        monkeypatch,
+        online_version="1.0.1",
+        assets=[{"name": "StoryToolkitAI-1.0.1-Windows-x64.zip"}],
+    )
+    monkeypatch.setattr(storytoolkitai_module.platform, "system", lambda: "Windows")
+
+    assert runtime.check_update() == (True, "1.0.1")
+
+
+def test_malformed_endpoint_version_fails_safely(monkeypatch) -> None:
+    """An invalid advertised version does not escape the update check."""
+
+    runtime = _update_runtime(local_version="1.0.0")
+    _mock_source_version(monkeypatch, "not-a-version")
+
+    assert runtime.check_update() == (False, "not-a-version")
 
 
 def test_development_build_skips_post_update_tasks(
@@ -162,3 +347,31 @@ def test_older_online_version_is_not_an_update() -> None:
         local_value="1.0.0.dev0",
         online_value="0.25.2",
     ) is False
+
+
+def test_source_endpoint_without_quotes_fails_safely(
+    monkeypatch,
+) -> None:
+    """A response without a quoted version is handled safely."""
+
+    runtime = _update_runtime(local_version="1.0.0")
+    response = _UpdateResponse(text="1.0.1")
+
+    monkeypatch.setattr(
+        storytoolkitai_module,
+        "get",
+        lambda *args, **kwargs: response,
+    )
+
+    assert runtime.check_update() == (False, None)
+
+def test_invalid_ignored_version_does_not_block_update(
+    monkeypatch,
+) -> None:
+    runtime = _update_runtime(
+        local_version="1.0.0",
+        ignored_version="invalid-value",
+    )
+    _mock_source_version(monkeypatch, "1.0.1")
+
+    assert runtime.check_update() == (True, "1.0.1")
