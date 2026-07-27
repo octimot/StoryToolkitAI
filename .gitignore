@@ -4,3 +4,9 @@ __pycache__/
 .DS_Store
 .sync/
 .idea/
+.env
+.nvim*
+.pytest_cache/
+.coverage
+htmlov/
+.local/*
