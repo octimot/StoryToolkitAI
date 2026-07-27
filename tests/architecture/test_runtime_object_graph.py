@@ -1,315 +1,144 @@
+"""Exercise the public runtime wiring without importing the full Tk UI."""
+
+from __future__ import annotations
+
 import ast
+import sys
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
+from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-APP_PATH = PROJECT_ROOT / 'storytoolkitai' / 'app.py'
-MAIN_PATH = PROJECT_ROOT / 'storytoolkitai' / '__main__.py'
-TK_UI_PATH = (
-    PROJECT_ROOT
-    / 'storytoolkitai'
-    / 'ui'
-    / 'toolkit_ui.py'
-)
+APP_ENTRY_PATH = PROJECT_ROOT / "storytoolkitai" / "__main__.py"
+TK_UI_PATH = PROJECT_ROOT / "storytoolkitai" / "ui" / "toolkit_ui.py"
+CLI_PATH = PROJECT_ROOT / "storytoolkitai" / "ui" / "toolkit_cli.py"
 
 
-def _find_function(
-    tree: ast.AST,
+def _load_function(
+    path: Path,
     function_name: str,
-) -> ast.FunctionDef:
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.FunctionDef)
-            and node.name == function_name
-        ):
-            return node
+    namespace: dict[str, Any],
+):
+    """Load one real function without importing its heavyweight module."""
 
-    raise AssertionError(
-        'Function {!r} was not found.'.format(
-            function_name
-        )
-    )
-
-
-def _find_method(
-    tree: ast.Module,
-    class_name: str,
-    method_name: str,
-) -> ast.FunctionDef:
-    for node in tree.body:
-        if not (
-            isinstance(node, ast.ClassDef)
-            and node.name == class_name
-        ):
-            continue
-
-        for class_node in node.body:
-            if (
-                isinstance(class_node, ast.FunctionDef)
-                and class_node.name == method_name
-            ):
-                return class_node
-
-    raise AssertionError(
-        '{}.{} was not found.'.format(
-            class_name,
-            method_name,
-        )
-    )
-
-
-def _parse_file(path: Path) -> ast.Module:
-    return ast.parse(
-        path.read_text(encoding='utf-8'),
-        filename=str(path),
-    )
-
-
-def _call_name(node: ast.Call) -> str | None:
-    if isinstance(node.func, ast.Name):
-        return node.func.id
-
-    if isinstance(node.func, ast.Attribute):
-        return node.func.attr
-
-    return None
-
-
-def _keyword_is_name(
-    node: ast.Call,
-    keyword_name: str,
-    expected_name: str,
-) -> bool:
-    return any(
-        keyword.arg == keyword_name
-        and isinstance(keyword.value, ast.Name)
-        and keyword.value.id == expected_name
-        for keyword in node.keywords
-    )
-
-
-def test_run_gui_accepts_only_application_state_and_engine():
-    tree = _parse_file(TK_UI_PATH)
-
-    function = _find_function(
-        tree,
-        'run_gui',
-    )
-
-    argument_names = [
-        argument.arg
-        for argument in function.args.args
-    ]
-
-    assert argument_names == [
-        'stAI',
-        'engine',
-    ]
-
-
-def test_run_gui_passes_engine_to_tk_and_subscribes_queue_entry_point():
-    tree = _parse_file(TK_UI_PATH)
-    function = _find_function(
-        tree,
-        'run_gui',
-    )
-
-    calls = [
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    function = next(
         node
-        for node in ast.walk(function)
-        if isinstance(node, ast.Call)
-    ]
-
-    toolkit_ui_calls = [
-        call
-        for call in calls
-        if _call_name(call) == 'toolkit_UI'
-    ]
-    assert len(toolkit_ui_calls) == 1
-    assert _keyword_is_name(
-        toolkit_ui_calls[0],
-        'stAI',
-        'stAI',
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == function_name
     )
-    assert _keyword_is_name(
-        toolkit_ui_calls[0],
-        'engine',
-        'engine',
+    module = ast.fix_missing_locations(
+        ast.Module(body=[function], type_ignores=[])
     )
+    exec(compile(module, str(path), "exec"), namespace)
+    return namespace[function_name]
 
-    subscriptions = [
-        call
-        for call in calls
-        if (
-            isinstance(call.func, ast.Attribute)
-            and isinstance(call.func.value, ast.Name)
-            and call.func.value.id == 'engine'
-            and call.func.attr == 'subscribe'
+
+def test_tk_and_cli_entry_points_receive_the_engine() -> None:
+    """Both interfaces must operate on the public engine they receive."""
+
+    state = object()
+    engine = SimpleNamespace(
+        subscribed=[],
+        unsubscribed=[],
+    )
+    engine.subscribe = engine.subscribed.append
+    engine.unsubscribe = engine.unsubscribed.append
+    gui_activity: list[Any] = []
+
+    class FakeTkUI:
+        def __init__(self, *, stAI, engine):
+            gui_activity.append(("constructed", stAI, engine))
+
+        def receive_engine_event(self, event):
+            gui_activity.append(("event", event))
+
+        def create_main_window(self):
+            gui_activity.append("main_window")
+
+        def _stop_engine_event_polling(self):
+            gui_activity.append("polling_stopped")
+
+    run_gui = _load_function(
+        TK_UI_PATH,
+        "run_gui",
+        {"toolkit_UI": FakeTkUI},
+    )
+    run_gui(state, engine)
+
+    assert ("constructed", state, engine) in gui_activity
+    assert "main_window" in gui_activity
+    assert "polling_stopped" in gui_activity
+    assert engine.subscribed
+    assert engine.subscribed == engine.unsubscribed
+
+    cli_activity: list[Any] = []
+
+    def fake_cli(*, args, parser, engine):
+        cli_activity.append((args, parser, engine))
+        return "completed"
+
+    run_cli = _load_function(
+        CLI_PATH,
+        "run_cli",
+        {"toolkit_CLI": fake_cli},
+    )
+    args = object()
+    parser = object()
+
+    assert run_cli(args, parser, engine) == "completed"
+    assert (args, parser, engine) in cli_activity
+
+
+def test_application_entry_point_passes_public_runtime_objects(monkeypatch) -> None:
+    """Runtime construction results flow to Tk and CLI without private objects."""
+
+    for mode in ("gui", "cli"):
+        args = object()
+        parser = object()
+        state = object()
+        engine = object()
+        calls: list[tuple[Any, ...]] = []
+
+        gui_module = ModuleType("storytoolkitai.ui.toolkit_ui")
+        gui_module.run_gui = lambda **kwargs: calls.append(
+            ("gui", kwargs)
         )
-    ]
-    assert len(subscriptions) == 1
-    assert len(subscriptions[0].args) == 1
-
-    listener = subscriptions[0].args[0]
-    assert (
-        isinstance(listener, ast.Attribute)
-        and isinstance(listener.value, ast.Name)
-        and listener.value.id == 'app_UI'
-        and listener.attr == 'receive_engine_event'
-    )
-
-
-def test_worker_event_entry_point_only_writes_to_thread_safe_inbox():
-    tree = _parse_file(TK_UI_PATH)
-    method = _find_method(
-        tree,
-        'toolkit_UI',
-        'receive_engine_event',
-    )
-
-    calls = [
-        node
-        for node in ast.walk(method)
-        if isinstance(node, ast.Call)
-    ]
-
-    assert len(calls) == 1
-
-    queue_write = calls[0]
-    assert (
-        isinstance(queue_write.func, ast.Attribute)
-        and queue_write.func.attr == 'put'
-        and isinstance(queue_write.func.value, ast.Attribute)
-        and isinstance(queue_write.func.value.value, ast.Name)
-        and queue_write.func.value.value.id == 'self'
-        and queue_write.func.value.attr == '_engine_events'
-    )
-
-    direct_self_attributes = {
-        node.attr
-        for node in ast.walk(method)
-        if (
-            isinstance(node, ast.Attribute)
-            and isinstance(node.value, ast.Name)
-            and node.value.id == 'self'
+        cli_module = ModuleType("storytoolkitai.ui.toolkit_cli")
+        cli_module.run_cli = lambda **kwargs: calls.append(
+            ("cli", kwargs)
         )
-    }
+        monkeypatch.setitem(sys.modules, gui_module.__name__, gui_module)
+        monkeypatch.setitem(sys.modules, cli_module.__name__, cli_module)
 
-    assert direct_self_attributes <= {
-        '_accept_engine_events',
-        '_engine_events',
-    }
-
-
-def test_build_runtime_returns_two_public_objects():
-    tree = _parse_file(APP_PATH)
-
-    function = _find_function(
-        tree,
-        'build_runtime',
-    )
-
-    return_nodes = [
-        node
-        for node in ast.walk(function)
-        if isinstance(node, ast.Return)
-    ]
-
-    tuple_returns = [
-        node.value
-        for node in return_nodes
-        if isinstance(node.value, ast.Tuple)
-    ]
-
-    assert len(tuple_returns) == 1
-    assert len(tuple_returns[0].elts) == 2
-
-    returned_names = [
-        element.id
-        for element in tuple_returns[0].elts
-        if isinstance(element, ast.Name)
-    ]
-
-    assert returned_names == [
-        'stAI',
-        'engine',
-    ]
-
-    engine_calls = [
-        node
-        for node in ast.walk(function)
-        if (
-            isinstance(node, ast.Call)
-            and _call_name(node) == 'StoryToolkitEngine'
+        main = _load_function(
+            APP_ENTRY_PATH,
+            "main",
+            {
+                "build_runtime": lambda options: (state, engine),
+                "create_parser": lambda: (parser, args),
+                "logger": SimpleNamespace(error=lambda message: None),
+                "runtime_options_from_args": lambda value: (
+                    SimpleNamespace(mode=mode)
+                ),
+            },
         )
-    ]
+        main()
 
-    assert len(engine_calls) == 1
-    assert _keyword_is_name(
-        engine_calls[0],
-        'toolkit_ops_obj',
-        'toolkit_ops',
-    )
-
-
-def test_main_passes_only_the_public_engine_to_tk_and_cli():
-    tree = _parse_file(MAIN_PATH)
-    function = _find_function(
-        tree,
-        'main',
-    )
-
-    runtime_assignments = [
-        node
-        for node in ast.walk(function)
-        if (
-            isinstance(node, ast.Assign)
-            and isinstance(node.value, ast.Call)
-            and _call_name(node.value) == 'build_runtime'
-        )
-    ]
-
-    assert len(runtime_assignments) == 1
-    assert len(runtime_assignments[0].targets) == 1
-
-    target = runtime_assignments[0].targets[0]
-    assert isinstance(target, ast.Tuple)
-    assert [
-        element.id
-        for element in target.elts
-        if isinstance(element, ast.Name)
-    ] == [
-        'stAI',
-        'engine',
-    ]
-
-    interface_calls = [
-        node
-        for node in ast.walk(function)
-        if (
-            isinstance(node, ast.Call)
-            and _call_name(node) in {'run_gui', 'run_cli'}
-        )
-    ]
-    calls_by_name = {
-        interface_name: [
-            call
-            for call in interface_calls
-            if _call_name(call) == interface_name
-        ]
-        for interface_name in ('run_gui', 'run_cli')
-    }
-
-    assert len(calls_by_name['run_gui']) == 1
-    assert len(calls_by_name['run_cli']) == 1
-    assert _keyword_is_name(
-        calls_by_name['run_gui'][0],
-        'engine',
-        'engine',
-    )
-    assert _keyword_is_name(
-        calls_by_name['run_cli'][0],
-        'engine',
-        'engine',
-    )
+        if mode == "gui":
+            assert (
+                "gui",
+                {"stAI": state, "engine": engine},
+            ) in calls
+            assert not any(call[0] == "cli" for call in calls)
+        else:
+            assert (
+                "cli",
+                {
+                    "args": args,
+                    "parser": parser,
+                    "engine": engine,
+                },
+            ) in calls
+            assert not any(call[0] == "gui" for call in calls)

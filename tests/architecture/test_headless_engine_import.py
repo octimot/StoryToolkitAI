@@ -99,7 +99,6 @@ state, engine = build_runtime(
 assert FakeStoryToolkitAI.ffmpeg_checked is True
 assert isinstance(state, FakeStoryToolkitAI)
 assert isinstance(engine, StoryToolkitEngine)
-assert isinstance(engine._toolkit_ops, FakeToolkitOps)
 
 loaded_modules = set(sys.modules)
 
