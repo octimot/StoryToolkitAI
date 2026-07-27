@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from packaging.version import InvalidVersion
 
+import version
 import storytoolkitai.core.post_update as post_update_module
 from storytoolkitai.core.versioning import is_update_available, parse_version
 
@@ -17,6 +18,19 @@ def test_final_release_is_newer_than_development_release() -> None:
     """The final 1.0.0 release must update a 1.0.0.dev0 installation."""
 
     assert parse_version("1.0.0") > parse_version("1.0.0.dev0")
+
+
+def test_dev_branch_runtime_uses_development_version() -> None:
+    """Work in progress remains visibly separate from the final release."""
+
+    assert version.__version__ == "1.0.0.dev0"
+
+
+def test_direct_version_1_release_sequence() -> None:
+    """Version 1 moves directly from development to the final release."""
+
+    assert parse_version(version.__version__) < parse_version("1.0.0")
+    assert parse_version("v1.0.0") == parse_version("1.0.0")
 
 
 def test_development_build_numbers_are_ordered() -> None:
