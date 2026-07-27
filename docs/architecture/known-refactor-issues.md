@@ -5,7 +5,7 @@ This file records runtime behaviour noticed during the StoryToolkitAI Version 1 
 An entry here does not establish that the refactor caused the issue. Recording it prevents the observation from being lost while architecture and release work continues.
 
 **Code reviewed through:** `f62b7877936902615a5cf62f46c73d48b4bdd5d1`
-**Intended release candidate:** `v1.0.0-rc.1`
+**Intended release:** `v1.0.0`
 
 ## Status legend
 
@@ -37,7 +37,7 @@ An entry here does not establish that the refactor caused the issue. Recording i
 | **Regression status** | There is no current evidence of a persistent refactor regression. |
 | **Automated coverage** | Fake-backed tests cover engine delegation, detached Resolve state, connection-result isolation, polling control, disabling, render-monitor validation and Resolve operations. These tests cannot exercise Blackmagic's scripting module, Fusion library loading, external-scripting configuration or the live `scriptapp("Resolve")` handshake. |
 | **Version 1 decision** | Do not make a speculative connection-code change while the current branch connects successfully. A safe fix requires a reproduced failure and diagnostics from a live Resolve environment. The source and packaged Resolve checks remain release conditions. |
-| **Future action** | Complete the manual verification below before the release candidate. If the connection failure returns, capture the exact environment and logs, then compare the same environment against the stable branch before changing the integration. |
+| **Future action** | Complete the manual verification below before release. If the connection failure returns, capture the exact environment and logs, then compare the same environment against the stable branch before changing the integration. |
 | **Status** | Accepted for Version 1; reopen if reproduced; live Resolve verification required |
 
 ### Step 6C assessment
@@ -75,7 +75,7 @@ regress the currently working environment.
 
 ### Manual Version 1 verification
 
-Before the release candidate:
+Before release:
 
 1. On an Intel or Apple silicon Mac with Resolve 20 or newer, record the exact
    macOS version, architecture, Resolve version and edition, Python version,
@@ -154,8 +154,8 @@ If the connection failure returns:
 | **Original behaviour** | Filenames containing single quotes or other shell-special characters in notification content can cause `osascript` to fail with a syntax error. |
 | **Current behaviour** | Notification messages and titles are passed to a fixed AppleScript program as process arguments. No shell parses the values, and AppleScript receives them through its `run` handler. The legacy still-render notification is presented by the Tk caller rather than the Resolve integration. |
 | **Cause** | The historical macOS notification helper interpolated text into both a shell command and AppleScript source instead of passing it as data. |
-| **Regression status** | Runtime correctness issue, not caused by the refactor but worth tracking before release candidate. |
-| **Future action** | Retain command-construction tests for quotes, backslashes, newlines, Unicode and shell metacharacters. Before a release candidate, manually trigger a macOS notification with the same characters to verify native presentation. |
+| **Regression status** | Runtime correctness issue, not caused by the refactor but worth tracking before release. |
+| **Future action** | Retain command-construction tests for quotes, backslashes, newlines, Unicode and shell metacharacters. Before release, manually trigger a macOS notification with the same characters to verify native presentation. |
 | **Status** | Fixed |
 
 ## R05 — Tuple identity comparison warning
@@ -167,7 +167,7 @@ If the connection failure returns:
 | **Original behaviour** | One tuple and two lists were compared using identity (`is` or `is not`) rather than value equality. Identity checks whether two references point to the same object, not whether the containers contain equal values. |
 | **Current behaviour** | The timecode sentinel checks use value equality, separately created `(None, None)` and `[None, None]` values take the intended fallback paths, and compilation no longer emits the tuple-literal `SyntaxWarning`. |
 | **Cause** | Historical use of identity comparisons where value comparisons were intended. |
-| **Regression status** | Potential correctness concern, not caused by the refactor but worth tracking before release candidate. |
+| **Regression status** | Potential correctness concern, not caused by the refactor but worth tracking before release. |
 | **Future action** | Retain the focused missing-timecode behavior test and the source audit that rejects identity comparisons against container literals. |
 | **Status** | Fixed |
 
@@ -182,7 +182,7 @@ If the connection failure returns:
 | **Cause** | Initialization order overwrote the value after `_load_json_into_attributes()` had restored it. |
 | **Regression status** | Historical data-compatibility bug found during release hardening; no migration is required. |
 | **Automated coverage** | `tests/test_compatibility.py` loads the sanitized stable-release shape, requires the original dictionary before edits, and requires the same key set and unrelated nested values after saving. |
-| **Future action** | Retain the fixture round-trip test and manually check copied stable-release transcriptions before the release candidate. |
+| **Future action** | Retain the fixture round-trip test and manually check copied stable-release transcriptions before release. |
 | **Status** | Fixed |
 
 ## Release issue tracking

@@ -1,12 +1,11 @@
 # Version 1 macOS release checklist
 
-**Scope:** Manual release-candidate verification on macOS
+**Scope:** Manual Version 1 release verification on macOS
 
 **Initial status:** Not run
 
-**Required for:** The first and final Version 1 release candidates. Intermediate
-release candidates must repeat startup and compatibility smoke tests plus every
-section affected by changes since the previous candidate.
+**Required for:** The final `v1.0.0` source tree and every macOS artifact
+selected for publication.
 
 This checklist records checks that the automated suite cannot prove. Every
 item is manual unless it explicitly points to prior automated coverage.
@@ -66,8 +65,10 @@ Record before testing:
 
 - [ ] Run the complete automated suite, compile check, and `git diff --check`
       separately. Attach their output; do not treat it as manual evidence.
-- [ ] Build the packaged application from the recorded commit using the release
-      build procedure.
+- [ ] Follow the
+      [packaged-application test procedure](../testing.md#packaged-application-test-procedure),
+      and build the packaged application from the recorded commit using the
+      maintainer-approved release build procedure.
 - [ ] Prepare short licensed or synthetic audio/video with known speech and
       searchable visual content. Keep large media and model files outside the
       repository.
@@ -308,6 +309,9 @@ Run this section separately for source and packaged applications.
 - [ ] Write, update, and remove a reversible uniquely named test marker.
 - [ ] Move the Resolve playhead to a known timecode and confirm it does not
       continue moving unexpectedly.
+- [ ] Start Resolve playback and exercise harmless StoryToolkitAI window input;
+      confirm the application does not block waiting for Resolve until playback
+      stops. If it does, capture logs and open a release issue.
 - [ ] Import a small representative media item into the intended test bin.
 - [ ] Run one safe representative timeline/render-monitor operation supported
       by the UI and confirm progress/terminal state is reported.

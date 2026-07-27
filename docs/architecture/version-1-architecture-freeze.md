@@ -2,7 +2,7 @@
 
 **Status:** Active until the Version 1 release
 **Code reviewed through:** `f62b7877936902615a5cf62f46c73d48b4bdd5d1`
-**Intended release candidate:** `v1.0.0-rc.1`
+**Intended release:** `v1.0.0`
 
 ## Purpose
 

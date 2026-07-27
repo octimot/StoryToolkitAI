@@ -1,7 +1,7 @@
 # Testing StoryToolkitAI
 
 **Code reviewed through:** `f62b7877936902615a5cf62f46c73d48b4bdd5d1`
-**Intended release candidate:** `v1.0.0-rc.1`
+**Intended release:** `v1.0.0`
 
 StoryToolkitAI uses three explicit verification categories:
 
@@ -45,7 +45,8 @@ The remaining automated tests cover application logic, processing helpers and in
 
 ## Run the complete suite
 
-Run all tests together, including architecture checks and application tests. Use this before preparing a release candidate.
+Run all tests together, including architecture checks and application tests.
+Use this before preparing a release.
 
 ```bash
 .venv-test/bin/python -m pytest -q
@@ -76,13 +77,12 @@ This focused command is useful for quick feedback but does not replace the
 complete suite or the manual release checklists.
 
 The current suite covers search status mapping, detached results, normal
-prepare/search/close behavior, and unknown session IDs. It does not yet contain
-all deterministic lifecycle-race tests called for by the Version 1 hardening
-plan: blocked status reads during preparation/search, close during blocked
-preparation/search/frame retrieval, duplicate simultaneous prepare calls, and
-late completion after removal or same-ID replacement. The implementation uses
-short registry-lock sections and identity revalidation for these cases, but
-the missing focused regression tests remain release-hardening work.
+prepare/search/close behavior, unknown and closed session IDs, responsive
+status reads during blocked preparation, model loading, and search, duplicate
+simultaneous prepare calls, close during blocked preparation/search/frame
+retrieval, and late worker completion after removal or same-ID replacement.
+The tests use deterministic synchronization points around third-party work so
+they exercise lifecycle races without relying on model or media timing.
 
 ## Run Version 1 compatibility checks
 
@@ -134,7 +134,7 @@ explicitly in a prepared release environment:
 - Start a Resolve connection (on macOS or Windows with Resolve installed) and run a marker operation.
 - Generate a story via Assistant and export it as EDL/XML.
 
-Run these manually before a release candidate. Record the environment (OS
+Run these manually before a release. Record the environment (OS
 version, architecture, Python version, application commit/build, model names,
 FFmpeg version and Resolve version/edition when applicable) alongside each
 result.
@@ -142,7 +142,7 @@ result.
 ## Current manual release status
 
 The repository contains no completed manual result record for the intended
-`v1.0.0-rc.1` candidate. Both platform checklists are deliberately initialized
+`v1.0.0` release. Both platform checklists are deliberately initialized
 to **Not run**. Until the release owner attaches environment- and
 artifact-specific evidence, all applicable checks below remain open:
 
@@ -162,7 +162,8 @@ artifact-specific evidence, all applicable checks below remain open:
   close-during-work behavior;
 - Assistant setup and a live provider request, including a safe failure case;
 - Resolve connection and reversible timeline operations in both source and
-  packaged applications where that platform artifact supports Resolve;
+  packaged applications where that platform artifact supports Resolve,
+  including UI responsiveness during Resolve playback;
 - copied stable-release projects, transcriptions, stories, settings, and queue
   data, with unintended format changes ruled out.
 
@@ -173,6 +174,28 @@ If a heavyweight automated test is added later, keep it out of the default
 suite behind an explicit opt-in command or marker, use repository-external
 media/model assets, and document how its result differs from the manual
 release checks.
+
+## Version workflow
+
+The `dev` branch uses a PEP 440 development version such as `1.0.0.dev0` while
+the release remains work in progress. The normal StoryToolkitAI workflow does
+not publish a release candidate merely as an internal checkpoint.
+
+For a normal release:
+
+1. Keep the development version on `dev` while implementation and source
+   verification are still in progress.
+2. In the final release-preparation change, set `version.py` to the final
+   version, finalize the changelog, and merge that tested tree into `main`.
+3. Build every release artifact from the exact final-version commit on `main`,
+   complete the packaged-application checks, and fix any blocker before
+   tagging.
+4. Tag that verified commit with the matching `v`-prefixed version, such as
+   `v1.0.0`.
+
+An alpha, beta, or release-candidate version is used only when the maintainer
+explicitly starts a separately published prerelease testing cycle. It is not
+part of the default dev-to-main release sequence.
 
 ## Version 1 release artifact matrix
 
@@ -189,6 +212,32 @@ A pass from another architecture or processing build does not carry over.
 The release owner must remove an artifact from the publication plan or complete
 its row in the applicable checklist. The source checkout is tested separately
 and does not replace packaged-artifact evidence.
+
+## Packaged-application test procedure
+
+For every artifact selected in the matrix:
+
+1. Record the release commit and build the artifact from that exact commit
+   using the maintainer-approved release build, signing, and notarization or
+   installer procedure.
+2. Record the artifact filename, target architecture/device variant, SHA-256
+   checksum, build source commit, and signing/notarization status before
+   testing. Do not rebuild or replace the artifact while collecting evidence.
+3. Install or copy that recorded artifact into the clean profile described by
+   the applicable platform checklist. Test first launch, subsequent launch,
+   paths containing spaces and Unicode, and normal shutdown.
+4. Run every applicable packaged row in the platform checklist against the
+   same artifact, including FFmpeg, processing device, transcription, queue,
+   search, Assistant, Resolve, and copied stable-release data checks.
+5. Attach logs and evidence to the release issue, label blocked or failed rows
+   explicitly, and verify the artifact checksum again before publication.
+
+This repository does not currently contain the authoritative commands for
+building, signing, notarizing, or installing the release artifacts. The
+release owner must add or link that maintainer-approved procedure before a
+`v1.0.0` artifact can be treated as reproducible. Until then, producing the
+packaged release is a documented release blocker; source verification
+does not waive it.
 
 ## macOS release verification
 

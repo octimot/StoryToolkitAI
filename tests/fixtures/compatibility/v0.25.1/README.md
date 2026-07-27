@@ -23,6 +23,6 @@ sentinels proving that transcription and story data not recognized by the
 current model survives a load/save cycle.
 
 The fixtures do not claim to represent every historical file variation.
-Before a Version 1 release candidate, copies of real user data from the current
+Before the Version 1 release, copies of real user data from the current
 stable release must still be checked with the applicable manual platform
 release checklist.

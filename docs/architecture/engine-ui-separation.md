@@ -4,7 +4,7 @@
 **Release status:** Architecture hardening implemented; release verification pending
 **Scope:** Internal Python architecture for Version 1
 **Code reviewed through:** `f62b7877936902615a5cf62f46c73d48b4bdd5d1`
-**Intended release candidate:** `v1.0.0-rc.1`
+**Intended release:** `v1.0.0`
 **Implemented boundary:** [`tk-engine-boundary.md`](./tk-engine-boundary.md)
 **Closed migration inventory:** [`current-ui-coupling.md`](./current-ui-coupling.md)
 **Version 1 architecture freeze:** [`version-1-architecture-freeze.md`](./version-1-architecture-freeze.md)

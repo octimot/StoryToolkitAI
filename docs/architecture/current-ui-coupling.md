@@ -3,7 +3,7 @@
 **Status:** Closed Version 1 architecture inventory
 **Branch reviewed:** `dev`
 **Reviewed through:** `f62b7877936902615a5cf62f46c73d48b4bdd5d1`
-**Intended release candidate:** `v1.0.0-rc.1`
+**Intended release:** `v1.0.0`
 **Related decision:** [`engine-ui-separation.md`](./engine-ui-separation.md)
 **Implemented boundary:** [`tk-engine-boundary.md`](./tk-engine-boundary.md)
 **Runtime issues:** [`known-refactor-issues.md`](./known-refactor-issues.md)

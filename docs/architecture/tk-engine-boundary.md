@@ -4,7 +4,7 @@
 **Release status:** Architecture hardening implemented; release verification pending
 **Branch reviewed:** `dev`
 **Reviewed through:** `f62b7877936902615a5cf62f46c73d48b4bdd5d1`
-**Intended release candidate:** `v1.0.0-rc.1`
+**Intended release:** `v1.0.0`
 **Related decision:** [`engine-ui-separation.md`](./engine-ui-separation.md)
 **Closed migration inventory:** [`current-ui-coupling.md`](./current-ui-coupling.md)
 
@@ -374,7 +374,7 @@ Run the remaining tests with:
 python -m pytest --ignore=tests/architecture -q
 ```
 
-Run the complete suite before a release candidate:
+Run the complete suite before a release:
 
 ```bash
 python -m pytest -q

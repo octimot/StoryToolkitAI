@@ -1,12 +1,11 @@
 # Version 1 Windows release checklist
 
-**Scope:** Manual release-candidate verification on Windows
+**Scope:** Manual Version 1 release verification on Windows
 
 **Initial status:** Not run
 
-**Required for:** The first and final Version 1 release candidates. Intermediate
-release candidates must repeat startup and compatibility smoke tests plus every
-section affected by changes since the previous candidate.
+**Required for:** The final `v1.0.0` source tree and every Windows artifact
+selected for publication.
 
 This checklist records checks that automated and mocked tests cannot prove.
 Unchecked items are **Not run**, not passed.
@@ -65,7 +64,9 @@ Record before testing:
 ## Preparation and data safety
 
 * [ ] Run the full automated suite, compilation check, and `git diff --check`.
-* [ ] Build or obtain the exact CPU and CUDA artifacts being considered for
+* [ ] Follow the
+  [packaged-application test procedure](../testing.md#packaged-application-test-procedure),
+  and build or obtain the exact CPU and CUDA artifacts being considered for
   release.
 * [ ] Prepare short licensed or synthetic audio and video with known content.
 * [ ] Create a disposable Resolve project and timeline.
@@ -209,6 +210,9 @@ Repeat required checks for source and packaged applications:
 * [ ] Read existing markers.
 * [ ] Write, update, and remove a reversible test marker.
 * [ ] Move the playhead to a known timecode.
+* [ ] Start Resolve playback and exercise harmless StoryToolkitAI window input;
+  confirm the application does not block waiting for Resolve until playback
+  stops. If it does, capture logs and open a release issue.
 * [ ] Import representative media into a test bin.
 * [ ] Run a safe monitored operation.
 * [ ] Disconnect and reconnect.
@@ -241,4 +245,3 @@ Work only on the isolated copy:
 * [ ] Automated, mocked, CPU, and CUDA evidence remain clearly separated.
 * [ ] No credentials, private media, or model files were committed.
 * [ ] Release notes describe accepted platform limitations.
-
