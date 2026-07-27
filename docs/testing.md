@@ -181,17 +181,34 @@ The `dev` branch uses a PEP 440 development version such as `1.0.0.dev0` while
 the release remains work in progress. The normal StoryToolkitAI workflow does
 not publish a release candidate merely as an internal checkpoint.
 
-For a normal release:
+The normal release is staged so source users can receive the stable release
+before standalone packages are ready.
 
-1. Keep the development version on `dev` while implementation and source
-   verification are still in progress.
-2. In the final release-preparation change, set `version.py` to the final
-   version, finalize the changelog, and merge that tested tree into `main`.
-3. Build every release artifact from the exact final-version commit on `main`,
-   complete the packaged-application checks, and fix any blocker before
-   tagging.
-4. Tag that verified commit with the matching `v`-prefixed version, such as
-   `v1.0.0`.
+### Source release
+
+1. Complete the automated tests and source smoke checks.
+2. In the final release-preparation change, set `version.py` to `1.0.0`,
+   finalize the changelog, and merge the tested tree into `main`.
+3. Tag and publish `v1.0.0` without standalone assets.
+4. Update the source-install version endpoint at
+   `https://api.storytoolkit.ai/version` when the source release is intended
+   to become discoverable.
+
+### Standalone release
+
+1. Incorporate feedback from the source rollout through patch releases.
+2. Select the current stable patch version for standalone publication.
+3. Build and test the macOS and Windows packages from that exact commit.
+4. Publish each verified package on the GitHub release matching that patch
+   version.
+
+This staging matches the update channels used by the application. Standalone
+installations query GitHub releases and are offered an update only when the
+release contains a suitable downloadable asset for their platform. A GitHub
+release containing only source archives therefore does not offer standalone
+users a binary that is not available. Source installations query the
+StoryToolkitAI version endpoint, so changing that endpoint controls when a
+source release becomes discoverable.
 
 An alpha, beta, or release-candidate version is used only when the maintainer
 explicitly starts a separately published prerelease testing cycle. It is not
