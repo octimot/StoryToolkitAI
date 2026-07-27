@@ -10,7 +10,7 @@ and never:
     processing -> UI
 
 In-process Version 1 bridges that remain intentionally supported are recorded
-in ``docs/architecture/current-ui-coupling.md``.
+in ``docs/DEVELOPMENT.md``.
 """
 
 from __future__ import annotations

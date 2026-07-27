@@ -102,6 +102,7 @@ The tool would be useless without using the following open source projects:
 ## Code contributions are welcome!
 
 Please open an issue with what you're trying to solve first and let's discuss it there.
+Maintainers should also read the [development guide](docs/DEVELOPMENT.md).
 
 ---
 
