@@ -128,16 +128,43 @@ Automated or mocked results do not prove hardware or packaged-app behavior.
   mocked results. Publish only verified artifacts on the matching GitHub
   release.
 
-## Deferred to Version 2
+## Tk UI during Version 2 development
 
-- A separate engine process and local daemon.
-- HTTP/WebSocket transports, wire formats, versioned API contracts, replay,
-  remote subscriptions, SDKs, and serialization of current in-process bridges.
-- Web, TUI, or Tauri interfaces and independently released UI/engine repos.
-- Remote or multi-user processing, stronger persistent-job/reconnect support,
-  and a replacement queue database.
-- Broad rewrites of `ToolkitOps`, package renames, or a general plugin or
-  dependency-injection architecture without a concrete Version 2 need.
+`toolkit_ui.py` remains the legacy Tk application coordinator. A complete
+pre-Version 2 split is not required.
+
+Use feature-oriented modularization selectively:
+
+- Place substantial new UI features in focused modules.
+- Extract existing features when they are significantly changed, migrated to
+  the process API, or causing parallel-development conflicts.
+- Leave small fixes and stable, tightly connected legacy behavior in
+  `toolkit_ui.py`.
+- Keep application startup, shutdown, Tk-thread event handling, global
+  navigation, and cross-feature coordination central where appropriate.
+
+Feature extraction should preserve behavior and should normally be separated
+from the functional change in Git history when practical.
+
+The Tk UI is a migration client, not a new reusable UI framework. Avoid
+spending time perfecting code that is expected to be retired after the Tauri
+interface reaches sufficient parity.
+
+## Version 2 direction
+
+- Run processing as a separate local engine process.
+- Introduce versioned HTTP/WebSocket communication and official clients.
+- Make Tk, CLI, TUI, web, and Tauri interfaces clients of the same engine.
+- Develop the web and Tauri applications from a shared frontend codebase.
+- Split the frontend repository only after the process boundary is proven.
+
+Initially out of scope:
+
+- Remote multi-user processing.
+- Distributed processing infrastructure.
+- A general plugin framework.
+- Rewriting the Python processing stack in Rust.
+- Broad package renaming or architectural layering without a concrete need.
 
 ## Documentation policy
 
